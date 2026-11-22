@@ -77,7 +77,9 @@ pub use unproved_batch::UnprovedBatch;
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
-use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
+use catallax_recipe::{
+    BooleanKind, EdgeSelection, FilletOverflow, LoftShape, Operation, Origin, Recipe, Role, Segment,
+};
 use catallax_shapes::{Isometry, Pose, RPoint3, RVector3, Surface, Vector3};
 
 use metric::{Arithmetic, Deterministic, PRECISION, Processor, Scalar};
@@ -444,9 +446,16 @@ impl Plan {
                 }
                 Operation::Fillet {
                     body,
-                    edges: catallax_recipe::EdgeSelection::Refs(refs),
+                    edges: EdgeSelection::Refs(refs),
+                    radius,
+                    overflow,
                     ..
-                } if refs.is_empty() => bodies[body],
+                } if refs.is_empty()
+                    && radius.value().sign() == Sign::Positive
+                    && !matches!(overflow, Some(FilletOverflow::KeepNeighbours(_))) =>
+                {
+                    bodies[body]
+                }
                 Operation::Boolean { kind, target, tool } => {
                     let (a, b) = (bodies[target], bodies[tool]);
                     match Self::boolean_identity(*kind, a, b) {
@@ -468,30 +477,71 @@ impl Plan {
         }
         let mut lineage = BTreeSet::new();
         let mut index = bodies[&recipe.result];
-        let mut selected = false;
         while index != 0 {
             let step = &recipe.steps[index - 1];
             lineage.insert(&step.id);
-            let source = match &step.op {
+            match &step.op {
                 Operation::Fillet {
                     body,
-                    edges: catallax_recipe::EdgeSelection::Refs(_),
+                    edges: EdgeSelection::Refs(refs),
+                    overflow,
                     ..
-                } if !selected => {
-                    selected = true;
-                    body
+                } if !matches!(overflow, Some(FilletOverflow::KeepNeighbours(_))) => {
+                    let ([reference], Some(loft)) = (refs.as_slice(), bodies[body].checked_sub(1))
+                    else {
+                        break;
+                    };
+                    let loft = &recipe.steps[loft];
+                    let Operation::Loft {
+                        sections,
+                        shape: LoftShape::Ruled,
+                    } = &loft.op
+                    else {
+                        break;
+                    };
+                    let [first, last] = sections.as_slice() else {
+                        break;
+                    };
+                    let sides = |section: &catallax_recipe::LoftSection| {
+                        let sketch = &recipe.steps[bodies[&section.profile] - 1];
+                        let Operation::Sketch { loops, .. } = &sketch.op else {
+                            return None;
+                        };
+                        let [outline] = loops.as_slice() else {
+                            return None;
+                        };
+                        outline
+                            .0
+                            .iter()
+                            .map(|segment| match segment {
+                                Segment::Line { id, .. } => Some(Origin {
+                                    step: loft.id.clone(),
+                                    role: Role::Side {
+                                        segment: id.clone(),
+                                        path: None,
+                                    },
+                                }),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<_>>>()
+                    };
+                    if let (Some(first), Some(last)) = (sides(first), sides(last))
+                        && first.len() >= 3
+                        && first.len() == last.len()
+                        && patch_shell::loft_edge(&first, reference).is_some()
+                    {
+                        lineage.insert(&loft.id);
+                        return lineage;
+                    }
+                    break;
                 }
-                Operation::Mirror {
-                    body,
-                    keep_original,
-                    ..
-                } if !selected || !keep_original => body,
-                Operation::Pattern { body, .. } if !selected => body,
+                Operation::Mirror { body, .. } | Operation::Pattern { body, .. } => {
+                    index = bodies[body];
+                }
                 _ => break,
-            };
-            index = bodies[source];
+            }
         }
-        if selected { lineage } else { BTreeSet::new() }
+        BTreeSet::new()
     }
 
     fn compile_recipe(
@@ -1547,17 +1597,13 @@ impl Plan {
                 }
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
-                    let refusal = match &leaf {
-                        geometry::Leaf::Shell(shell) if shell.has_named_loft_sides() => {
-                            shell_refusal
-                        }
-                        _ => ComparisonBuildRefusal::Ordinary,
-                    };
                     if let geometry::Leaf::Shell(shell) = &mut leaf {
                         shell.forget_loft_sides();
                     }
-                    leaf.transform(map).map_err(refusal)?;
-                    leaf.rebuild_after_transform(dec).map_err(refusal)?;
+                    leaf.transform(map)
+                        .map_err(ComparisonBuildRefusal::Ordinary)?;
+                    leaf.rebuild_after_transform(dec)
+                        .map_err(ComparisonBuildRefusal::Ordinary)?;
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])
@@ -1571,10 +1617,11 @@ impl Plan {
                         .collect::<Vec<_>>();
                     for face in &mut faces {
                         geometry::face_geometry(face, map.surface(&face.surface), dec)
-                            .map_err(refusal)?;
+                            .map_err(ComparisonBuildRefusal::Ordinary)?;
                         face.origin = catallax_features::copy_origin(step, instance, &face.origin);
                     }
-                    self.leaf(leaf, faces, dec).map_err(refusal)?
+                    self.leaf(leaf, faces, dec)
+                        .map_err(ComparisonBuildRefusal::Ordinary)?
                 }
             };
             if self.separated_unions.contains(&i) {

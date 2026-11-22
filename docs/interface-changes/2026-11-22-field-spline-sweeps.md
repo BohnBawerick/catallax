@@ -19,8 +19,8 @@ its spine. The tube proof runs in test fixtures and in sampled comparison
 through `Plan::compile_for_comparison`. Ordinary recipe compilation keeps
 its spline fillet refusal. Mirrors and patterns that copy a rounded
 spline shell return `field.spline-copy`. Copied unrounded lofts support
-field queries. A later spline fillet on a copy returns
-`fillet.unsupported-spline`.
+field queries. A later fillet that uses the original loft side names on
+an unrounded copy returns `fillet.lost-edge`.
 See [selected spline fillet comparison](../COMPARE.md#selected-spline-fillet)
 for report semantics. Sweep refusals are reported under
 `field.spline-sweep`, `field.spline-sweep-reach`,

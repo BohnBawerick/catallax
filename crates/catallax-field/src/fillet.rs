@@ -562,34 +562,27 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
         let (radius, roll_over) = (settings.radius, settings.roll_over);
+        if matches!(
+            settings.overflow,
+            Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
+        ) {
+            return Err(ComparisonBuildRefusal::Ordinary(Refusal::new(
+                "fillet.unsupported-overflow",
+                "explicit station-plane clipping needs a proved field region",
+            )));
+        }
         let shell = match (self.instructions[root], selection) {
-            (Instruction::Leaf(i), EdgeSelection::Refs(refs))
-                if settings.spline_proofs && !refs.is_empty() =>
-            {
-                match &self.leaves[i] {
-                    geometry::Leaf::Shell(shell) if shell.has_named_loft_sides() => {
-                        Some((shell, refs.as_slice()))
-                    }
+            (Instruction::Leaf(i), EdgeSelection::Refs(refs)) if settings.spline_proofs => {
+                match (&self.leaves[i], refs.as_slice()) {
+                    (geometry::Leaf::Shell(shell), [reference]) => shell
+                        .selected_loft_edge(reference)
+                        .map(|edge| (shell, edge)),
                     _ => None,
                 }
             }
             _ => None,
         };
-        if matches!(
-            settings.overflow,
-            Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
-        ) {
-            let refusal = Refusal::new(
-                "fillet.unsupported-overflow",
-                "explicit station-plane clipping needs a proved field region",
-            );
-            return Err(if shell.is_some() {
-                ComparisonBuildRefusal::Spline(refusal)
-            } else {
-                ComparisonBuildRefusal::Ordinary(refusal)
-            });
-        }
-        if let Some((shell, refs)) = shell {
+        if let Some((shell, edge)) = shell {
             let rounded = (|| {
                 let radius = q(radius)?;
                 if radius.sign() != Sign::Positive {
@@ -604,7 +597,7 @@ impl Plan {
                         "a field spline loft fillet closes at its original cap planes",
                     ));
                 }
-                shell.fillet(refs, step, radius, dec)
+                shell.fillet(edge, step, radius, dec)
             })()
             .map_err(ComparisonBuildRefusal::Spline)?;
             return self

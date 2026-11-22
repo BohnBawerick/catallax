@@ -245,6 +245,36 @@ fn definition_refusal(detail: &str) -> Refusal {
     Refusal::new("field.spline-spine-definition", detail)
 }
 
+fn reserved_batch<T>(
+    dec: &mut Decider,
+    units: u64,
+    evaluate: impl FnOnce() -> T,
+) -> Result<T, Refusal> {
+    dec.charge_work(units)?;
+    Ok(evaluate())
+}
+
+#[cfg(test)]
+#[test]
+fn support_batch_runs_only_after_reservation() {
+    use catallax_numbers::with_operation_budget;
+
+    let mut calls = 0;
+    let (result, work) = with_operation_budget(4, || {
+        reserved_batch(&mut Decider::default(), 5, || calls += 1)
+    });
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+    assert_eq!(calls, 0);
+
+    let (result, work) = with_operation_budget(6, || {
+        reserved_batch(&mut Decider::default(), 5, || calls += 1)
+    });
+    result.unwrap();
+    assert_eq!(work.used, 6);
+    assert_eq!(calls, 1);
+}
+
 fn zero() -> Interval {
     Interval::point(0.0).expect("zero")
 }
@@ -575,28 +605,31 @@ impl Support {
         let mut value = vec![[zero(); 4]; (m + 1) * rows];
         for a in 0..=m {
             for b in 0..=n {
-                dec.charge_work(5 * (a as u64 + 1) * (b as u64 + 1))?;
-                let mut out = [zero(); 4];
-                for i in 0..=a {
-                    for j in 0..=b {
-                        let factor = basis[0][a][i] * basis[1][b][j];
-                        for (o, c) in out.iter_mut().zip(net[i * rows + j]) {
-                            *o = *o + factor * c;
+                value[a * rows + b] =
+                    reserved_batch(dec, 5 * (a as u64 + 1) * (b as u64 + 1), || {
+                        let mut out = [zero(); 4];
+                        for i in 0..=a {
+                            for j in 0..=b {
+                                let factor = basis[0][a][i] * basis[1][b][j];
+                                for (o, c) in out.iter_mut().zip(net[i * rows + j]) {
+                                    *o = *o + factor * c;
+                                }
+                            }
                         }
-                    }
-                }
-                value[a * rows + b] = out;
+                        out
+                    })?;
             }
         }
         let along_u =
             |table: &[[Interval; 4]], dec: &mut Decider| -> Result<Vec<[Interval; 4]>, Refusal> {
                 let mut out = vec![[zero(); 4]; table.len()];
                 for i in 0..m {
-                    dec.charge_work(4 * rows as u64)?;
-                    for j in 0..=n {
-                        let k = point((i + 1) as f64);
-                        out[i * rows + j] = table[(i + 1) * rows + j].map(|c| c * k);
-                    }
+                    reserved_batch(dec, 4 * rows as u64, || {
+                        for j in 0..=n {
+                            let k = point((i + 1) as f64);
+                            out[i * rows + j] = table[(i + 1) * rows + j].map(|c| c * k);
+                        }
+                    })?;
                 }
                 Ok(out)
             };
@@ -604,11 +637,12 @@ impl Support {
             |table: &[[Interval; 4]], dec: &mut Decider| -> Result<Vec<[Interval; 4]>, Refusal> {
                 let mut out = vec![[zero(); 4]; table.len()];
                 for i in 0..=m {
-                    dec.charge_work(4 * n as u64)?;
-                    for j in 0..n {
-                        let k = point((j + 1) as f64);
-                        out[i * rows + j] = table[i * rows + j + 1].map(|c| c * k);
-                    }
+                    reserved_batch(dec, 4 * n as u64, || {
+                        for j in 0..n {
+                            let k = point((j + 1) as f64);
+                            out[i * rows + j] = table[i * rows + j + 1].map(|c| c * k);
+                        }
+                    })?;
                 }
                 Ok(out)
             };

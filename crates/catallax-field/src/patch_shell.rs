@@ -30,6 +30,23 @@ use crate::patch_distance::PatchDistance;
 use crate::rolling_region::Range;
 use crate::spline_spine::sweep::{Cap, loft::Round};
 
+pub(crate) fn loft_edge(sides: &[Origin], reference: &EdgeRef) -> Option<[usize; 2]> {
+    let [a, b] = &reference.between;
+    if reference.near.is_some()
+        || !reference.touching.is_empty()
+        || a.role.is_none()
+        || b.role.is_none()
+    {
+        return None;
+    }
+    (0..sides.len())
+        .map(|i| [i, (i + 1) % sides.len()])
+        .find(|&[i, j]| {
+            (a.matches(&sides[i]) && b.matches(&sides[j]))
+                || (a.matches(&sides[j]) && b.matches(&sides[i]))
+        })
+}
+
 fn refusal(detail: &str) -> Refusal {
     Refusal::new("field.patch-shell", detail)
 }
@@ -478,8 +495,11 @@ impl Shell {
         self
     }
 
-    pub(crate) fn has_named_loft_sides(&self) -> bool {
-        !self.loft_sides.is_empty()
+    pub(crate) fn selected_loft_edge(&self, reference: &EdgeRef) -> Option<[usize; 2]> {
+        if self.round.is_some() {
+            return None;
+        }
+        loft_edge(&self.loft_sides, reference)
     }
 
     pub(crate) fn forget_loft_sides(&mut self) {
@@ -488,7 +508,7 @@ impl Shell {
 
     pub(crate) fn fillet(
         &self,
-        edges: &[EdgeRef],
+        selected: [usize; 2],
         step: &StepId,
         radius: Rational,
         dec: &mut Decider,
@@ -499,27 +519,7 @@ impl Shell {
                 "a field spline fillet needs one named edge of an untrimmed convex ruled loft",
             )
         };
-        let [reference] = edges else {
-            return Err(unsupported());
-        };
         let sides = &self.loft_sides;
-        if self.round.is_some() || reference.near.is_some() || !reference.touching.is_empty() {
-            return Err(unsupported());
-        }
-        let adjacent: Vec<_> = (0..sides.len())
-            .map(|i| [i, (i + 1) % sides.len()])
-            .filter(|&[i, j]| {
-                let [a, b] = &reference.between;
-                (a.matches(&sides[i]) && b.matches(&sides[j]))
-                    || (a.matches(&sides[j]) && b.matches(&sides[i]))
-            })
-            .collect();
-        let [selected] = adjacent.as_slice() else {
-            return Err(Refusal::new(
-                "fillet.lost-edge",
-                "the side origins do not select one shared loft edge",
-            ));
-        };
         let edge = EdgeName::new(sides[selected[0]].clone(), sides[selected[1]].clone())
             .map_err(|e| refusal(&e.to_string()))?;
         let origin = Origin {
@@ -547,7 +547,7 @@ impl Shell {
         ];
         let mut shell = self.clone();
         shell.round = Some(Round::prove(
-            origin, *selected, &patches, &caps, radius, dec,
+            origin, selected, &patches, &caps, radius, dec,
         )?);
         Ok(shell)
     }

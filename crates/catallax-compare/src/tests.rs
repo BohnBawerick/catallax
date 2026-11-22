@@ -116,6 +116,13 @@ fn empty_m27_fillet_keeps_the_loft_and_any_selected_blend() {
 
 #[test]
 fn all_edges_on_bezier_loft_keeps_the_ordinary_refusal() {
+    let report = check(&bezier_loft_fillet());
+    assert_eq!(report.refusal.as_ref().unwrap().code, "fillet.lost-edge");
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    assert_eq!(report.forward_vertices, 0);
+}
+
+fn bezier_loft_fillet() -> Recipe {
     let mut value: Value = serde_json::from_str(include_str!(
         "../../catallax-features/tests/fixtures/loft-spline-prism.json"
     ))
@@ -125,11 +132,87 @@ fn all_edges_on_bezier_loft_keeps_the_ordinary_refusal() {
         .unwrap()
         .push(json!({"id":"round","op":"fillet","body":"loft","radius":"1/10","edges":"all"}));
     value["result"] = json!("round");
-    let recipe = Recipe::parse(&value.to_string()).unwrap();
-    let report = check(&recipe);
-    assert_eq!(report.refusal.as_ref().unwrap().code, "fillet.lost-edge");
-    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
-    assert_eq!(report.forward_vertices, 0);
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+#[test]
+fn m27_selection_matrix_preserves_ordinary_refusals() {
+    use catallax_field::{ComparisonBuildRefusal, Plan};
+    use catallax_numbers::with_operation_budget;
+
+    let side = |i| json!({"step":"loft","role":{"side":{"segment":format!("a_{i}")}}});
+    let adjacent = |i| json!({"between":[side(i),side((i + 1) % 4)]});
+    let change_edges = |edges| {
+        let mut input = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+        input["steps"][3]["edges"] = edges;
+        Recipe::parse(&input.to_string()).unwrap()
+    };
+
+    let mut overflow = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    overflow["steps"][3]["overflow"] = json!({"keep_neighbours":[]});
+    let references_lost = "no source support resolves the edge reference";
+    let all_lost = "no selected support intersection is a sharp input boundary";
+    let mut ordinary = vec![
+        (bezier_loft_fillet(), "fillet.lost-edge", all_lost),
+        (change_edges(json!("all")), "fillet.lost-edge", all_lost),
+        (
+            change_edges(json!([adjacent(0), adjacent(1)])),
+            "fillet.lost-edge",
+            references_lost,
+        ),
+        (
+            change_edges(json!([{"between":[side(0),side(2)]}])),
+            "fillet.lost-edge",
+            references_lost,
+        ),
+        (
+            Recipe::parse(&overflow.to_string()).unwrap(),
+            "fillet.unsupported-overflow",
+            "explicit station-plane clipping needs a proved field region",
+        ),
+    ];
+    for cap in ["start", "end"] {
+        for i in 0..4 {
+            ordinary.push((
+                change_edges(json!([{"between":[{"step":"loft","role":cap},side(i)]}])),
+                "fillet.lost-edge",
+                references_lost,
+            ));
+        }
+    }
+    for (input, code, detail) in ordinary {
+        let (report, work) = with_operation_budget(100_000_000, || check(&input));
+        let expected = catallax_numbers::Refusal::new(code, detail);
+        assert!(!work.exhausted);
+        assert_eq!(Plan::compile(&input).unwrap_err(), expected);
+        assert_eq!(report.refusal, Some(expected), "{input:?}");
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.forward_vertices, 0);
+        assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    }
+
+    for (i, vertices) in [(0, Some(245)), (1, Some(335)), (2, None), (3, None)] {
+        let input = change_edges(json!([adjacent(i)]));
+        assert_eq!(Plan::compile(&input).unwrap_err().code, "fillet.lost-edge");
+        if let Some(vertices) = vertices {
+            let (report, work) = with_operation_budget(100_000_000, || check(&input));
+            assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+            assert_eq!(report.forward_vertices, vertices);
+        } else {
+            let (result, _) = with_operation_budget(20_000_000, || {
+                Plan::compile_for_comparison(
+                    &input,
+                    &catallax_features::ImportFiles::new(),
+                    &mut Decider::default(),
+                )
+            });
+            match result {
+                Ok(plan) => assert!(plan.spline_blend_origin().is_some()),
+                Err(ComparisonBuildRefusal::Spline(_)) => {}
+                Err(error) => panic!("adjacent sides {i}: {error:?}"),
+            }
+        }
+    }
 }
 
 #[test]
@@ -421,7 +504,6 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
     let (budget_refusal, work) = with_operation_budget(budget, || check(&valid_edge));
     assert!(work.exhausted);
     for (report, code) in [
-        (check(&missing_edge), "fillet.lost-edge"),
         (union_refusal, "numbers.operation-budget"),
         (budget_refusal, "numbers.operation-budget"),
     ] {

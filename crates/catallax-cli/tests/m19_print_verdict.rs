@@ -231,7 +231,7 @@ fn full_p6_writes_the_same_material_certificate_and_stl_at_each_worker_count() {
     let mut reference = None;
     for workers in [1, 2, 4] {
         let dir = root.join(workers.to_string());
-        let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
             .env_remove("CATALLAX_THREADS")
             .args(["--threads", &workers.to_string(), "stream"])
             .stdin(Stdio::piped())

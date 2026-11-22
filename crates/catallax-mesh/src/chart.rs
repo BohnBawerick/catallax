@@ -171,6 +171,10 @@ impl Chart {
     }
 
     pub(crate) fn from_spline(support: &SplineSupport, dec: &mut Decider) -> Result<Self, Refusal> {
+        let carrier = match support {
+            SplineSupport::RationalAtlas(atlas) => atlas.charts()[0].patch().carrier(),
+            _ => support.carrier(),
+        };
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
             periodic: [false; 2],
@@ -181,7 +185,7 @@ impl Chart {
             normal_scale: Rational::one(),
             great_circle_sector: false,
             corner_planes: None,
-            sampling: Sampling::Spline(SplineChart::new(support.carrier(), dec)?),
+            sampling: Sampling::Spline(SplineChart::new(carrier, dec)?),
         })
     }
 

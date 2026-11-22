@@ -1607,6 +1607,20 @@ fn regular_chart(
     ))
 }
 
+fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
+    match surface {
+        Surface::BSpline(
+            support @ (SplineSupport::RationalPatch(_) | SplineSupport::SplineFillet(_)),
+        ) => Some(support),
+        Surface::BSpline(support @ SplineSupport::RationalAtlas(atlas))
+            if atlas.charts().len() == 1 =>
+        {
+            Some(support)
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn build(
     model: &Model,
     body: BodyId,
@@ -1618,16 +1632,10 @@ pub(crate) fn build(
         return crate::oblique_draft::build(model, body, options, dec);
     }
     let faces = model.faces_of_body(body);
-    let use_spline_charts =
-        faces.iter().all(
-            |&face| match model.geom().surface(model.face(face).surface) {
-                Surface::BSpline(
-                    SplineSupport::RationalPatch(_) | SplineSupport::SplineFillet(_),
-                ) => true,
-                Surface::BSpline(_) => false,
-                _ => true,
-            },
-        );
+    let use_spline_charts = faces.iter().all(|&face| {
+        let surface = model.geom().surface(model.face(face).surface);
+        !matches!(surface, Surface::BSpline(_)) || spline_chart(surface).is_some()
+    });
     let junction = if use_spline_charts {
         None
     } else {
@@ -1694,10 +1702,8 @@ fn build_junction(
         .iter()
         .filter(|&&f| !fitted(f))
         .map(|&f| {
-            let chart = match model.geom().surface(model.face(f).surface) {
-                Surface::BSpline(
-                    support @ (SplineSupport::RationalPatch(_) | SplineSupport::SplineFillet(_)),
-                ) if junction.is_none() => Chart::from_spline(support, dec)?,
+            let chart = match spline_chart(model.geom().surface(model.face(f).surface)) {
+                Some(support) if junction.is_none() => Chart::from_spline(support, dec)?,
                 _ => regular_chart(model, f, options, dec)?,
             };
             Ok((f, chart))

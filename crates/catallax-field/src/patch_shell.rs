@@ -72,6 +72,7 @@ fn point(p: &RPoint3) -> V {
 #[derive(Clone, Debug)]
 pub struct Polygon {
     vertices: Vec<V>,
+    other_rings: Vec<Vec<V>>,
     /// Outward, by Newell's sum of the vertices' cross products.
     normal: V,
     /// The coordinate axis dropped to test points in two dimensions: the one
@@ -115,9 +116,33 @@ impl Polygon {
             .expect("three axes");
         Ok(Self {
             vertices,
+            other_rings: vec![],
             normal,
             dropped,
         })
+    }
+
+    /// Validated nonintersecting coplanar rings. The first ring determines
+    /// the outward normal and even-odd nesting determines cap material.
+    pub(crate) fn with_rings(
+        first: Vec<RPoint3>,
+        other_rings: Vec<Vec<RPoint3>>,
+    ) -> Result<Self, Refusal> {
+        let mut polygon = Self::new(first)?;
+        polygon.other_rings = other_rings
+            .iter()
+            .map(|ring| ring.iter().map(point).collect())
+            .collect();
+        Ok(polygon)
+    }
+
+    fn rings(&self) -> impl Iterator<Item = &[V]> {
+        std::iter::once(self.vertices.as_slice()).chain(self.other_rings.iter().map(Vec::as_slice))
+    }
+
+    fn segments(&self) -> impl Iterator<Item = (&V, &V)> {
+        self.rings()
+            .flat_map(|ring| ring.iter().zip(ring.iter().cycle().skip(1)))
     }
 
     fn flat(&self, v: &V) -> [Rational; 2] {
@@ -134,9 +159,9 @@ impl Polygon {
     fn planar(&self, q: &V) -> Planar {
         let q = self.flat(q);
         let mut inside = false;
-        for (i, a) in self.vertices.iter().enumerate() {
+        for (a, b) in self.segments() {
             let a = self.flat(a);
-            let b = self.flat(&self.vertices[(i + 1) % self.vertices.len()]);
+            let b = self.flat(b);
             let side =
                 &(&(&b[0] - &a[0]) * &(&q[1] - &a[1])) - &(&(&b[1] - &a[1]) * &(&q[0] - &a[0]));
             let within = |k: usize| {
@@ -170,8 +195,7 @@ impl Polygon {
             return &(&height * &height) / &length;
         }
         let mut best: Option<Rational> = None;
-        for (i, a) in self.vertices.iter().enumerate() {
-            let b = &self.vertices[(i + 1) % self.vertices.len()];
+        for (a, b) in self.segments() {
             let edge = sub(b, a);
             let t = (&dot(&sub(q, a), &edge) / &dot(&edge, &edge))
                 .max(Rational::zero())
@@ -211,14 +235,10 @@ impl Polygon {
     /// Tentative squared distance and the side of the plane, from binary64
     /// arithmetic only.
     fn fast_squared(&self, q: [f64; 3]) -> (f64, f64) {
-        let v: Vec<[f64; 3]> = self
-            .vertices
-            .iter()
-            .map(|v| v.each_ref().map(Rational::to_f64_nearest))
-            .collect();
+        let v0 = self.vertices[0].each_ref().map(Rational::to_f64_nearest);
         let n = self.normal.each_ref().map(Rational::to_f64_nearest);
         let length = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-        let side = (0..3).map(|k| (q[k] - v[0][k]) * n[k]).sum::<f64>() / length;
+        let side = (0..3).map(|k| (q[k] - v0[k]) * n[k]).sum::<f64>() / length;
         let foot: [f64; 3] = std::array::from_fn(|k| q[k] - side * n[k] / length);
         let [a, b] = match self.dropped {
             0 => [1, 2],
@@ -227,8 +247,8 @@ impl Polygon {
         };
         let mut inside = false;
         let mut edges = f64::INFINITY;
-        for i in 0..v.len() {
-            let (s, t) = (v[i], v[(i + 1) % v.len()]);
+        for (s, t) in self.segments() {
+            let [s, t] = [s, t].map(|v| v.each_ref().map(Rational::to_f64_nearest));
             if (s[b] > foot[b]) != (t[b] > foot[b])
                 && foot[a] < s[a] + (foot[b] - s[b]) * (t[a] - s[a]) / (t[b] - s[b])
             {
@@ -299,6 +319,43 @@ fn ball(interval: Interval) -> Ball {
 }
 
 impl Shell {
+    /// Unsigned boundary distance for a proximity test with a positive limit.
+    /// Once a witness is within the limit, zero remains a valid lower bound.
+    pub fn boundary_distance_within(
+        &self,
+        p: &RPoint3,
+        limit: f64,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        let q = self.local(&point(p));
+        let at = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::INFINITY;
+        for face in &self.faces {
+            let distance = match face {
+                Face::Polygon(polygon) => {
+                    dec.charge_work(1)?;
+                    Interval::from_rational(&polygon.squared(&q))
+                        .sqrt()
+                        .expect("non-negative")
+                }
+                // Leave half the requested limit for a nonzero lower bound.
+                Face::Patch(patch) => {
+                    patch
+                        .distance
+                        .distance_within(&at, limit * 0.5, dec)?
+                        .distance
+                }
+            };
+            lo = lo.min(distance.lo());
+            hi = hi.min(distance.hi());
+            if hi <= limit {
+                return Ok(Interval::new(0.0, hi).expect("non-negative bounds"));
+            }
+        }
+        Ok(Interval::new(lo, hi).expect("ordered bounds"))
+    }
+
     /// A shell of `faces` in place. The caller proves them a closed,
     /// outward, crossing-free shell.
     pub fn new(faces: Vec<Face>) -> Result<Self, Refusal> {
@@ -319,7 +376,7 @@ impl Shell {
         };
         for face in &faces {
             match face {
-                Face::Polygon(polygon) => polygon.vertices.iter().for_each(|v| grow(v.clone())),
+                Face::Polygon(polygon) => polygon.rings().flatten().for_each(|v| grow(v.clone())),
                 Face::Patch(patch) => {
                     let hull = patch.distance.hull();
                     let end = |x: f64| Rational::from_f64_exact(x).expect("finite control");
@@ -418,7 +475,7 @@ impl Shell {
             match face {
                 Face::Polygon(polygon) => {
                     let mut hull: Option<[Interval; 3]> = None;
-                    for v in &polygon.vertices {
+                    for v in polygon.rings().flatten() {
                         let p = v.each_ref().map(Interval::from_rational);
                         hull = Some(match hull {
                             None => p,

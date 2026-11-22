@@ -38,6 +38,28 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     );
     controller.latest().unwrap()
 }
+
+#[test]
+fn motion_shell_comparison_checks_spline_sweep_vertices_and_reports_reverse_gap() {
+    for source in [
+        include_str!("../../catallax-features/tests/fixtures/spline-sweep-planar.json"),
+        include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json"),
+    ] {
+        let recipe = Recipe::parse(source).unwrap();
+        let options = Options::default();
+        let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            check_with_options(&recipe, &options)
+        });
+        assert!(!work.exhausted, "{work:?}");
+        assert!(report.refusal.is_none(), "{:?}", report.refusal);
+        assert!(report.forward_vertices > 0);
+        assert_eq!(report.reverse_samples, 0);
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.findings.len(), 1, "{:?}", report.findings.first());
+        assert_eq!(report.findings[0].pass, Pass::Reverse);
+        assert!(report.sampled_distance_upper.unwrap() <= options.accuracy);
+    }
+}
 #[test]
 fn thin_boolean_faces_receive_trim_checked_reverse_samples() {
     let part = recipe(vec![

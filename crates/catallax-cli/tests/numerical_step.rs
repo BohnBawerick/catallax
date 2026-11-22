@@ -1,12 +1,12 @@
 //! Real stream requests keep numerical STEP separate from exact answers.
 
+mod support;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::{fs, io::Write, process::Stdio};
+
+use support::bin_command;
 
 fn recipe() -> Value {
     let mut recipe: Value = serde_json::from_str(include_str!(
@@ -51,7 +51,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     let requests: Vec<_> = std::iter::once(("recipe", problem, 20_000_000))
         .chain(following)
         .collect();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -187,7 +187,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     let question = dir.join("late-budget.json");
     fs::write(&question, serde_json::to_vec(&portable).unwrap()).unwrap();
     let late = dir.join("late-budget");
-    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let output = bin_command!("catallax-verify")
         .arg("replay")
         .arg(&question)
         .arg("--out")
@@ -212,7 +212,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     assert!(!late.join("answer.step").exists());
     let broken = dir.join("broken-metadata");
     fs::create_dir_all(broken.join("operations.json")).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let output = bin_command!("catallax-verify")
         .arg("replay")
         .arg(dir.join("0/question.json"))
         .arg("--out")
@@ -243,7 +243,7 @@ fn skew_collar_numerical_request_exports_the_actual_hole_with_step_trace_spans()
     let request = json!({"format":"catallax-request/1","source":"recipe",
         "problem":{"format":"catallax-numerical-step/1","recipe":recipe,"tolerance_mm":"1e-7"},
         "max_work":20_000_000,"out":dir});
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -301,7 +301,7 @@ fn numerical_hole_review_request(recipe: Value, label: &str) -> (Value, std::pat
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("answer.step"), b"STALE").unwrap();
     let request = json!({"format":"catallax-request/1","source":"recipe","problem":{"format":"catallax-numerical-step/1","recipe":recipe,"tolerance_mm":"1e-7"},"max_work":20_000_000,"out":dir});
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

@@ -69,11 +69,11 @@ pub struct IgesReport {
     pub faces: usize,
     /// Shared topological edges, including ring edges.
     pub edges: usize,
-    /// Export-only seam edges joining periodic ring boundaries.
+    /// Export-only seam edges on periodic faces.
     pub added_edges: usize,
-    /// Written vertices, including one added vertex per vertexless ring edge.
+    /// Written vertices, including vertices added for periodic boundaries.
     pub vertices: usize,
-    /// Ring vertices required by the IGES edge-list representation.
+    /// Ring origins, seam junctions and poles required by the IGES topology.
     pub added_vertices: usize,
 }
 

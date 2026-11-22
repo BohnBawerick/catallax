@@ -1,7 +1,8 @@
-//! Two-way sampled display comparison. Agreement is not a global Hausdorff
-//! certificate or a pre-export accuracy certificate. Imported definitions also
+//! Sampled display comparison. The spline fillet path checks the selected
+//! face in the forward direction and leaves reverse coverage unresolved.
+//! Agreement covers sampled display accuracy. Imported definitions also
 //! compare exact containment samples and independent volume enclosures.
-//! See `docs/archive/PLAN-2026-11.md` for coverage and measured costs.
+//! See `docs/COMPARE.md` for coverage and measured costs.
 #![forbid(unsafe_code)]
 
 use catallax_numbers::{Interval, Rational, Refusal};
@@ -45,8 +46,10 @@ pub struct Options {
     pub divisions: u32,
     /// Minimum dot product of unit normals. Default is 999/1000.
     pub normal_cosine: Rational,
-    /// Restricts queries to this closed region, padded by mesh error forward.
-    /// `None` checks the complete sampled boundary.
+    /// Restricts queries to this closed region. Forward selection pads it by
+    /// display error, including the fit bound on the spline path.
+    /// `None` uses all samples in the comparison scope. For spline fillets,
+    /// that scope is the selected face.
     pub region: Option<Region>,
 }
 impl Default for Options {
@@ -76,7 +79,7 @@ pub enum Pass {
 /// Why the kernels disagree, or why a sample could not be settled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reason {
-    /// A certified distance lower bound exceeds the display accuracy.
+    /// A certified distance lower bound exceeds the applicable comparison limit.
     Gap,
     /// A certified field origin is absent from the matching B-rep face.
     Origins,
@@ -138,7 +141,8 @@ pub struct Report {
     /// Number of certified surviving field samples checked.
     pub reverse_samples: usize,
     /// Maximum certified distance upper bound over checked samples, including
-    /// forward mesh error. `None` means at least one distance is unbounded.
+    /// forward display error. `None` indicates an unbounded sampled distance
+    /// or a spline comparison without a complete forward bound.
     /// This is not a whole-boundary Hausdorff certificate.
     pub sampled_distance_upper: Option<Rational>,
     /// Proven disagreements and explicit unresolved observations, in fixed order.
@@ -267,13 +271,15 @@ impl Revision {
         state.latest = Some(report);
         Completion::Published
     }
-    /// Builds both kernels and runs the complete two-way display check.
+    /// Builds both kernels and checks their sampled displays. Spline fillets
+    /// use a forward check of the selected face and leave reverse coverage unresolved.
     /// No thread or wall-clock deadline influences a geometric verdict.
     pub fn check(&self, recipe: &Recipe, options: &Options) -> Completion {
         self.check_with_files(recipe, &catallax_features::ImportFiles::new(), options)
     }
     /// Checks both kernels against the same immutable STEP sources. Imports add
     /// exact containment samples and volume enclosures to the boundary check.
+    /// The spline fillet scope is the same as in [`Self::check`].
     pub fn check_with_files(
         &self,
         recipe: &Recipe,
@@ -284,6 +290,7 @@ impl Revision {
     }
     /// Checks an independently built B-rep against a field recipe. Useful for
     /// cached builds and for reproducing kernel discrepancies without altering kernels.
+    /// The spline fillet scope is the same as in [`Self::check`].
     pub fn check_built(
         &self,
         built: &catallax_features::Built,

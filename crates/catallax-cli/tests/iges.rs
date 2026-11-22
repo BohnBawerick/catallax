@@ -1,12 +1,18 @@
 //! Explicit IGES verification requests through the public stream and replay commands.
+
+mod support;
+
 use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+use support::bin_command;
+
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 fn scratch(name: &str) -> PathBuf {
@@ -44,6 +50,11 @@ fn sphere() -> Value {
         "steps":[{"id":"ball","op":"sphere","radius":"2",
         "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"ball"})
 }
+fn torus() -> Value {
+    json!({"format":"catallax-recipe/3","name":"ring",
+        "steps":[{"id":"ring","op":"torus","major":"5","minor":"2",
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"ring"})
+}
 fn iges(recipe: Value) -> Value {
     json!({"format":"catallax-iges/1","recipe":recipe})
 }
@@ -53,7 +64,7 @@ fn request(problem: Value, out: &Path, max_work: u64) -> Value {
 }
 /// One worker process answering its requests in order.
 fn stream(requests: &[Value]) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -93,8 +104,12 @@ fn strip_timing(mut response: Value) -> Value {
 
 #[test]
 fn supported_parts_publish_the_actual_report_and_artifact_identity() {
-    // Faces, solids and the bore's cylinder pin the topology the writer reports.
-    for (name, recipe, faces) in [("box", block(["2", "3", "5"]), 6), ("bored", bored(), 7)] {
+    for (name, recipe, faces) in [
+        ("box", block(["2", "3", "5"]), 6),
+        ("bored", bored(), 7),
+        ("sphere", sphere(), 1),
+        ("torus", torus(), 1),
+    ] {
         let (response, dir) = answer(iges(recipe), 100_000_000);
         let manifest = &response["manifest"];
         assert_eq!(manifest["status"], "answered", "{name}: {manifest}");
@@ -158,7 +173,6 @@ fn refusals_are_typed_and_remove_the_previous_artifact() {
     let tight = json!({"format":"catallax-iges/1","recipe":block(["1/3","2/7","5/11"]),
         "tolerance":"1/1000000000000000000000000000000000000"});
     let cases = [
-        (iges(sphere()), 100_000_000, "iges.unsupported-surface"),
         (tight, 100_000_000, "iges.tolerance-exceeded"),
         (
             json!({"format":"catallax-iges/1","recipe":block(["2","3","5"]),"scale_digits":0}),
@@ -207,7 +221,7 @@ fn a_process_io_failure_is_not_a_geometric_refusal() {
     // A directory where the previous artifact should be makes cleanup fail.
     let dir = scratch("io");
     fs::create_dir_all(dir.join("answer.igs")).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -233,6 +247,7 @@ fn replay_and_worker_counts_reproduce_outcomes_work_and_bytes() {
         iges(bored()),
         iges(collar()),
         iges(sphere()),
+        iges(torus()),
     ];
     let baseline_dir = scratch("base");
     let requests: Vec<_> = problems
@@ -278,7 +293,7 @@ fn replay_and_worker_counts_reproduce_outcomes_work_and_bytes() {
     for (i, expected) in baseline.iter().enumerate() {
         let original = baseline_dir.join(i.to_string());
         let replay = original.join("replay");
-        let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        let output = bin_command!("catallax-verify")
             .args([
                 "replay",
                 original.join("question.json").to_str().unwrap(),
@@ -318,7 +333,7 @@ fn existing_recipe_requests_keep_their_artifacts_and_gain_no_iges_file() {
 
 #[test]
 fn about_advertises_the_source_and_problem_format() {
-    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let output = bin_command!("catallax-verify")
         .arg("about")
         .output()
         .unwrap();

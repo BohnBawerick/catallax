@@ -341,11 +341,12 @@ fn distance_finding(
     names: Vec<Vec<Origin>>,
     field: Vec<Origin>,
     bounds: (Rational, Option<Rational>),
-    options: &Options,
+    limits: (&Rational, &Rational),
 ) {
     let (lo, hi) = bounds;
+    let (gap_threshold, upper_limit) = limits;
     retain_distance_upper(report, hi.as_ref());
-    if lo > options.accuracy {
+    if &lo > gap_threshold {
         let low = Interval::from_rational(&lo).lo();
         let high = hi
             .as_ref()
@@ -358,7 +359,7 @@ fn distance_finding(
             reason: Reason::Gap,
             gap: Some(Interval::new(low, high).unwrap()),
         });
-    } else if hi.is_none_or(|h| h > options.accuracy) {
+    } else if hi.is_none_or(|h| &h > upper_limit) {
         unresolved(
             report,
             pass,
@@ -398,6 +399,165 @@ fn endpoint_distance(
         }
     }
     Ok(upper)
+}
+
+fn incident_faces(mesh: &catallax_mesh::Mesh) -> Vec<BTreeSet<usize>> {
+    let mut incident = vec![BTreeSet::new(); mesh.positions.len()];
+    for (index, face) in mesh.faces.iter().enumerate() {
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            for &vertex in &triangle.vertices {
+                incident[vertex].insert(index);
+            }
+        }
+    }
+    incident
+}
+
+fn forward_patch_shell(
+    revision: &Revision,
+    report: &mut Report,
+    mesh: &catallax_mesh::Mesh,
+    face_origins: &[Vec<Origin>],
+    shell: &catallax_field::patch_shell::Shell,
+    options: &Options,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for (position, faces) in mesh.positions.iter().zip(incident_faces(mesh)) {
+        if revision.is_cancelled() {
+            break;
+        }
+        let [x, y, z] = position.map(|p| Rational::from_f64_exact(p).expect("finite mesh"));
+        let p = RPoint3::new(x, y, z);
+        let Some(error) = faces.iter().map(|&i| &mesh.faces[i].max_chord_error).max() else {
+            unresolved(
+                report,
+                Pass::Forward,
+                &p,
+                vec![],
+                vec![],
+                "mesh vertex has no incident face",
+            );
+            continue;
+        };
+        if options
+            .region
+            .as_ref()
+            .is_some_and(|region| !region.contains(&p, error))
+        {
+            continue;
+        }
+        report.forward_vertices += 1;
+        let limit = &options.accuracy - error;
+        let width = if limit > r(0) {
+            limit
+        } else {
+            options.accuracy.clone()
+        };
+        let distance = shell.boundary_distance_within(&p, width.to_f64_nearest(), dec)?;
+        let upper = Rational::from_f64_exact(distance.hi()).map(|h| &h + error);
+        let lower = Rational::from_f64_exact(distance.lo()).unwrap_or_else(|| r(0));
+        distance_finding(
+            report,
+            Pass::Forward,
+            &p,
+            faces.iter().map(|&i| face_origins[i].clone()).collect(),
+            vec![],
+            ((&lower - error).max(r(0)), upper),
+            (&options.accuracy, &options.accuracy),
+        );
+    }
+    Ok(())
+}
+
+/// Compare the complete positional display of the selected blend. There
+/// is no independent reverse normal certificate for this fitted face yet.
+#[allow(clippy::too_many_arguments)]
+fn spline_display(
+    revision: &Revision,
+    display: catallax_mesh::DisplayMesh,
+    fit_bound: &Rational,
+    field: &Plan,
+    origin: &Origin,
+    report: &mut Report,
+    options: &Options,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if !display.source_marks.is_empty() {
+        whole_failure(report, "spline display inherits marked geometry");
+    }
+    let error = &display.measurement.maximum_deviation + fit_bound;
+    let mut first = None;
+    for position in display.geometry.positions {
+        if revision.is_cancelled() {
+            return Ok(false);
+        }
+        let [x, y, z] = position.map(|x| Rational::from_f64_exact(x).expect("finite display"));
+        let p = RPoint3::new(x, y, z);
+        if options
+            .region
+            .as_ref()
+            .is_some_and(|b| !b.contains(&p, &error))
+        {
+            continue;
+        }
+        let range = field
+            .spline_blend_distance(origin, &p, &error, dec)?
+            .expect("the field has the named blend");
+        first.get_or_insert_with(|| p.clone());
+        spline_vertex(report, &p, Some(origin), range, &error, &options.accuracy);
+    }
+    if let Some(p) = first {
+        unresolved(
+            report,
+            Pass::Reverse,
+            &p,
+            vec![vec![origin.clone()]],
+            vec![],
+            "selected B-rep face lacks complete sampled origin/direction coverage",
+        );
+    } else {
+        report.sampled_distance_upper = None;
+        whole_failure(report, "no spline display vertices in the requested scope");
+    }
+    Ok(true)
+}
+
+pub(super) fn spline_vertex(
+    report: &mut Report,
+    point: &RPoint3,
+    origin: Option<&Origin>,
+    range: catallax_field::rolling_region::Range,
+    error: &Rational,
+    accuracy: &Rational,
+) {
+    report.forward_vertices += 1;
+    let names = origin.into_iter().map(|o| vec![o.clone()]).collect();
+    let field = origin.into_iter().cloned().collect();
+    let upper = range.upper.as_ref().map(|u| u + error);
+    if &range.lower <= error && range.upper.is_none_or(|upper| &upper > error) {
+        retain_distance_upper(report, upper.as_ref());
+        unresolved(
+            report,
+            Pass::Forward,
+            point,
+            names,
+            field,
+            "field.spline-bound-unresolved",
+        );
+    } else {
+        if &range.lower > error {
+            report.verdict = Verdict::Disagree;
+        }
+        distance_finding(
+            report,
+            Pass::Forward,
+            point,
+            names,
+            field,
+            ((&range.lower - error).max(r(0)), upper),
+            (&r(0), accuracy),
+        );
+    }
 }
 
 pub(crate) fn run(
@@ -440,53 +600,70 @@ pub(crate) fn run(
         return revision.publish(report);
     }
     let mut dec = Decider::default();
-    let field = match Plan::compile_with_files_checked(recipe, files, &mut dec) {
+    let field = match Plan::compile_for_comparison(recipe, files, &mut dec) {
         Ok(f) => f,
-        Err(e) => {
+        Err(error) => {
+            use catallax_field::ComparisonBuildRefusal;
+            let e = match error {
+                ComparisonBuildRefusal::Ordinary(refusal) => refusal,
+                ComparisonBuildRefusal::Spline(refusal) => {
+                    report.sampled_distance_upper = None;
+                    refusal
+                }
+            };
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
             report.refusal = Some(e);
             return revision.publish(report);
         }
     };
-    let supports = match field
-        .faces()
-        .iter()
-        .map(|face| support(&face.surface, &mut dec))
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(supports) => supports,
-        Err(e) => {
-            whole_failure(
-                &mut report,
-                format!("support normalisation {}: {}", e.code, e.detail),
-            );
-            return revision.publish(report);
-        }
-    };
-    let mut registry = BTreeMap::<Origin, Vec<catallax_field::FaceId>>::new();
-    for (index, face) in field.faces().iter().enumerate() {
-        if let Some(id) = field.result_face(index) {
-            registry.entry(face.origin.clone()).or_default().push(id);
-        }
+    let spline_origin = field.spline_blend_origin();
+    if spline_origin.is_some() {
+        report.sampled_distance_upper = None;
     }
-    let mut groups = Vec::with_capacity(supports.len());
-    for source in &supports {
-        let mut group = Vec::new();
-        for (i, other) in supports.iter().enumerate() {
-            match source.equals(other, &mut dec) {
-                Ok(true) => group.push(i),
-                Ok(false) => (),
-                Err(e) => {
-                    whole_failure(
-                        &mut report,
-                        format!("support comparison {}: {}", e.code, e.detail),
-                    );
-                    return revision.publish(report);
-                }
+    let analytic_supports = if spline_origin.is_none() {
+        let supports = match field
+            .faces()
+            .iter()
+            .map(|face| support(&face.surface, &mut dec))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(supports) => supports,
+            Err(e) => {
+                whole_failure(
+                    &mut report,
+                    format!("support normalisation {}: {}", e.code, e.detail),
+                );
+                return revision.publish(report);
+            }
+        };
+        let mut registry = BTreeMap::<Origin, Vec<catallax_field::FaceId>>::new();
+        for (index, face) in field.faces().iter().enumerate() {
+            if let Some(id) = field.result_face(index) {
+                registry.entry(face.origin.clone()).or_default().push(id);
             }
         }
-        groups.push(group);
-    }
+        let mut groups = Vec::with_capacity(supports.len());
+        for source in &supports {
+            let mut group = Vec::new();
+            for (i, other) in supports.iter().enumerate() {
+                match source.equals(other, &mut dec) {
+                    Ok(true) => group.push(i),
+                    Ok(false) => (),
+                    Err(e) => {
+                        whole_failure(
+                            &mut report,
+                            format!("support comparison {}: {}", e.code, e.detail),
+                        );
+                        return revision.publish(report);
+                    }
+                }
+            }
+            groups.push(group);
+        }
+        Some((supports, registry, groups))
+    } else {
+        None
+    };
     let (mut model, result) = if let Some(b) = built {
         (b.model.clone(), b.result)
     } else {
@@ -494,6 +671,11 @@ pub(crate) fn run(
             Ok(b) => b,
             Err(e) => {
                 whole_failure(&mut report, format!("B-rep build: {e}"));
+                if spline_origin.is_some()
+                    && let catallax_features::BuildError::Geometry { refusal, .. } = e
+                {
+                    report.refusal = Some(refusal);
+                }
                 return revision.publish(report);
             }
         };
@@ -526,6 +708,67 @@ pub(crate) fn run(
     if revision.is_cancelled() {
         return Completion::Cancelled;
     }
+    if let Some(origin) = spline_origin {
+        let faces: Vec<_> = model
+            .faces_of_body(result)
+            .into_iter()
+            .filter(|&face| model.face_origins(face).contains(origin))
+            .collect();
+        let [face] = faces.as_slice() else {
+            whole_failure(&mut report, "the B-rep has no unique named spline blend");
+            return revision.publish(report);
+        };
+        let Surface::BSpline(catallax_shapes::SplineSupport::SplineFillet(fit)) =
+            model.geom().surface(model.face(*face).surface)
+        else {
+            whole_failure(
+                &mut report,
+                "the named B-rep blend is not a fitted spline fillet",
+            );
+            return revision.publish(report);
+        };
+        let display = match catallax_mesh::display_spline_fillet_face(
+            &model,
+            result,
+            *face,
+            &options.mesh,
+            &mut dec,
+        ) {
+            Ok(display) => display,
+            Err(e) => {
+                whole_failure(
+                    &mut report,
+                    format!("B-rep positional display {}: {}", e.code, e.detail),
+                );
+                report.refusal = Some(e);
+                return revision.publish(report);
+            }
+        };
+        report.sampled_distance_upper = Some(r(0));
+        match spline_display(
+            revision,
+            display,
+            &fit.bound().upper,
+            &field,
+            origin,
+            &mut report,
+            options,
+            &mut dec,
+        ) {
+            Ok(true) => (),
+            Ok(false) => return Completion::Cancelled,
+            Err(e) => {
+                whole_failure(
+                    &mut report,
+                    format!("field spline comparison {}: {}", e.code, e.detail),
+                );
+                report.sampled_distance_upper = None;
+                report.refusal = Some(e);
+            }
+        }
+        return revision.publish(report);
+    }
+    let (supports, registry, groups) = analytic_supports.expect("analytic comparison supports");
     let mesh = match catallax_mesh::mesh_body(&model, result, &options.mesh, &mut dec) {
         Ok(m) => {
             if !m.marks.is_empty() {
@@ -560,6 +803,43 @@ pub(crate) fn run(
         .iter()
         .map(|f| model.face_origins(f.face).to_vec())
         .collect();
+    if matches!(
+        recipe.step(&recipe.result).map(|step| &step.op),
+        Some(Operation::Sweep { .. } | Operation::Loft { .. })
+    ) && let Some(shell) = field.result_patch_shell()
+    {
+        if let Err(error) = forward_patch_shell(
+            revision,
+            &mut report,
+            &mesh,
+            &face_origins,
+            shell,
+            options,
+            &mut dec,
+        ) {
+            whole_failure(
+                &mut report,
+                format!("field shell distance {}: {}", error.code, error.detail),
+            );
+            report.refusal = Some(error);
+        }
+        unresolved(
+            &mut report,
+            Pass::Reverse,
+            &RPoint3::new(r(0), r(0), r(0)),
+            vec![],
+            vec![],
+            "patch shell has no named reverse samples",
+        );
+        if report
+            .findings
+            .iter()
+            .any(|finding| finding.reason == Reason::Gap)
+        {
+            report.verdict = Verdict::Disagree;
+        }
+        return revision.publish(report);
+    }
     let surfaces: Vec<_> = mesh
         .faces
         .iter()
@@ -580,14 +860,7 @@ pub(crate) fn run(
         .iter()
         .map(|p| std::array::from_fn(|i| p.partial(i)))
         .collect();
-    let mut incident: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); mesh.positions.len()];
-    for (i, face) in mesh.faces.iter().enumerate() {
-        for triangle in &mesh.triangles[face.triangles.clone()] {
-            for &v in &triangle.vertices {
-                incident[v].insert(i);
-            }
-        }
-    }
+    let incident = incident_faces(&mesh);
     let mut endpoints = BTreeMap::<usize, BTreeSet<catallax_topology::VertexId>>::new();
     for boundary in &mesh.edges {
         let edge = model.edge(boundary.edge);
@@ -817,7 +1090,7 @@ pub(crate) fn run(
                 names,
                 field_names,
                 (lower, upper),
-                options,
+                (&options.accuracy, &options.accuracy),
             );
         } else if d.lo() == f64::INFINITY && field.is_proven_empty() {
             report.findings.push(Finding {
@@ -1102,7 +1375,7 @@ pub(crate) fn run(
                 names.clone(),
                 origins.clone(),
                 (lower, upper.clone()),
-                options,
+                (&options.accuracy, &options.accuracy),
             );
         } else {
             retain_distance_upper(&mut report, None);

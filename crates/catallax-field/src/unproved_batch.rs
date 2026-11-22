@@ -49,11 +49,12 @@ impl Plan {
                 self.tentative::<crate::metric::Processor>(point, workspace)
             })
         })?;
+        let true_distance_formula = self.true_distance_formula();
         for result in results {
             match result {
                 Ok(value) => storage.values.push(UnprovedValue {
                     value,
-                    true_distance_formula: self.true_distance_formula(),
+                    true_distance_formula,
                     hardware: PreviewHardware::Processor,
                 }),
                 Err(error) => {

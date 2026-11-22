@@ -31,9 +31,14 @@ def install(cache, codename, run=command, sleep=time.sleep, has_perf=None):
                 if source.exists() else [])
 
     if has_perf is None:
-        has_perf = lambda: subprocess.run(
-            ['apt-cache', *options, *source_options(), 'show', 'linux-perf'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+        def has_perf():
+            # APT can know about linux-perf through dependencies without offering it.
+            policy = subprocess.run(
+                ['apt-cache', *options, *source_options(), 'policy', 'linux-perf'],
+                capture_output=True, text=True, env={**os.environ, 'LC_ALL': 'C'}, check=False)
+            return policy.returncode == 0 and any(
+                line.startswith('  Candidate: ') and line != '  Candidate: (none)'
+                for line in policy.stdout.splitlines())
 
     def packages():
         # Newer Ubuntu images ship perf separately from linux-tools-*.

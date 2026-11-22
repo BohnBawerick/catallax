@@ -15,7 +15,7 @@ pub const SPLINE_DISPLAY_RULE: BoundedRule = BoundedRule {
     unit: EvidenceUnit::Millimetres,
 };
 
-/// How the complete rendering boundary was compared with the retained surfaces.
+/// How the rendered faces were compared with the retained surfaces.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DisplayMeasurement {
     /// Complete-cell method, including shared-edge replacement and binary64 rounding.
@@ -37,7 +37,7 @@ pub struct DisplayMeasurement {
 pub struct DisplayMesh {
     /// Positions, triangles and shared physical edges for rendering and selection.
     pub geometry: PreviewMesh,
-    /// Whole-boundary measurement against the kept model.
+    /// Measurement against the kept model for the boundary or selected face.
     pub measurement: DisplayMeasurement,
     /// Marks retained from the body and sampled exact boundary traces.
     pub source_marks: catallax_numbers::MarkLog,
@@ -66,6 +66,71 @@ fn rendering(
             covered_faces,
         },
     }
+}
+
+fn check_position_options(options: &MeshOptions) -> Result<(), catallax_numbers::Refusal> {
+    if options.chord_tolerance <= Rational::zero()
+        || options.max_vertices < 4
+        || options.angular_deviation.is_some()
+        || options.max_edge_length.is_some()
+        || options.max_aspect_ratio.is_some()
+    {
+        return Err(catallax_numbers::Refusal::new(
+            "mesh.invalid-options",
+            "positional comparison needs a positive chord tolerance and no facet controls",
+        ));
+    }
+    Ok(())
+}
+
+/// Displays the selected spline fillet face with a complete positional bound.
+/// Its original neighbours identify the cap cuts, and only the selected
+/// face contributes a grid or edge stations. Facet controls require a
+/// separate certificate.
+pub fn display_spline_fillet_face(
+    model: &Model,
+    body: BodyId,
+    face: catallax_topology::FaceId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<DisplayMesh, catallax_numbers::Refusal> {
+    check_position_options(options)?;
+    let boundaries = crate::junction::spline_fillet_face(model, body, face, options, dec)?;
+    crate::triangulate::check_surface_faces(model, [face], &boundaries.mesh)?;
+    let result = rendering(
+        boundaries.mesh,
+        boundaries.marks,
+        "complete-cell position enclosures",
+    );
+    if result.measurement.covered_faces != 1
+        || result.measurement.maximum_deviation > options.chord_tolerance
+    {
+        return Err(failure("positional comparison has incomplete coverage"));
+    }
+    Ok(result)
+}
+
+/// A measured positional grid on an entire fitted carrier.
+pub struct SplineCarrierDisplay {
+    /// All grid vertices in column order, in millimetres.
+    pub positions: Vec<[f64; 3]>,
+    /// The number of columns and rows. Each cell uses the low-low to
+    /// high-high diagonal.
+    pub dimensions: [usize; 2],
+    /// The maximum chord deviation from the fitted carrier in millimetres,
+    /// including binary64 rounding.
+    pub maximum_deviation: Rational,
+}
+
+/// Displays the complete carrier of a fitted spline fillet with no body
+/// cuts, using the positional grid and the requested chord tolerance.
+pub fn display_spline_fillet_carrier(
+    fillet: &catallax_shapes::SplineFillet,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<SplineCarrierDisplay, catallax_numbers::Refusal> {
+    check_position_options(options)?;
+    crate::junction::spline_fillet_carrier(fillet, options, dec)
 }
 
 /// Tries certification first, then the fixed 0.01 mm spline rendering rule.

@@ -17,8 +17,11 @@ Code the field shares with the B-rep, and what a bug in it would do:
 | `catallax_shapes::RollingEnvelopeDefinition` | the M18 `Region` building block's input, in the M18 tests only | Replaced in step 4: the field's rim piece (`rolling_region::rim`) finds each mouth from its own leaves and supports and checks the regime itself. The M18 `Region` still takes the B-rep's definition as its input format; no recipe compiles through it. |
 | `catallax_features::fillet::FilletDefinition` and `CornerDefinition` | today's compiled plane-plane and plane-cylinder field fillets (edge, contacts, section) | These elementary definitions predate 4.2a. The step 1 path pieces do not use them; the step 1 tests compare the two, so a bug in either shows. Production keeps them until a later step moves the compile route onto the path pieces. |
 | `catallax-intersect` support intersection | finding which support pairs meet at a sharp edge | Edge discovery only. The ball path is not computed there. |
-| `RationalPatch::bezier_spans` | step 7, each span's exact homogeneous Bezier controls, which `PatchDistance` encloses | Blossom extraction shared with every spline route. A wrong control would move the patch for both kernels; the step 7.1 test checks every distance against binary64 points of the support's own polynomials, which do not go through it. |
-| M10 pair search (`offset_meeting`) | step 7 only, spline spine topology | Named by the decisions. Step 7 adds the dense binary64 third check that catches a bug shared through M10. |
+| `RationalPatch::bezier_spans` | step 7, exact homogeneous Bézier controls for patch distance and the spine's polynomial charts | Both kernels use the same blossom extraction. The step 7.1 distance check uses binary64 points from the original support polynomials as its oracle. |
+
+M10's pair search informed the design. The field computes and certifies its
+own seed, trace and border roots. The dense binary64 check solves the contact
+equations from the original support polynomials independently.
 
 ## Query contract (Q23)
 
@@ -410,12 +413,365 @@ The print and display classifier treats a shell as it treats a mesh: a box that 
 
 The first producer is the field's own ruled loft (`Plan::patch_loft`), tried where the translated-loft route refuses: two parallel sections of line segments, one loop each, with as many segments. Each pair of corresponding segments gives a bilinear side, the straight lines between points at equal parameters, which is the B-rep's ruled side (the M11 loft's patches in `catallax-shapes/tests/spline_fillet.rs`). The slice at fraction `v` of the height is the polygon with vertices `(1 - v) a_i + v b_i`, so the turn at a vertex is a quadratic in `v`; its Bernstein coefficients `a' x a''`, `(a' x b'' + b' x a'') / 2` and `b' x b''` (edges `'` before and `''` after the vertex) all of one strict sign at every vertex prove every slice a strictly convex polygon. Then the sides meet only along the lines through corresponding vertices and the caps only along the sections' edges, which is the closed shell the leaf needs. Any other loft keeps `field.loft-correspondence-unsupported`; a correspondence turned half a turn, whose middle slice collapses, is the test's case.
 
-Results (`patch_shell.rs`, release build on the work PC, 4.6 s for the file). On 1,521 grid points round the M11 loft, the shell answers 294 inside and 1,216 outside, each as the B-rep does, and 3 points exactly on a side `Indeterminate`, where the B-rep says boundary. The B-rep refuses 8 points on the vertical line through the loft's corner `(1, -1)` (`shapes.rational-patch-unproven`, "the line is tangent to the finite rational patch"); the field answers outside there. Every distance agrees with a binary64 search of the six faces, and its bounds are within 2^-24 mm. Cap points are on the boundary, side points at rational parameters stay `Indeterminate`, a rotated and mirrored copy answers as the original, and answers and work are the same at 1, 2 and 4 threads. Through `Plan::compile`, the field builds the M11 loft and agrees with the B-rep at 505 points. The print classifier on 1,521 boxes of side 1/4 mm round it settles 159 inside and 533 outside, each as the shell answers at its corners and centre, and leaves 829 near the faces unknown, among them a box across a side. The M11 fillet recipe now passes its loft in the field and stops at the fillet with `fillet.lost-edge` (the shell registers no named face yet), which the field's spline spine (7.3 and 7.4) replaces.
+Results (`patch_shell.rs`, release build on the work PC, 4.6 s for the file). On 1,521 grid points round the M11 loft, the shell answers 294 inside and 1,216 outside, each as the B-rep does, and 3 points exactly on a side `Indeterminate`, where the B-rep says boundary. The B-rep refuses 8 points on the vertical line through the loft's corner `(1, -1)` (`shapes.rational-patch-unproven`, "the line is tangent to the finite rational patch"); the field answers outside there. Every distance agrees with a binary64 search of the six faces, and its bounds are within 2^-24 mm. Cap points are on the boundary, side points at rational parameters stay `Indeterminate`, a rotated and mirrored copy answers as the original, and answers and work are the same at 1, 2 and 4 threads. Through `Plan::compile`, the field builds the M11 loft and agrees with the B-rep at 505 points. The print classifier on 1,521 boxes of side 1/4 mm round it settles 159 inside and 533 outside, each as the shell answers at its corners and centre, and leaves 829 near the faces unknown, among them a box across a side. Ordinary compilation builds the M11 loft and stops at the fillet with `fillet.lost-edge`. Sampled comparison and test fixtures use the independent spline proof from steps 7.3 and 7.4.
+
+## Step 7.3: an independent spline spine
+
+`catallax_field::spline_spine` proves a centre path between two whole,
+single-span rational patches. The caller supplies the radius, the side of
+each patch normal, a continuation parameter, a seed station and the part
+tolerance. The field uses the two homogeneous Bézier nets and solves directly
+for the centre, both contacts and the two positive normal lengths. It shares
+rational patch and interval primitives with the B-rep.
+
+OpenCASCADE marches a guide with `BlendFunc_ConstRad` and
+`BRepBlend_Walking`, using a Newton correction on each section.
+SMLib's `SmConstantRadiusFS` solves for equal points on the two offset
+surfaces, and `SmFilletIntersector` checks interpolated spans. The field uses
+SMLib's equal-offset condition and OpenCASCADE's Newton iteration limit
+for the trace. [OpenCASCADE solver](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V7_9_0/src/BRepBlend/BRepBlend_Walking.cxx)
+[SMLib solver](https://raw.githubusercontent.com/NVIDIA-Omniverse/usd-brep/main/source/SMLib/src/SmFilletStandardSolver.cpp)
+[SMLib span checks](https://raw.githubusercontent.com/NVIDIA-Omniverse/usd-brep/main/source/SMLib/src/SmFilletIntersector.cpp)
+
+Outward-rounded Krawczyk tests isolate the two border roots and certify a
+unique root at every station in each span. Taylor models enclose the
+residual about an interpolated centre and contact curve. At a shared
+station, a root enclosure must fit both uniqueness boxes. The solver
+isolates the station's root separately if neither span supplies an
+enclosure tight enough. The border and seed roots must also fit their
+spans. Contact bounds and inward derivatives at border roots keep both
+contacts on the patches. The centre enclosure must fit
+`min(100 nm, part tolerance / 2)` in Euclidean distance.
+[Certified continuation](https://doi.org/10.1137/130906544)
+
+All three M11 fixtures passed with eight spans each. The spine work
+recorded at `1a7321fc` predates charging for basis-table arithmetic.
+
+| Edge | Work | Tube radius (nm, rounded up) |
+| --- | ---: | ---: |
+| M27 loft edge | 428,558 | 0.009859 |
+| Next loft edge | 431,184 | 0.008290 |
+| Biquadratic edge | 656,302 | 0.006276 |
+
+The certificates and work match at 1, 2 and 4 workers and the default
+setting. A separate Newton solver eliminates the centre and normal lengths
+and checks 1,001 stations per edge. Every centre and contact lies within
+the enclosure to within the oracle's binary64 test slack. A tighter
+part tolerance forces subdivision, and an unattainable tolerance returns
+`field.spline-spine-eps` with the width reached.
+
+This certificate covers the component selected by the seed. The next step
+ties it to the named edge of a convex ruled loft.
+
+## Step 7.4: the swept-ball distance
+
+The distance query covers the short circular sections between the two
+contact rails. A panel supplies a lower bound. Only a certified station
+inside the finite domain, or a certified endpoint, supplies an upper
+witness. A binary64 Newton proposal can place a witness sooner without
+entering the proof. OpenCASCADE refines sampled point-to-curve extrema
+in `Extrema_GExtPC`. SMLib uses short circular sections in
+`SmCircularCrossSectionFSG`. The field uses the interval panel cover
+from step 1 on the spline's certified centre and contact enclosures.
+[OpenCASCADE](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V7_9_0/src/Extrema/Extrema_GExtPC.gxx)
+[SMLib](https://docs.nvidia.com/smlib/manual/smlib/fillets/)
+
+Differentiate the span's offset system twice to bound the centre's speed
+and acceleration. If the centre moves at least `m` per unit of parameter
+along a fixed direction and its acceleration is at most `M`, a chord
+for a parameter increment `dt` has length at least `m |dt|`.
+Its projection on a unit normal is at most `M dt² / 2`.
+The normal sections at radius `r` therefore clear every other ball when
+`r M < m²`. This is the normal/chord reach inequality.
+[Federer, *Curvature Measures*, Theorem 4.18](https://doi.org/10.1090/S0002-9947-1959-0110078-1)
+
+The two rails of a loft can meet one cap at different stations. Follow the
+same offset component onto the exact extended charts, tying it to the
+whole-patch proof at the seed. Every short arc direction crosses each
+cap once, as its cap-height derivative keeps one strict sign. A distance
+witness on a clipped section comes from its nearest circle point, a
+retained rail point, or a circle-plane intersection. This keeps the part
+between the caps even where its first rail has left the original chart.
+
+For a ruled loft, each side is an exact quadratic inequality obtained
+from its moving horizontal edge. A quadratic remainder bound proves
+the rolling ball stays inside both touched sides and clears every other
+side. The section's radial normal proves that the new face projects
+one-to-one between the two rails along a common outward direction. That
+graph replaces the sharp corner while preserving the remaining sides
+and caps. See [the field recipe scope](FIELD.md#spline-fillets-in-comparison)
+for edge selection and comparison entry points.
+
+Sampled comparison opts into the tube proof. The tentative evaluator
+locates each rail with 24 height bisections, then solves height and across
+together with at most 12 two-variable Newton steps. It seeds the solve by
+interpolating between the rail cuts. The finite differences use `2^-16`
+of the normalized parameter interval. The solve stops once both updates
+are at most `2^-24`, the rail bracket resolution.
+
+The focused release tests sampled 505 independent arc points per edge.
+Median distance query times on the work PC were 4.388 us for M27, 4.474 us
+for the next edge and 7.215 us for the biquadratic edge. These were
+shared-machine runs. The cap regression also tests a point above the
+first rail's last station and below the cap, using an independent solve
+for the second rail.
+
+The capped sweep timing test uses nine independent binary64 arc samples
+per group. The near-cut controls sit 0.2 mm inside the cap on sections
+clear of both cuts. The on-cap samples come from sections whose two
+rails straddle that cap. These median query times are in microseconds
+from a focused release run on the shared Blade with field optimization
+level 1.
+
+| Loft edge | Cap height (mm) | Near cut | On cut |
+| --- | ---: | ---: | ---: |
+| M27 | 0 | 16.817 | 21.201 |
+| M27 | 2 | 15.505 | 22.734 |
+| Next M11 | 0 | 15.542 | 21.390 |
+| Next M11 | 2 | 15.261 | 22.808 |
+
+### Forward display comparison
+
+The loft fixtures use the [selected spline fillet comparison](COMPARE.md#selected-spline-fillet)
+at 0.005 mm chord tolerance. The biquadratic fixture displays the
+complete fitted carrier, which has no body cuts.
+The bare carrier test in `catallax-compare` charges the field proof and
+sweep, B-rep fit, grid and vertex queries to one request. The comparison
+totals and field build work recorded at `e30b732a` predate charging for
+basis-table arithmetic and cap normals.
+
+| Edge | Forward vertices | Total work | Largest comparison upper bound (mm) |
+| --- | ---: | ---: | ---: |
+| M27 loft | 245 | 36,448,251 | 0.002888316 |
+| Next M11 loft | 335 | 63,995,055 | 0.004464352 |
+| Biquadratic | 104 | 72,210,076 | 0.004916114 |
+
+Both lofts passed every forward vertex check. With fresh inputs at 1, 2
+and 4 workers, the field build records and work matched for all four rows.
+The capped field builds used 901,321 work for M27, 897,045 for the next
+loft edge, and 887,445 for the spline-plane loft. The bare biquadratic
+field proof and sweep used 667,187 work. On that row, the B-rep fit
+took 16,438,284, and the 4 by 26 carrier
+grid took 54,998,702. The grid's display bound was 0.004836298487 mm.
+Vertex queries took the remaining 105,903 work. All three comparisons
+used the existing 100M request allowance.
+
+The whole-body B-rep display remains open for both lofts. Reverse
+normal and origin coverage for the fitted blends also remains open.
+
+## Steps 7.5 to 7.7: near tangency and a plane chart
+
+The synthetic edge uses one parabolic side and one plane. The plane's
+slope at the shared edge runs from `1` to `2^-24` in dyadic steps.
+The smallest tested angle with a full tube and reach proof was
+0.003497057 degrees (`2^-14`), at 261,376 work and a tube radius of
+`8.77e-11 mm`. The near-tangent and plane-control work recorded at
+`69b8a363` predates charging for basis-table arithmetic. Lower angles
+failed at the seed, a border proof or the support-domain check. The exact
+tangent control refuses by name.
+When the feet point into the same half plane, the chord between them
+bounds the distance from either rail to every point of the short arc.
+The sweep labels this bound when it fits the spine target. At the smallest
+tested angle that passed, the rail bound was 6.142 nm.
+
+An analytic plane stays a plane at its offset. Its rational chart is
+translated exactly along the normal and enters the field solver at
+zero offset. The original normal still gives its contact direction.
+This follows the same-family offset route described in
+[the viability study](research/cp2-grill/sdf-spline-viability.md#3-does-m10-accept-analytic-against-spline-offsets).
+The spline-plane control checks the centre against the exact offset
+equation `15x + 8y = 17/10`. The control's tube radius is
+`1.224362e-14 mm` at 347,890 work. The field proof and work agree
+at 1, 2 and 4 workers. The median query took 4.762 us over 99
+independently generated points on the work PC.
+
+**Step 7 and 4.2a remain open.** The B-rep spline-plane loft
+fillet refuses with `fillet.unsupported-contact`. The comparison used
+896,264 work at `e30b732a`, before the basis-table and cap-normal charges.
+Forward display coverage for that row waits for the B-rep build.
+
+### Historical measurements with sweep reservations
+
+These figures are from `b6eb02fe`, before the spine proof and exact
+query reservations below. Focused release tests on the shared Blade used
+field optimization level 1.
+Before admitting a sweep proof panel, the decider charges for the dense
+coefficient tables, the span enclosure and the largest vector-product
+count on that panel. Certified queries also reserve work per endpoint,
+station proposal, bracket evaluation and distance panel. Each Newton
+iteration reserves four products per Horner term on each of three
+coordinates and ten for the station update. The arc reservation includes
+squares in the distance bounds and both intersections for each active
+cap. The spline face comparison skips analytic support grouping. The older figures above record earlier charge
+policies.
+
+The spine certificates and charged work agreed at 1, 2 and 4 workers
+under the 20M field allowance.
+
+| Edge | Spine work | Tube radius (nm, rounded up) |
+| --- | ---: | ---: |
+| M27 loft | 438,880 | 0.009859 |
+| Next M11 loft | 437,113 | 0.008290 |
+| Biquadratic | 659,811 | 0.006276 |
+
+The capped loft builds and the bare carrier field build also agreed at
+1, 2 and 4 workers. All four stayed within the 20M field target. Each
+comparison used the same 100M request for both kernels and sampling.
+
+| Edge | Field build work | Comparison work | Forward vertices | Widened upper bound (mm) |
+| --- | ---: | ---: | ---: | ---: |
+| M27 loft | 903,619 | 36,720,334 | 245 | 0.002888316 |
+| Next M11 loft | 899,457 | 64,360,508 | 335 | 0.004464352 |
+| Biquadratic | 667,830 | 72,234,943 | 104 | 0.004916114 |
+| Spline-plane loft | 889,743 | 898,562 | 0 | absent |
+
+The biquadratic fit used 16,438,284 work. Its 4 by 26 display grid used
+54,998,702 work and had a positional bound of 0.004836298487 mm. Vertex
+queries used 130,127 work. The spline-plane row remains open at the B-rep
+refusal `fillet.unsupported-contact`.
+
+The historical query-reservation run at `66aa2bc0` recorded field build
+work of 903,528, 899,366, 667,827 and 889,652 in table order. The
+respective comparison totals were 36,704,963, 64,339,737, 72,229,429 and
+898,471. Bare-carrier queries used 124,616 work at that revision.
+
+The historical proof-panel run at `23d30ee7` recorded field build work
+of 903,363, 899,201, 667,827 and 889,487 in table order. The respective
+comparison totals were 36,450,293, 63,997,211, 72,210,716 and 898,306.
+Bare-carrier queries used 105,903 work at that revision.
+
+The smallest tested angle certified under 20M was 0.003497057 degrees
+(`2^-14`). It used 262,047 work, with an `8.77e-11 mm` tube and a
+6.142 nm rail bound. The adjacent `2^-15` case used 24,803 work and
+refused with `field.spline-spine` because it found no spine point at
+the seed. The historical run at `66aa2bc0` used 262,044 work at the
+smallest certified angle. The exact tangent control also refused. The
+spline-plane control used 347,999 work at all three worker counts and retained its
+`1.224362e-14 mm` tube.
+
+On this shared-machine run, the independent arc-query medians were
+16.387 µs for M27, 31.059 µs for the next loft edge and 68.492 µs for the
+biquadratic edge. The spline-plane median was 30.474 µs on 99 points.
+The corresponding historical medians were 31.247, 31.883, 57.260 and
+24.618 µs at `66aa2bc0` and 14.348, 14.121, 23.896 and 30.603 µs at
+`23d30ee7`.
+
+| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) | Historical at `66aa2bc0` (near / on, µs) | Historical at `23d30ee7` (near / on, µs) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| M27 | 0 | 15.038 | 18.470 | 17.052 / 23.232 | 16.826 / 22.374 |
+| M27 | 2 | 14.495 | 20.343 | 22.783 / 32.722 | 14.640 / 21.484 |
+| Next M11 | 0 | 14.708 | 19.482 | 15.892 / 23.885 | 18.444 / 24.989 |
+| Next M11 | 2 | 15.068 | 19.139 | 17.575 / 11.215 | 7.052 / 10.220 |
+
+### Historical spine proof and exact query reservations
+
+These measurements are from `cedef5e3`, before the rational conversion
+reservations. The spine proof reserves binary64 work before support and seed evaluation,
+Newton solves, span proofs and root joins. It reserves Taylor products from
+the coefficient lengths and zero terms in the support equations. Rounded
+loft queries use operand limb counts for rational frame, cap and side tests
+and distance witnesses.
+
+Focused release tests on the shared Blade used optimization level 0 for
+`catallax-field`. The spine certificates and charges agreed at 1, 2 and
+4 workers under the 20M allowance.
+
+| Edge | Spine work | Tube radius (nm, rounded up) | Median arc query (µs) |
+| --- | ---: | ---: | ---: |
+| M27 loft | 515,976 | 0.009859 | 85.929 |
+| Next M11 loft | 513,706 | 0.008290 | 87.756 |
+| Biquadratic | 766,921 | 0.006276 | 133.420 |
+
+The four field builds agreed at 1, 2 and 4 workers within the 20M target.
+Comparison coverage, bounds, refusals and work also agreed at those
+worker counts. Each comparison used one 100M allowance for construction,
+display and sampling.
+
+| Edge | Field build work | Comparison work | Forward vertices | Widened upper bound (mm) |
+| --- | ---: | ---: | ---: | ---: |
+| M27 loft | 1,056,498 | 36,895,263 | 245 | 0.002888316 |
+| Next M11 loft | 1,051,175 | 64,542,376 | 335 | 0.004464352 |
+| Biquadratic | 774,940 | 72,342,053 | 104 | 0.004916114 |
+| Spline-plane loft | 1,054,700 | 1,063,519 | 0 | absent |
+
+The biquadratic fit used 16,438,284 work. The 4 by 26 bare carrier grid
+used 54,998,702 work and had a positional bound of 0.004836298487 mm.
+Vertex queries used 130,127 work. The spline-plane row stays open at
+the B-rep refusal `fillet.unsupported-contact`.
+
+The smallest tested angle certified under 20M was 0.003497057 degrees
+(`2^-14`). It used 421,404 work, with an `8.77e-11 mm` tube and
+a 6.142 nm rail bound. The adjacent `2^-15` case used 34,549 work
+and refused with `field.spline-spine` at the seed. The exact tangent
+control refused. The spline-plane control used 421,729 work at all three
+worker counts, with a `1.224362e-14 mm` tube and a 95.115 µs median
+over 99 independent points.
+
+| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) |
+| --- | ---: | ---: | ---: |
+| M27 | 0 | 91.268 | 90.125 |
+| M27 | 2 | 91.778 | 111.309 |
+| Next M11 | 0 | 100.422 | 119.959 |
+| Next M11 | 2 | 67.159 | 90.854 |
+
+### Measurements with rational conversion reservations
+
+Spline proofs and queries reserve rational-to-interval conversion before
+rounding, using the square of the rational operand's limb count. The
+focused release tests used optimization level 0 for `catallax-field`.
+Spine certificates and work agreed at 1, 2 and 4 workers under the 20M
+allowance.
+
+| Edge | Spine work | Tube radius (nm, rounded up) | Median arc query (µs) |
+| --- | ---: | ---: | ---: |
+| M27 loft | 516,211 | 0.009859 | 37.585 |
+| Next M11 loft | 513,941 | 0.008290 | 37.485 |
+| Biquadratic | 767,416 | 0.006276 | 55.297 |
+
+The four field builds stayed within 20M. The comparisons and their
+work agreed at 1, 2 and 4 workers under the shared 100M allowance.
+
+| Edge | Field build work | Comparison work | Forward vertices | Widened upper bound (mm) |
+| --- | ---: | ---: | ---: | ---: |
+| M27 loft | 1,057,344 | 37,041,149 | 245 | 0.002888316 |
+| Next M11 loft | 1,052,021 | 64,741,542 | 335 | 0.004464352 |
+| Biquadratic | 775,435 | 72,354,612 | 104 | 0.004916114 |
+| Spline-plane loft | 1,055,546 | 1,064,365 | 0 | absent |
+
+The biquadratic fit used 16,438,284 work. Its 4 by 26 bare carrier grid
+used 54,998,702 work with a positional bound of 0.004836298487 mm.
+Vertex queries used 142,191 work. The spline-plane row stays open at
+`fillet.unsupported-contact` in the B-rep.
+
+The smallest tested certified angle was 0.003497057 degrees (`2^-14`).
+It used 421,694 work and reached an `8.77e-11 mm` tube and a 6.142 nm rail
+bound. The adjacent `2^-15` case used 34,839 work and refused at the seed
+with `field.spline-spine`. The exact tangent control refused. The
+spline-plane control used 422,019 work at all three worker counts,
+with a `1.224362e-14 mm` tube and an 81.001 µs median over 99 points.
+
+| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) |
+| --- | ---: | ---: | ---: |
+| M27 | 0 | 55.563 | 41.874 |
+| M27 | 2 | 34.327 | 63.725 |
+| Next M11 | 0 | 22.008 | 39.310 |
+| Next M11 | 2 | 29.922 | 29.591 |
+
+Rounded-shell distance queries reserve the local coordinate enclosures
+once for the blend and patch faces. The four canonical comparison rows
+were rerun after this change. Their work and coverage match the table
+above. The high-limb rounded-shell query also passed within 20M.
+
+The M27 alias regression covers zero offsets and Boolean identities
+before and after the fillet. It compares the field's touching-block
+union and subtraction cases against an independently built M27 B-rep.
+The combined B-rep union recipe refuses at `intersect.unsupported-curve`.
 
 ## Open for the done-when line
 
 - Samples on rolling faces, for the reverse coverage findings. Rational samples exist on rational tori, cylinders and spheres; irrational faces need another route.
 - B-rep faces with no equation. `tangent-boss` and `narrow-cone` have horn-torus or fitted B-rep blend faces, which compare refuses before it reaches the field (`surface comparison needs a finite parametric correspondence solver`). The saddle and ellipse rows of steps 2 and 3 are fitted on the B-rep side too. For them the step tests run the same check directly against the pieces.
+- The original and mirrored sphere-ring cases from `rolling_quadrics.rs` have membership checks. Both display comparisons remain open because the B-rep cannot display the ring bands. The frozen `sphere-cylinder` recipe has a separate B-rep build refusal.
 
 ## Frozen case list for the done-when lines
 
@@ -449,4 +805,4 @@ The list does not change during the milestone. A case added later joins the next
 | 4 | Ends at an edge or vertex, P5 at radius 2 | part 1, rim contact and hole rings: [#733](https://github.com/BohnBawerick/catallax/pull/733); part 2, the slot file: [#738](https://github.com/BohnBawerick/catallax/pull/738); part 3, `l-mixed-all` and `vertex-4-one`: [#742](https://github.com/BohnBawerick/catallax/pull/742) |
 | 5 | Fillet over fillet, nested path | part 1, chains over an earlier straight round with the ball on its axis side: [#744](https://github.com/BohnBawerick/catallax/pull/744); part 2, sphere corners and cliffs; part 3, an upright under an earlier mitre; the face registry for rolling pieces and compare on rolling faces; part 4, a ball outside the round's cylinder (`mixed-ordered`); part 5, a ball narrower than a mitre's rounds (`narrow-mitres`); part 6, every edge at once and a third round over rolling pieces: this change |
 | 6 | Torus pairs | `torus-slice`, `torus-intersection` and a cut below the centre plane: this change |
-| 7 | Spline faces (7.0 to 7.7 of the decisions) | 7.1, the spike, certified distance to a whole patch; 7.2, the patch-shell leaf and the field's ruled loft: this change |
+| 7 | Spline faces (7.0 to 7.7 of the decisions) | Whole patches, independent spine and sweep queries, and forward coverage for the three M11 spline-pair rows. Spline-plane display remains open with B-rep refusal `fillet.unsupported-contact`. |

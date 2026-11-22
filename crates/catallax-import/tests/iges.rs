@@ -377,10 +377,7 @@ fn an_arc_with_an_irrational_radius_is_refused() {
 /// Files from another writer: OpenCASCADE 8.0 (`cadquery-ocp==8.0.1.1.0`,
 /// `IGESControl_Writer("MM", 1)`, B-rep mode), with the author field replaced.
 fn occt(name: &str) -> Vec<u8> {
-    let path = format!(
-        "{}/tests/fixtures/iges/occt-{name}.igs",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = format!("tests/fixtures/iges/occt-{name}.igs");
     std::fs::read(path).unwrap()
 }
 
@@ -457,6 +454,38 @@ fn a_hand_made_sphere_closes_through_its_seam_and_poles() {
     let ball = catallax_topology::sphere(&mut source, r(2), &Pose::identity()).unwrap();
     let (a, b) = (measured(&m, bodies[0]), measured(&source, ball));
     assert!(a.0 <= b.1 && b.0 <= a.1, "{a:?} {b:?}");
+}
+
+#[test]
+fn exported_sphere_and_torus_rebuild_as_analytic_solids() {
+    let pose = Pose::identity();
+    let mut source = Model::new();
+    let sphere = catallax_topology::sphere(&mut source, r(2), &pose).unwrap();
+    let torus = catallax_topology::torus(&mut source, r(5), r(2), &pose).unwrap();
+    for (body, seams) in [(sphere, 1), (torus, 2)] {
+        let mut bytes = Vec::new();
+        let report = write_iges(
+            &source,
+            &[body],
+            &IgesOptions::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+        .unwrap();
+        assert_eq!(report.scale, r(1));
+        assert_eq!(report.added_edges, seams);
+        let file = read_iges(&bytes).unwrap();
+        let support = &file.solids[0].faces[0].surface;
+        assert!(if body == sphere {
+            matches!(support, Surface::Sphere(_, radius) if radius == &r(2))
+        } else {
+            matches!(support, Surface::Torus(_, major, minor) if major == &r(5) && minor == &r(2))
+        });
+        let mut rebuilt = Model::new();
+        let bodies = build_file(&mut rebuilt, &file, None).unwrap();
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(measured(&rebuilt, bodies[0]), measured(&source, body));
+    }
 }
 
 #[test]

@@ -8,7 +8,9 @@ use catallax_recipe::{
 };
 use catallax_shapes::{Curve, CurveId, GeomStore, Line, Plane, Point3, Surface, Vector3};
 
-use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
+use crate::{
+    ComparisonBuildRefusal, Instruction, Location, Plan, features::Feature, geometry, profile,
+};
 
 #[path = "fillet_chain.rs"]
 mod chain;
@@ -32,6 +34,8 @@ pub(crate) struct Settings<'a> {
     /// Whether a run continues across tangent neighbours (recipe version 4
     /// on); version 3 runs a straight strip past its rails instead.
     pub roll_over: bool,
+    pub spline_proofs: bool,
+    pub overflow: Option<&'a catallax_recipe::FilletOverflow>,
 }
 
 fn bad(detail: &str) -> Refusal {
@@ -556,8 +560,50 @@ impl Plan {
         settings: Settings<'_>,
         step: &StepId,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<usize, ComparisonBuildRefusal> {
         let (radius, roll_over) = (settings.radius, settings.roll_over);
+        if matches!(
+            settings.overflow,
+            Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
+        ) {
+            return Err(ComparisonBuildRefusal::Ordinary(Refusal::new(
+                "fillet.unsupported-overflow",
+                "explicit station-plane clipping needs a proved field region",
+            )));
+        }
+        let shell = match (self.instructions[root], selection) {
+            (Instruction::Leaf(i), EdgeSelection::Refs(refs)) if settings.spline_proofs => {
+                match (&self.leaves[i], refs.as_slice()) {
+                    (geometry::Leaf::Shell(shell), [reference]) => shell
+                        .selected_loft_edge(reference)
+                        .map(|edge| (shell, edge)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some((shell, edge)) = shell {
+            let rounded = (|| {
+                let radius = q(radius)?;
+                if radius.sign() != Sign::Positive {
+                    return Err(Refusal::new(
+                        "fillet.non-positive-radius",
+                        "fillet radius must be positive",
+                    ));
+                }
+                if settings.closure == catallax_recipe::FilletCorner::Smooth {
+                    return Err(Refusal::new(
+                        "fillet.unsupported-spline",
+                        "a field spline loft fillet closes at its original cap planes",
+                    ));
+                }
+                shell.fillet(edge, step, radius, dec)
+            })()
+            .map_err(ComparisonBuildRefusal::Spline)?;
+            return self
+                .leaf(geometry::Leaf::Shell(Box::new(rounded)), Vec::new(), dec)
+                .map_err(ComparisonBuildRefusal::Spline);
+        }
         if self.rolling_below(root).0 {
             // Only the chain route takes a straight rolling piece's
             // registered face as a support and keeps clear of the pieces
@@ -579,7 +625,8 @@ impl Plan {
                 Ok(None) => Err(refusal),
                 Err(chained) if chain::retried(&chained) => Err(refusal),
                 Err(chained) => Err(chained),
-            };
+            }
+            .map_err(ComparisonBuildRefusal::Ordinary);
         }
         let saved = (self.instructions.len(), self.leaves.len(), self.faces.len());
         match self.fillet_runs(root, source_faces, selection, settings, step, dec) {
@@ -606,6 +653,7 @@ impl Plan {
             }
             other => other,
         }
+        .map_err(ComparisonBuildRefusal::Ordinary)
     }
 
     /// The fillet routes do not take a rolling piece's face as a support,

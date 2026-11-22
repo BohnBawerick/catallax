@@ -252,10 +252,7 @@ impl<'a> Exporter<'a> {
         let p = number::point(origin, self.digits(), self.dec)?;
         let z = number::direction(axis, self.digits(), self.dec)?;
         let x = number::direction(reference, self.digits(), self.dec)?;
-        // STEP normalizes the axis, then projects and normalizes the reference.
-        // For a unit u, |normalize(w)-u| <= 2|w-u|. Gram-Schmidt gives
-        // |dx|+|dy|+|dz| <= 8|reference-e1|+12|axis-e3|.
-        let error = x.error() * Rational::from_i64(8) + z.error() * Rational::from_i64(12);
+        let error = number::frame_error(&x, &z);
         let written = if capture {
             Some(std::sync::Arc::new(crate::pcurve::Placement::new(
                 p.xyz.each_ref().map(|n| n.value.clone()),
@@ -2098,6 +2095,36 @@ pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) ->
         &["catallax export"],
         MILLI,
     )
+}
+
+pub(crate) fn assembly_header(
+    product_name: &str,
+    placements: &[usize],
+    complete_body_bound: bool,
+) -> String {
+    let description: &[&str] = if complete_body_bound {
+        &["catallax assembly export"]
+    } else {
+        &[
+            "catallax assembly export",
+            "at least one part lacks a complete deviation bound; complete_body_bound=unestablished",
+        ]
+    };
+    let mut header = representation_header(
+        product_name,
+        placements,
+        None,
+        "SHAPE_REPRESENTATION",
+        description,
+        MILLI,
+    );
+    let category = "\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('";
+    let start = header
+        .find(category)
+        .expect("STEP header has a product category")
+        + category.len();
+    header.replace_range(start..start + "part".len(), "assembly");
+    header
 }
 
 fn stand_in_header(product_name: &str, items: &[usize], uncertainty: &str) -> String {

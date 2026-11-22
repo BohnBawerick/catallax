@@ -18,12 +18,34 @@
 //!
 //! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
 
-use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
-use catallax_shapes::{Isometry, RPoint3, RationalPatch};
+use crate::spline_spine::exact;
+
+use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal, Sign};
+use catallax_recipe::{EdgeName, EdgeRef, Origin, Role, StepId};
+use catallax_shapes::{Isometry, RPoint3, RVector3, RationalPatch};
 
 use crate::Location;
 use crate::metric::PRECISION;
 use crate::patch_distance::PatchDistance;
+use crate::rolling_region::Range;
+use crate::spline_spine::sweep::{Cap, loft::Round};
+
+pub(crate) fn loft_edge(sides: &[Origin], reference: &EdgeRef) -> Option<[usize; 2]> {
+    let [a, b] = &reference.between;
+    if reference.near.is_some()
+        || !reference.touching.is_empty()
+        || a.role.is_none()
+        || b.role.is_none()
+    {
+        return None;
+    }
+    (0..sides.len())
+        .map(|i| [i, (i + 1) % sides.len()])
+        .find(|&[i, j]| {
+            (a.matches(&sides[i]) && b.matches(&sides[j]))
+                || (a.matches(&sides[j]) && b.matches(&sides[i]))
+        })
+}
 
 fn refusal(detail: &str) -> Refusal {
     Refusal::new("field.patch-shell", detail)
@@ -72,6 +94,7 @@ fn point(p: &RPoint3) -> V {
 #[derive(Clone, Debug)]
 pub struct Polygon {
     vertices: Vec<V>,
+    other_rings: Vec<Vec<V>>,
     /// Outward, by Newell's sum of the vertices' cross products.
     normal: V,
     /// The coordinate axis dropped to test points in two dimensions: the one
@@ -115,9 +138,33 @@ impl Polygon {
             .expect("three axes");
         Ok(Self {
             vertices,
+            other_rings: vec![],
             normal,
             dropped,
         })
+    }
+
+    /// Validated nonintersecting coplanar rings. The first ring determines
+    /// the outward normal and even-odd nesting determines cap material.
+    pub(crate) fn with_rings(
+        first: Vec<RPoint3>,
+        other_rings: Vec<Vec<RPoint3>>,
+    ) -> Result<Self, Refusal> {
+        let mut polygon = Self::new(first)?;
+        polygon.other_rings = other_rings
+            .iter()
+            .map(|ring| ring.iter().map(point).collect())
+            .collect();
+        Ok(polygon)
+    }
+
+    fn rings(&self) -> impl Iterator<Item = &[V]> {
+        std::iter::once(self.vertices.as_slice()).chain(self.other_rings.iter().map(Vec::as_slice))
+    }
+
+    fn segments(&self) -> impl Iterator<Item = (&V, &V)> {
+        self.rings()
+            .flat_map(|ring| ring.iter().zip(ring.iter().cycle().skip(1)))
     }
 
     fn flat(&self, v: &V) -> [Rational; 2] {
@@ -134,9 +181,9 @@ impl Polygon {
     fn planar(&self, q: &V) -> Planar {
         let q = self.flat(q);
         let mut inside = false;
-        for (i, a) in self.vertices.iter().enumerate() {
+        for (a, b) in self.segments() {
             let a = self.flat(a);
-            let b = self.flat(&self.vertices[(i + 1) % self.vertices.len()]);
+            let b = self.flat(b);
             let side =
                 &(&(&b[0] - &a[0]) * &(&q[1] - &a[1])) - &(&(&b[1] - &a[1]) * &(&q[0] - &a[0]));
             let within = |k: usize| {
@@ -170,8 +217,7 @@ impl Polygon {
             return &(&height * &height) / &length;
         }
         let mut best: Option<Rational> = None;
-        for (i, a) in self.vertices.iter().enumerate() {
-            let b = &self.vertices[(i + 1) % self.vertices.len()];
+        for (a, b) in self.segments() {
             let edge = sub(b, a);
             let t = (&dot(&sub(q, a), &edge) / &dot(&edge, &edge))
                 .max(Rational::zero())
@@ -185,6 +231,54 @@ impl Polygon {
             });
         }
         best.expect("three vertices")
+    }
+
+    fn project_rounded(&self, q: &V, dec: &mut Decider) -> Result<V, Refusal> {
+        let height = exact::dot(&self.normal, &exact::sub3(q, &self.vertices[0], dec)?, dec)?;
+        let length = exact::dot(&self.normal, &self.normal, dec)?;
+        let factor = exact::div(&height, &length, dec)?;
+        exact::sub3(q, &exact::scale(&self.normal, &factor, dec)?, dec)
+    }
+
+    fn squared_rounded(&self, q: &V, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let foot = self.project_rounded(q, dec)?;
+        let mut positive = false;
+        let mut negative = false;
+        let mut edge_bound: Option<Rational> = None;
+        for (i, a) in self.vertices.iter().enumerate() {
+            let b = &self.vertices[(i + 1) % self.vertices.len()];
+            let edge = exact::sub3(b, a, dec)?;
+            let side = exact::cross(&edge, &exact::sub3(&foot, a, dec)?, dec)?;
+            match exact::dot(&self.normal, &side, dec)?.sign() {
+                Sign::Positive => positive = true,
+                Sign::Negative => negative = true,
+                Sign::Zero => (),
+            }
+            let along = exact::dot(&exact::sub3(q, a, dec)?, &edge, dec)?;
+            let length = exact::dot(&edge, &edge, dec)?;
+            let t = if along.sign() == Sign::Negative {
+                Rational::zero()
+            } else if exact::cmp(&along, &length, dec)?.is_ge() {
+                Rational::one()
+            } else {
+                exact::div(&along, &length, dec)?
+            };
+            let near = exact::add3(a, &exact::scale(&edge, &t, dec)?, dec)?;
+            let gap = exact::sub3(q, &near, dec)?;
+            let squared = exact::dot(&gap, &gap, dec)?;
+            if let Some(best) = edge_bound.as_ref()
+                && exact::cmp(best, &squared, dec)?.is_le()
+            {
+                continue;
+            }
+            edge_bound = Some(squared);
+        }
+        if positive && negative {
+            Ok(edge_bound.expect("three vertices"))
+        } else {
+            let gap = exact::sub3(q, &foot, dec)?;
+            exact::dot(&gap, &gap, dec)
+        }
     }
 
     /// The signed crossing of the open ray `q + t d`, `t > 0`: one if it
@@ -210,15 +304,11 @@ impl Polygon {
 
     /// Tentative squared distance and the side of the plane, from binary64
     /// arithmetic only.
-    fn fast_squared(&self, q: [f64; 3]) -> (f64, f64) {
-        let v: Vec<[f64; 3]> = self
-            .vertices
-            .iter()
-            .map(|v| v.each_ref().map(Rational::to_f64_nearest))
-            .collect();
+    fn fast_sample(&self, q: [f64; 3]) -> (f64, f64, [f64; 3]) {
+        let v0 = self.vertices[0].each_ref().map(Rational::to_f64_nearest);
         let n = self.normal.each_ref().map(Rational::to_f64_nearest);
         let length = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-        let side = (0..3).map(|k| (q[k] - v[0][k]) * n[k]).sum::<f64>() / length;
+        let side = (0..3).map(|k| (q[k] - v0[k]) * n[k]).sum::<f64>() / length;
         let foot: [f64; 3] = std::array::from_fn(|k| q[k] - side * n[k] / length);
         let [a, b] = match self.dropped {
             0 => [1, 2],
@@ -226,9 +316,9 @@ impl Polygon {
             _ => [0, 1],
         };
         let mut inside = false;
-        let mut edges = f64::INFINITY;
-        for i in 0..v.len() {
-            let (s, t) = (v[i], v[(i + 1) % v.len()]);
+        let mut edge = (f64::INFINITY, q);
+        for (s, t) in self.segments() {
+            let [s, t] = [s, t].map(|v| v.each_ref().map(Rational::to_f64_nearest));
             if (s[b] > foot[b]) != (t[b] > foot[b])
                 && foot[a] < s[a] + (foot[b] - s[b]) * (t[a] - s[a]) / (t[b] - s[b])
             {
@@ -237,9 +327,17 @@ impl Polygon {
             let e: [f64; 3] = std::array::from_fn(|k| t[k] - s[k]);
             let ee = e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
             let along = ((0..3).map(|k| (q[k] - s[k]) * e[k]).sum::<f64>() / ee).clamp(0.0, 1.0);
-            edges = edges.min((0..3).map(|k| (q[k] - s[k] - along * e[k]).powi(2)).sum());
+            let candidate = std::array::from_fn(|k| s[k] + along * e[k]);
+            let distance = (0..3).map(|k| (q[k] - s[k] - along * e[k]).powi(2)).sum();
+            if distance < edge.0 {
+                edge = (distance, candidate);
+            }
         }
-        (if inside { side * side } else { edges }, side)
+        if inside {
+            (side * side, side, foot)
+        } else {
+            (edge.0, side, edge.1)
+        }
     }
 }
 
@@ -247,6 +345,7 @@ impl Polygon {
 #[derive(Clone, Debug)]
 pub struct PatchFace {
     distance: PatchDistance,
+    support: RationalPatch,
     /// Whether the patch's natural normal `S_u x S_v` points out of the solid.
     outward: bool,
 }
@@ -257,6 +356,7 @@ impl PatchFace {
     pub fn new(patch: &RationalPatch, outward: bool, dec: &mut Decider) -> Result<Self, Refusal> {
         Ok(Self {
             distance: PatchDistance::new(patch, dec)?,
+            support: patch.clone(),
             outward,
         })
     }
@@ -282,6 +382,8 @@ pub struct Shell {
     rotation: [[Rational; 3]; 3],
     translation: V,
     inverse_rotation: [[Rational; 3]; 3],
+    loft_sides: Vec<Origin>,
+    round: Option<Round>,
 }
 
 fn apply(m: &[[Rational; 3]; 3], v: &V) -> V {
@@ -292,13 +394,53 @@ fn transpose(m: &[[Rational; 3]; 3]) -> [[Rational; 3]; 3] {
     std::array::from_fn(|i| std::array::from_fn(|j| m[j][i].clone()))
 }
 
-fn ball(interval: Interval) -> Ball {
-    let end =
-        |x: f64| Ball::from_rational(&Rational::from_f64_exact(x).expect("finite"), PRECISION);
-    end(interval.lo()).hull(&end(interval.hi()))
+fn ball(interval: Interval) -> Result<Ball, Refusal> {
+    let end = |x| {
+        Rational::from_f64_exact(x)
+            .map(|value| Ball::from_rational(&value, PRECISION))
+            .ok_or_else(|| refusal("the shell distance has no finite enclosure"))
+    };
+    Ok(end(interval.lo())?.hull(&end(interval.hi())?))
 }
 
 impl Shell {
+    /// Unsigned boundary distance for a proximity test with a positive limit.
+    /// Once a witness is within the limit, zero remains a valid lower bound.
+    pub fn boundary_distance_within(
+        &self,
+        p: &RPoint3,
+        limit: f64,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        let q = self.local(&point(p));
+        let at = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::INFINITY;
+        for face in &self.faces {
+            let distance = match face {
+                Face::Polygon(polygon) => {
+                    dec.charge_work(1)?;
+                    Interval::from_rational(&polygon.squared(&q))
+                        .sqrt()
+                        .expect("non-negative")
+                }
+                // Leave half the requested limit for a nonzero lower bound.
+                Face::Patch(patch) => {
+                    patch
+                        .distance
+                        .distance_within(&at, limit * 0.5, dec)?
+                        .distance
+                }
+            };
+            lo = lo.min(distance.lo());
+            hi = hi.min(distance.hi());
+            if hi <= limit {
+                return Ok(Interval::new(0.0, hi).expect("non-negative bounds"));
+            }
+        }
+        Ok(Interval::new(lo, hi).expect("ordered bounds"))
+    }
+
     /// A shell of `faces` in place. The caller proves them a closed,
     /// outward, crossing-free shell.
     pub fn new(faces: Vec<Face>) -> Result<Self, Refusal> {
@@ -319,7 +461,7 @@ impl Shell {
         };
         for face in &faces {
             match face {
-                Face::Polygon(polygon) => polygon.vertices.iter().for_each(|v| grow(v.clone())),
+                Face::Polygon(polygon) => polygon.rings().flatten().for_each(|v| grow(v.clone())),
                 Face::Patch(patch) => {
                     let hull = patch.distance.hull();
                     let end = |x: f64| Rational::from_f64_exact(x).expect("finite control");
@@ -343,11 +485,141 @@ impl Shell {
             inverse_rotation: identity.clone(),
             rotation: identity,
             translation: std::array::from_fn(|_| Rational::zero()),
+            loft_sides: Vec::new(),
+            round: None,
         })
+    }
+
+    pub(crate) fn named_loft(mut self, sides: Vec<Origin>) -> Self {
+        self.loft_sides = sides;
+        self
+    }
+
+    pub(crate) fn selected_loft_edge(&self, reference: &EdgeRef) -> Option<[usize; 2]> {
+        if self.round.is_some() {
+            return None;
+        }
+        loft_edge(&self.loft_sides, reference)
+    }
+
+    pub(crate) fn forget_loft_sides(&mut self) {
+        self.loft_sides.clear();
+    }
+
+    pub(crate) fn fillet(
+        &self,
+        selected: [usize; 2],
+        step: &StepId,
+        radius: Rational,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let unsupported = || {
+            Refusal::new(
+                "fillet.unsupported-spline",
+                "a field spline fillet needs one named edge of an untrimmed convex ruled loft",
+            )
+        };
+        let sides = &self.loft_sides;
+        let edge = EdgeName::new(sides[selected[0]].clone(), sides[selected[1]].clone())
+            .map_err(|e| refusal(&e.to_string()))?;
+        let origin = Origin {
+            step: step.clone(),
+            role: Role::Blend { edge },
+        };
+        let patches = self.faces[..sides.len()]
+            .iter()
+            .map(|face| match face {
+                Face::Patch(face) => Ok((&face.support, face.outward)),
+                Face::Polygon(_) => Err(unsupported()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let cap = |face: &Face| -> Result<Cap, Refusal> {
+            let Face::Polygon(face) = face else {
+                return Err(unsupported());
+            };
+            let [x, y, z] = face.vertices[0].clone();
+            let [nx, ny, nz] = face.normal.clone();
+            Ok((RPoint3::new(x, y, z), RVector3::new(-nx, -ny, -nz)))
+        };
+        let caps = [
+            cap(&self.faces[sides.len()])?,
+            cap(&self.faces[sides.len() + 1])?,
+        ];
+        let mut shell = self.clone();
+        shell.round = Some(Round::prove(
+            origin, selected, &patches, &caps, radius, dec,
+        )?);
+        Ok(shell)
+    }
+
+    pub(crate) fn blend_origin(&self) -> Option<&Origin> {
+        self.round.as_ref().map(|r| &r.origin)
+    }
+
+    pub(crate) fn blend_distance(
+        &self,
+        p: &RPoint3,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<Range>, Refusal> {
+        let Some(round) = &self.round else {
+            return Ok(None);
+        };
+        let [x, y, z] = self.local_rounded(&point(p), dec)?;
+        round
+            .distance_at_most(&RPoint3::new(x, y, z), bound, dec)
+            .map(Some)
+    }
+
+    fn local_face_bound(
+        &self,
+        p: &RPoint3,
+        round: &Round,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<Rational>, Refusal> {
+        let query = point(p);
+        let mut witnesses = round.side_witnesses(p, dec)?;
+        for face in &self.faces {
+            if let Face::Polygon(poly) = face {
+                let [x, y, z] = poly.project_rounded(&query, dec)?;
+                witnesses.push(RPoint3::new(x, y, z));
+            }
+        }
+        let square = exact::mul(width, width, dec)?;
+        let mut candidates: Vec<(Rational, RPoint3)> = Vec::new();
+        for witness in witnesses {
+            let gap = exact::sub3(&query, &point(&witness), dec)?;
+            let d = exact::dot(&gap, &gap, dec)?;
+            if exact::cmp(&d, &square, dec)?.is_le() {
+                let mut position = candidates.len();
+                while position > 0 && exact::cmp(&d, &candidates[position - 1].0, dec)?.is_lt() {
+                    position -= 1;
+                }
+                candidates.insert(position, (d, witness));
+            }
+        }
+        for (d, candidate) in candidates {
+            if round.location(&candidate, dec)? == Location::Boundary {
+                let upper = exact::interval(&d, dec)?.sqrt().unwrap().hi();
+                return Ok(Rational::from_f64_exact(upper));
+            }
+        }
+        Ok(None)
     }
 
     fn local(&self, p: &V) -> V {
         apply(&self.inverse_rotation, &sub(p, &self.translation))
+    }
+
+    fn local_rounded(&self, p: &V, dec: &mut Decider) -> Result<V, Refusal> {
+        let p = exact::sub3(p, &self.translation, dec)?;
+        let [a, b, c] = &self.inverse_rotation;
+        Ok([
+            exact::dot(a, &p, dec)?,
+            exact::dot(b, &p, dec)?,
+            exact::dot(c, &p, dec)?,
+        ])
     }
 
     /// Composes a rational rigid motion, reflections included, in front of
@@ -418,7 +690,7 @@ impl Shell {
             match face {
                 Face::Polygon(polygon) => {
                     let mut hull: Option<[Interval; 3]> = None;
-                    for v in &polygon.vertices {
+                    for v in polygon.rings().flatten() {
                         let p = v.each_ref().map(Interval::from_rational);
                         hull = Some(match hull {
                             None => p,
@@ -430,6 +702,9 @@ impl Shell {
                 Face::Patch(patch) => out.extend(patch.distance.boxes().into_iter().map(world)),
             }
         }
+        if let Some(round) = &self.round {
+            out.extend(round.boxes().map(world));
+        }
         out
     }
 
@@ -439,6 +714,13 @@ impl Shell {
         p: &RPoint3,
         dec: &mut Decider,
     ) -> Result<(Location, Interval), Refusal> {
+        if let Some(round) = &self.round {
+            let q = self.local_rounded(&point(p), dec)?;
+            let p = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
+            let location = round.location(&p, dec)?;
+            let distance = self.rounded_distance(&p, &q, round, location, dec)?;
+            return Ok((location, distance));
+        }
         let q = self.local(&point(p));
         let mut lo = f64::INFINITY;
         let mut hi = f64::INFINITY;
@@ -505,6 +787,10 @@ impl Shell {
 
     /// Exact classification of a rational world point.
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(round) = &self.round {
+            let [x, y, z] = self.local_rounded(p, dec)?;
+            return round.location(&RPoint3::new(x, y, z), dec);
+        }
         let p = RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
         Ok(self.classify(&p, dec)?.0)
     }
@@ -519,13 +805,61 @@ impl Shell {
         if location == Location::Boundary {
             return Ok(Ball::from_rational(&Rational::zero(), PRECISION));
         }
-        let (_, distance) = self.classify(p, dec)?;
-        let distance = ball(distance);
+        let distance = if let Some(round) = &self.round {
+            let q = self.local_rounded(&point(p), dec)?;
+            let local = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
+            self.rounded_distance(&local, &q, round, location, dec)?
+        } else {
+            self.classify(p, dec)?.1
+        };
+        let distance = ball(distance)?;
         Ok(match location {
             Location::Inside => -distance,
             Location::Outside => distance,
             _ => (-distance.clone()).hull(&distance),
         })
+    }
+
+    fn rounded_distance(
+        &self,
+        p: &RPoint3,
+        q: &V,
+        round: &Round,
+        location: Location,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        if location == Location::Boundary {
+            return Ok(Interval::point(0.0).unwrap());
+        }
+        let width = Rational::from_ratio(1, 1_000_000).expect("one nanometre");
+        if let Some(upper) = self.local_face_bound(p, round, &width, dec)? {
+            return Ok(Interval::new(0.0, exact::interval(&upper, dec)?.hi()).unwrap());
+        }
+        let enclosed = exact::interval3(q.each_ref(), dec)?;
+        let blend = round.distance_enclosed(enclosed, &width, dec)?;
+        let mut lower = exact::interval(&blend.lower, dec)?.lo();
+        let mut upper = blend
+            .upper
+            .as_ref()
+            .map(|v| exact::interval(v, dec).map(|bound| bound.hi()))
+            .transpose()?
+            .unwrap_or(f64::INFINITY);
+        for (i, face) in self.faces.iter().enumerate() {
+            let distance = match face {
+                Face::Polygon(polygon) => exact::interval(&polygon.squared_rounded(q, dec)?, dec)?
+                    .sqrt()
+                    .unwrap(),
+                Face::Patch(patch) => patch.distance.distance_enclosed(&enclosed, dec)?.distance,
+            };
+            lower = lower.min(distance.lo());
+            // Only an uncut face can furnish a witness from a whole-face
+            // minimum. The blend itself already supplies an upper witness.
+            if i < self.loft_sides.len() && !round.selected.contains(&i) {
+                upper = upper.min(distance.hi());
+            }
+        }
+        Interval::new(lower, upper)
+            .ok_or_else(|| refusal("the rounded shell distance is not ordered"))
     }
 
     /// Tentative signed distance from binary64 searches: the nearest face's
@@ -539,19 +873,31 @@ impl Shell {
         let s: [f64; 3] = std::array::from_fn(|k| p[k] - t[k]);
         let q: [f64; 3] = std::array::from_fn(|i| m[i][0] * s[0] + m[i][1] * s[1] + m[i][2] * s[2]);
         let mut best = (f64::INFINITY, 1.0);
-        for face in &self.faces {
-            let (squared, side) = match face {
-                Face::Polygon(polygon) => polygon.fast_squared(q),
+        for (i, face) in self.faces.iter().enumerate() {
+            let (squared, side, candidate) = match face {
+                Face::Polygon(polygon) => polygon.fast_sample(q),
                 Face::Patch(patch) => {
-                    let (squared, side) = patch.distance.fast_nearest(q);
-                    (squared, if patch.outward { side } else { -side })
+                    let (squared, side, candidate) = patch.distance.fast_sample(q);
+                    (squared, if patch.outward { side } else { -side }, candidate)
                 }
             };
-            if squared < best.0 {
+            if squared < best.0
+                && !self.round.as_ref().is_some_and(|round| {
+                    (i >= self.loft_sides.len() || round.selected.contains(&i))
+                        && round.preview(candidate).0
+                })
+            {
                 best = (squared, side);
             }
         }
         let magnitude = crate::metric::Scalar::sqrt(&best.0);
-        if best.1 < 0.0 { -magnitude } else { magnitude }
+        if let Some(round) = &self.round {
+            let (_, blend) = round.preview(q);
+            blend.abs().min(magnitude).copysign(blend)
+        } else if best.1 < 0.0 {
+            -magnitude
+        } else {
+            magnitude
+        }
     }
 }

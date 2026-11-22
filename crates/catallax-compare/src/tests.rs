@@ -38,6 +38,918 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     );
     controller.latest().unwrap()
 }
+
+fn m11_loft([a, b]: [usize; 2], planar: bool, heights: [&str; 2]) -> Recipe {
+    let polygon = |prefix: &str, points: [[i64; 2]; 4]| {
+        points
+            .into_iter()
+            .enumerate()
+            .map(|(i, [x, y])| {
+                json!({"kind":"line","id":format!("{prefix}_{i}"),
+                "to":[x.to_string(),y.to_string()]})
+            })
+            .collect::<Vec<_>>()
+    };
+    let side = |i: usize| json!({"step":"loft","role":{"side":{"segment":format!("a_{i}")}}});
+    let section = |i: usize, height: &str, loop_: &[_]| {
+        json!({"id":format!("section{i}"),"op":"sketch","loops":[loop_],
+          "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]}})
+    };
+    let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]]);
+    let top = if planar {
+        [[1, 0], [1, 2], [-2, 0], [0, -1]]
+    } else {
+        [[1, 0], [0, 2], [-2, 0], [0, -1]]
+    };
+    let top = polygon("b", top);
+    Recipe::parse(
+        &json!({
+            "format":"catallax-recipe/5","name":"M11 loft comparison","steps":[
+                section(0,heights[0],&bottom), section(1,heights[1],&top),
+                {"id":"loft","op":"loft","shape":"ruled","sections":[
+                    {"profile":"section0","start":["a_0"]},{"profile":"section1","start":["b_0"]}]},
+                {"id":"round","op":"fillet","body":"loft","radius":"1/10",
+                    "edges":[{"between":[side(a),side(b)]}]}
+            ],"result":"round"
+        })
+        .to_string(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn empty_m27_fillet_keeps_the_loft_and_any_selected_blend() {
+    let rounded = m11_loft([0, 1], false, ["0", "2"]);
+    let mut plain = serde_json::to_value(&rounded).unwrap();
+    plain["steps"][3]["edges"] = json!([]);
+    let plain = Recipe::parse(&plain.to_string()).unwrap();
+    let plan = catallax_field::Plan::compile_for_comparison(
+        &plain,
+        &catallax_features::ImportFiles::new(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(plan.spline_blend_origin().is_none());
+    let shell = plan
+        .result_patch_shell()
+        .expect("the unmodified loft shell");
+    let (location, _) = shell
+        .classify(
+            &catallax_shapes::RPoint3::new(0.into(), 0.into(), 1.into()),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(location, catallax_field::Location::Inside);
+    assert!(evaluate(&plain, &mut Decider::default()).is_ok());
+
+    let mut later = serde_json::to_value(&rounded).unwrap();
+    later["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"noop","op":"fillet","body":"round","radius":"1/10","edges":[]}));
+    later["result"] = json!("noop");
+    let later = Recipe::parse(&later.to_string()).unwrap();
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || check(&later));
+    assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+    assert_eq!(report.forward_vertices, 245);
+}
+
+#[test]
+fn all_edges_on_bezier_loft_keeps_the_ordinary_refusal() {
+    let report = check(&bezier_loft_fillet());
+    assert_eq!(report.refusal.as_ref().unwrap().code, "fillet.lost-edge");
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    assert_eq!(report.forward_vertices, 0);
+}
+
+fn bezier_loft_fillet() -> Recipe {
+    let mut value: Value = serde_json::from_str(include_str!(
+        "../../catallax-features/tests/fixtures/loft-spline-prism.json"
+    ))
+    .unwrap();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"round","op":"fillet","body":"loft","radius":"1/10","edges":"all"}));
+    value["result"] = json!("round");
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+#[test]
+fn m27_selection_matrix_preserves_ordinary_refusals() {
+    use catallax_field::{ComparisonBuildRefusal, Plan};
+    use catallax_numbers::with_operation_budget;
+
+    let side = |i| json!({"step":"loft","role":{"side":{"segment":format!("a_{i}")}}});
+    let adjacent = |i| json!({"between":[side(i),side((i + 1) % 4)]});
+    let change_edges = |edges| {
+        let mut input = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+        input["steps"][3]["edges"] = edges;
+        Recipe::parse(&input.to_string()).unwrap()
+    };
+
+    let mut overflow = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    overflow["steps"][3]["overflow"] = json!({"keep_neighbours":[]});
+    let references_lost = "no source support resolves the edge reference";
+    let all_lost = "no selected support intersection is a sharp input boundary";
+    let mut ordinary = vec![
+        (bezier_loft_fillet(), "fillet.lost-edge", all_lost),
+        (change_edges(json!("all")), "fillet.lost-edge", all_lost),
+        (
+            change_edges(json!([adjacent(0), adjacent(1)])),
+            "fillet.lost-edge",
+            references_lost,
+        ),
+        (
+            change_edges(json!([{"between":[side(0),side(2)]}])),
+            "fillet.lost-edge",
+            references_lost,
+        ),
+        (
+            Recipe::parse(&overflow.to_string()).unwrap(),
+            "fillet.unsupported-overflow",
+            "explicit station-plane clipping needs a proved field region",
+        ),
+    ];
+    for cap in ["start", "end"] {
+        for i in 0..4 {
+            ordinary.push((
+                change_edges(json!([{"between":[{"step":"loft","role":cap},side(i)]}])),
+                "fillet.lost-edge",
+                references_lost,
+            ));
+        }
+    }
+    for (input, code, detail) in ordinary {
+        let (report, work) = with_operation_budget(100_000_000, || check(&input));
+        let expected = catallax_numbers::Refusal::new(code, detail);
+        assert!(!work.exhausted);
+        assert_eq!(Plan::compile(&input).unwrap_err(), expected);
+        assert_eq!(report.refusal, Some(expected), "{input:?}");
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.forward_vertices, 0);
+        assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    }
+
+    for (i, vertices) in [(0, Some(245)), (1, Some(335)), (2, None), (3, None)] {
+        let input = change_edges(json!([adjacent(i)]));
+        assert_eq!(Plan::compile(&input).unwrap_err().code, "fillet.lost-edge");
+        if let Some(vertices) = vertices {
+            let (report, work) = with_operation_budget(100_000_000, || check(&input));
+            assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+            assert_eq!(report.forward_vertices, vertices);
+        } else {
+            let (result, _) = with_operation_budget(20_000_000, || {
+                Plan::compile_for_comparison(
+                    &input,
+                    &catallax_features::ImportFiles::new(),
+                    &mut Decider::default(),
+                )
+            });
+            match result {
+                Ok(plan) => assert!(plan.spline_blend_origin().is_some()),
+                Err(ComparisonBuildRefusal::Spline(_)) => {}
+                Err(error) => panic!("adjacent sides {i}: {error:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn selected_spline_import_refusal_has_no_sampled_bound() {
+    let mut dec = Decider::default();
+    let built = evaluate(&recipe(vec![block("stock", "4", "10")]), &mut dec).unwrap();
+    let mut bytes = Vec::new();
+    catallax_step::write_step(
+        &built.model,
+        &[built.result],
+        &Default::default(),
+        &mut dec,
+        &mut bytes,
+    )
+    .unwrap();
+    let digest = catallax_import::sha256_hex(&bytes);
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    value["steps"].as_array_mut().unwrap().push(
+        json!({"id":"imported","op":"import_step","file":{"name":"box.step","sha256":digest},
+            "pose":pose("0")}),
+    );
+    let files = catallax_features::ImportFiles::from([(digest, bytes.as_slice())]);
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let controller = Controller::default();
+    let (completion, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        controller
+            .begin()
+            .check_with_files(&recipe, &files, &options())
+    });
+    assert!(!work.exhausted);
+    assert_eq!(completion, Completion::Published);
+    let report = controller.latest().unwrap();
+    assert_eq!(
+        report.refusal.as_ref().unwrap().code,
+        "field.volume-definition"
+    );
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.sampled_distance_upper, None);
+}
+
+#[test]
+fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
+    for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
+        let recipe = m11_loft([a, b], planar, ["0", "2"]);
+        let (report, work) =
+            catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
+        println!(
+            "loft edges {a}/{b} planar {planar}: {} forward vertices, {} work, upper {:?}, refusal {:?}",
+            report.forward_vertices,
+            work.used,
+            report
+                .sampled_distance_upper
+                .as_ref()
+                .map(Rational::to_f64_nearest),
+            report.refusal
+        );
+        assert!(!work.exhausted, "{report:?}");
+        if planar {
+            assert_eq!(report.forward_vertices, 0);
+            assert_eq!(
+                report.refusal.as_ref().map(|e| e.code),
+                Some("fillet.unsupported-contact")
+            );
+            assert!(report.findings.iter().any(|f| {
+                matches!(&f.reason, Reason::Unresolved(reason) if reason.starts_with("B-rep build"))
+            }));
+            continue;
+        }
+        assert_eq!(report.forward_vertices, if a == 0 { 245 } else { 335 });
+        assert!(report.refusal.is_none(), "{report:?}");
+        let findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.pass == Pass::Forward)
+            .collect();
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+}
+
+#[test]
+fn m27_identity_aliases_reach_the_scoped_vertex_pass() {
+    let m27 = m11_loft([0, 1], false, ["0", "2"]);
+    for (kind, before_fillet) in [
+        ("offset", false),
+        ("offset", true),
+        ("union", false),
+        ("subtract", false),
+        ("union", true),
+        ("subtract", true),
+    ] {
+        let mut value = serde_json::to_value(&m27).unwrap();
+        let steps = value["steps"].as_array_mut().unwrap();
+        let fillet = before_fillet.then(|| steps.pop().unwrap());
+        let body = if before_fillet { "loft" } else { "round" };
+        if kind == "offset" {
+            steps.push(json!({"id":"alias","op":"offset","body":body,"distance":"0"}));
+        } else {
+            steps.push(block("a", "4", "10"));
+            steps.push(block("b", "4", "14"));
+            steps.push(json!({"id":"empty","op":"boolean","kind":"intersect",
+                "target":"a","tool":"b"}));
+            steps.push(json!({"id":"alias","op":"boolean","kind":kind,
+                "target":body,"tool":"empty"}));
+        }
+        if let Some(mut fillet) = fillet {
+            fillet["body"] = json!("alias");
+            steps.push(fillet);
+        } else {
+            value["result"] = json!("alias");
+        }
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            if kind == "offset" {
+                check(&recipe)
+            } else {
+                compare(&m27, &recipe, &options())
+            }
+        });
+        assert!(
+            !work.exhausted && report.refusal.is_none(),
+            "{kind}, {before_fillet}: {report:?}"
+        );
+        assert_eq!(report.forward_vertices, 245);
+        assert!(report.sampled_distance_upper.unwrap() < Rational::parse("0.005").unwrap());
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.pass == Pass::Forward)
+        );
+    }
+}
+
+#[test]
+fn analytic_named_boss_loop_keeps_the_base_refusal() {
+    let sides = ["x_min", "y_min", "x_max", "y_max"];
+    let side = |segment| json!({"step":"block","role":{"side":{"segment":segment}}});
+    let cap = json!({"step":"block","role":"end"});
+    let upright_edges = (0..4)
+        .map(|i| json!({"between":[side(sides[i]), side(sides[(i + 1) % 4])]}))
+        .collect::<Vec<_>>();
+    let mut top_edges = sides
+        .map(|segment| json!({"between":[cap, side(segment)]}))
+        .to_vec();
+    top_edges.push(json!({"between":[cap, {"step":"upright"}]}));
+    let mut stock = block("block", "20", "0");
+    stock["size"][2] = json!("10");
+    let boss = Recipe::parse(
+        &json!({"format":"catallax-recipe/4","name":"fillet over fillet","result":"top","steps":[
+            stock,
+            {"id":"upright","op":"fillet","body":"block","radius":"1","edges":upright_edges},
+            {"id":"top","op":"fillet","body":"upright","radius":"3","edges":top_edges}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let report = check(&boss);
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(
+        report.refusal.as_ref().map(|error| error.code),
+        Some("field.rolling-path-reach"),
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn analytic_forward_gap_leaves_a_refused_comparison_unresolved() {
+    use catallax_numbers::with_operation_budget;
+
+    let brep = recipe(vec![block("stock", "4", "0")]);
+    let field = recipe(vec![block("stock", "4", "5")]);
+    let built = evaluate(&brep, &mut Decider::default()).unwrap();
+    let compare = || {
+        let controller = Controller::default();
+        assert_eq!(
+            controller.begin().check_built(&built, &field, &options()),
+            Completion::Published,
+        );
+        controller.latest().unwrap()
+    };
+    let (complete, work) = with_operation_budget(1_000_000, compare);
+    assert_eq!(complete.verdict, Verdict::Disagree);
+    assert!(complete.refusal.is_none());
+    let (partial, spent) = with_operation_budget(work.used - 1, compare);
+    assert!(spent.exhausted);
+    assert!(
+        partial
+            .findings
+            .iter()
+            .any(|finding| { finding.pass == Pass::Forward && finding.reason == Reason::Gap })
+    );
+    assert_eq!(partial.verdict, Verdict::Unresolved);
+    assert_eq!(
+        partial.refusal.as_ref().map(|error| error.code),
+        Some("numbers.operation-budget"),
+    );
+    assert_eq!(partial.sampled_distance_upper, None);
+}
+
+#[test]
+fn analytic_build_and_rounded_copy_refusals_remain_typed() {
+    let analytic = recipe(vec![
+        block("stock", "4", "0"),
+        json!({"id":"round","op":"fillet","body":"stock","radius":"1/10",
+            "edges":[{"between":[{"step":"stock","role":{"side":{"segment":"x_min"}}},
+                {"step":"stock","role":{"side":{"segment":"x_max"}}}]}]}),
+    ]);
+    let report = check(&analytic);
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(
+        report.refusal.as_ref().map(|error| error.code),
+        Some("fillet.lost-edge"),
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    assert!(report.findings.iter().any(|finding| {
+        matches!(&finding.reason, Reason::Unresolved(reason) if reason.starts_with("field build "))
+    }));
+
+    let original = m11_loft([0, 1], false, ["0", "2"]);
+    for copy in [
+        json!({"id":"copy","op":"mirror","body":"round","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":false}),
+        json!({"id":"copy","op":"mirror","body":"round","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":true}),
+        json!({"id":"copy","op":"pattern","body":"round","layout":{"linear":{"vector":["4","0","0"],"count":2}}}),
+    ] {
+        let mut value = serde_json::to_value(&original).unwrap();
+        value["steps"].as_array_mut().unwrap().push(copy);
+        value["result"] = json!("copy");
+        let report = check(&Recipe::parse(&value.to_string()).unwrap());
+        assert_eq!(
+            report.refusal.as_ref().map(|e| e.code),
+            Some("field.spline-copy"),
+            "{report:?}"
+        );
+        assert_eq!(report.sampled_distance_upper, None);
+
+        value["result"] = json!("round");
+        let report = check(&Recipe::parse(&value.to_string()).unwrap());
+        assert_eq!(report.refusal.as_ref().unwrap().code, "field.spline-copy");
+        assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    }
+}
+
+#[test]
+fn spline_build_refusals_have_no_sampled_distance_bound() {
+    use catallax_numbers::with_operation_budget;
+
+    let missing_edge = m11_loft([0, 2], false, ["0", "2"]);
+    let valid_edge = m11_loft([0, 1], false, ["0", "2"]);
+    let budget = 100_000;
+    let (unrounded, _) =
+        with_operation_budget(budget, || catallax_field::Plan::compile(&valid_edge));
+    assert_eq!(unrounded.unwrap_err().code, "fillet.lost-edge");
+
+    let (prerequisite_refusal, no_work) = with_operation_budget(0, || check(&valid_edge));
+    assert!(no_work.exhausted);
+    assert_eq!(
+        prerequisite_refusal.refusal.as_ref().unwrap().code,
+        "numbers.operation-budget"
+    );
+    assert_eq!(
+        prerequisite_refusal.sampled_distance_upper,
+        Some(Rational::zero())
+    );
+    let mut translated = serde_json::to_value(&missing_edge).unwrap();
+    translated["steps"][1]["loops"] = translated["steps"][0]["loops"].clone();
+    translated["steps"][2]["sections"][1]["start"] = json!(["a_0"]);
+    for scalar in ["1", "2"] {
+        translated["steps"][1]["plane"]["rotation"] = json!([scalar, "0", "0", "0"]);
+        let recipe = Recipe::parse(&translated.to_string()).unwrap();
+        let (analytic, _) = with_operation_budget(budget, || check(&recipe));
+        assert_eq!(
+            analytic.refusal.as_ref().map(|error| error.code),
+            Some("fillet.lost-edge")
+        );
+        assert_eq!(analytic.sampled_distance_upper, Some(Rational::zero()));
+    }
+
+    let mut union = serde_json::to_value(&valid_edge).unwrap();
+    let steps = union["steps"].as_array_mut().unwrap();
+    steps[3]["body"] = json!("same");
+    steps.insert(
+        3,
+        json!({"id":"same","op":"boolean","kind":"union","target":"loft","tool":"loft"}),
+    );
+    let union = Recipe::parse(&union.to_string()).unwrap();
+    let (union_refusal, work) = with_operation_budget(budget, || check(&union));
+    assert!(work.exhausted);
+
+    let (budget_refusal, work) = with_operation_budget(budget, || check(&valid_edge));
+    assert!(work.exhausted);
+    for (report, code) in [
+        (union_refusal, "numbers.operation-budget"),
+        (budget_refusal, "numbers.operation-budget"),
+    ] {
+        assert_eq!(report.refusal.as_ref().map(|error| error.code), Some(code));
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.forward_vertices, 0);
+        assert_eq!(report.sampled_distance_upper, None);
+    }
+}
+
+#[test]
+fn selected_spline_refusals_follow_pattern_boolean_aliases() {
+    use catallax_numbers::with_operation_budget;
+
+    let m27 = m11_loft([0, 1], false, ["0", "2"]);
+    let mut plain = serde_json::to_value(&m27).unwrap();
+    plain["steps"].as_array_mut().unwrap().pop();
+    plain["result"] = json!("loft");
+    let plain = Recipe::parse(&plain.to_string()).unwrap();
+    let (built, loft_work) =
+        with_operation_budget(20_000_000, || catallax_field::Plan::compile(&plain));
+    assert!(built.is_ok());
+
+    for kind in ["union", "intersect"] {
+        for (source, before_fillet) in [("loft", true), ("round", false)] {
+            let mut value = serde_json::to_value(&m27).unwrap();
+            let steps = value["steps"].as_array_mut().unwrap();
+            let fillet = before_fillet.then(|| steps.pop().unwrap());
+            steps.push(json!({"id":"alias", "op":"pattern", "body":source,
+                "layout":{"linear":{"vector":["4","0","0"],"count":1}}}));
+            steps.push(json!({"id":"same","op":"boolean","kind":kind,
+                "target":"alias","tool":source}));
+            if let Some(mut fillet) = fillet {
+                fillet["body"] = json!("same");
+                steps.push(fillet);
+            } else {
+                value["result"] = json!("same");
+            }
+            let recipe = Recipe::parse(&value.to_string()).unwrap();
+            let allowance = if before_fillet {
+                loft_work.used - 1
+            } else {
+                100_000
+            };
+            let (report, work) = with_operation_budget(allowance, || check(&recipe));
+            assert!(work.exhausted);
+            assert_eq!(
+                report.refusal.as_ref().unwrap().code,
+                "numbers.operation-budget"
+            );
+            assert_eq!(report.forward_vertices, 0);
+            assert_eq!(report.sampled_distance_upper, None);
+        }
+    }
+}
+
+#[test]
+fn an_unselected_m27_fillet_keeps_the_ordinary_refusal() {
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(block("stock", "4", "10"));
+    value["result"] = json!("stock");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
+    assert!(!work.exhausted);
+    assert_eq!(report.refusal.as_ref().unwrap().code, "fillet.lost-edge");
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn a_plain_patch_loft_refusal_keeps_the_ordinary_bound() {
+    use catallax_numbers::with_operation_budget;
+
+    let mut plain = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    plain["steps"].as_array_mut().unwrap().pop();
+    plain["result"] = json!("loft");
+    let plain = Recipe::parse(&plain.to_string()).unwrap();
+    let (built, work) =
+        with_operation_budget(100_000_000, || catallax_field::Plan::compile(&plain));
+    assert!(built.is_ok());
+
+    let (report, work) = with_operation_budget(work.used - 1, || check(&plain));
+    assert!(work.exhausted);
+    assert_eq!(
+        report.refusal.as_ref().map(|error| error.code),
+        Some("numbers.operation-budget")
+    );
+    assert!(report.findings.iter().any(|finding| {
+        matches!(&finding.reason, Reason::Unresolved(reason) if reason.starts_with("field build "))
+    }));
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn invalid_spline_prerequisites_keep_the_sketch_refusal() {
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    for (section, prefix, scale) in [(0, 'a', 1), (1, 'b', 2)] {
+        let edges = [(0, 4), (3, -3), (-4, 1), (4, 1), (-3, -3)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (x, y))| {
+                json!({"kind":"line","id":format!("{prefix}_{i}"),
+                    "to":[(scale * x).to_string(),y.to_string()]})
+            })
+            .collect::<Vec<_>>();
+        value["steps"][section]["loops"] = json!([edges]);
+    }
+
+    let report = check(&Recipe::parse(&value.to_string()).unwrap());
+    assert_eq!(
+        report.refusal.as_ref().unwrap().code,
+        "sketch.self-intersection"
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn spline_prerequisite_refusal_does_not_expand_shared_unions() {
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    let mut fillet = steps.pop().unwrap();
+    let mut inputs = ["loft".to_owned(), "loft".to_owned()];
+    for depth in 0..30 {
+        let outputs = [format!("left{depth}"), format!("right{depth}")];
+        for id in &outputs {
+            steps.push(json!({"id":id,"op":"boolean","kind":"union",
+                "target":inputs[0],"tool":inputs[1]}));
+        }
+        inputs = outputs;
+    }
+    fillet["body"] = json!(inputs[0]);
+    steps.push(fillet);
+
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (report, work) = catallax_numbers::with_operation_budget(0, || check(&recipe));
+    assert!(work.exhausted);
+    assert_eq!(
+        report.refusal.as_ref().unwrap().code,
+        "numbers.operation-budget"
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn a_mirrored_loft_can_be_queried_but_not_filleted_with_stale_origins() {
+    use catallax_field::{Plan, Workspace};
+
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    let mut fillet = steps.pop().unwrap();
+    steps.push(json!({"id":"copy","op":"mirror","body":"loft",
+        "plane":{"point":["5","0","0"],"normal":["1","0","0"]},"keep_original":false}));
+    value["result"] = json!("copy");
+    let mirrored = Recipe::parse(&value.to_string()).unwrap();
+    let plan = Plan::compile(&mirrored).unwrap();
+    let mut workspace = Workspace::default();
+    assert!(plan.fast([10.0, 0.0, 1.0], &mut workspace).unwrap().value < 0.0);
+    assert!(plan.fast([0.0, 0.0, 1.0], &mut workspace).unwrap().value > 0.0);
+
+    fillet["body"] = json!("copy");
+    value["steps"].as_array_mut().unwrap().push(fillet);
+    value["result"] = json!("round");
+    let report = check(&Recipe::parse(&value.to_string()).unwrap());
+    assert_eq!(
+        report.refusal.as_ref().map(|e| e.code),
+        Some("fillet.lost-edge")
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn scoped_spline_display_selects_either_blend_in_a_disjoint_body() {
+    use catallax_shapes::{Isometry, RVector3, SplineSupport, Surface};
+    let recipe = m11_loft([0, 1], false, ["0", "2"]);
+    let ((), work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let mut built = evaluate(&recipe, &mut dec).unwrap();
+        let map = Isometry::translation(RVector3::new(
+            Rational::from_i64(8),
+            Rational::zero(),
+            Rational::zero(),
+        ));
+        let copied =
+            catallax_topology::transformed_body(&mut built.model, built.result, &map, Clone::clone);
+        let mut body = built.model.body(built.result).clone();
+        body.lumps
+            .extend_from_slice(&built.model.body(copied).lumps);
+        let body = built.model.add_body(body);
+        let mut extents = Vec::new();
+        for face in built.model.faces_of_body(body) {
+            if !matches!(
+                built.model.geom().surface(built.model.face(face).surface),
+                Surface::BSpline(SplineSupport::SplineFillet(_))
+            ) {
+                continue;
+            }
+            let display = catallax_mesh::display_spline_fillet_face(
+                &built.model,
+                body,
+                face,
+                &Options::default().mesh,
+                &mut dec,
+            )
+            .unwrap();
+            assert_eq!(display.measurement.covered_faces, 1);
+            assert_eq!(display.geometry.positions.len(), 245);
+            let xs: Vec<_> = display.geometry.positions.iter().map(|p| p[0]).collect();
+            extents.push((
+                xs.iter().copied().fold(f64::INFINITY, f64::min),
+                xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            ));
+        }
+        extents.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let [original, translated] = extents.as_slice() else {
+            panic!("{extents:?}")
+        };
+        assert!((translated.0 - original.0 - 8.0).abs() < 1e-9);
+        assert!((translated.1 - original.1 - 8.0).abs() < 1e-9);
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn loft_vertices_must_fit_the_brep_bound_even_below_display_accuracy() {
+    let field = m11_loft([0, 1], false, ["0", "2"]);
+    let brep = m11_loft([0, 1], false, ["3/250", "503/250"]);
+    let mut options = options();
+    options.region = Some(Region {
+        min: ["-2", "-2", "503/250"].map(|x| Rational::parse(x).unwrap()),
+        max: ["2", "2", "503/250"].map(|x| Rational::parse(x).unwrap()),
+    });
+    let (report, work) =
+        catallax_numbers::with_operation_budget(100_000_000, || compare(&brep, &field, &options));
+    assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+    assert_eq!(report.verdict, Verdict::Disagree, "{report:?}");
+    let shifted_cap = Rational::parse("503/250").unwrap().to_f64_nearest();
+    assert!(
+        report.findings.iter().any(|f| {
+            f.pass == Pass::Forward
+                && f.reason == Reason::Gap
+                && (f.point.z.to_f64_nearest() - shifted_cap).abs() < 1e-9
+                && f.gap.unwrap().lo() < options.accuracy.to_f64_nearest()
+        }),
+        "{report:?}"
+    );
+    let (partial, spent) =
+        catallax_numbers::with_operation_budget(work.used - 1, || compare(&brep, &field, &options));
+    assert!(spent.exhausted && partial.refusal.is_some(), "{partial:?}");
+    assert_eq!(partial.verdict, Verdict::Disagree, "{partial:?}");
+    assert_eq!(partial.forward_vertices + 1, report.forward_vertices);
+    assert!(partial.sampled_distance_upper.is_none());
+    assert!(partial.findings.iter().any(|f| f.reason == Reason::Gap));
+}
+
+#[test]
+fn an_empty_spline_region_explains_missing_coverage() {
+    let mut options = options();
+    options.region = Some(Region {
+        min: [10; 3].map(Rational::from_i64),
+        max: [11; 3].map(Rational::from_i64),
+    });
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        check_with_options(&m11_loft([0, 1], false, ["0", "2"]), &options)
+    });
+    assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(report.forward_vertices, 0);
+    assert!(report.sampled_distance_upper.is_none());
+    assert!(report.findings.iter().any(|f| {
+        matches!(&f.reason, Reason::Unresolved(reason) if reason == "no spline display vertices in the requested scope")
+    }));
+}
+
+fn biquadratic_supports(dec: &mut Decider) -> [catallax_shapes::RationalPatch; 2] {
+    use catallax_numbers::Real;
+    use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
+    let q = Rational::from_i64;
+    let quarter = |n| q(n).mul_pow2(-2);
+    [false, true].map(|second| {
+        let mut controls = Vec::new();
+        for i in 0..3 {
+            for j in 0..3 {
+                let (x, y) = if second {
+                    (quarter(4 - i * j), quarter(-4 + 4 * i + 2 * j))
+                } else {
+                    (quarter(-4 + 4 * i + 2 * j - i * j), quarter(-4 + i * j))
+                };
+                let z = if i == 1 && j == 1 {
+                    q(j) + Rational::from_ratio(if second { -1 } else { 1 }, 20).unwrap()
+                } else {
+                    q(j)
+                };
+                controls.push(Point3::new(x.into(), y.into(), z.into()));
+            }
+        }
+        let patch = BSplineSurface::new(
+            [2, 2],
+            std::array::from_fn(|_| [0, 0, 0, 1, 1, 1].map(q).to_vec()),
+            [3, 3],
+            controls,
+            vec![Real::one(); 9],
+            dec,
+        )
+        .unwrap();
+        RationalPatch::new(patch, dec).unwrap()
+    })
+}
+
+fn biquadratic_spine(
+    dec: &mut Decider,
+) -> Result<catallax_field::spline_spine::Spine, catallax_numbers::Refusal> {
+    use catallax_field::spline_spine::{Spine, SpineDefinition};
+    Spine::prove(
+        &SpineDefinition {
+            supports: biquadratic_supports(dec),
+            radius: Rational::parse("1/10").unwrap(),
+            sides: [catallax_numbers::Sign::Negative; 2],
+            axis: 1,
+            seed: Rational::parse("1/2").unwrap(),
+            tolerance: Rational::parse("1/1000").unwrap(),
+        },
+        dec,
+    )
+}
+
+#[test]
+fn spline_comparison_field_builds_agree_at_one_two_and_four_workers() {
+    use catallax_field::{Plan, spline_spine::sweep::Sweep};
+    use catallax_numbers::{set_threads, threads, with_operation_budget};
+    use std::num::NonZeroUsize;
+
+    let mut baseline = None;
+    for count in [1, 2, 4] {
+        set_threads(NonZeroUsize::new(count));
+        assert_eq!(threads(), count);
+        let mut records = Vec::new();
+        for (name, edges, planar) in [
+            ("M27", [0, 1], false),
+            ("next loft", [1, 2], false),
+            ("spline-plane", [0, 1], true),
+        ] {
+            let recipe = m11_loft(edges, planar, ["0", "2"]);
+            let (plan, work) = with_operation_budget(20_000_000, || {
+                Plan::compile_for_comparison(
+                    &recipe,
+                    &catallax_features::ImportFiles::new(),
+                    &mut Decider::default(),
+                )
+            });
+            let plan = plan.unwrap();
+            assert!(plan.spline_blend_origin().is_some());
+            assert!(!work.exhausted, "{name} at {count} workers");
+            records.push((name, work.used, format!("{plan:?}")));
+        }
+        let (bare, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let spine = biquadratic_spine(&mut dec)?;
+            let sweep = Sweep::new(&spine, &mut dec)?;
+            Ok::<_, catallax_numbers::Refusal>(format!("{sweep:?}"))
+        });
+        assert!(!work.exhausted, "biquadratic at {count} workers");
+        records.push(("biquadratic", work.used, bare.unwrap()));
+        set_threads(None);
+        for (name, used, _) in &records {
+            println!("{name} field build at {count} workers: {used} work");
+        }
+        if let Some(expected) = &baseline {
+            assert!(
+                &records == expected,
+                "field build or work changed at {count} workers"
+            );
+        } else {
+            baseline = Some(records);
+        }
+    }
+}
+
+#[test]
+fn biquadratic_carrier_vertices_fit_the_field_within_one_request() {
+    use catallax_field::spline_spine::sweep::Sweep;
+    use catallax_numbers::{Refusal, Sign, current_operation_work, with_operation_budget};
+    use catallax_shapes::{SplineFillet, SplineFilletDefinition};
+    let options = options();
+    let (result, work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let radius = Rational::parse("1/10").unwrap();
+        let sides = [Sign::Negative; 2];
+        let spine = biquadratic_spine(&mut dec)?;
+        let sweep = Sweep::new(&spine, &mut dec)?;
+        let field_work = current_operation_work().used;
+        assert!(field_work <= 20_000_000);
+
+        let definition = SplineFilletDefinition::new(
+            biquadratic_supports(&mut dec),
+            radius,
+            sides,
+            1,
+            [Rational::parse("1/32").unwrap(), Rational::one()],
+        )?;
+        let fit = SplineFillet::fit(definition, &mut dec)?;
+        let fitted_work = current_operation_work().used;
+        let fit_work = fitted_work - field_work;
+        assert!(fit_work <= 20_000_000);
+        let grid = catallax_mesh::display_spline_fillet_carrier(&fit, &options.mesh, &mut dec)?;
+        let display_work = current_operation_work().used - fitted_work;
+        assert_eq!(grid.dimensions, [4, 26]);
+        assert!(grid.maximum_deviation <= options.mesh.chord_tolerance);
+        let error = &fit.bound().upper + &grid.maximum_deviation;
+        let mut report = Report {
+            import_agreement: None,
+            revision: 0,
+            region: None,
+            verdict: Verdict::Unresolved,
+            forward_vertices: 0,
+            reverse_samples: 0,
+            sampled_distance_upper: Some(Rational::zero()),
+            findings: vec![],
+            not_comparable: vec![],
+            refusal: None,
+        };
+        for point in grid.positions {
+            let [x, y, z] = point.map(|x| Rational::from_f64_exact(x).unwrap());
+            let p = RPoint3::new(x, y, z);
+            let range = sweep.distance_at_most(&p, &error, &mut dec)?;
+            check::spline_vertex(&mut report, &p, None, range, &error, &options.accuracy);
+        }
+        assert_eq!(report.forward_vertices, 104);
+        assert!(report.findings.is_empty(), "{report:?}");
+        println!(
+            "biquadratic carrier: {} vertices, {:.9e} mm display bound, {:.9e} mm widened upper, {field_work} field work, {fit_work} fit work, {display_work} display work",
+            report.forward_vertices,
+            grid.maximum_deviation.to_f64_nearest(),
+            report.sampled_distance_upper.unwrap().to_f64_nearest(),
+        );
+        Ok::<_, Refusal>(())
+    });
+    println!("biquadratic comparison: {} work", work.used);
+    assert!(!work.exhausted, "{result:?}");
+    result.unwrap();
+}
+
 #[test]
 fn thin_boolean_faces_receive_trim_checked_reverse_samples() {
     let part = recipe(vec![
@@ -863,4 +1775,26 @@ fn separated_curved_features_keep_finite_gap_bounds_after_near_samples() {
         }),
         "{report:?}"
     );
+}
+
+#[test]
+fn motion_shell_comparison_checks_spline_sweep_vertices_and_reports_reverse_gap() {
+    for source in [
+        include_str!("../../catallax-features/tests/fixtures/spline-sweep-planar.json"),
+        include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json"),
+    ] {
+        let recipe = Recipe::parse(source).unwrap();
+        let options = Options::default();
+        let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            check_with_options(&recipe, &options)
+        });
+        assert!(!work.exhausted, "{work:?}");
+        assert!(report.refusal.is_none(), "{:?}", report.refusal);
+        assert!(report.forward_vertices > 0);
+        assert_eq!(report.reverse_samples, 0);
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.findings.len(), 1, "{:?}", report.findings.first());
+        assert_eq!(report.findings[0].pass, Pass::Reverse);
+        assert!(report.sampled_distance_upper.unwrap() <= options.accuracy);
+    }
 }

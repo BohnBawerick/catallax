@@ -62,6 +62,8 @@ mod samples;
 mod smooth;
 /// No-mesh solver queries and conservative cut-cell integration.
 pub mod solver;
+/// The field's own proof of a rolling ball's spine between two rational patches.
+pub mod spline_spine;
 mod support;
 mod sweep;
 mod unproved_batch;
@@ -75,7 +77,9 @@ pub use unproved_batch::UnprovedBatch;
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
-use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
+use catallax_recipe::{
+    BooleanKind, EdgeSelection, FilletOverflow, LoftShape, Operation, Origin, Recipe, Role, Segment,
+};
 use catallax_shapes::{Isometry, Pose, RPoint3, RVector3, Surface, Vector3};
 
 use metric::{Arithmetic, Deterministic, PRECISION, Processor, Scalar};
@@ -262,6 +266,35 @@ pub struct Batch {
     fast: Vec<Approximate>,
 }
 
+/// A refusal from the field build of a sampled comparison.
+#[derive(Debug)]
+pub enum ComparisonBuildRefusal {
+    /// The field refused outside the experimental spline route.
+    Ordinary(Refusal),
+    /// The experimental spline route refused before comparison sampling.
+    Spline(Refusal),
+}
+
+impl ComparisonBuildRefusal {
+    fn refusal(&self) -> &Refusal {
+        match self {
+            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+        }
+    }
+
+    fn into_refusal(self) -> Refusal {
+        match self {
+            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+        }
+    }
+}
+
+impl From<Refusal> for ComparisonBuildRefusal {
+    fn from(refusal: Refusal) -> Self {
+        Self::Ordinary(refusal)
+    }
+}
+
 /// An owned, fixed-order field plan compiled from a checked recipe.
 /// Face identities remain outside the tape, including folded-away candidates.
 #[derive(Clone, Debug)]
@@ -285,6 +318,38 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Origin of the surviving spline blend on a result that is a rounded
+    /// loft shell.
+    pub fn spline_blend_origin(&self) -> Option<&Origin> {
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            return None;
+        };
+        match &self.leaves[index] {
+            geometry::Leaf::Shell(shell) => shell.blend_origin(),
+            _ => None,
+        }
+    }
+
+    /// Guaranteed distance range to the named blend, refined against a distance bound.
+    pub fn spline_blend_distance(
+        &self,
+        origin: &Origin,
+        point: &RPoint3,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<rolling_region::Range>, Refusal> {
+        if self.spline_blend_origin() != Some(origin) {
+            return Ok(None);
+        }
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            unreachable!("the origin belongs to a result leaf");
+        };
+        let geometry::Leaf::Shell(shell) = &self.leaves[index] else {
+            unreachable!("the origin belongs to a loft shell");
+        };
+        shell.blend_distance(point, bound, dec)
+    }
+
     /// Removed-face provenance from draft operations, in recipe order.
     /// These records never make a vanished face selectable.
     pub fn consumed_faces(&self) -> &[catallax_features::ConsumedFace] {
@@ -320,9 +385,179 @@ impl Plan {
         files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        recipe
-            .check()
-            .map_err(|e| Refusal::new("field.recipe", e.to_string()))?;
+        Self::compile_recipe(recipe, files, dec, false)
+            .map_err(ComparisonBuildRefusal::into_refusal)
+    }
+
+    /// Compiles a sampled comparison plan, enabling experimental proofs for
+    /// supported spline fillets on the selected result's lineage.
+    pub fn compile_for_comparison(
+        recipe: &Recipe,
+        files: &catallax_features::ImportFiles<'_>,
+        dec: &mut Decider,
+    ) -> Result<Self, ComparisonBuildRefusal> {
+        Self::compile_recipe(recipe, files, dec, true)
+    }
+
+    fn touching_blocks(a: &Operation, b: &Operation) -> bool {
+        let interval = |operation: &Operation, axis: usize| {
+            let Operation::Block { size, pose } = operation else {
+                return None;
+            };
+            if pose.rotation[0].value().is_zero()
+                || pose.rotation[1..].iter().any(|q| !q.value().is_zero())
+                || size
+                    .iter()
+                    .any(|length| length.value().sign() != Sign::Positive)
+            {
+                return None;
+            }
+            let parts = |n: &Rational| {
+                Some((
+                    i128::from(n.numerator().to_i64()?),
+                    i128::from(n.denominator().to_i64()?),
+                ))
+            };
+            let (lo, ld) = parts(pose.translation.0[axis].value())?;
+            let (length, d) = parts(size[axis].value())?;
+            let hi = (lo * d).checked_add(length * ld)?;
+            Some(((lo, ld), (hi, ld * d)))
+        };
+        let equal = |(n, d): (i128, i128), (m, e): (i128, i128)| {
+            n.checked_mul(e)
+                .zip(m.checked_mul(d))
+                .is_some_and(|(a, b)| a == b)
+        };
+        (0..3).any(|axis| match (interval(a, axis), interval(b, axis)) {
+            (Some((lo, hi)), Some((other_lo, other_hi))) => {
+                equal(hi, other_lo) || equal(other_hi, lo)
+            }
+            _ => false,
+        })
+    }
+
+    fn selected_fillet_lineage(recipe: &Recipe) -> BTreeSet<&catallax_recipe::StepId> {
+        let mut bodies: BTreeMap<_, usize> = BTreeMap::new();
+        for (index, step) in recipe.steps.iter().enumerate() {
+            let body = match &step.op {
+                Operation::Pattern { body, layout } if layout.count() == 1 => bodies[body],
+                Operation::Offset { body, distance } => {
+                    Self::offset_identity(bodies[body], distance.value()).unwrap_or(index + 1)
+                }
+                Operation::Fillet {
+                    body,
+                    edges: EdgeSelection::Refs(refs),
+                    radius,
+                    overflow,
+                    ..
+                } if refs.is_empty()
+                    && radius.value().sign() == Sign::Positive
+                    && !matches!(overflow, Some(FilletOverflow::KeepNeighbours(_))) =>
+                {
+                    bodies[body]
+                }
+                Operation::Boolean { kind, target, tool } => {
+                    let (a, b) = (bodies[target], bodies[tool]);
+                    match Self::boolean_identity(*kind, a, b) {
+                        Some(node) => node,
+                        None if *kind == BooleanKind::Intersect
+                            && Self::touching_blocks(
+                                &recipe.steps[a - 1].op,
+                                &recipe.steps[b - 1].op,
+                            ) =>
+                        {
+                            0
+                        }
+                        None => index + 1,
+                    }
+                }
+                _ => index + 1,
+            };
+            bodies.insert(&step.id, body);
+        }
+        let mut lineage = BTreeSet::new();
+        let mut index = bodies[&recipe.result];
+        while index != 0 {
+            let step = &recipe.steps[index - 1];
+            lineage.insert(&step.id);
+            match &step.op {
+                Operation::Fillet {
+                    body,
+                    edges: EdgeSelection::Refs(refs),
+                    overflow,
+                    ..
+                } if !matches!(overflow, Some(FilletOverflow::KeepNeighbours(_))) => {
+                    let ([reference], Some(loft)) = (refs.as_slice(), bodies[body].checked_sub(1))
+                    else {
+                        break;
+                    };
+                    let loft = &recipe.steps[loft];
+                    let Operation::Loft {
+                        sections,
+                        shape: LoftShape::Ruled,
+                    } = &loft.op
+                    else {
+                        break;
+                    };
+                    let [first, last] = sections.as_slice() else {
+                        break;
+                    };
+                    let sides = |section: &catallax_recipe::LoftSection| {
+                        let sketch = &recipe.steps[bodies[&section.profile] - 1];
+                        let Operation::Sketch { loops, .. } = &sketch.op else {
+                            return None;
+                        };
+                        let [outline] = loops.as_slice() else {
+                            return None;
+                        };
+                        outline
+                            .0
+                            .iter()
+                            .map(|segment| match segment {
+                                Segment::Line { id, .. } => Some(Origin {
+                                    step: loft.id.clone(),
+                                    role: Role::Side {
+                                        segment: id.clone(),
+                                        path: None,
+                                    },
+                                }),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<_>>>()
+                    };
+                    if let (Some(first), Some(last)) = (sides(first), sides(last))
+                        && first.len() >= 3
+                        && first.len() == last.len()
+                        && patch_shell::loft_edge(&first, reference).is_some()
+                    {
+                        lineage.insert(&loft.id);
+                        return lineage;
+                    }
+                    break;
+                }
+                Operation::Mirror { body, .. } | Operation::Pattern { body, .. } => {
+                    index = bodies[body];
+                }
+                _ => break,
+            }
+        }
+        BTreeSet::new()
+    }
+
+    fn compile_recipe(
+        recipe: &Recipe,
+        files: &catallax_features::ImportFiles<'_>,
+        dec: &mut Decider,
+        spline_proofs: bool,
+    ) -> Result<Self, ComparisonBuildRefusal> {
+        recipe.check().map_err(|e| {
+            ComparisonBuildRefusal::Ordinary(Refusal::new("field.recipe", e.to_string()))
+        })?;
+        let spline_sources = if spline_proofs {
+            Self::selected_fillet_lineage(recipe)
+        } else {
+            BTreeSet::new()
+        };
         let mut plan = Self {
             instructions: vec![Instruction::Empty],
             leaves: vec![],
@@ -338,13 +573,20 @@ impl Plan {
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
+        let mut bezier_profiles = BTreeSet::new();
         let mut step_faces: BTreeMap<catallax_recipe::StepId, Vec<usize>> = BTreeMap::new();
         let mut step_domains = ownership::Snapshots::new();
         for step in &recipe.steps {
             let span =
                 catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
             let first_face = plan.faces.len();
-            let result = (|| -> Result<Option<usize>, Refusal> {
+            let selected = spline_sources.contains(&step.id);
+            let shell_refusal: fn(Refusal) -> ComparisonBuildRefusal = if selected {
+                ComparisonBuildRefusal::Spline
+            } else {
+                ComparisonBuildRefusal::Ordinary
+            };
+            let result = (|| -> Result<Option<usize>, ComparisonBuildRefusal> {
                 let node = match &step.op {
                     Operation::ImportStep { .. } | Operation::ImportIges { .. } => {
                         plan.import_step(step, files, dec)?
@@ -352,7 +594,27 @@ impl Plan {
                     // Reference data, RECIPE.md section 4.19.1: never a body.
                     Operation::ScanImport { .. } => return Ok(None),
                     Operation::Sketch { plane, loops } => {
-                        profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
+                        if loops
+                            .iter()
+                            .flat_map(|boundary| &boundary.0)
+                            .any(|segment| {
+                                matches!(segment, catallax_recipe::Segment::Bezier { .. })
+                            })
+                            && !recipe.steps.iter().any(|consumer| {
+                                !matches!(consumer.op, Operation::Loft { .. })
+                                    && consumer.op.inputs().iter().any(|(id, _)| *id == &step.id)
+                            })
+                        {
+                            catallax_features::Profile::new(plane, loops, dec)
+                                .map_err(ComparisonBuildRefusal::Ordinary)?;
+                            bezier_profiles.insert(step.id.clone());
+                        } else {
+                            profiles.insert(
+                                step.id.clone(),
+                                profile::Profile::new(plane, loops, dec)
+                                    .map_err(ComparisonBuildRefusal::Ordinary)?,
+                            );
+                        }
                         return Ok(None);
                     }
                     Operation::Path { .. } => return Ok(None),
@@ -367,7 +629,7 @@ impl Plan {
                             return Err(Refusal::new(
                                 "field.unfinished-operation",
                                 "guided and twisted sweeps are numerical B-reps; their field definitions remain in phase 4",
-                            ));
+                            ).into());
                         }
                         plan.sweep(
                             &profiles[profile],
@@ -378,7 +640,21 @@ impl Plan {
                         )?
                     }
                     Operation::Loft { sections, shape } => {
-                        plan.loft(recipe, sections, *shape, &profiles, &step.id, dec)?
+                        if sections
+                            .iter()
+                            .any(|section| bezier_profiles.contains(&section.profile))
+                        {
+                            plan.bezier_loft(recipe, sections, *shape, dec)?
+                        } else {
+                            plan.loft(
+                                recipe,
+                                sections,
+                                *shape,
+                                &profiles,
+                                (&step.id, shell_refusal),
+                                dec,
+                            )?
+                        }
                     }
                     Operation::SmoothBlend {
                         kind,
@@ -393,7 +669,7 @@ impl Plan {
                                     "smooth step {} is not result {}; 0 downstream implicit-boundary consumers admitted",
                                     step.id, recipe.result
                                 ),
-                            ));
+                            ).into());
                         }
 
                         for source in [target, tool] {
@@ -410,7 +686,7 @@ impl Plan {
                                     format!(
                                         "operand {source}: exact stock distance required; 0 composite distance definitions admitted"
                                     ),
-                                ));
+                                ).into());
                             }
                         }
                         plan.smooth(
@@ -645,7 +921,7 @@ impl Plan {
                                 source,
                                 (&step_faces[body], &step_domains[body]),
                                 &map,
-                                &step.id,
+                                (&step.id, shell_refusal),
                                 instance,
                                 dec,
                             )?;
@@ -664,7 +940,7 @@ impl Plan {
                             source,
                             (&step_faces[body], &step_domains[body]),
                             &map,
-                            &step.id,
+                            (&step.id, shell_refusal),
                             1,
                             dec,
                         )?;
@@ -705,7 +981,7 @@ impl Plan {
                                 &step.id,
                                 dec,
                             )?;
-                            return plan.restore_preserved(drafted, &preserved, dec).map(Some);
+                            return Ok(Some(plan.restore_preserved(drafted, &preserved, dec)?));
                         }
                         let filtered_planar = faces.iter().any(|reference| {
                             !reference.touching.is_empty() || reference.near.is_some()
@@ -763,29 +1039,20 @@ impl Plan {
                         radius,
                         overflow,
                         corner,
-                    } => {
-                        if matches!(
-                            overflow,
-                            Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
-                        ) {
-                            return Err(Refusal::new(
-                                "fillet.unsupported-overflow",
-                                "explicit station-plane clipping needs a proved field region",
-                            ));
-                        }
-                        plan.fillet(
-                            steps[body],
-                            &step_faces[body],
-                            edges,
-                            fillet::Settings {
-                                radius: &radius.value().clone().into(),
-                                closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
-                                roll_over: recipe.format != catallax_recipe::FORMAT,
-                            },
-                            &step.id,
-                            dec,
-                        )?
-                    }
+                    } => plan.fillet(
+                        steps[body],
+                        &step_faces[body],
+                        edges,
+                        fillet::Settings {
+                            radius: &radius.value().clone().into(),
+                            closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
+                            roll_over: recipe.format != catallax_recipe::FORMAT,
+                            spline_proofs: selected,
+                            overflow: overflow.as_ref(),
+                        },
+                        &step.id,
+                        dec,
+                    )?,
                     Operation::ExtrudeTo {
                         target,
                         profile,
@@ -1022,7 +1289,7 @@ impl Plan {
                                     "step {}: mesh source {} sha256 mismatch: expected {}, actual {actual}",
                                     step.id, file.name, file.sha256
                                 ),
-                            ));
+                            ).into());
                         }
                         let read =
                             catallax_import::mesh::ClosedMesh::read(source, scale.value(), dec)?;
@@ -1057,9 +1324,13 @@ impl Plan {
                         frame,
                     } => {
                         if *kind == catallax_recipe::GyroidKind::Sheet {
-                            return plan
-                                .sheet(steps[region], period.value(), level, frame, dec)
-                                .map(Some);
+                            return Ok(Some(plan.sheet(
+                                steps[region],
+                                period.value(),
+                                level,
+                                frame,
+                                dec,
+                            )?));
                         }
                         let gyroid = gyroid::Gyroid::new(period.value(), level, *kind, frame)?;
                         match gyroid.saturated() {
@@ -1082,7 +1353,11 @@ impl Plan {
                 };
                 Ok(Some(node))
             })();
-            span.finish(dec, result.as_ref().err(), None);
+            span.finish(
+                dec,
+                result.as_ref().err().map(ComparisonBuildRefusal::refusal),
+                None,
+            );
             if let Some(node) = result? {
                 let mut faces = match &step.op {
                     Operation::Boolean { target, tool, .. } => step_faces[target]
@@ -1279,21 +1554,35 @@ impl Plan {
         source: usize,
         source_faces: (&[usize], &[usize]),
         map: &Isometry,
-        step: &catallax_recipe::StepId,
+        (step, shell_refusal): (
+            &catallax_recipe::StepId,
+            fn(Refusal) -> ComparisonBuildRefusal,
+        ),
         instance: u32,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<usize, ComparisonBuildRefusal> {
         let (source_faces, source_domains) = source_faces;
         let end = source + 1;
         let first_face = self.faces.len();
         let mut live = vec![false; end];
         live[source] = true;
         for i in (0..end).rev() {
-            if live[i]
-                && let Instruction::Boolean { a, b, .. } = self.instructions[i]
-            {
-                live[a] = true;
-                live[b] = true;
+            if !live[i] {
+                continue;
+            }
+            match self.instructions[i] {
+                Instruction::Boolean { a, b, .. } => {
+                    live[a] = true;
+                    live[b] = true;
+                }
+                Instruction::Leaf(id) if matches!(&self.leaves[id], geometry::Leaf::Shell(shell) if shell.blend_origin().is_some()) =>
+                {
+                    return Err(shell_refusal(Refusal::new(
+                        "field.spline-copy",
+                        "rounded spline shells cannot be copied by a pattern or mirror",
+                    )));
+                }
+                _ => {}
             }
         }
         let mut remap = vec![0; end];
@@ -1308,8 +1597,13 @@ impl Plan {
                 }
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
-                    leaf.transform(map)?;
-                    leaf.rebuild_after_transform(dec)?;
+                    if let geometry::Leaf::Shell(shell) = &mut leaf {
+                        shell.forget_loft_sides();
+                    }
+                    leaf.transform(map)
+                        .map_err(ComparisonBuildRefusal::Ordinary)?;
+                    leaf.rebuild_after_transform(dec)
+                        .map_err(ComparisonBuildRefusal::Ordinary)?;
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])
@@ -1322,10 +1616,12 @@ impl Plan {
                         })
                         .collect::<Vec<_>>();
                     for face in &mut faces {
-                        geometry::face_geometry(face, map.surface(&face.surface), dec)?;
+                        geometry::face_geometry(face, map.surface(&face.surface), dec)
+                            .map_err(ComparisonBuildRefusal::Ordinary)?;
                         face.origin = catallax_features::copy_origin(step, instance, &face.origin);
                     }
-                    self.leaf(leaf, faces, dec)?
+                    self.leaf(leaf, faces, dec)
+                        .map_err(ComparisonBuildRefusal::Ordinary)?
                 }
             };
             if self.separated_unions.contains(&i) {
@@ -1356,18 +1652,24 @@ impl Plan {
         {
             return Ok(0);
         }
-        Ok(match kind {
-            Union if a == b || b == 0 => a,
-            Union if a == 0 => b,
-            Intersect if a == 0 || b == 0 => 0,
-            Intersect if a == b => a,
-            Subtract if a == 0 || a == b => 0,
-            Subtract if b == 0 => a,
-            _ => {
-                self.instructions.push(Instruction::Boolean { kind, a, b });
-                self.instructions.len() - 1
-            }
-        })
+        if let Some(node) = Self::boolean_identity(kind, a, b) {
+            return Ok(node);
+        }
+        self.instructions.push(Instruction::Boolean { kind, a, b });
+        Ok(self.instructions.len() - 1)
+    }
+
+    fn boolean_identity(kind: BooleanKind, a: usize, b: usize) -> Option<usize> {
+        use BooleanKind::*;
+        match kind {
+            Union if a == b || b == 0 => Some(a),
+            Union if a == 0 => Some(b),
+            Intersect if a == 0 || b == 0 => Some(0),
+            Intersect if a == b => Some(a),
+            Subtract if a == 0 || a == b => Some(0),
+            Subtract if b == 0 => Some(a),
+            _ => None,
+        }
     }
 
     fn compact(&mut self) {
@@ -1445,6 +1747,17 @@ impl Plan {
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
+
+    /// The unrounded closed patch shell when it alone defines the result.
+    pub fn result_patch_shell(&self) -> Option<&patch_shell::Shell> {
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            return None;
+        };
+        match &self.leaves[index] {
+            geometry::Leaf::Shell(shell) if shell.blend_origin().is_none() => Some(shell),
+            _ => None,
+        }
+    }
     /// The rolling-ball path pieces the plan's fillets compiled to (4.2a), in
     /// compile order. A piece whose face lies on a ring torus, a sphere or a
     /// cylinder registers it as a named face; other pieces' faces are not
@@ -1499,8 +1812,11 @@ impl Plan {
     }
 
     fn true_distance_formula(&self) -> bool {
-        matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
-            || self.separated_unions.contains(&self.root)
+        let rounded_shell = |i: usize| matches!(&self.leaves[i], geometry::Leaf::Shell(shell) if shell.blend_origin().is_some());
+        if let Instruction::Leaf(i) = self.instructions[self.root] {
+            return self.leaves[i].true_distance() && !rounded_shell(i);
+        }
+        self.separated_unions.contains(&self.root)
     }
 
     fn tentative<A: Arithmetic>(
@@ -2099,12 +2415,16 @@ impl Plan {
         storage: &'a mut Batch,
     ) -> Result<&'a [Approximate], Refusal> {
         let results = workers::map_init(points, Workspace::default, |workspace, &point| {
-            self.fast(point, workspace)
+            self.tentative::<Deterministic>(point, workspace)
         });
+        let true_distance_formula = self.true_distance_formula();
         storage.fast.clear();
         for result in results {
             match result {
-                Ok(value) => storage.fast.push(value),
+                Ok(value) => storage.fast.push(Approximate {
+                    value,
+                    true_distance_formula,
+                }),
                 Err(error) => {
                     storage.fast.clear();
                     return Err(error);

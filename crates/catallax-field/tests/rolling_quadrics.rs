@@ -704,11 +704,7 @@ fn crossing_steps(kind: &str, radius: &str, second: &str, gap: &str) -> Vec<Valu
     ]
 }
 fn corpus(id: &str, pieces: usize) -> Case {
-    let text = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../parts/fillets/cases.jsonl"
-    ))
-    .unwrap();
+    let text = std::fs::read_to_string("../../parts/fillets/cases.jsonl").unwrap();
     let row: Value = text
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
@@ -808,11 +804,7 @@ fn sphere_cases() -> Vec<Case> {
     let mut ring = corpus("sphere-cylinder", 2);
     let mut mirrored = corpus("sphere-cylinder", 4);
     mirrored.name = "mirrored sphere ring".into();
-    let text = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../parts/fillets/cases.jsonl"
-    ))
-    .unwrap();
+    let text = std::fs::read_to_string("../../parts/fillets/cases.jsonl").unwrap();
     let mut recipe: Value = text
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())

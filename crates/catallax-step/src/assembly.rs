@@ -173,8 +173,22 @@ pub fn write_step_assembly<W: Write>(
                 }
             }
             ProductContent::Part(part) => {
-                if part.model.body(part.body).kind != BodyKind::Solid {
+                let body = part.model.body(part.body);
+                if body.kind != BodyKind::Solid {
                     return Err(invalid("a part definition must be a solid"));
+                }
+                if body
+                    .lumps
+                    .iter()
+                    .any(|&lump| part.model.lump(lump).shells.len() > 1)
+                {
+                    return Err(Refusal::new(
+                        "step.assembly-unsupported-part",
+                        format!(
+                            "part {:?} has a void shell outside the assembly reader's solid subset",
+                            product.name
+                        ),
+                    ));
                 }
                 let mut file = Vec::new();
                 let mut settings = options.clone();
@@ -312,8 +326,14 @@ pub fn write_step_assembly<W: Write>(
         }
     }
 
-    let header =
-        crate::export::assembly_header(&assembly.products[assembly.root].name, &root_items);
+    let complete_body_bound = reports
+        .iter()
+        .all(|(_, report)| report.definition_deviation.is_some());
+    let header = crate::export::assembly_header(
+        &assembly.products[assembly.root].name,
+        &root_items,
+        complete_body_bound,
+    );
     out.write_all(header.as_bytes())
         .and_then(|_| out.write_all(step.as_bytes()))
         .and_then(|_| out.write_all(b"ENDSEC;\nEND-ISO-10303-21;\n"))

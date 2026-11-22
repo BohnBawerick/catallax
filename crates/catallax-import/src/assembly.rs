@@ -269,6 +269,17 @@ pub fn read_step_assembly(
                 .iter()
                 .flat_map(|representation| representation_items[representation].1.iter().copied())
                 .collect::<BTreeSet<_>>();
+            for &item in &geometry_items {
+                let entity = graph
+                    .get(&item)
+                    .ok_or_else(|| invalid(format!("missing representation item #{item}")))?;
+                if entity.type_name() != "MANIFOLD_SOLID_BREP" {
+                    return Err(ImportRefusal::Unsupported {
+                        entity: format!("#{item}"),
+                        type_name: entity.type_name().into(),
+                    });
+                }
+            }
             let mut pending = related;
             while let Some(entity) = pending.pop() {
                 if local.contains_key(&entity) {
@@ -395,7 +406,8 @@ fn part_colour(
 ) -> Result<Option<Colour>, ImportRefusal> {
     let mut colours = BTreeSet::new();
     for solid in solids {
-        let mut colour = None;
+        let mut side_colours = [None, None];
+        let mut has_one_sided_style = false;
         for assignment in styles.get(solid).into_iter().flatten() {
             let fields = fields(graph, *assignment, "PRESENTATION_STYLE_ASSIGNMENT")?;
             for style in references(fields, 0)? {
@@ -405,6 +417,13 @@ fn part_colour(
                 else {
                     continue;
                 };
+                let sides: &[usize] = match usage.first() {
+                    Some(Param::Enum(side)) if side == "BOTH" => &[0, 1],
+                    Some(Param::Enum(side)) if side == "POSITIVE" => &[0],
+                    Some(Param::Enum(side)) if side == "NEGATIVE" => &[1],
+                    _ => return Err(invalid("unknown surface style side")),
+                };
+                has_one_sided_style |= sides.len() == 1;
                 let side = reference(usage, 1)?;
                 for fill in references(self::fields(graph, side, "SURFACE_SIDE_STYLE")?, 1)? {
                     let Some(fill) = graph
@@ -434,15 +453,22 @@ fn part_colour(
                             Ok(q)
                         };
                         let current = [read(1)?, read(2)?, read(3)?];
-                        if colour.as_ref().is_some_and(|previous| previous != &current) {
-                            return Err(invalid("one solid has conflicting colours"));
+                        for &side in sides {
+                            let colour = &mut side_colours[side];
+                            if colour.as_ref().is_some_and(|previous| previous != &current) {
+                                return Err(invalid("one side of a solid has conflicting colours"));
+                            }
+                            *colour = Some(current.clone());
                         }
-                        colour = Some(current);
                     }
                 }
             }
         }
-        colours.insert(colour);
+        let [positive, negative] = side_colours;
+        if positive != negative || (has_one_sided_style && positive.is_none()) {
+            return Err(invalid("a part colour must resolve equally on both sides"));
+        }
+        colours.insert(positive);
     }
     if colours.len() > 1 {
         return Err(invalid("bodies of one product have different colours"));

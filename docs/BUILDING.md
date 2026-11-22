@@ -20,7 +20,7 @@ cargo test --workspace --release
 python3 -B -m unittest discover -s tools/edge-hunt -v
 ```
 
-CI selects checks by changed paths. Full-suite runs include formatting, clippy, enabled release tests and doctests. Crate `TESTS.md` files describe extra opt-in workloads. Timing benchmarks report measurements, never correctness gates.
+See [merge checks](RELEASING.md#merge-checks) for CI triggers and job selection. Crate `TESTS.md` files describe extra opt-in workloads. Timing benchmarks report measurements, never correctness gates.
 
 ## Verification
 

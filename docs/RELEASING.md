@@ -64,12 +64,24 @@ The [review inventory](../tools/release/review-candidates.json) records the 118 
 
 ## Merge checks
 
+Pushes to branches outside `main` and `release/**` run only the GitHub-hosted
+[`branch check`](../.github/workflows/branch-check.yml) job. It checks Rust
+formatting, runs workspace Clippy and builds the CLI binaries. Pull requests
+and pushes to `main` and `release/**` enter the regular CI workflows. The
+[field processor bits check](../.github/workflows/field-bits.yml) runs on both
+push targets. The [name stability replay](../.github/workflows/name-stability.yml)
+uses the same changed-path filters on both.
+
+[`check.yml`](../.github/workflows/check.yml) selects jobs by changed paths for
+pull requests and pushes to `main`. Release-branch pushes and manual dispatches
+run its full suite. You can manually dispatch it on an ordinary branch.
+
 `tools/checks/rules.json` declares the required jobs independently of workflow
 `needs`. `tools/checks/checks.py select` unions the base and candidate rules and
 workspace Cargo dependency graphs, including dev, build, optional and
 target-specific dependencies. Renames use both paths. Shared build inputs and
-unknown paths select every crate. Documentation-only changes still run
-formatting and policy checks without a kernel replay.
+unknown paths select every crate. Under path-based selection, documentation-only
+changes run formatting and policy checks without a kernel replay.
 
 When all non-documentation changes match the reviewed `ci_paths`, selection runs
 the CI tooling checks and only changed job definitions with their required

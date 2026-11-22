@@ -15,12 +15,8 @@ for an entire fitted carrier without body cuts.
 Why: a field fillet should prove its own sweep and compare it against the
 B-rep without depending on the B-rep's offset or fitted carrier.
 Migration: callers of the spline sweep set the part tolerance when proving
-its spine. The tube proof runs in test fixtures and in sampled comparison
-through `Plan::compile_for_comparison`. Ordinary recipe compilation keeps
-its spline fillet refusal. Mirrors and patterns that copy a rounded
-spline shell return `field.spline-copy`. Copied unrounded lofts support
-field queries. A later fillet that uses the original loft side names on
-an unrounded copy returns `fillet.lost-edge`.
+its spine. See [spline fillets in comparison](../FIELD.md#spline-fillets-in-comparison)
+for supported recipe inputs and copy behavior.
 See [selected spline fillet comparison](../COMPARE.md#selected-spline-fillet)
 for report semantics. Sweep refusals are reported under
 `field.spline-sweep`, `field.spline-sweep-reach`,

@@ -493,15 +493,14 @@ witness on a clipped section comes from its nearest circle point, a
 retained rail point, or a circle-plane intersection. This keeps the part
 between the caps even where its first rail has left the original chart.
 
-The loft route supports one named convex edge between adjacent sides.
 For a ruled loft, each side is an exact quadratic inequality obtained
 from its moving horizontal edge. A quadratic remainder bound proves
 the rolling ball stays inside both touched sides and clears every other
 side. The section's radial normal proves that the new face projects
 one-to-one between the two rails along a common outward direction. That
 graph replaces the sharp corner while preserving the remaining sides
-and caps. Whole patches from other sources and subsequent rounds on
-the trimmed loft keep their typed refusals.
+and caps. See [the field recipe scope](FIELD.md#spline-fillets-in-comparison)
+for edge selection and comparison entry points.
 
 Sampled comparison opts into the tube proof. The tentative evaluator
 locates each rail with 24 height bisections, then solves height and across

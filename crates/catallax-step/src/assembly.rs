@@ -173,8 +173,22 @@ pub fn write_step_assembly<W: Write>(
                 }
             }
             ProductContent::Part(part) => {
-                if part.model.body(part.body).kind != BodyKind::Solid {
+                let body = part.model.body(part.body);
+                if body.kind != BodyKind::Solid {
                     return Err(invalid("a part definition must be a solid"));
+                }
+                if body
+                    .lumps
+                    .iter()
+                    .any(|&lump| part.model.lump(lump).shells.len() > 1)
+                {
+                    return Err(Refusal::new(
+                        "step.assembly-unsupported-part",
+                        format!(
+                            "part {:?} has a void shell outside the assembly reader's solid subset",
+                            product.name
+                        ),
+                    ));
                 }
                 let mut file = Vec::new();
                 let mut settings = options.clone();

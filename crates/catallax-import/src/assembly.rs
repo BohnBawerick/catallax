@@ -269,6 +269,17 @@ pub fn read_step_assembly(
                 .iter()
                 .flat_map(|representation| representation_items[representation].1.iter().copied())
                 .collect::<BTreeSet<_>>();
+            for &item in &geometry_items {
+                let entity = graph
+                    .get(&item)
+                    .ok_or_else(|| invalid(format!("missing representation item #{item}")))?;
+                if entity.type_name() != "MANIFOLD_SOLID_BREP" {
+                    return Err(ImportRefusal::Unsupported {
+                        entity: format!("#{item}"),
+                        type_name: entity.type_name().into(),
+                    });
+                }
+            }
             let mut pending = related;
             while let Some(entity) = pending.pop() {
                 if local.contains_key(&entity) {

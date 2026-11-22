@@ -309,6 +309,34 @@ fn nested_step_assembly_round_trips_part_placement_and_pmi() {
 }
 
 #[test]
+fn a_mapped_leaf_with_its_own_translation_is_refused() {
+    let (first, _, _) = export_and_read(1);
+    let source = String::from_utf8(first).unwrap();
+    let direct = "#36=ADVANCED_BREP_SHAPE_REPRESENTATION('Base''s plate',(#37,#41),#34);";
+    assert!(source.contains(direct));
+    let mapped = source.replacen(
+        direct,
+        concat!(
+            "#36=SHAPE_REPRESENTATION('Base''s plate',(#37,#414),#34);\n",
+            "#410=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#37,#41),#34);\n",
+            "#411=REPRESENTATION_MAP(#37,#410);\n",
+            "#412=CARTESIAN_POINT('',(100.,0.,0.));\n",
+            "#413=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',#40,$,#412,1.,#39);\n",
+            "#414=MAPPED_ITEM('',#411,#413);",
+        ),
+        1,
+    );
+    let refusal = read_step_assembly(mapped.as_bytes(), &mut Decider::default())
+        .err()
+        .expect("the mapped leaf needs a transform this reader does not apply");
+    assert!(matches!(
+        refusal,
+        catallax_import::ImportRefusal::Unsupported { entity, type_name }
+            if entity == "#414" && type_name == "MAPPED_ITEM"
+    ));
+}
+
+#[test]
 fn a_cyclic_assembly_leaves_the_sink_untouched() {
     let assembly = Assembly {
         root: 0,

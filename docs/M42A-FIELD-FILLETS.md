@@ -502,11 +502,12 @@ graph replaces the sharp corner while preserving the remaining sides
 and caps. Whole patches from other sources and subsequent rounds on
 the trimmed loft keep their typed refusals.
 
-Sampled comparison opts into the tube proof. Its tentative evaluator
-interpolates the station between the two rail cuts for angular samples.
-Each bracket uses 24 bisections, leaving at most one part in `2^24`
-of its initial parameter interval. The final height search refines the
-selected angle's station at the query height clamped between the caps.
+Sampled comparison opts into the tube proof. The tentative evaluator
+locates each rail with 24 height bisections, then solves height and across
+together with at most 12 two-variable Newton steps. It seeds the solve by
+interpolating between the rail cuts. The finite differences use `2^-16`
+of the normalized parameter interval. The solve stops once both updates
+are at most `2^-24`, the rail bracket resolution.
 
 The focused release tests sampled 505 independent arc points per edge.
 Median distance query times on the work PC were 4.388 us for M27, 4.474 us
@@ -536,10 +537,12 @@ sweep, B-rep fit, grid and vertex queries to one request.
 | Next M11 loft | 335 | 63,995,011 | 0.004464352 |
 | Biquadratic | 104 | 72,210,034 | 0.004916114 |
 
-Both lofts passed every forward vertex check. The earlier comparison
-runs also matched reports and work at 1, 2 and 4 workers. On the
-biquadratic row, the field proof and sweep took
-667,145 work, the B-rep fit took 16,438,284, and the 4 by 26 carrier
+Both lofts passed every forward vertex check. With fresh inputs at 1, 2
+and 4 workers, the field build records and work matched for all four rows.
+The capped field builds used 901,277 work for M27, 897,001 for the next
+loft edge, and 887,401 for the spline-plane loft. The bare biquadratic
+field proof and sweep used 667,145 work. On that row, the B-rep fit
+took 16,438,284, and the 4 by 26 carrier
 grid took 54,998,702. The grid's display bound was 0.004836298487 mm.
 Vertex queries took the remaining 105,903 work. All three comparisons
 used the existing 100M request allowance.

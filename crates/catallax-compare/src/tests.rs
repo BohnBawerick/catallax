@@ -202,9 +202,78 @@ fn biquadratic_supports(dec: &mut Decider) -> [catallax_shapes::RationalPatch; 2
     })
 }
 
+fn biquadratic_spine(
+    dec: &mut Decider,
+) -> Result<catallax_field::spline_spine::Spine, catallax_numbers::Refusal> {
+    use catallax_field::spline_spine::{Spine, SpineDefinition};
+    Spine::prove(
+        &SpineDefinition {
+            supports: biquadratic_supports(dec),
+            radius: Rational::parse("1/10").unwrap(),
+            sides: [catallax_numbers::Sign::Negative; 2],
+            axis: 1,
+            seed: Rational::parse("1/2").unwrap(),
+            tolerance: Rational::parse("1/1000").unwrap(),
+        },
+        dec,
+    )
+}
+
+#[test]
+fn spline_comparison_field_builds_agree_at_one_two_and_four_workers() {
+    use catallax_field::{Plan, spline_spine::sweep::Sweep};
+    use catallax_numbers::{set_threads, threads, with_operation_budget};
+    use std::num::NonZeroUsize;
+
+    let mut baseline = None;
+    for count in [1, 2, 4] {
+        set_threads(NonZeroUsize::new(count));
+        assert_eq!(threads(), count);
+        let mut records = Vec::new();
+        for (name, edges, planar) in [
+            ("M27", [0, 1], false),
+            ("next loft", [1, 2], false),
+            ("spline-plane", [0, 1], true),
+        ] {
+            let recipe = m11_loft(edges, planar, ["0", "2"]);
+            let (plan, work) = with_operation_budget(20_000_000, || {
+                Plan::compile_for_comparison(
+                    &recipe,
+                    &catallax_features::ImportFiles::new(),
+                    &mut Decider::default(),
+                )
+            });
+            let plan = plan.unwrap();
+            assert!(plan.spline_blend_origin().is_some());
+            assert!(!work.exhausted, "{name} at {count} workers");
+            records.push((name, work.used, format!("{plan:?}")));
+        }
+        let (bare, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let spine = biquadratic_spine(&mut dec)?;
+            let sweep = Sweep::new(&spine, &mut dec)?;
+            Ok::<_, catallax_numbers::Refusal>(format!("{sweep:?}"))
+        });
+        assert!(!work.exhausted, "biquadratic at {count} workers");
+        records.push(("biquadratic", work.used, bare.unwrap()));
+        set_threads(None);
+        for (name, used, _) in &records {
+            println!("{name} field build at {count} workers: {used} work");
+        }
+        if let Some(expected) = &baseline {
+            assert!(
+                &records == expected,
+                "field build or work changed at {count} workers"
+            );
+        } else {
+            baseline = Some(records);
+        }
+    }
+}
+
 #[test]
 fn biquadratic_carrier_vertices_fit_the_field_within_one_request() {
-    use catallax_field::spline_spine::{Spine, SpineDefinition, sweep::Sweep};
+    use catallax_field::spline_spine::sweep::Sweep;
     use catallax_numbers::{Refusal, Sign, current_operation_work, with_operation_budget};
     use catallax_shapes::{SplineFillet, SplineFilletDefinition};
     let options = options();
@@ -212,18 +281,7 @@ fn biquadratic_carrier_vertices_fit_the_field_within_one_request() {
         let mut dec = Decider::default();
         let radius = Rational::parse("1/10").unwrap();
         let sides = [Sign::Negative; 2];
-        let supports = biquadratic_supports(&mut dec);
-        let spine = Spine::prove(
-            &SpineDefinition {
-                supports,
-                radius: radius.clone(),
-                sides,
-                axis: 1,
-                seed: Rational::parse("1/2").unwrap(),
-                tolerance: Rational::parse("1/1000").unwrap(),
-            },
-            &mut dec,
-        )?;
+        let spine = biquadratic_spine(&mut dec)?;
         let sweep = Sweep::new(&spine, &mut dec)?;
         let field_work = current_operation_work().used;
         assert!(field_work <= 20_000_000);

@@ -502,15 +502,6 @@ impl Shell {
         self.round.as_ref().map(|r| &r.origin)
     }
 
-    pub(crate) fn rename_copy(&mut self, step: &StepId, instance: u32) {
-        for side in &mut self.loft_sides {
-            *side = catallax_features::copy_origin(step, instance, side);
-        }
-        if let Some(round) = &mut self.round {
-            round.origin = catallax_features::copy_origin(step, instance, &round.origin);
-        }
-    }
-
     pub(crate) fn blend_distance(
         &self,
         p: &RPoint3,

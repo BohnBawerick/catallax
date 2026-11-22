@@ -8,6 +8,11 @@ use crate::Location;
 
 use super::*;
 
+#[cfg(test)]
+thread_local! {
+    static PREVIEW_SECTIONS: Cell<usize> = const { Cell::new(0) };
+}
+
 fn vector(v: &RVector3) -> V {
     [&v.x, &v.y, &v.z].map(Interval::from_rational)
 }
@@ -240,49 +245,68 @@ impl Round {
             let height = self.caps[0].at(&p).mid().clamp(0.0, max_height);
             let [a, b] = &self.spine.ends;
             let t = self.spine.system.tau();
-            let section = |angle| {
-                let (mut lo, mut hi) = (a.point[t].lo(), b.point[t].hi());
-                for _ in 0..24 {
-                    let mid = lo.midpoint(hi);
-                    let q = self.section_at(&sweep, mid, point(angle));
-                    if self.caps[0].at(&q).mid() < height {
-                        lo = mid;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                let tau = lo.midpoint(hi);
-                (tau, self.section_at(&sweep, tau, point(angle)))
+            let (start, end) = (a.point[t].lo(), b.point[t].hi());
+            let sample = |station: f64, angle: f64| {
+                #[cfg(test)]
+                PREVIEW_SECTIONS.with(|count| count.set(count.get() + 1));
+                let tau = (start + (end - start) * station).clamp(start, end);
+                self.section_at(&sweep, tau, point(angle))
             };
-            let across = |q: &V| dot(&self.across, q).mid();
-            let x = across(&p);
-            let (mut left, mut right) = (section(0.0), section(1.0));
-            let mut angles = [0.0, 1.0];
-            if across(&left.1) > across(&right.1) {
-                std::mem::swap(&mut left, &mut right);
-                angles.swap(0, 1);
-            }
-            let [start_angle, end_angle] = angles;
-            let (start_tau, left) = left;
-            let (end_tau, right) = right;
-            let (in_fan, nearest) = if x < across(&left) {
-                (false, left)
-            } else if x > across(&right) {
-                (false, right)
-            } else {
+            let coordinates = |q: &V| [self.caps[0].at(q).mid(), dot(&self.across, q).mid()];
+            let x = coordinates(&p)[1];
+            let rail = |angle| {
                 let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
-                let angle = |s| start_angle + (end_angle - start_angle) * s;
                 for _ in 0..24 {
                     let mid = lo.midpoint(hi);
-                    let tau = start_tau + (end_tau - start_tau) * mid;
-                    let sample = self.section_at(&sweep, tau, point(angle(mid)));
-                    if across(&sample) < x {
+                    if coordinates(&sample(mid, angle))[0] < height {
                         lo = mid;
                     } else {
                         hi = mid;
                     }
                 }
-                (true, section(angle(lo.midpoint(hi))).1)
+                let station = lo.midpoint(hi);
+                let q = sample(station, angle);
+                (coordinates(&q)[1], [station, angle], q)
+            };
+            let (mut left, mut right) = (rail(0.0), rail(1.0));
+            if left.0 > right.0 {
+                std::mem::swap(&mut left, &mut right);
+            }
+            let (in_fan, nearest) = if x <= left.0 {
+                (false, left.2)
+            } else if x >= right.0 {
+                (false, right.2)
+            } else {
+                let fraction = (x - left.0) / (right.0 - left.0);
+                let mut uv =
+                    std::array::from_fn(|i| left.1[i] + fraction * (right.1[i] - left.1[i]));
+                let delta = |v| {
+                    if v <= 0.5 {
+                        1.0 / 65_536.0
+                    } else {
+                        -1.0 / 65_536.0
+                    }
+                };
+                for _ in 0..12 {
+                    let [u, v] = uv;
+                    let [h, across] = coordinates(&sample(u, v));
+                    let (du, dv) = (delta(u), delta(v));
+                    let [hu, xu] = coordinates(&sample(u + du, v));
+                    let [hv, xv] = coordinates(&sample(u, v + dv));
+                    let (hu, xu) = ((hu - h) / du, (xu - across) / du);
+                    let (hv, xv) = ((hv - h) / dv, (xv - across) / dv);
+                    let det = hu * xv - hv * xu;
+                    let (dh, dx) = (height - h, x - across);
+                    let step = [(dh * xv - hv * dx) / det, (hu * dx - dh * xu) / det];
+                    if step.iter().any(|d| !d.is_finite()) {
+                        break;
+                    }
+                    uv = std::array::from_fn(|i| (uv[i] + step[i]).clamp(0.0, 1.0));
+                    if step.iter().all(|d| d.abs() <= 1.0 / 16_777_216.0) {
+                        break;
+                    }
+                }
+                (true, sample(uv[0], uv[1]))
             };
             let cut = in_fan && dot(&self.outward, &sub3(&p, &nearest)).mid() > 0.0;
             let h = dot(&vector(&self.height), &sub3(&p, &xyz(&self.bottom)));
@@ -495,5 +519,56 @@ impl Round {
         let length = Interval::new(length.lo().max(shortest), length.hi().min(radius.hi()))
             .unwrap_or_else(Interval::entire);
         add3(&c, &mul3(&(radius / length), &w))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PREVIEW_SECTIONS;
+    use crate::{Plan, Workspace};
+    use catallax_features::ImportFiles;
+    use catallax_numbers::Decider;
+    use catallax_recipe::Recipe;
+    use serde_json::json;
+
+    #[test]
+    fn preview_between_the_m27_rails_bounds_section_evaluations() {
+        let section = |id, prefix, height, points: [[i64; 2]; 4]| {
+            let edges: Vec<_> = points.into_iter().enumerate().map(|(i, [x, y])|
+                json!({"kind":"line","id":format!("{prefix}_{i}"),"to":[x.to_string(),y.to_string()]}))
+                .collect();
+            json!({"id":id,"op":"sketch","loops":[edges],
+                "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]}})
+        };
+        let recipe = Recipe::parse(
+            &json!({
+                "format":"catallax-recipe/5","name":"M27 preview","result":"round","steps":[
+                    section("bottom", "a", "0", [[1,-1],[1,1],[-1,1],[-1,-1]]),
+                    section("top", "b", "2", [[1,0],[0,2],[-2,0],[0,-1]]),
+                    {"id":"loft","op":"loft","shape":"ruled","sections":[
+                        {"profile":"bottom","start":["a_0"]},{"profile":"top","start":["b_0"]}]},
+                    {"id":"round","op":"fillet","body":"loft","radius":"1/10","edges":[{"between":[
+                        {"step":"loft","role":{"side":{"segment":"a_0"}}},
+                        {"step":"loft","role":{"side":{"segment":"a_1"}}}
+                    ]}]}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let plan =
+            Plan::compile_for_comparison(&recipe, &ImportFiles::new(), &mut Decider::default())
+                .unwrap();
+        PREVIEW_SECTIONS.with(|count| count.set(0));
+        let value = plan
+            .fast([0.999, -0.499, 1.0], &mut Workspace::default())
+            .unwrap()
+            .value;
+        assert!(value > 0.01, "{value}");
+        let evaluations = PREVIEW_SECTIONS.with(|count| count.get());
+        assert!(
+            (51..=435).contains(&evaluations),
+            "{evaluations} section evaluations"
+        );
     }
 }

@@ -133,6 +133,63 @@ fn a_partial_pipe_cannot_publish_component_bounds_as_a_certified_file() {
 }
 
 #[test]
+fn assembly_export_keeps_the_partial_oblique_rim_bound_warning() {
+    use catallax_shapes::Pose;
+    use catallax_step::assembly::{
+        Assembly, Occurrence, Part, Product, ProductContent, write_step_assembly,
+    };
+
+    let recipe = Recipe::parse(include_str!(
+        "../../../evidence/phase1/P03/inputs/partial-oblique.json"
+    ))
+    .unwrap();
+    // Use the existing qualification allowance for this curved fixture.
+    let mut dec = Decider::new(BudgetPolicy {
+        max_work: 1_000_000_000,
+        ..Default::default()
+    });
+    let ((), work) = with_operation_budget(1_000_000_000, || {
+        let built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+        let assembly = Assembly {
+            root: 0,
+            products: vec![
+                Product {
+                    name: "Rim assembly".into(),
+                    content: ProductContent::Assembly(vec![Occurrence {
+                        name: "Rim".into(),
+                        product: 1,
+                        pose: Pose::identity(),
+                    }]),
+                },
+                Product {
+                    name: "Partial oblique rim".into(),
+                    content: ProductContent::Part(Part {
+                        model: &built.model,
+                        body: built.result,
+                        colour: None,
+                        pmi: None,
+                    }),
+                },
+            ],
+        };
+        let mut out = Vec::new();
+        let report =
+            write_step_assembly(&assembly, &Default::default(), &mut dec, &mut out).unwrap();
+        assert!(report.parts[0].1.definition_deviation.is_none());
+        assert!(
+            report
+                .marks
+                .iter()
+                .any(|mark| mark.code == "step.approximate-pipe-end")
+        );
+        let file = String::from_utf8(out).unwrap();
+        let (header, _) = file.split_once("\nDATA;\n").unwrap();
+        assert!(header.contains("complete_body_bound=unestablished"));
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
 fn a_twenty_million_request_refuses_without_publishing_a_partial_file() {
     let recipe = Recipe::parse(include_str!(
         "../../../evidence/phase1/P03/inputs/partial-oblique.json"

@@ -326,8 +326,14 @@ pub fn write_step_assembly<W: Write>(
         }
     }
 
-    let header =
-        crate::export::assembly_header(&assembly.products[assembly.root].name, &root_items);
+    let complete_body_bound = reports
+        .iter()
+        .all(|(_, report)| report.definition_deviation.is_some());
+    let header = crate::export::assembly_header(
+        &assembly.products[assembly.root].name,
+        &root_items,
+        complete_body_bound,
+    );
     out.write_all(header.as_bytes())
         .and_then(|_| out.write_all(step.as_bytes()))
         .and_then(|_| out.write_all(b"ENDSEC;\nEND-ISO-10303-21;\n"))

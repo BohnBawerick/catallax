@@ -2097,13 +2097,25 @@ pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) ->
     )
 }
 
-pub(crate) fn assembly_header(product_name: &str, placements: &[usize]) -> String {
+pub(crate) fn assembly_header(
+    product_name: &str,
+    placements: &[usize],
+    complete_body_bound: bool,
+) -> String {
+    let description: &[&str] = if complete_body_bound {
+        &["catallax assembly export"]
+    } else {
+        &[
+            "catallax assembly export",
+            "at least one part lacks a complete deviation bound; complete_body_bound=unestablished",
+        ]
+    };
     let mut header = representation_header(
         product_name,
         placements,
         None,
         "SHAPE_REPRESENTATION",
-        &["catallax assembly export"],
+        description,
         MILLI,
     );
     let category = "\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('";

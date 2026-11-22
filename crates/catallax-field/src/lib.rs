@@ -62,6 +62,8 @@ mod samples;
 mod smooth;
 /// No-mesh solver queries and conservative cut-cell integration.
 pub mod solver;
+/// The field's own proof of a rolling ball's spine between two rational patches.
+pub mod spline_spine;
 mod support;
 mod sweep;
 mod unproved_batch;

@@ -412,6 +412,55 @@ The first producer is the field's own ruled loft (`Plan::patch_loft`), tried whe
 
 Results (`patch_shell.rs`, release build on the work PC, 4.6 s for the file). On 1,521 grid points round the M11 loft, the shell answers 294 inside and 1,216 outside, each as the B-rep does, and 3 points exactly on a side `Indeterminate`, where the B-rep says boundary. The B-rep refuses 8 points on the vertical line through the loft's corner `(1, -1)` (`shapes.rational-patch-unproven`, "the line is tangent to the finite rational patch"); the field answers outside there. Every distance agrees with a binary64 search of the six faces, and its bounds are within 2^-24 mm. Cap points are on the boundary, side points at rational parameters stay `Indeterminate`, a rotated and mirrored copy answers as the original, and answers and work are the same at 1, 2 and 4 threads. Through `Plan::compile`, the field builds the M11 loft and agrees with the B-rep at 505 points. The print classifier on 1,521 boxes of side 1/4 mm round it settles 159 inside and 533 outside, each as the shell answers at its corners and centre, and leaves 829 near the faces unknown, among them a box across a side. The M11 fillet recipe now passes its loft in the field and stops at the fillet with `fillet.lost-edge` (the shell registers no named face yet), which the field's spline spine (7.3 and 7.4) replaces.
 
+## Step 7.3: an independent spline spine
+
+`catallax_field::spline_spine` proves a centre path between two whole,
+single-span rational patches. The caller supplies the radius, the side of
+each patch normal, a continuation parameter, a seed station and the part
+tolerance. The field uses the two homogeneous Bézier nets and solves directly
+for the centre, both contacts and the two positive normal lengths. It shares
+rational patch and interval primitives with the B-rep.
+
+OpenCASCADE marches a guide with `BlendFunc_ConstRad` and
+`BRepBlend_Walking`, using a Newton correction on each section.
+SMLib's `SmConstantRadiusFS` solves for equal points on the two offset
+surfaces, and `SmFilletIntersector` checks interpolated spans. The field uses
+SMLib's equal-offset condition and OpenCASCADE's Newton iteration limit
+for the trace. [OpenCASCADE solver](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V7_9_0/src/BRepBlend/BRepBlend_Walking.cxx)
+[SMLib solver](https://raw.githubusercontent.com/NVIDIA-Omniverse/usd-brep/main/source/SMLib/src/SmFilletStandardSolver.cpp)
+[SMLib span checks](https://raw.githubusercontent.com/NVIDIA-Omniverse/usd-brep/main/source/SMLib/src/SmFilletIntersector.cpp)
+
+Outward-rounded Krawczyk tests isolate the two border roots and certify a
+unique root at every station in each span. Taylor models enclose the
+residual about an interpolated centre and contact curve. At a shared
+station, a root enclosure must fit both uniqueness boxes. The solver
+isolates the station's root separately if neither span supplies an
+enclosure tight enough. The border and seed roots must also fit their
+spans. Contact bounds and inward derivatives at border roots keep both
+contacts on the patches. The centre enclosure must fit
+`min(100 nm, part tolerance / 2)` in Euclidean distance.
+[Certified continuation](https://doi.org/10.1137/130906544)
+
+All three M11 fixtures pass with eight spans each.
+
+| Edge | Work | Tube radius (nm, rounded up) |
+| --- | ---: | ---: |
+| M27 loft edge | 428,558 | 0.009859 |
+| Next loft edge | 431,184 | 0.008290 |
+| Biquadratic edge | 656,302 | 0.006276 |
+
+The certificates and work match at 1, 2 and 4 workers and the default
+setting. A separate Newton solver eliminates the centre and normal lengths
+and checks 1,001 stations per edge. Every centre and contact lies within
+the enclosure to within the oracle's binary64 test slack. A tighter
+part tolerance forces subdivision, and an unattainable tolerance returns
+`field.spline-spine-eps` with the width reached.
+
+This certificate covers the component selected by the seed. Recipe
+admission still needs a proof that the component belongs to the named edge,
+clearance, the rolling sector and the cap cuts. A cap can meet the two rails
+at different stations, so the border roots alone do not describe its cut.
+
 ## Open for the done-when line
 
 - Samples on rolling faces, for the reverse coverage findings. Rational samples exist on rational tori, cylinders and spheres; irrational faces need another route.
@@ -449,4 +498,4 @@ The list does not change during the milestone. A case added later joins the next
 | 4 | Ends at an edge or vertex, P5 at radius 2 | part 1, rim contact and hole rings: [#733](https://github.com/BohnBawerick/catallax/pull/733); part 2, the slot file: [#738](https://github.com/BohnBawerick/catallax/pull/738); part 3, `l-mixed-all` and `vertex-4-one`: [#742](https://github.com/BohnBawerick/catallax/pull/742) |
 | 5 | Fillet over fillet, nested path | part 1, chains over an earlier straight round with the ball on its axis side: [#744](https://github.com/BohnBawerick/catallax/pull/744); part 2, sphere corners and cliffs; part 3, an upright under an earlier mitre; the face registry for rolling pieces and compare on rolling faces; part 4, a ball outside the round's cylinder (`mixed-ordered`); part 5, a ball narrower than a mitre's rounds (`narrow-mitres`); part 6, every edge at once and a third round over rolling pieces: this change |
 | 6 | Torus pairs | `torus-slice`, `torus-intersection` and a cut below the centre plane: this change |
-| 7 | Spline faces (7.0 to 7.7 of the decisions) | 7.1, the spike, certified distance to a whole patch; 7.2, the patch-shell leaf and the field's ruled loft: this change |
+| 7 | Spline faces (7.0 to 7.7 of the decisions) | 7.1, certified distance to a whole patch; 7.2, the patch shell and ruled loft; 7.3, certified spline spine |

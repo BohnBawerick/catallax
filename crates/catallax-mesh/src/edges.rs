@@ -622,11 +622,13 @@ pub(crate) fn sample(
             let cap = piece
                 .fillet_cut()
                 .map(|(trace, forward)| {
+                    let chart = trace.display_chart(dec)?;
+                    let coefficient = chart.acceleration_bound(dec)?.mul_pow2(-1);
                     Ok::<_, Refusal>(Cap {
                         trace,
-                        chart: trace.display_chart(dec)?,
+                        chart,
                         forward,
-                        coefficient: trace.display_acceleration(dec)?.mul_pow2(-1),
+                        coefficient,
                     })
                 })
                 .transpose()?;

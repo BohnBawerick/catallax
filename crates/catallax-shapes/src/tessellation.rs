@@ -3,6 +3,7 @@
 use catallax_numbers::{Interval, Rational};
 
 mod rational;
+pub(crate) use rational::rational_span_range;
 pub use rational::{Projection, RationalSpan, rational_spans};
 
 /// Filip, Magedson and Markot's second-derivative bound on a parameter box.

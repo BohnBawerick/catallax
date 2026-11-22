@@ -1,7 +1,7 @@
 //! Enclosures of a proved cap cut, without replacing it by its STEP fit.
 
 use super::*;
-use crate::tessellation::{RationalSpan, rational_spans};
+use crate::tessellation::{RationalSpan, rational_span_range};
 use catallax_numbers::Interval;
 
 /// A proved plane cut, parametrised by the carrier's second parameter.
@@ -56,6 +56,37 @@ fn hull(values: impl IntoIterator<Item = Interval>) -> Interval {
         .unwrap_or_else(|| Interval::point(0.0).unwrap())
 }
 
+// Woźny and Chudy (2020), Algorithm 1.1. Reverse below one half
+// so the denominator in the parameter ratio is at least one half.
+fn display_bernstein(values: &[Interval], at: f64, dec: &mut Decider) -> Result<Interval, Refusal> {
+    if at <= 0.0 {
+        return Ok(values[0]);
+    }
+    if at >= 1.0 {
+        return Ok(*values.last().unwrap());
+    }
+    let one = Interval::point(1.0).unwrap();
+    let parameter = Interval::point(at).unwrap();
+    let reversed = at < 0.5;
+    let ratio = if reversed {
+        parameter / (one - parameter)
+    } else {
+        (one - parameter) / parameter
+    };
+    let degree = values.len() - 1;
+    let control = |i| values[if reversed { degree - i } else { i }];
+    let mut weight = one;
+    let mut value = control(0);
+    dec.charge_work(3 * degree as u64)?;
+    for i in 1..=degree {
+        let order = Interval::point(i as f64).unwrap();
+        let remaining = Interval::point((degree - i + 1) as f64).unwrap();
+        weight = one / (one + (order / remaining) * ratio / weight);
+        value = (one - weight) * value + weight * control(i);
+    }
+    Ok(value)
+}
+
 impl SplineFillet {
     /// Proves a plane cut and prepares its exact equation for point queries.
     pub fn cut_trace(
@@ -100,9 +131,9 @@ impl FilletCutTrace {
 
     /// Prepares outward-rounded coefficients for repeated display sampling.
     pub fn display_chart(&self, dec: &mut Decider) -> Result<DisplayCut, Refusal> {
-        let spans = rational_spans(self.fillet.carrier(), dec)?
+        let [first, last] = self.cut.spans;
+        let spans = rational_span_range(self.fillet.carrier(), first..=last, dec)?
             .into_iter()
-            .skip(self.cut.spans[0])
             .zip(&self.coefficients)
             .map(|(carrier, rows)| {
                 let g = rows
@@ -116,78 +147,6 @@ impl FilletCutTrace {
         Ok(DisplayCut {
             spans,
             before: self.cut.before,
-        })
-    }
-
-    /// Upper bound on the spatial acceleration with respect to theta.
-    /// The display sampler uses this to plan chords of the proved plane cut.
-    pub fn display_acceleration(&self, dec: &mut Decider) -> Result<Rational, Refusal> {
-        let carrier = self.fillet.carrier();
-        let [degree, across] = carrier.degrees();
-        let fit = &self.fillet.data.fit;
-        let bits = dec.policy().max_precision_bits.min(128);
-        let zero = Interval::point(0.0).unwrap();
-        let twice = Interval::point(2.0).unwrap();
-        let mut maximum = 0.0_f64;
-        let mut workspace = [Vec::new(), Vec::new()];
-        for (span, rows) in (self.cut.spans[0]..).zip(&self.coefficients) {
-            let g = rows
-                .each_ref()
-                .map(|row| row.iter().map(Interval::from_rational).collect::<Vec<_>>());
-            let gs = g.each_ref().map(|row| difference(row));
-            let gt = std::array::from_fn::<_, 2, _>(|i| {
-                g[i + 1]
-                    .iter()
-                    .zip(&g[i])
-                    .map(|(&b, &a)| twice * (b - a))
-                    .collect::<Vec<_>>()
-            });
-            dec.charge_work(
-                (3 * degree + 2 * (degree + 1) + 3 * (degree - 1) + 2 * degree) as u64,
-            )?;
-            let gss = hull(gs.iter().flat_map(|row| difference(row)));
-            let gst = hull(gt.iter().flat_map(|row| difference(row)));
-            let gtt = hull(gt[1].iter().zip(&gt[0]).map(|(&b, &a)| b - a));
-            let gs = hull(gs.into_iter().flatten());
-            if gs.lo() <= 0.0 && gs.hi() >= 0.0 {
-                return Err(Refusal::new(
-                    SPLINE_FILLET_CUT,
-                    "binary64 could not separate the plane cut's monotone derivative",
-                ));
-            }
-            // Implicit differentiation of g(s(theta), theta) = 0.
-            // The carrier composes Hermite spans with shared first jets, so
-            // crossing a knot does not introduce a jump in the curve tangent.
-            let rate = -hull(gt.into_iter().flatten()) / gs;
-            let rate_sq = rate.square();
-            let accel = -(gtt + twice * gst * rate + gss * rate_sq) / gs;
-            let domain = [
-                [fit.nodes[span].tau.clone(), fit.nodes[span + 1].tau.clone()],
-                [Rational::zero(), Rational::one()],
-            ];
-            let width = Interval::from_rational(&(&domain[0][1] - &domain[0][0]));
-            let jet = carrier.jet_on_span(
-                [(span + 1) * degree, across],
-                &domain,
-                bits,
-                dec,
-                &mut workspace,
-            )?;
-            let tau_rate = rate * width;
-            let tau_accel = accel * width;
-            let tau_rate_sq = tau_rate.square();
-            dec.charge_work(2 + 4 + 1 + 3 * 4)?;
-            let bound = (0..3).fold(zero, |sum, i| {
-                let acceleration = jet.second[2][i].to_interval()
-                    + twice * jet.second[1][i].to_interval() * tau_rate
-                    + jet.second[0][i].to_interval() * tau_rate_sq
-                    + jet.first[0][i].to_interval() * tau_accel;
-                sum + Interval::point(acceleration.lo().abs().max(acceleration.hi().abs())).unwrap()
-            });
-            maximum = maximum.max(bound.hi());
-        }
-        Rational::from_f64_exact(maximum).ok_or_else(|| {
-            Refusal::new(SPLINE_FILLET_CUT, "plane cut acceleration exceeds binary64")
         })
     }
 
@@ -261,6 +220,53 @@ impl FilletCutTrace {
 }
 
 impl DisplayCut {
+    /// Bounds the spatial acceleration, in millimetres per squared theta.
+    /// The carrier has shared first jets across its internal knots.
+    pub fn acceleration_bound(&self, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let twice = Interval::point(2.0).unwrap();
+        let magnitude =
+            |bound: Interval| Interval::point(bound.lo().abs().max(bound.hi().abs())).unwrap();
+        let mut maximum = 0.0_f64;
+        for span in &self.spans {
+            let g = &span.g;
+            let degree = g[0].len() - 1;
+            if span.speed.contains_zero() {
+                return Err(Refusal::new(
+                    SPLINE_FILLET_CUT,
+                    "binary64 could not separate the plane cut's monotone derivative",
+                ));
+            }
+            let gs = g.each_ref().map(|row| difference(row));
+            let gt = std::array::from_fn::<_, 2, _>(|i| {
+                g[i + 1]
+                    .iter()
+                    .zip(&g[i])
+                    .map(|(&b, &a)| twice * (b - a))
+                    .collect::<Vec<_>>()
+            });
+            dec.charge_work(
+                (3 * degree + 2 * (degree + 1) + 3 * (degree - 1) + 2 * degree) as u64,
+            )?;
+            let gss = hull(gs.iter().flat_map(|row| difference(row)));
+            let gst = hull(gt.iter().flat_map(|row| difference(row)));
+            let gtt = hull(gt[1].iter().zip(&gt[0]).map(|(&b, &a)| b - a));
+            // Differentiate the monotone Bernstein equation g(s(theta), theta) = 0.
+            // The derivatives and the carrier bounds both use the local span coordinates.
+            let rate = -hull(gt.into_iter().flatten()) / span.speed;
+            let rate_sq = rate.square();
+            let acceleration = -(gtt + twice * gst * rate + gss * rate_sq) / span.speed;
+            let [ss, st, tt] = span.carrier.affine_hessian();
+            let [speed, _] = span.carrier.first_derivative_bounds();
+            dec.charge_work(1 + 3 + 4)?;
+            let bound =
+                ss * rate_sq + twice * st * magnitude(rate) + tt + speed * magnitude(acceleration);
+            maximum = maximum.max(bound.hi());
+        }
+        Rational::from_f64_exact(maximum).ok_or_else(|| {
+            Refusal::new(SPLINE_FILLET_CUT, "plane cut acceleration exceeds binary64")
+        })
+    }
+
     /// Encloses the cut point by interval Newton inside the Bernstein spans.
     /// A sample that does not converge in binary64 uses the original trace.
     pub fn enclose(
@@ -269,7 +275,6 @@ impl DisplayCut {
         output_width: f64,
         dec: &mut Decider,
     ) -> Result<Option<DisplayCutSample>, Refusal> {
-        let one = Interval::point(1.0).unwrap();
         let blend = |a: Interval, b: Interval| a + (b - a) * theta;
         let side = |g: Interval, sign: Sign| match sign {
             Sign::Positive => g.lo() > 0.0,
@@ -295,7 +300,6 @@ impl DisplayCut {
             }
             let values: Vec<_> = (0..=end).map(column).collect();
             dec.charge_work((3 * values.len()) as u64)?;
-            let mut work = values.clone();
             let mut root = Interval::new(0.0, 1.0).unwrap();
             let speed = span.carrier.first_derivative_bounds()[0].hi();
             for _ in 0..f64::MANTISSA_DIGITS {
@@ -304,16 +308,9 @@ impl DisplayCut {
                 if root.width() * speed <= output_width * 0.5 {
                     break;
                 }
-                work.copy_from_slice(&values);
                 let middle = Interval::point(root.mid()).unwrap();
-                let complement = one - middle;
-                dec.charge_work((end * (end + 1)) as u64)?;
-                for step in 1..=end {
-                    for i in 0..=end - step {
-                        work[i] = work[i] * complement + work[i + 1] * middle;
-                    }
-                }
-                let next = middle - work[0] / span.speed;
+                let value = display_bernstein(&values, middle.mid(), dec)?;
+                let next = middle - value / span.speed;
                 let Some(next) = Interval::new(root.lo().max(next.lo()), root.hi().min(next.hi()))
                 else {
                     return Ok(None);
@@ -340,5 +337,21 @@ impl DisplayCut {
             });
         }
         Ok(found)
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+
+    #[test]
+    fn scalar_bernstein_encloses_the_cubic_from_either_end() {
+        let controls = [0.0, 0.0, 0.0, 1.0].map(|value| Interval::point(value).unwrap());
+        let mut dec = Decider::default();
+        for at in [0.0_f64, 0.25, 0.5, 0.75, 1.0] {
+            let value = display_bernstein(&controls, at, &mut dec).unwrap();
+            assert!(value.contains(at.powi(3)));
+            assert!(value.width() < f64::EPSILON.sqrt());
+        }
     }
 }

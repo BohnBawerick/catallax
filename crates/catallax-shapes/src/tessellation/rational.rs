@@ -88,9 +88,20 @@ pub fn rational_spans(
     surface: &BSplineSurface,
     dec: &mut Decider,
 ) -> Result<Vec<RationalSpan>, Refusal> {
+    rational_span_range(surface, 0..=usize::MAX, dec)
+}
+
+pub(crate) fn rational_span_range(
+    surface: &BSplineSurface,
+    range: std::ops::RangeInclusive<usize>,
+    dec: &mut Decider,
+) -> Result<Vec<RationalSpan>, Refusal> {
     let degree = surface.degrees();
+    let count = range.end().saturating_sub(*range.start()).saturating_add(1);
     surface
         .span_indices()
+        .skip(*range.start())
+        .take(count)
         .map(|span| {
             let domain = std::array::from_fn(|axis| {
                 [span[axis], span[axis] + 1].map(|i| surface.knots()[axis][i].clone())

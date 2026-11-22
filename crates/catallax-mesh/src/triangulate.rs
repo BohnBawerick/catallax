@@ -1670,7 +1670,9 @@ fn regular_chart(
 fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
     match surface {
         Surface::BSpline(
-            support @ (SplineSupport::RationalPatch(_) | SplineSupport::SplineFillet(_)),
+            support @ (SplineSupport::BezierExtrusion(_)
+            | SplineSupport::RationalPatch(_)
+            | SplineSupport::SplineFillet(_)),
         ) => Some(support),
         Surface::BSpline(support @ SplineSupport::RationalAtlas(atlas))
             if atlas.charts().len() == 1 =>

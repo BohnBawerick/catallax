@@ -26,6 +26,7 @@ struct Span {
     width: [Interval; 2],
     affine_hessian: [Interval; 3],
     normal: [Interval; 3],
+    normal_cells: RefCell<BTreeMap<[u64; 4], [Interval; 3]>>,
 }
 
 struct Seam {
@@ -68,6 +69,7 @@ impl Span {
             width,
             affine_hessian,
             normal,
+            normal_cells: RefCell::default(),
         })
     }
 
@@ -112,6 +114,51 @@ impl Span {
                 score.max((bounds.lo() - x).max(x - bounds.hi()).next_down())
             })
     }
+
+    fn normal_cell(
+        &self,
+        local: [Interval; 2],
+        dec: &mut Decider,
+    ) -> Result<[Interval; 3], Refusal> {
+        if local == [Interval::new(0.0, 1.0).unwrap(); 2] {
+            return Ok(self.normal);
+        }
+        let key = [
+            local[0].lo().to_bits(),
+            local[0].hi().to_bits(),
+            local[1].lo().to_bits(),
+            local[1].hi().to_bits(),
+        ];
+        if let Some(&normal) = self.normal_cells.borrow().get(&key) {
+            return Ok(normal);
+        }
+        let normal = self.rational.normal_box(local, dec)?;
+        self.normal_cells.borrow_mut().insert(key, normal);
+        Ok(normal)
+    }
+}
+
+/// The smallest closed dyadic cell that contains a nonempty range.
+fn dyadic_cell(range: Interval) -> Interval {
+    if range.width() == 0.0 {
+        return range;
+    }
+    let mut lo = 0.0_f64;
+    let mut hi = 1.0_f64;
+    loop {
+        let middle = lo.midpoint(hi);
+        if middle <= lo || middle >= hi {
+            break;
+        }
+        if range.hi() <= middle {
+            hi = middle;
+        } else if range.lo() >= middle {
+            lo = middle;
+        } else {
+            break;
+        }
+    }
+    Interval::new(lo, hi).unwrap()
 }
 
 impl SplineChart {
@@ -308,6 +355,18 @@ impl SplineChart {
         }
         let bounds = parameter_box(&uv);
         let span = self.spans.iter().find(|span| span.contains(m)).unwrap();
+        if bounds
+            .iter()
+            .zip(span.bounds)
+            .all(|([a, b], [lo, hi])| lo <= *a && *b <= hi)
+        {
+            let local = span.local_box(bounds);
+            let cell = local.map(dyadic_cell);
+            let normal = span.normal_cell(cell, dec)?;
+            if normals_agree(normal.map(|n| point(n.mid())), normal, cosine, dec)? {
+                return Ok(true);
+            }
+        }
         let at = span
             .rational
             .normal_box(span.local_box(m.map(|x| [x; 2])), dec)?;
@@ -446,10 +505,20 @@ impl SplineChart {
                     bounds[i][1].min(span.bounds[i][1]),
                 ]
             });
-            let normal = span
-                .rational
-                .normal_box(span.local_box(intersection), dec)?;
-            if !normals_agree(direction, normal, cosine, dec)? {
+            let local = span.local_box(intersection);
+            // Whole-cell certificates can serve adjacent facets with different
+            // trim triangles. Fall back to the triangle's tighter rectangle.
+            let cell = local.map(dyadic_cell);
+            let normal = span.normal_cell(cell, dec)?;
+            if !normals_agree(direction, normal, cosine, dec)?
+                && (cell == local
+                    || !normals_agree(
+                        direction,
+                        span.rational.normal_box(local, dec)?,
+                        cosine,
+                        dec,
+                    )?)
+            {
                 return Ok(false);
             }
         }

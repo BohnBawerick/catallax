@@ -8,6 +8,8 @@
 mod wire;
 
 pub use wire::*;
+/// AP242 product definitions, occurrence placements, colour and semantic PMI.
+pub mod assembly;
 mod build;
 mod clean;
 mod cone;

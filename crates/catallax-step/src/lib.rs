@@ -14,6 +14,7 @@ use catallax_numbers::{Answered, Decider, Rational};
 pub type StepResult = catallax_numbers::OperationResult<StepReport>;
 use catallax_topology::{BodyId, Model};
 
+pub mod assembly;
 mod band;
 mod canonical;
 mod certified_spline;

@@ -367,13 +367,13 @@ impl Plan {
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
-        step: &StepId,
+        (step, spline_source): (&StepId, bool),
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
         if recipe.loft_parameterization().ok()
             != Some(catallax_recipe::LoftParameterization::RationalCharts)
         {
-            return Err(ComparisonBuildRefusal::BeforeRoute(Refusal::new(
+            return Err(ComparisonBuildRefusal::Ordinary(Refusal::new(
                 "loft.legacy-parameterization",
                 "legacy arc-length lofts are not rational-chart lofts",
             )));
@@ -383,7 +383,7 @@ impl Plan {
             return Ok(node);
         }
         match Self::loft_translation(recipe, sections, shape, profiles, dec)
-            .map_err(ComparisonBuildRefusal::BeforeRoute)?
+            .map_err(ComparisonBuildRefusal::Ordinary)?
         {
             Ok(None) => Ok(0),
             Ok(Some(vector)) => self
@@ -392,7 +392,15 @@ impl Plan {
                     dec,
                 )
                 .map_err(ComparisonBuildRefusal::Ordinary),
-            Err(refusal) => self.patch_or(recipe, refusal, sections, shape, profiles, step, dec),
+            Err(refusal) => self.patch_or(
+                recipe,
+                refusal,
+                sections,
+                shape,
+                profiles,
+                (step, spline_source),
+                dec,
+            ),
         }
     }
 
@@ -517,17 +525,21 @@ impl Plan {
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
-        step: &StepId,
+        (step, spline_source): (&StepId, bool),
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
         if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
             return Ok(node);
         }
         if let Some(outline) = Self::patch_outline(sections, profiles, dec)
-            .map_err(ComparisonBuildRefusal::BeforeRoute)?
+            .map_err(ComparisonBuildRefusal::Ordinary)?
             && let Some(node) = self
                 .patch_loft(outline, step, dec)
-                .map_err(ComparisonBuildRefusal::Spline)?
+                .map_err(if spline_source {
+                    ComparisonBuildRefusal::Spline
+                } else {
+                    ComparisonBuildRefusal::Ordinary
+                })?
         {
             return Ok(node);
         }
@@ -535,7 +547,7 @@ impl Plan {
             return Ok(node);
         }
         self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
-            .ok_or(ComparisonBuildRefusal::BeforeRoute(refusal))
+            .ok_or(ComparisonBuildRefusal::Ordinary(refusal))
     }
 
     /// A loft between two parallel polygons, every slice of which is a

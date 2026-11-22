@@ -15,7 +15,7 @@ pub const SPLINE_DISPLAY_RULE: BoundedRule = BoundedRule {
     unit: EvidenceUnit::Millimetres,
 };
 
-/// How the complete rendering boundary was compared with the retained surfaces.
+/// How the rendered faces were compared with the retained surfaces.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DisplayMeasurement {
     /// Complete-cell method, including shared-edge replacement and binary64 rounding.
@@ -37,7 +37,7 @@ pub struct DisplayMeasurement {
 pub struct DisplayMesh {
     /// Positions, triangles and shared physical edges for rendering and selection.
     pub geometry: PreviewMesh,
-    /// Whole-boundary measurement against the kept model.
+    /// Measurement against the kept model for the boundary or selected face.
     pub measurement: DisplayMeasurement,
     /// Marks retained from the body and sampled exact boundary traces.
     pub source_marks: catallax_numbers::MarkLog,

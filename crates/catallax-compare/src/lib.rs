@@ -1,4 +1,6 @@
-//! Two-way sampled display comparison. Agreement is not a global Hausdorff
+//! Sampled display comparison. The spline fillet path checks the selected
+//! face in the forward direction and leaves reverse coverage unresolved.
+//! Agreement is not a global Hausdorff
 //! certificate or a pre-export accuracy certificate. Imported definitions also
 //! compare exact containment samples and independent volume enclosures.
 //! See `docs/archive/PLAN-2026-11.md` for coverage and measured costs.
@@ -46,7 +48,8 @@ pub struct Options {
     /// Minimum dot product of unit normals. Default is 999/1000.
     pub normal_cosine: Rational,
     /// Restricts queries to this closed region, padded by mesh error forward.
-    /// `None` checks the complete sampled boundary.
+    /// `None` uses all samples in the comparison scope. For spline fillets,
+    /// that scope is the selected face.
     pub region: Option<Region>,
 }
 impl Default for Options {
@@ -267,13 +270,15 @@ impl Revision {
         state.latest = Some(report);
         Completion::Published
     }
-    /// Builds both kernels and runs the complete two-way display check.
+    /// Builds both kernels and checks their sampled displays. Spline fillets
+    /// use a forward check of the selected face and leave reverse coverage unresolved.
     /// No thread or wall-clock deadline influences a geometric verdict.
     pub fn check(&self, recipe: &Recipe, options: &Options) -> Completion {
         self.check_with_files(recipe, &catallax_features::ImportFiles::new(), options)
     }
     /// Checks both kernels against the same immutable STEP sources. Imports add
     /// exact containment samples and volume enclosures to the boundary check.
+    /// The spline fillet scope is the same as in [`Self::check`].
     pub fn check_with_files(
         &self,
         recipe: &Recipe,
@@ -284,6 +289,7 @@ impl Revision {
     }
     /// Checks an independently built B-rep against a field recipe. Useful for
     /// cached builds and for reproducing kernel discrepancies without altering kernels.
+    /// The spline fillet scope is the same as in [`Self::check`].
     pub fn check_built(
         &self,
         built: &catallax_features::Built,

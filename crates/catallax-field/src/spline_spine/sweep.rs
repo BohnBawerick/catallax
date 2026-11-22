@@ -23,14 +23,12 @@ const DEPTH: usize = 64;
 type V = [Interval; 3];
 
 fn norm(v: &V) -> Interval {
-    count(3);
     (v[0].square() + v[1].square() + v[2].square())
         .sqrt()
         .expect("sum of squares")
 }
 
 fn reserve_panel(dec: &mut Decider, products: u64) -> Result<(), Refusal> {
-    PRODUCTS.with(|count| count.set(0));
     dec.charge_work(products)
 }
 
@@ -39,7 +37,7 @@ fn gap(detail: &str) -> Refusal {
 }
 
 impl Support {
-    fn normal_products(&self, multiply: u64, scale: u64) -> u64 {
+    pub(super) fn normal_products(&self, multiply: u64, scale: u64) -> u64 {
         let [m, n] = self.degrees.map(|degree| degree as u64);
         let powers = m.saturating_sub(1) + n.saturating_sub(1) + (m + 1) * n;
         let coefficients = 12 * (m + 1) * (n + 1);
@@ -167,10 +165,13 @@ pub fn cap_continuation(
     definition: &SpineDefinition,
     dec: &mut Decider,
 ) -> Result<[Spine; 2], Refusal> {
-    let plane = definition
-        .supports
-        .iter()
-        .position(|patch| crate::flat_support(&Surface::BSpline(patch.clone().into())).is_some());
+    let mut plane = None;
+    for (i, support) in definition.supports.iter().enumerate() {
+        if flat_normal(support, dec)?.is_some() {
+            plane = Some(i);
+            break;
+        }
+    }
     let original = Spine::prove_offsets(definition, plane, dec)?;
     let axis = definition.axis;
     // Use the support extension of M11 (docs/M11-OFFSET-PROOF.md), one
@@ -180,12 +181,16 @@ pub fn cap_continuation(
     let mut extended = definition.clone();
     for support in &mut extended.supports {
         let mut domain = support.carrier().domain().map(|d| d.map(Clone::clone));
-        let margin = (&domain[axis][1] - &domain[axis][0]).mul_pow2(-2);
-        domain[axis][0] = &domain[axis][0] - &margin;
-        domain[axis][1] = &domain[axis][1] + &margin;
+        let margin = exact::mul(
+            &exact::sub(&domain[axis][1], &domain[axis][0], dec)?,
+            &quarter,
+            dec,
+        )?;
+        domain[axis][0] = exact::sub(&domain[axis][0], &margin, dec)?;
+        domain[axis][1] = exact::add(&domain[axis][1], &margin, dec)?;
         *support = support.extended(domain, dec)?;
     }
-    extended.seed = &(&definition.seed + &quarter) / &scale;
+    extended.seed = exact::div(&exact::add(&definition.seed, &quarter, dec)?, &scale, dec)?;
     let extension = Spine::prove_offsets(&extended, plane, dec)?;
 
     // The old proved seed root, expressed in the new normalized charts,
@@ -194,7 +199,7 @@ pub fn cap_continuation(
     let mut root = original.seed_root;
     let t = extension.system.tau();
     let old_tau = Rational::from_f64_exact(root[t].lo()).expect("finite proved seed");
-    let new_tau = &(&old_tau + &quarter) / &scale;
+    let new_tau = exact::div(&exact::add(&old_tau, &quarter, dec)?, &scale, dec)?;
     let scale = Interval::from_rational(&scale);
     let quarter = Interval::from_rational(&quarter);
     reserve_panel(dec, 2)?;
@@ -219,7 +224,7 @@ pub fn cap_continuation(
             break;
         }
     }
-    PRODUCTS.with(|c| c.set(0));
+
     if !joined {
         return Err(cap_gap(
             "the extended spine is not tied to the original seed",
@@ -262,7 +267,7 @@ impl<'a> Sweep<'a> {
             sweep.tail_bound = sweep.check(dec)?;
             Ok(sweep)
         })();
-        PRODUCTS.with(|c| c.set(0));
+
         checked
     }
 
@@ -283,7 +288,7 @@ impl<'a> Sweep<'a> {
     ) -> Result<Self, Refusal> {
         let sweep = Self::admit(spine, Some(caps), dec)?;
         let checked = sweep.check_caps(dec);
-        PRODUCTS.with(|c| c.set(0));
+
         checked?;
         Ok(sweep)
     }
@@ -652,13 +657,12 @@ impl<'a> Sweep<'a> {
         let offset = (0..3)
             .map(|i| (p[i].mid() - a[i].mid()) * direction[i])
             .sum::<f64>();
-        count(6);
+
         let start = a[t].hi();
         let end = b[t].lo();
         let mut tau = (start + (end - start) * (offset / length)).clamp(start, end);
-        count(1);
+
         let eval = |coefficients: &[f64], s: f64| {
-            count((4 * (coefficients.len() - 1)) as u64);
             let mut value = *coefficients.last().unwrap();
             let mut first = 0.0;
             let mut second = 0.0;
@@ -684,7 +688,7 @@ impl<'a> Sweep<'a> {
                 f += gap * first;
                 df += first * first + gap * second;
             }
-            count(10);
+
             let next = (tau - half * f / df).clamp(start, end);
             if !next.is_finite() || (next - tau).abs() < NEWTON_STOP {
                 break;
@@ -730,7 +734,6 @@ impl<'a> Sweep<'a> {
         threshold: bool,
         dec: &mut Decider,
     ) -> Result<Range, Refusal> {
-        PRODUCTS.with(|c| c.set(0));
         if limit.sign() == Sign::Negative {
             return Err(gap("requested distance limit must be non-negative"));
         }

@@ -2,6 +2,9 @@
 //! horizontal arc in each slice. The arc replaces the corner between its
 //! two rails, and the remaining sides stay on the original loft.
 
+#[cfg(test)]
+use std::cell::Cell;
+
 use catallax_recipe::Origin;
 
 use crate::Location;
@@ -11,6 +14,14 @@ use super::*;
 #[cfg(test)]
 thread_local! {
     static PREVIEW_SECTIONS: Cell<usize> = const { Cell::new(0) };
+}
+
+fn components(v: &RVector3) -> exact::Vector {
+    [&v.x, &v.y, &v.z].map(Clone::clone)
+}
+
+fn coords(p: &RPoint3) -> exact::Vector {
+    [&p.x, &p.y, &p.z].map(Clone::clone)
 }
 
 fn vector(v: &RVector3) -> V {
@@ -40,18 +51,34 @@ struct Side {
 }
 
 impl Side {
-    fn value(&self, p: &RPoint3, h: &Rational) -> Sign {
-        let start = self.start.plus(&self.shift.scaled(h));
-        self.normal
-            .plus(&self.turn.scaled(h))
-            .dot(&p.minus(&start))
-            .sign()
+    fn section(&self, h: &Rational, dec: &mut Decider) -> Result<[exact::Vector; 2], Refusal> {
+        Ok([
+            exact::add3(
+                &coords(&self.start),
+                &exact::scale(&components(&self.shift), h, dec)?,
+                dec,
+            )?,
+            exact::add3(
+                &components(&self.normal),
+                &exact::scale(&components(&self.turn), h, dec)?,
+                dec,
+            )?,
+        ])
     }
 
-    fn project(&self, p: &RPoint3, h: &Rational) -> RPoint3 {
-        let start = self.start.plus(&self.shift.scaled(h));
-        let normal = self.normal.plus(&self.turn.scaled(h));
-        p.plus(&normal.scaled(&(-normal.dot(&p.minus(&start)) / normal.norm_squared())))
+    fn value(&self, p: &RPoint3, h: &Rational, dec: &mut Decider) -> Result<Sign, Refusal> {
+        let [start, normal] = self.section(h, dec)?;
+        Ok(exact::dot(&normal, &exact::sub3(&coords(p), &start, dec)?, dec)?.sign())
+    }
+
+    fn project(&self, p: &RPoint3, h: &Rational, dec: &mut Decider) -> Result<RPoint3, Refusal> {
+        let [start, normal] = self.section(h, dec)?;
+        let p = coords(p);
+        let height = exact::dot(&normal, &exact::sub3(&p, &start, dec)?, dec)?;
+        let length = exact::dot(&normal, &normal, dec)?;
+        let factor = exact::div(&-height, &length, dec)?;
+        let [x, y, z] = exact::add3(&p, &exact::scale(&normal, &factor, dec)?, dec)?;
+        Ok(RPoint3::new(x, y, z))
     }
 }
 
@@ -99,31 +126,37 @@ impl Round {
         };
         let [_, spine] = cap_continuation(&definition, dec)?;
         let sweep = Sweep::between_caps(&spine, caps, dec)?;
-        reserve_panel(dec, 12)?;
         let (bottom, up) = &caps[0];
-        let height = up.scaled(&(&Rational::one() / &up.dot(&caps[1].0.minus(bottom))));
+        let up = components(up);
+        let delta = exact::sub3(&coords(&caps[1].0), &coords(bottom), dec)?;
+        let length = exact::dot(&up, &delta, dec)?;
+        let [x, y, z] = exact::scale(&up, &exact::div(&Rational::one(), &length, dec)?, dec)?;
+        let height = RVector3::new(x, y, z);
         let sides = patches
             .iter()
             .map(|(patch, forward)| {
-                reserve_panel(dec, 30)?;
                 let [a, b, c, d] = patch.carrier().controls() else {
                     return Err(clearance());
                 };
                 let [a, b, c, d] = [a, b, c, d].map(|p| p.as_rational().ok_or_else(clearance));
                 let (a, b, c, d) = (a?, b?, c?, d?);
-                let normal = |edge: RVector3| {
+                let normal = |edge: exact::Vector, dec: &mut Decider| {
                     if *forward {
-                        edge.cross(up)
+                        exact::cross(&edge, &up, dec)
                     } else {
-                        up.cross(&edge)
+                        exact::cross(&up, &edge, dec)
                     }
                 };
-                let n = normal(c.minus(&a));
+                let n = normal(exact::sub3(&coords(&c), &coords(&a), dec)?, dec)?;
+                let top = normal(exact::sub3(&coords(&d), &coords(&b), dec)?, dec)?;
+                let [sx, sy, sz] = exact::sub3(&coords(&b), &coords(&a), dec)?;
+                let [tx, ty, tz] = exact::sub3(&top, &n, dec)?;
+                let [nx, ny, nz] = n;
                 Ok(Side {
-                    start: a.clone(),
-                    shift: b.minus(&a),
-                    turn: normal(d.minus(&b)).minus(&n),
-                    normal: n,
+                    start: a,
+                    shift: RVector3::new(sx, sy, sz),
+                    turn: RVector3::new(tx, ty, tz),
+                    normal: RVector3::new(nx, ny, nz),
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -132,11 +165,11 @@ impl Round {
         let [a, b] = sweep.radials(&spine.seed_root);
         let proposal =
             add3(&a, &b).map(|x| Rational::from_f64_exact(x.mid()).expect("finite seed"));
-        reserve_panel(dec, 27)?;
-        let [x, y, z] = proposal;
-        let outward = up.cross(&RVector3::new(x, y, z).cross(up));
-        let across = vector(&up.cross(&outward));
-        let outward = vector(&outward);
+        let outward = exact::cross(&up, &exact::cross(&proposal, &up, dec)?, dec)?;
+        let across = exact::cross(&up, &outward, dec)?
+            .each_ref()
+            .map(Interval::from_rational);
+        let outward = outward.each_ref().map(Interval::from_rational);
         let prepared_caps = sweep.caps.clone().expect("checked caps");
         let round = Self {
             origin,
@@ -150,7 +183,7 @@ impl Round {
             across,
         };
         let checked = round.check(dec);
-        PRODUCTS.with(|c| c.set(0));
+
         checked?;
         Ok(round)
     }
@@ -244,95 +277,90 @@ impl Round {
     }
 
     pub(crate) fn preview(&self, query: [f64; 3]) -> (bool, f64) {
-        PRODUCTS.with(|products| {
-            let saved = products.get();
-            let p = query.map(point);
-            let sweep = self.sweep();
-            let max_height = self.caps[0].at(&self.caps[1].origin).mid();
-            let height = self.caps[0].at(&p).mid().clamp(0.0, max_height);
-            let [a, b] = &self.spine.ends;
-            let t = self.spine.system.tau();
-            let (start, end) = (a.point[t].lo(), b.point[t].hi());
-            let sample = |station: f64, angle: f64| {
-                #[cfg(test)]
-                PREVIEW_SECTIONS.with(|count| count.set(count.get() + 1));
-                let tau = (start + (end - start) * station).clamp(start, end);
-                self.section_at(&sweep, tau, point(angle))
-            };
-            let coordinates = |q: &V| [self.caps[0].at(q).mid(), dot(&self.across, q).mid()];
-            let x = coordinates(&p)[1];
-            let rail = |angle| {
-                let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
-                for _ in 0..24 {
-                    let mid = lo.midpoint(hi);
-                    if coordinates(&sample(mid, angle))[0] < height {
-                        lo = mid;
-                    } else {
-                        hi = mid;
-                    }
+        let p = query.map(point);
+        let sweep = self.sweep();
+        let max_height = self.caps[0].at(&self.caps[1].origin).mid();
+        let height = self.caps[0].at(&p).mid().clamp(0.0, max_height);
+        let [a, b] = &self.spine.ends;
+        let t = self.spine.system.tau();
+        let (start, end) = (a.point[t].lo(), b.point[t].hi());
+        let sample = |station: f64, angle: f64| {
+            #[cfg(test)]
+            PREVIEW_SECTIONS.with(|count| count.set(count.get() + 1));
+            let tau = (start + (end - start) * station).clamp(start, end);
+            self.section_at(&sweep, tau, point(angle))
+        };
+        let coordinates = |q: &V| [self.caps[0].at(q).mid(), dot(&self.across, q).mid()];
+        let x = coordinates(&p)[1];
+        let rail = |angle| {
+            let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+            for _ in 0..24 {
+                let mid = lo.midpoint(hi);
+                if coordinates(&sample(mid, angle))[0] < height {
+                    lo = mid;
+                } else {
+                    hi = mid;
                 }
-                let station = lo.midpoint(hi);
-                let q = sample(station, angle);
-                (coordinates(&q)[1], [station, angle], q)
-            };
-            let (mut left, mut right) = (rail(0.0), rail(1.0));
-            if left.0 > right.0 {
-                std::mem::swap(&mut left, &mut right);
             }
-            let (in_fan, nearest) = if x <= left.0 {
-                (false, left.2)
-            } else if x >= right.0 {
-                (false, right.2)
-            } else {
-                let fraction = (x - left.0) / (right.0 - left.0);
-                let mut uv =
-                    std::array::from_fn(|i| left.1[i] + fraction * (right.1[i] - left.1[i]));
-                let delta = |v| {
-                    if v <= 0.5 {
-                        1.0 / 65_536.0
-                    } else {
-                        -1.0 / 65_536.0
-                    }
-                };
-                for _ in 0..12 {
-                    let [u, v] = uv;
-                    let [h, across] = coordinates(&sample(u, v));
-                    let (du, dv) = (delta(u), delta(v));
-                    let [hu, xu] = coordinates(&sample(u + du, v));
-                    let [hv, xv] = coordinates(&sample(u, v + dv));
-                    let (hu, xu) = ((hu - h) / du, (xu - across) / du);
-                    let (hv, xv) = ((hv - h) / dv, (xv - across) / dv);
-                    let det = hu * xv - hv * xu;
-                    let (dh, dx) = (height - h, x - across);
-                    let step = [(dh * xv - hv * dx) / det, (hu * dx - dh * xu) / det];
-                    if step.iter().any(|d| !d.is_finite()) {
-                        break;
-                    }
-                    uv = std::array::from_fn(|i| (uv[i] + step[i]).clamp(0.0, 1.0));
-                    if step.iter().all(|d| d.abs() <= 1.0 / 16_777_216.0) {
-                        break;
-                    }
+            let station = lo.midpoint(hi);
+            let q = sample(station, angle);
+            (coordinates(&q)[1], [station, angle], q)
+        };
+        let (mut left, mut right) = (rail(0.0), rail(1.0));
+        if left.0 > right.0 {
+            std::mem::swap(&mut left, &mut right);
+        }
+        let (in_fan, nearest) = if x <= left.0 {
+            (false, left.2)
+        } else if x >= right.0 {
+            (false, right.2)
+        } else {
+            let fraction = (x - left.0) / (right.0 - left.0);
+            let mut uv = std::array::from_fn(|i| left.1[i] + fraction * (right.1[i] - left.1[i]));
+            let delta = |v| {
+                if v <= 0.5 {
+                    1.0 / 65_536.0
+                } else {
+                    -1.0 / 65_536.0
                 }
-                (true, sample(uv[0], uv[1]))
             };
-            let cut = in_fan && dot(&self.outward, &sub3(&p, &nearest)).mid() > 0.0;
-            let h = dot(&vector(&self.height), &sub3(&p, &xyz(&self.bottom)));
-            let outside = cut
-                || self.caps.iter().any(|cap| cap.at(&p).mid() < 0.0)
-                || self.sides.iter().any(|side| {
-                    let start = add3(&xyz(&side.start), &mul3(&h, &vector(&side.shift)));
-                    let normal = add3(&vector(&side.normal), &mul3(&h, &vector(&side.turn)));
-                    dot(&normal, &sub3(&p, &start)).mid() > 0.0
-                });
-            let magnitude = query
-                .into_iter()
-                .zip(nearest)
-                .map(|(coordinate, sample)| (coordinate - sample.mid()).powi(2))
-                .sum::<f64>()
-                .sqrt();
-            products.set(saved);
-            (cut, if outside { magnitude } else { -magnitude })
-        })
+            for _ in 0..12 {
+                let [u, v] = uv;
+                let [h, across] = coordinates(&sample(u, v));
+                let (du, dv) = (delta(u), delta(v));
+                let [hu, xu] = coordinates(&sample(u + du, v));
+                let [hv, xv] = coordinates(&sample(u, v + dv));
+                let (hu, xu) = ((hu - h) / du, (xu - across) / du);
+                let (hv, xv) = ((hv - h) / dv, (xv - across) / dv);
+                let det = hu * xv - hv * xu;
+                let (dh, dx) = (height - h, x - across);
+                let step = [(dh * xv - hv * dx) / det, (hu * dx - dh * xu) / det];
+                if step.iter().any(|d| !d.is_finite()) {
+                    break;
+                }
+                uv = std::array::from_fn(|i| (uv[i] + step[i]).clamp(0.0, 1.0));
+                if step.iter().all(|d| d.abs() <= 1.0 / 16_777_216.0) {
+                    break;
+                }
+            }
+            (true, sample(uv[0], uv[1]))
+        };
+        let cut = in_fan && dot(&self.outward, &sub3(&p, &nearest)).mid() > 0.0;
+        let h = dot(&vector(&self.height), &sub3(&p, &xyz(&self.bottom)));
+        let outside = cut
+            || self.caps.iter().any(|cap| cap.at(&p).mid() < 0.0)
+            || self.sides.iter().any(|side| {
+                let start = add3(&xyz(&side.start), &mul3(&h, &vector(&side.shift)));
+                let normal = add3(&vector(&side.normal), &mul3(&h, &vector(&side.turn)));
+                dot(&normal, &sub3(&p, &start)).mid() > 0.0
+            });
+        let magnitude = query
+            .into_iter()
+            .zip(nearest)
+            .map(|(coordinate, sample)| (coordinate - sample.mid()).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        (cut, if outside { magnitude } else { -magnitude })
     }
 
     pub(crate) fn boxes(&self) -> impl Iterator<Item = V> + '_ {
@@ -343,14 +371,27 @@ impl Round {
         })
     }
 
-    pub(crate) fn side_witnesses(&self, p: &RPoint3) -> impl Iterator<Item = RPoint3> + '_ {
-        let height = self.height.dot(&p.minus(&self.bottom));
-        let p = p.clone();
-        let inside = Rational::zero() <= height && height <= Rational::one();
+    fn height_at(&self, p: &RPoint3, dec: &mut Decider) -> Result<Rational, Refusal> {
+        exact::dot(
+            &components(&self.height),
+            &exact::sub3(&coords(p), &coords(&self.bottom), dec)?,
+            dec,
+        )
+    }
+
+    pub(crate) fn side_witnesses(
+        &self,
+        p: &RPoint3,
+        dec: &mut Decider,
+    ) -> Result<Vec<RPoint3>, Refusal> {
+        let height = self.height_at(p, dec)?;
+        if height.sign() == Sign::Negative || exact::cmp(&height, &Rational::one(), dec)?.is_gt() {
+            return Ok(Vec::new());
+        }
         self.sides
             .iter()
-            .take(if inside { self.sides.len() } else { 0 })
-            .map(move |side| side.project(&p, &height))
+            .map(|side| side.project(p, &height, dec))
+            .collect()
     }
 
     /// Sections of the sphere envelope are graphs in the outward ray
@@ -360,16 +401,14 @@ impl Round {
     /// clears the ball. Hence the projection runs monotonically between
     /// the two rail projections, and cuts only the selected corner.
     pub(crate) fn location(&self, q: &RPoint3, dec: &mut Decider) -> Result<Location, Refusal> {
-        reserve_panel(dec, 8)?;
-        let d = q.minus(&self.bottom);
-        let height = self.height.dot(&d);
-        if height < Rational::zero() || height > Rational::one() {
+        let height = self.height_at(q, dec)?;
+        let top = exact::cmp(&height, &Rational::one(), dec)?;
+        if height.sign() == Sign::Negative || top.is_gt() {
             return Ok(Location::Outside);
         }
-        let mut boundary = height.is_zero() || height == Rational::one();
+        let mut boundary = height.is_zero() || top.is_eq();
         for side in &self.sides {
-            reserve_panel(dec, 17)?;
-            match side.value(q, &height) {
+            match side.value(q, &height, dec)? {
                 Sign::Positive => return Ok(Location::Outside),
                 Sign::Zero => boundary = true,
                 Sign::Negative => (),
@@ -380,14 +419,14 @@ impl Round {
         } else {
             Location::Inside
         };
-        PRODUCTS.with(|c| c.set(0));
+
         let p = xyz(q);
         self.clip_location(&p, kept, dec)
     }
 
     fn clip_location(&self, p: &V, kept: Location, dec: &mut Decider) -> Result<Location, Refusal> {
         let sweep = self.sweep();
-        reserve_panel(dec, 6)?;
+        reserve_panel(dec, 12)?;
         let height = self.caps[0].at(p);
         let side = dot(&self.across, p);
         let first = dot(
@@ -412,6 +451,7 @@ impl Round {
         for _ in 0..DEPTH {
             let mid = lo.midpoint(hi);
             let across = Interval::new(lo, hi).expect("ordered section");
+            reserve_panel(dec, 3)?;
             let gap = depth(&self.at_height(&sweep, height, across, dec)?);
             if gap.lo() > 0.0 {
                 return Ok(kept);
@@ -424,6 +464,7 @@ impl Round {
                 if s <= lo || s >= hi {
                     continue;
                 }
+                reserve_panel(dec, 3)?;
                 let g = dot(
                     &self.across,
                     &self.at_height(&sweep, height, point(s), dec)?,

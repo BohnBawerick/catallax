@@ -509,6 +509,13 @@ fn the_m11_fillet_replaces_its_named_loft_edge() {
             .unwrap();
         assert_eq!(result.location, location, "{p:?}: {result:?}");
     }
+    let above = RPoint3::new(q(0), q(0), q(3) + Q::one().mul_pow2(-32_768));
+    let (outside, work) = with_operation_budget(16, || {
+        plan.proven_checked(&above, &mut Workspace::default(), &mut decider())
+    });
+    assert_eq!(outside.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted, "{work:?}");
+    assert_eq!(work.uncharged, 0, "{work:?}");
     let rail = [0.9074607460926539, -0.5308464179691144, 1.0];
     let x = r("0.9074607460926539");
     let side_y = &x / &q(3) - r("5/6");

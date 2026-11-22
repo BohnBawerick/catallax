@@ -18,7 +18,9 @@
 //!
 //! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
 
-use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
+use crate::spline_spine::exact;
+
+use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal, Sign};
 use catallax_recipe::{EdgeName, EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{Isometry, RPoint3, RVector3, RationalPatch};
 
@@ -212,6 +214,54 @@ impl Polygon {
             });
         }
         best.expect("three vertices")
+    }
+
+    fn project_rounded(&self, q: &V, dec: &mut Decider) -> Result<V, Refusal> {
+        let height = exact::dot(&self.normal, &exact::sub3(q, &self.vertices[0], dec)?, dec)?;
+        let length = exact::dot(&self.normal, &self.normal, dec)?;
+        let factor = exact::div(&height, &length, dec)?;
+        exact::sub3(q, &exact::scale(&self.normal, &factor, dec)?, dec)
+    }
+
+    fn squared_rounded(&self, q: &V, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let foot = self.project_rounded(q, dec)?;
+        let mut positive = false;
+        let mut negative = false;
+        let mut edge_bound: Option<Rational> = None;
+        for (i, a) in self.vertices.iter().enumerate() {
+            let b = &self.vertices[(i + 1) % self.vertices.len()];
+            let edge = exact::sub3(b, a, dec)?;
+            let side = exact::cross(&edge, &exact::sub3(&foot, a, dec)?, dec)?;
+            match exact::dot(&self.normal, &side, dec)?.sign() {
+                Sign::Positive => positive = true,
+                Sign::Negative => negative = true,
+                Sign::Zero => (),
+            }
+            let along = exact::dot(&exact::sub3(q, a, dec)?, &edge, dec)?;
+            let length = exact::dot(&edge, &edge, dec)?;
+            let t = if along.sign() == Sign::Negative {
+                Rational::zero()
+            } else if exact::cmp(&along, &length, dec)?.is_ge() {
+                Rational::one()
+            } else {
+                exact::div(&along, &length, dec)?
+            };
+            let near = exact::add3(a, &exact::scale(&edge, &t, dec)?, dec)?;
+            let gap = exact::sub3(q, &near, dec)?;
+            let squared = exact::dot(&gap, &gap, dec)?;
+            if let Some(best) = edge_bound.as_ref()
+                && exact::cmp(best, &squared, dec)?.is_le()
+            {
+                continue;
+            }
+            edge_bound = Some(squared);
+        }
+        if positive && negative {
+            Ok(edge_bound.expect("three vertices"))
+        } else {
+            let gap = exact::sub3(q, &foot, dec)?;
+            exact::dot(&gap, &gap, dec)
+        }
     }
 
     /// The signed crossing of the open ray `q + t d`, `t > 0`: one if it
@@ -518,7 +568,7 @@ impl Shell {
         let Some(round) = &self.round else {
             return Ok(None);
         };
-        let [x, y, z] = self.local(&point(p));
+        let [x, y, z] = self.local_rounded(&point(p), dec)?;
         round
             .distance_at_most(&RPoint3::new(x, y, z), bound, dec)
             .map(Some)
@@ -532,24 +582,26 @@ impl Shell {
         dec: &mut Decider,
     ) -> Result<Option<Rational>, Refusal> {
         let query = point(p);
-        let caps = self.faces.iter().filter_map(|face| {
-            let Face::Polygon(poly) = face else {
-                return None;
-            };
-            let factor = &dot(&poly.normal, &sub(&query, &poly.vertices[0]))
-                / &dot(&poly.normal, &poly.normal);
-            let [x, y, z] = std::array::from_fn(|i| &query[i] - &(&factor * &poly.normal[i]));
-            Some(RPoint3::new(x, y, z))
-        });
-        let square = width * width;
-        let mut candidates: Vec<_> = caps
-            .chain(round.side_witnesses(p))
-            .filter_map(|q| {
-                let d = p.minus(&q).norm_squared();
-                (d <= square).then_some((d, q))
-            })
-            .collect();
-        candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut witnesses = round.side_witnesses(p, dec)?;
+        for face in &self.faces {
+            if let Face::Polygon(poly) = face {
+                let [x, y, z] = poly.project_rounded(&query, dec)?;
+                witnesses.push(RPoint3::new(x, y, z));
+            }
+        }
+        let square = exact::mul(width, width, dec)?;
+        let mut candidates: Vec<(Rational, RPoint3)> = Vec::new();
+        for witness in witnesses {
+            let gap = exact::sub3(&query, &point(&witness), dec)?;
+            let d = exact::dot(&gap, &gap, dec)?;
+            if exact::cmp(&d, &square, dec)?.is_le() {
+                let mut position = candidates.len();
+                while position > 0 && exact::cmp(&d, &candidates[position - 1].0, dec)?.is_lt() {
+                    position -= 1;
+                }
+                candidates.insert(position, (d, witness));
+            }
+        }
         for (d, candidate) in candidates {
             if round.location(&candidate, dec)? == Location::Boundary {
                 let upper = Interval::from_rational(&d).sqrt().unwrap().hi();
@@ -561,6 +613,16 @@ impl Shell {
 
     fn local(&self, p: &V) -> V {
         apply(&self.inverse_rotation, &sub(p, &self.translation))
+    }
+
+    fn local_rounded(&self, p: &V, dec: &mut Decider) -> Result<V, Refusal> {
+        let p = exact::sub3(p, &self.translation, dec)?;
+        let [a, b, c] = &self.inverse_rotation;
+        Ok([
+            exact::dot(a, &p, dec)?,
+            exact::dot(b, &p, dec)?,
+            exact::dot(c, &p, dec)?,
+        ])
     }
 
     /// Composes a rational rigid motion, reflections included, in front of
@@ -655,13 +717,14 @@ impl Shell {
         p: &RPoint3,
         dec: &mut Decider,
     ) -> Result<(Location, Interval), Refusal> {
-        let q = self.local(&point(p));
         if let Some(round) = &self.round {
+            let q = self.local_rounded(&point(p), dec)?;
             let p = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
             let location = round.location(&p, dec)?;
             let distance = self.rounded_distance(&p, &q, round, location, dec)?;
             return Ok((location, distance));
         }
+        let q = self.local(&point(p));
         let mut lo = f64::INFINITY;
         let mut hi = f64::INFINITY;
         for face in &self.faces {
@@ -728,7 +791,7 @@ impl Shell {
     /// Exact classification of a rational world point.
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         if let Some(round) = &self.round {
-            let [x, y, z] = self.local(p);
+            let [x, y, z] = self.local_rounded(p, dec)?;
             return round.location(&RPoint3::new(x, y, z), dec);
         }
         let p = RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
@@ -746,7 +809,7 @@ impl Shell {
             return Ok(Ball::from_rational(&Rational::zero(), PRECISION));
         }
         let distance = if let Some(round) = &self.round {
-            let q = self.local(&point(p));
+            let q = self.local_rounded(&point(p), dec)?;
             let local = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
             self.rounded_distance(&local, &q, round, location, dec)?
         } else {
@@ -784,7 +847,9 @@ impl Shell {
         for (i, face) in self.faces.iter().enumerate() {
             let distance = match face {
                 Face::Polygon(polygon) => {
-                    Interval::from_rational(&polygon.squared(q)).sqrt().unwrap()
+                    Interval::from_rational(&polygon.squared_rounded(q, dec)?)
+                        .sqrt()
+                        .unwrap()
                 }
                 Face::Patch(patch) => patch.distance.distance(p, dec)?.distance,
             };

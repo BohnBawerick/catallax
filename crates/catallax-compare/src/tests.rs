@@ -241,17 +241,19 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
         prerequisite_refusal.sampled_distance_upper,
         Some(Rational::zero())
     );
-    let mut translated = serde_json::to_value(&valid_edge).unwrap();
+    let mut translated = serde_json::to_value(&missing_edge).unwrap();
     translated["steps"][1]["loops"] = translated["steps"][0]["loops"].clone();
     translated["steps"][2]["sections"][1]["start"] = json!(["a_0"]);
-    translated["steps"][1]["plane"]["rotation"] = json!(["2", "0", "0", "0"]);
-    let translated = Recipe::parse(&translated.to_string()).unwrap();
-    let (analytic, _) = with_operation_budget(0, || check(&translated));
-    assert_eq!(
-        analytic.refusal.as_ref().map(|error| error.code),
-        Some("numbers.operation-budget")
-    );
-    assert_eq!(analytic.sampled_distance_upper, Some(Rational::zero()));
+    for scalar in ["1", "2"] {
+        translated["steps"][1]["plane"]["rotation"] = json!([scalar, "0", "0", "0"]);
+        let recipe = Recipe::parse(&translated.to_string()).unwrap();
+        let (analytic, _) = with_operation_budget(budget, || check(&recipe));
+        assert_eq!(
+            analytic.refusal.as_ref().map(|error| error.code),
+            Some("fillet.lost-edge")
+        );
+        assert_eq!(analytic.sampled_distance_upper, Some(Rational::zero()));
+    }
 
     let mut union = serde_json::to_value(&valid_edge).unwrap();
     let steps = union["steps"].as_array_mut().unwrap();
@@ -276,6 +278,31 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
         assert_eq!(report.forward_vertices, 0);
         assert_eq!(report.sampled_distance_upper, None);
     }
+}
+
+#[test]
+fn a_plain_patch_loft_refusal_keeps_the_ordinary_bound() {
+    use catallax_numbers::with_operation_budget;
+
+    let mut plain = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    plain["steps"].as_array_mut().unwrap().pop();
+    plain["result"] = json!("loft");
+    let plain = Recipe::parse(&plain.to_string()).unwrap();
+    let (built, work) =
+        with_operation_budget(100_000_000, || catallax_field::Plan::compile(&plain));
+    assert!(built.is_ok());
+
+    let (report, work) = with_operation_budget(work.used - 1, || check(&plain));
+    assert!(work.exhausted);
+    assert_eq!(
+        report.refusal.as_ref().map(|error| error.code),
+        Some("numbers.operation-budget")
+    );
+    assert!(report.findings.iter().any(|finding| {
+        matches!(&finding.reason, Reason::Unresolved(reason) if reason.starts_with("field build "))
+    }));
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
 }
 
 #[test]

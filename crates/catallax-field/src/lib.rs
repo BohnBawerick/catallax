@@ -267,8 +267,6 @@ pub struct Batch {
 /// A refusal from the field build of a sampled comparison.
 #[derive(Debug)]
 pub enum ComparisonBuildRefusal {
-    /// A prerequisite refused before the compiler could select a route.
-    BeforeRoute(Refusal),
     /// The field refused outside the experimental spline route.
     Ordinary(Refusal),
     /// The experimental spline route refused before comparison sampling.
@@ -278,13 +276,13 @@ pub enum ComparisonBuildRefusal {
 impl ComparisonBuildRefusal {
     fn refusal(&self) -> &Refusal {
         match self {
-            Self::BeforeRoute(refusal) | Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
         }
     }
 
     fn into_refusal(self) -> Refusal {
         match self {
-            Self::BeforeRoute(refusal) | Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
         }
     }
 }
@@ -398,6 +396,39 @@ impl Plan {
         Self::compile_recipe(recipe, files, dec, true)
     }
 
+    fn selected_fillet_lineage(recipe: &Recipe) -> BTreeSet<&catallax_recipe::StepId> {
+        let mut lineage = BTreeSet::new();
+        let mut id = &recipe.result;
+        let mut selected = false;
+        for step in recipe.steps.iter().rev() {
+            if &step.id != id {
+                continue;
+            }
+            lineage.insert(id);
+            match &step.op {
+                Operation::Fillet { body, .. } if !selected => {
+                    selected = true;
+                    id = body;
+                }
+                Operation::Mirror {
+                    body,
+                    keep_original,
+                    ..
+                } if !selected || !keep_original => id = body,
+                Operation::Pattern { body, layout } if !selected || layout.count() == 1 => {
+                    id = body
+                }
+                Operation::Boolean {
+                    kind: BooleanKind::Union | BooleanKind::Intersect,
+                    target,
+                    tool,
+                } if target == tool => id = target,
+                _ => break,
+            }
+        }
+        if selected { lineage } else { BTreeSet::new() }
+    }
+
     fn compile_recipe(
         recipe: &Recipe,
         files: &catallax_features::ImportFiles<'_>,
@@ -405,8 +436,13 @@ impl Plan {
         spline_proofs: bool,
     ) -> Result<Self, ComparisonBuildRefusal> {
         recipe.check().map_err(|e| {
-            ComparisonBuildRefusal::BeforeRoute(Refusal::new("field.recipe", e.to_string()))
+            ComparisonBuildRefusal::Ordinary(Refusal::new("field.recipe", e.to_string()))
         })?;
+        let spline_sources = if spline_proofs {
+            Self::selected_fillet_lineage(recipe)
+        } else {
+            BTreeSet::new()
+        };
         let mut plan = Self {
             instructions: vec![Instruction::Empty],
             leaves: vec![],
@@ -449,13 +485,13 @@ impl Plan {
                             })
                         {
                             catallax_features::Profile::new(plane, loops, dec)
-                                .map_err(ComparisonBuildRefusal::BeforeRoute)?;
+                                .map_err(ComparisonBuildRefusal::Ordinary)?;
                             bezier_profiles.insert(step.id.clone());
                         } else {
                             profiles.insert(
                                 step.id.clone(),
                                 profile::Profile::new(plane, loops, dec)
-                                    .map_err(ComparisonBuildRefusal::BeforeRoute)?,
+                                    .map_err(ComparisonBuildRefusal::Ordinary)?,
                             );
                         }
                         return Ok(None);
@@ -489,7 +525,14 @@ impl Plan {
                         {
                             plan.bezier_loft(recipe, sections, *shape, dec)?
                         } else {
-                            plan.loft(recipe, sections, *shape, &profiles, &step.id, dec)?
+                            plan.loft(
+                                recipe,
+                                sections,
+                                *shape,
+                                &profiles,
+                                (&step.id, spline_sources.contains(&step.id)),
+                                dec,
+                            )?
                         }
                     }
                     Operation::SmoothBlend {
@@ -757,7 +800,7 @@ impl Plan {
                                 source,
                                 (&step_faces[body], &step_domains[body]),
                                 &map,
-                                &step.id,
+                                (&step.id, spline_sources.contains(&step.id)),
                                 instance,
                                 dec,
                             )?;
@@ -776,7 +819,7 @@ impl Plan {
                             source,
                             (&step_faces[body], &step_domains[body]),
                             &map,
-                            &step.id,
+                            (&step.id, spline_sources.contains(&step.id)),
                             1,
                             dec,
                         )?;
@@ -1194,6 +1237,12 @@ impl Plan {
                 result.as_ref().err().map(ComparisonBuildRefusal::refusal),
                 None,
             );
+            let result = result.map_err(|error| match error {
+                ComparisonBuildRefusal::Spline(refusal) if !spline_sources.contains(&step.id) => {
+                    ComparisonBuildRefusal::Ordinary(refusal)
+                }
+                other => other,
+            });
             if let Some(node) = result? {
                 let mut faces = match &step.op {
                     Operation::Boolean { target, tool, .. } => step_faces[target]
@@ -1390,7 +1439,7 @@ impl Plan {
         source: usize,
         source_faces: (&[usize], &[usize]),
         map: &Isometry,
-        step: &catallax_recipe::StepId,
+        (step, spline_source): (&catallax_recipe::StepId, bool),
         instance: u32,
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
@@ -1430,11 +1479,16 @@ impl Plan {
                 }
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
+                    let refusal = if spline_source && matches!(&leaf, geometry::Leaf::Shell(_)) {
+                        ComparisonBuildRefusal::Spline
+                    } else {
+                        ComparisonBuildRefusal::Ordinary
+                    };
                     if let geometry::Leaf::Shell(shell) = &mut leaf {
                         shell.forget_loft_sides();
                     }
-                    leaf.transform(map)?;
-                    leaf.rebuild_after_transform(dec)?;
+                    leaf.transform(map).map_err(refusal)?;
+                    leaf.rebuild_after_transform(dec).map_err(refusal)?;
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])
@@ -1447,10 +1501,11 @@ impl Plan {
                         })
                         .collect::<Vec<_>>();
                     for face in &mut faces {
-                        geometry::face_geometry(face, map.surface(&face.surface), dec)?;
+                        geometry::face_geometry(face, map.surface(&face.surface), dec)
+                            .map_err(refusal)?;
                         face.origin = catallax_features::copy_origin(step, instance, &face.origin);
                     }
-                    self.leaf(leaf, faces, dec)?
+                    self.leaf(leaf, faces, dec).map_err(refusal)?
                 }
             };
             if self.separated_unions.contains(&i) {

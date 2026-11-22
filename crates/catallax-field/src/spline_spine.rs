@@ -76,11 +76,12 @@
 //!
 //! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
 
-use std::cell::Cell;
 use std::f64::consts::FRAC_1_SQRT_2;
 
+use std::cell::Cell;
+
 use catallax_numbers::{Decider, Interval, Rational, Real, Refusal, Sign};
-use catallax_shapes::{Pose, RationalPatch, Rotation, Surface};
+use catallax_shapes::{Pose, RVector3, RationalPatch, Rotation, Surface};
 
 pub mod sweep;
 
@@ -129,19 +130,99 @@ const SEED_GRID: usize = 9;
 /// "Solving algebraic problems with high accuracy", 1983).
 const INFLATIONS: usize = 8;
 
-thread_local! {
-    /// Products made since the last charge, on this thread.
-    static PRODUCTS: Cell<u64> = const { Cell::new(0) };
+pub(crate) mod exact {
+    use super::{Decider, Rational, Refusal};
+
+    pub(crate) fn add(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
+        dec.reserve_exact_arithmetic(a, b, false)?;
+        Ok(a + b)
+    }
+
+    pub(crate) fn sub(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
+        dec.reserve_exact_arithmetic(a, b, false)?;
+        Ok(a - b)
+    }
+
+    pub(crate) fn mul(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
+        dec.reserve_exact_arithmetic(a, b, true)?;
+        Ok(a * b)
+    }
+
+    pub(crate) fn div(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
+        dec.reserve_exact_arithmetic(a, b, true)?;
+        Ok(a / b)
+    }
+
+    pub(crate) type Vector = [Rational; 3];
+
+    pub(crate) fn add3(a: &Vector, b: &Vector, dec: &mut Decider) -> Result<Vector, Refusal> {
+        Ok([
+            add(&a[0], &b[0], dec)?,
+            add(&a[1], &b[1], dec)?,
+            add(&a[2], &b[2], dec)?,
+        ])
+    }
+
+    pub(crate) fn sub3(a: &Vector, b: &Vector, dec: &mut Decider) -> Result<Vector, Refusal> {
+        Ok([
+            sub(&a[0], &b[0], dec)?,
+            sub(&a[1], &b[1], dec)?,
+            sub(&a[2], &b[2], dec)?,
+        ])
+    }
+
+    pub(crate) fn scale(a: &Vector, b: &Rational, dec: &mut Decider) -> Result<Vector, Refusal> {
+        Ok([
+            mul(&a[0], b, dec)?,
+            mul(&a[1], b, dec)?,
+            mul(&a[2], b, dec)?,
+        ])
+    }
+
+    pub(crate) fn dot(a: &Vector, b: &Vector, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let xy = add(&mul(&a[0], &b[0], dec)?, &mul(&a[1], &b[1], dec)?, dec)?;
+        add(&xy, &mul(&a[2], &b[2], dec)?, dec)
+    }
+
+    pub(crate) fn cross(a: &Vector, b: &Vector, dec: &mut Decider) -> Result<Vector, Refusal> {
+        let axis = |i: usize, j: usize, dec: &mut Decider| {
+            sub(&mul(&a[i], &b[j], dec)?, &mul(&a[j], &b[i], dec)?, dec)
+        };
+        Ok([axis(1, 2, dec)?, axis(2, 0, dec)?, axis(0, 1, dec)?])
+    }
+
+    pub(crate) fn cmp(
+        a: &Rational,
+        b: &Rational,
+        dec: &mut Decider,
+    ) -> Result<std::cmp::Ordering, Refusal> {
+        dec.reserve_uncounted_arithmetic(a, b, true)?;
+        Ok(a.cmp(b))
+    }
 }
 
-fn count(products: u64) {
-    PRODUCTS.with(|c| c.set(c.get().saturating_add(products)));
-}
-
-/// Charges the products made since the last charge.
-fn charge(dec: &mut Decider) -> Result<(), Refusal> {
-    let products = PRODUCTS.with(|c| c.replace(0));
-    dec.charge_work(products)
+fn flat_normal(patch: &RationalPatch, dec: &mut Decider) -> Result<Option<exact::Vector>, Refusal> {
+    let surface = Surface::BSpline(patch.clone().into());
+    let Ok(Some(patch)) = crate::import_spline::bilinear(&surface) else {
+        return Ok(None);
+    };
+    let [a, b, c, d] = patch.corners.map(|p| [p.x, p.y, p.z]);
+    let u = exact::sub3(&c, &a, dec)?;
+    let v = exact::sub3(&b, &a, dec)?;
+    let w = exact::sub3(&exact::sub3(&d, &c, dec)?, &v, dec)?;
+    let cross = exact::cross(&u, &v, dec)?;
+    if !exact::dot(&cross, &w, dec)?.is_zero() {
+        return Ok(None);
+    }
+    let uw = exact::cross(&u, &w, dec)?;
+    let vw = exact::cross(&v, &w, dec)?;
+    let turn = exact::sub3(&uw, &vw, dec)?;
+    let normal = exact::add3(
+        &cross,
+        &exact::scale(&turn, &Rational::one().mul_pow2(-1), dec)?,
+        dec,
+    )?;
+    Ok(normal.iter().any(|x| !x.is_zero()).then_some(normal))
 }
 
 fn refusal(detail: impl Into<String>) -> Refusal {
@@ -174,7 +255,6 @@ fn is_zero(x: Interval) -> bool {
 }
 
 fn product(a: Interval, b: Interval) -> Interval {
-    count(1);
     a * b
 }
 
@@ -199,11 +279,9 @@ impl Num for f64 {
         self - other
     }
     fn times(&self, other: &Self) -> Self {
-        count(1);
         self * other
     }
     fn scaled(&self, k: Interval) -> Self {
-        count(1);
         self * k.mid()
     }
 }
@@ -317,6 +395,54 @@ impl Num for Tm {
     }
     fn scaled(&self, k: Interval) -> Self {
         Tm(self.0.iter().map(|c| product(*c, k)).collect())
+    }
+}
+
+thread_local! {
+    static TAYLOR_PRODUCTS: Cell<u64> = const { Cell::new(0) };
+}
+
+#[derive(Clone)]
+struct TaylorWork {
+    terms: usize,
+    possibly_nonzero: bool,
+}
+
+impl Num for TaylorWork {
+    fn constant(value: Interval) -> Self {
+        Self {
+            terms: 1,
+            possibly_nonzero: !is_zero(value),
+        }
+    }
+
+    fn plus(&self, other: &Self) -> Self {
+        Self {
+            terms: self.terms.max(other.terms),
+            possibly_nonzero: self.possibly_nonzero || other.possibly_nonzero,
+        }
+    }
+
+    fn minus(&self, other: &Self) -> Self {
+        self.plus(other)
+    }
+
+    fn times(&self, other: &Self) -> Self {
+        if self.possibly_nonzero {
+            TAYLOR_PRODUCTS.with(|work| work.set(work.get() + (self.terms * other.terms) as u64));
+        }
+        Self {
+            terms: (self.terms + other.terms - 1).min(ORDER + 1),
+            possibly_nonzero: self.possibly_nonzero && other.possibly_nonzero,
+        }
+    }
+
+    fn scaled(&self, k: Interval) -> Self {
+        TAYLOR_PRODUCTS.with(|work| work.set(work.get() + self.terms as u64));
+        Self {
+            terms: self.terms,
+            possibly_nonzero: self.possibly_nonzero && !is_zero(k),
+        }
     }
 }
 
@@ -610,7 +736,7 @@ impl Support {
             return None;
         }
         let side = self.side.mid();
-        count(3);
+
         Some((
             std::array::from_fn(|k| x[k] / f[0][3] + side * m[k] / length),
             length,
@@ -638,19 +764,25 @@ fn free(pinned: usize) -> [usize; 8] {
 }
 
 /// Gaussian elimination with partial pivoting, in binary64.
-fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+fn solve(
+    mut a: Vec<Vec<f64>>,
+    mut b: Vec<f64>,
+    dec: &mut Decider,
+) -> Result<Option<Vec<f64>>, Refusal> {
     let size = b.len();
+    dec.charge_work((1..=size as u64).map(|n| (n - 1) * (n + 2) + n).sum())?;
     for column in 0..size {
-        let pivot =
-            (column..size).max_by(|&i, &j| a[i][column].abs().total_cmp(&a[j][column].abs()))?;
+        let pivot = (column..size)
+            .max_by(|&i, &j| a[i][column].abs().total_cmp(&a[j][column].abs()))
+            .expect("nonempty column");
         if a[pivot][column] == 0.0 || !a[pivot][column].is_finite() {
-            return None;
+            return Ok(None);
         }
         a.swap(column, pivot);
         b.swap(column, pivot);
         for row in column + 1..size {
             let factor = a[row][column] / a[column][column];
-            count((size - column + 1) as u64);
+
             for k in column..size {
                 a[row][k] -= factor * a[column][k];
             }
@@ -663,27 +795,30 @@ fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
         for k in row + 1..size {
             sum -= a[row][k] * x[k];
         }
-        count((size - row) as u64);
+
         x[row] = sum / a[row][row];
     }
-    x.iter().all(|v| v.is_finite()).then_some(x)
+    Ok(x.iter().all(|v| v.is_finite()).then_some(x))
 }
 
 /// The inverse of a square binary64 matrix, column by column.
-fn inverse(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
+fn inverse(a: &[Vec<f64>], dec: &mut Decider) -> Result<Option<Vec<Vec<f64>>>, Refusal> {
     let size = a.len();
     let mut columns = Vec::with_capacity(size);
     for column in 0..size {
         let unit = (0..size)
             .map(|k| f64::from(u8::from(k == column)))
             .collect();
-        columns.push(solve(a.to_vec(), unit)?);
+        let Some(solution) = solve(a.to_vec(), unit, dec)? else {
+            return Ok(None);
+        };
+        columns.push(solution);
     }
-    Some(
+    Ok(Some(
         (0..size)
             .map(|row| (0..size).map(|column| columns[column][row]).collect())
             .collect(),
-    )
+    ))
 }
 
 /// A proved Krawczyk box: `K` inside `Y = [-radius, radius]`, the
@@ -705,12 +840,16 @@ fn krawczyk(
     jacobian: &[[Interval; 9]; 8],
     pinned: usize,
     scale: &[f64; 8],
-) -> Option<Krawczyk> {
+    dec: &mut Decider,
+) -> Result<Option<Krawczyk>, Refusal> {
     let unknowns = free(pinned);
     let middle: Vec<Vec<f64>> = (0..8)
         .map(|row| unknowns.iter().map(|&k| jacobian[row][k].mid()).collect())
         .collect();
-    let preconditioner = inverse(&middle)?;
+    let Some(preconditioner) = inverse(&middle, dec)? else {
+        return Ok(None);
+    };
+    dec.charge_work(8 * 8 + 8 * 8 * 8 + 16)?;
     let step: [Interval; 8] = std::array::from_fn(|i| {
         -(0..8).fold(zero(), |sum, k| {
             sum + product(point(preconditioner[i][k]), g[k])
@@ -730,8 +869,9 @@ fn krawczyk(
     let mut radius: [f64; 8] = std::array::from_fn(|i| 2.0 * magnitude(step[i]) + floor[i]);
     for _ in 0..INFLATIONS {
         if radius.iter().any(|r| !r.is_finite() || *r > BOX) {
-            return None;
+            return Ok(None);
         }
+        dec.charge_work(8 * 8 + 8)?;
         let spread: [Interval; 8] = std::array::from_fn(|i| {
             (0..8).fold(zero(), |sum, c| {
                 sum + product(contraction[i][c], spread(radius[c]))
@@ -747,17 +887,18 @@ fn krawczyk(
                 .zip(&radius)
                 .all(|(k, r)| k.lo() > -r && k.hi() < *r)
         {
-            return Some(Krawczyk {
+            return Ok(Some(Krawczyk {
                 image,
                 radius,
                 preconditioner,
                 contraction,
                 norm,
-            });
+            }));
         }
+        dec.charge_work(8)?;
         radius = std::array::from_fn(|i| 2.0 * magnitude(image[i]) + floor[i]);
     }
-    None
+    Ok(None)
 }
 
 /// Bounds on the spine's slope `d = dz / dtau` over a proved span, from
@@ -769,7 +910,12 @@ fn krawczyk(
 /// preconditioned interval linear systems (Neumaier, "Interval Methods for
 /// Systems of Equations", 1990, chapter 4). The identity then narrows the
 /// bounds, eight times at most.
-fn solve_derivative(proof: &Krawczyk, load: [Interval; 8]) -> Option<[Interval; 8]> {
+fn solve_derivative(
+    proof: &Krawczyk,
+    load: [Interval; 8],
+    dec: &mut Decider,
+) -> Result<Option<[Interval; 8]>, Refusal> {
+    dec.charge_work(8 * 8 + 8 + 1 + 8)?;
     let pull: [Interval; 8] = std::array::from_fn(|i| {
         -(0..8).fold(zero(), |sum, k| {
             sum + product(point(proof.preconditioner[i][k]), load[k])
@@ -783,16 +929,20 @@ fn solve_derivative(proof: &Krawczyk, load: [Interval; 8]) -> Option<[Interval; 
     let mut d: [Interval; 8] =
         std::array::from_fn(|i| spread(product(point(bound), point(y[i])).hi()));
     for _ in 0..INFLATIONS {
+        dec.charge_work(8 * 8)?;
         let next: [Interval; 8] = std::array::from_fn(|i| {
             (0..8).fold(pull[i], |sum, c| {
                 sum + product(proof.contraction[i][c], d[c])
             })
         });
         for (out, n) in d.iter_mut().zip(next) {
-            *out = Interval::new(out.lo().max(n.lo()), out.hi().min(n.hi()))?;
+            let Some(clipped) = Interval::new(out.lo().max(n.lo()), out.hi().min(n.hi())) else {
+                return Ok(None);
+            };
+            *out = clipped;
         }
     }
-    Some(d)
+    Ok(Some(d))
 }
 
 /// The two supports, the radius and the side choices: the spine's system.
@@ -800,6 +950,7 @@ fn solve_derivative(proof: &Krawczyk, load: [Interval; 8]) -> Option<[Interval; 
 struct System {
     supports: [Support; 2],
     axis: usize,
+    taylor_work: [u64; 2],
 }
 
 impl System {
@@ -811,6 +962,41 @@ impl System {
     /// The contact parameters other than `tau`.
     fn contacts(&self) -> [usize; 3] {
         [PARAMETERS + 1 - self.axis, PARAMETERS + 2, PARAMETERS + 3]
+    }
+
+    fn reserve_system(
+        &self,
+        jacobian: bool,
+        multiply: u64,
+        scale: u64,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        let (products, scalings, tables) = if jacobian { (122, 12, 6) } else { (31, 3, 3) };
+        dec.charge_work(
+            self.supports
+                .iter()
+                .map(|support| {
+                    let [m, n] = support.degrees.map(|degree| degree as u64);
+                    let powers = m.saturating_sub(1) + n.saturating_sub(1) + (m + 1) * n;
+                    (powers + products) * multiply
+                        + (4 * tables * (m + 1) * (n + 1) + scalings) * scale
+                })
+                .sum(),
+        )
+    }
+
+    fn taylor_work(&self, dec: &mut Decider) -> Result<[u64; 2], Refusal> {
+        self.reserve_system(false, 1, 1, dec)?;
+        self.reserve_system(true, 1, 1, dec)?;
+        let model = std::array::from_fn(|i| TaylorWork {
+            terms: if i == self.tau() { 2 } else { TERMS },
+            possibly_nonzero: true,
+        });
+        Ok([false, true].map(|jacobian| {
+            TAYLOR_PRODUCTS.with(|work| work.set(0));
+            self.system(&model, jacobian);
+            TAYLOR_PRODUCTS.with(Cell::get)
+        }))
     }
 
     /// The eight equations at the nine values, and with `jacobian` their
@@ -843,32 +1029,42 @@ impl System {
     }
 
     /// Newton's method on the unknowns with value `pinned` held, from `z`.
-    fn newton(&self, pinned: usize, mut z: [f64; 9]) -> Option<[f64; 9]> {
+    fn newton(
+        &self,
+        pinned: usize,
+        mut z: [f64; 9],
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 9]>, Refusal> {
         let unknowns = free(pinned);
         for _ in 0..NEWTON_STEPS {
+            self.reserve_system(true, 1, 1, dec)?;
             let (f, j) = self.system(&z, true);
             let j = j.expect("a Jacobian");
             let a = (0..8)
                 .map(|row| unknowns.iter().map(|&k| j[row][k]).collect())
                 .collect();
-            let step = solve(a, f.to_vec())?;
+            let Some(step) = solve(a, f.to_vec(), dec)? else {
+                return Ok(None);
+            };
+            dec.charge_work(8)?;
             let mut largest: f64 = 0.0;
             for (k, &index) in unknowns.iter().enumerate() {
                 z[index] -= step[k];
                 largest = largest.max(step[k].abs() / (1.0 + z[index].abs()));
             }
             if !z.iter().all(|v| v.is_finite()) {
-                return None;
+                return Ok(None);
             }
             if largest <= NEWTON_STOP {
-                return (z[LENGTHS] > 0.0 && z[LENGTHS + 1] > 0.0).then_some(z);
+                return Ok((z[LENGTHS] > 0.0 && z[LENGTHS + 1] > 0.0).then_some(z));
             }
         }
-        None
+        Ok(None)
     }
 
     /// The spine's slope `dz / dtau` at `z`, in binary64.
-    fn slope(&self, z: &[f64; 9]) -> Option<[f64; 9]> {
+    fn slope(&self, z: &[f64; 9], dec: &mut Decider) -> Result<Option<[f64; 9]>, Refusal> {
+        self.reserve_system(true, 1, 1, dec)?;
         let pinned = self.tau();
         let unknowns = free(pinned);
         let (_, j) = self.system(z, true);
@@ -877,23 +1073,26 @@ impl System {
             .map(|row| unknowns.iter().map(|&k| j[row][k]).collect())
             .collect();
         let b = (0..8).map(|row| -j[row][pinned]).collect();
-        let d = solve(a, b)?;
+        let Some(d) = solve(a, b, dec)? else {
+            return Ok(None);
+        };
         let mut out = [0.0; 9];
         out[pinned] = 1.0;
         for (k, &index) in unknowns.iter().enumerate() {
             out[index] = d[k];
         }
-        Some(out)
+        Ok(Some(out))
     }
 
     /// A spine point at `tau`: the closest pair of ball centres over a grid
     /// on the three other contact parameters, then Newton's method.
-    fn seed(&self, tau: f64) -> Option<[f64; 9]> {
+    fn seed(&self, tau: f64, dec: &mut Decider) -> Result<Option<[f64; 9]>, Refusal> {
         let grid = |i: usize| i as f64 / (SEED_GRID - 1) as f64;
         let mut a_params = [0.0; 2];
         a_params[self.axis] = tau;
         let mut first = Vec::new();
         for i in 0..SEED_GRID {
+            dec.charge_work(self.supports[0].normal_products(1, 1) + 13)?;
             a_params[1 - self.axis] = grid(i);
             if let Some(centre) = self.supports[0].centre(a_params[0], a_params[1]) {
                 first.push((a_params, centre));
@@ -902,11 +1101,13 @@ impl System {
         let mut best: Option<(f64, [f64; 9])> = None;
         for i in 0..SEED_GRID {
             for j in 0..SEED_GRID {
-                let Some((cb, lb)) = self.supports[1].centre(grid(i), grid(j)) else {
+                dec.charge_work(self.supports[1].normal_products(1, 1) + 14)?;
+                let [u, v] = [grid(i), grid(j)];
+                let Some((cb, lb)) = self.supports[1].centre(u, v) else {
                     continue;
                 };
                 for (a, (ca, la)) in &first {
-                    count(3);
+                    dec.charge_work(3)?;
                     let gap: f64 = (0..3)
                         .map(|k| {
                             let d = ca[k] - cb[k];
@@ -914,17 +1115,17 @@ impl System {
                         })
                         .sum();
                     if best.as_ref().is_none_or(|(g, _)| gap < *g) {
+                        dec.charge_work(3)?;
                         let c: [f64; 3] = std::array::from_fn(|k| (ca[k] + cb[k]) / 2.0);
-                        best = Some((
-                            gap,
-                            [c[0], c[1], c[2], a[0], a[1], grid(i), grid(j), *la, lb],
-                        ));
+                        best = Some((gap, [c[0], c[1], c[2], a[0], a[1], u, v, *la, lb]));
                     }
                 }
             }
         }
-        let (_, z) = best?;
-        self.newton(self.tau(), z)
+        let Some((_, z)) = best else {
+            return Ok(None);
+        };
+        self.newton(self.tau(), z, dec)
     }
 
     /// Follows the spine from `seed` both ways to its two ends. Returns the
@@ -940,24 +1141,20 @@ impl System {
         for (side, direction) in [-1.0, 1.0].into_iter().enumerate() {
             let mut z = seed;
             loop {
-                charge(dec)?;
                 let here = z[tau];
                 if (direction < 0.0 && here <= 0.0) || (direction > 0.0 && here >= 1.0) {
                     found[side] = Some(End::own(tau, z));
                     break;
                 }
+                dec.charge_work(1)?;
                 let next = (here + direction * TRACE_STEP).clamp(0.0, 1.0);
                 let lost = || refusal(format!("Newton's method lost the spine near tau = {here}"));
-                let proposed = self.slope(&z);
-                charge(dec)?;
-                let d = proposed.ok_or_else(lost)?;
-                count(9);
+                let d = self.slope(&z, dec)?.ok_or_else(lost)?;
+                dec.charge_work(9)?;
                 let mut guess: [f64; 9] = std::array::from_fn(|k| z[k] + (next - here) * d[k]);
                 guess[tau] = next;
-                let proposed = self.newton(tau, guess);
-                charge(dec)?;
-                let ahead = proposed.ok_or_else(lost)?;
-                if let Some(end) = self.leaves(&z, &ahead) {
+                let ahead = self.newton(tau, guess, dec)?.ok_or_else(lost)?;
+                if let Some(end) = self.leaves(&z, &ahead, dec)? {
                     points.push(end.z);
                     found[side] = Some(end);
                     break;
@@ -976,7 +1173,12 @@ impl System {
     /// Where the spine between traced points `z` and `ahead` first leaves a
     /// support's square, if it does: the root with the leaving parameter at
     /// its border.
-    fn leaves(&self, z: &[f64; 9], ahead: &[f64; 9]) -> Option<End> {
+    fn leaves(
+        &self,
+        z: &[f64; 9],
+        ahead: &[f64; 9],
+        dec: &mut Decider,
+    ) -> Result<Option<End>, Refusal> {
         let tau = self.tau();
         let mut best: Option<End> = None;
         for q in self.contacts() {
@@ -987,11 +1189,12 @@ impl System {
             } else {
                 continue;
             };
+            dec.charge_work(10)?;
             let fraction = (border - z[q]) / (ahead[q] - z[q]);
-            count(9);
+
             let mut guess: [f64; 9] = std::array::from_fn(|k| z[k] + fraction * (ahead[k] - z[k]));
             guess[q] = border;
-            let Some(root) = self.newton(q, guess) else {
+            let Some(root) = self.newton(q, guess, dec)? else {
                 continue;
             };
             let nearer = best
@@ -1005,7 +1208,7 @@ impl System {
                 });
             }
         }
-        best.or_else(|| {
+        Ok(best.or_else(|| {
             // A parameter left, but no border root was found: the trace stops
             // at the last point inside, and the end proof refuses.
             self.contacts()
@@ -1016,7 +1219,7 @@ impl System {
                     border: f64::NAN,
                     z: *z,
                 })
-        })
+        }))
     }
 
     /// Proves one root with value `pinned` held exactly at `z[pinned]`, in a
@@ -1029,21 +1232,20 @@ impl System {
     ) -> Result<Option<[Interval; 9]>, Refusal> {
         let unknowns = free(pinned);
         let at: [Tm; 9] = std::array::from_fn(|k| Tm::constant(point(z[k])));
+        self.reserve_system(false, 1, 1, dec)?;
         let (g, _) = self.system(&at, false);
-        charge(dec)?;
         let mut around = at.clone();
         for &k in &unknowns {
             around[k] = Tm::constant(point(z[k]) + spread(BOX));
         }
+        self.reserve_system(true, 1, 1, dec)?;
         let (_, j) = self.system(&around, true);
-        charge(dec)?;
         let g: [Interval; 8] = std::array::from_fn(|k| g[k].range());
         let j = j.expect("a Jacobian");
         let j: [[Interval; 9]; 8] =
             std::array::from_fn(|r| std::array::from_fn(|c| j[r][c].range()));
         let scale: [f64; 8] = std::array::from_fn(|i| 1.0 + z[unknowns[i]].abs());
-        let proof = krawczyk(&g, &j, pinned, &scale);
-        charge(dec)?;
+        let proof = krawczyk(&g, &j, pinned, &scale, dec)?;
         Ok(proof.map(|k| {
             let mut out: [Interval; 9] = std::array::from_fn(|i| point(z[i]));
             for (i, &index) in unknowns.iter().enumerate() {
@@ -1090,13 +1292,14 @@ impl System {
         let half = (t[1] - t[0]) / 2.0;
         let mut solutions = Vec::with_capacity(TERMS);
         for s in NODES {
+            dec.charge_work(11)?;
             let at = middle + half * s;
-            let Some(z) = self.newton(tau, self.guess(points, at)) else {
-                charge(dec)?;
+            let Some(z) = self.newton(tau, self.guess(points, at), dec)? else {
                 return Ok(None);
             };
             solutions.push(z);
         }
+        dec.charge_work((TERMS * (TERMS - 2)) as u64)?;
         let vandermonde: Vec<Vec<f64>> = NODES
             .iter()
             .map(|s| {
@@ -1104,58 +1307,59 @@ impl System {
                 for k in 2..TERMS {
                     row.push(row[k - 1] * s);
                 }
-                count((TERMS - 2) as u64);
+
                 row
             })
             .collect();
         let mut model = [[0.0; TERMS]; 8];
         for (i, &index) in unknowns.iter().enumerate() {
             let values = solutions.iter().map(|z| z[index]).collect();
-            let Some(coefficients) = solve(vandermonde.clone(), values) else {
-                charge(dec)?;
+            let Some(coefficients) = solve(vandermonde.clone(), values, dec)? else {
                 return Ok(None);
             };
             model[i].copy_from_slice(&coefficients);
         }
-        charge(dec)?;
         let models: [Tm; 8] = std::array::from_fn(|i| Tm(model[i].map(point).to_vec()));
         let mut inputs: [Tm; 9] = std::array::from_fn(|_| Tm::constant(zero()));
         inputs[tau] = Tm(vec![point(middle), point(half)]);
         for (i, &index) in unknowns.iter().enumerate() {
             inputs[index] = models[i].clone();
         }
+        dec.charge_work(self.taylor_work[0])?;
         let (residual, _) = self.system(&inputs, false);
-        charge(dec)?;
         let g: [Interval; 8] = std::array::from_fn(|k| residual[k].range());
         for &index in &unknowns {
             let mut widened = inputs[index].clone();
             widened.0[0] = widened.0[0] + spread(BOX);
             inputs[index] = widened;
         }
+        dec.charge_work(self.taylor_work[1])?;
         let (_, j) = self.system(&inputs, true);
-        charge(dec)?;
         let j = j.expect("a Jacobian");
         let j: [[Interval; 9]; 8] =
             std::array::from_fn(|r| std::array::from_fn(|c| j[r][c].range()));
         let scale: [f64; 8] = std::array::from_fn(|i| 1.0 + magnitude(models[i].range()));
-        let Some(proof) = krawczyk(&g, &j, tau, &scale) else {
-            charge(dec)?;
+        let Some(proof) = krawczyk(&g, &j, tau, &scale, dec)? else {
             return Ok(None);
         };
-        let slope = solve_derivative(&proof, j.map(|row| row[tau]));
+        let slope = solve_derivative(&proof, j.map(|row| row[tau]), dec)?;
         // Twice differentiating F(z(tau)) = 0 gives the same linear
         // system with the directional second derivative of F as its load.
-        let acceleration = slope.and_then(|d| {
+        let acceleration = if let Some(d) = slope {
             let mut z: [Directional; 9] = std::array::from_fn(|_| Directional::constant(zero()));
             z[tau] = Directional([Interval::new(t[0], t[1]).unwrap(), point(1.0), zero()]);
             for (i, index) in unknowns.into_iter().enumerate() {
                 z[index] = Directional([models[i].range() + proof.image[i], d[i], zero()]);
             }
+            self.reserve_system(false, 6, 3, dec)?;
             let (g, _) = self.system(&z, false);
-            let second = solve_derivative(&proof, g.map(|value| product(point(2.0), value.0[2])))?;
-            Some([second[0], second[1], second[2]])
-        });
-        charge(dec)?;
+            dec.charge_work(8)?;
+            solve_derivative(&proof, g.map(|value| product(point(2.0), value.0[2])), dec)?
+                .map(|second| [second[0], second[1], second[2]])
+        } else {
+            None
+        };
+        dec.charge_work(3)?;
         let eps = (0..3)
             .fold(zero(), |sum, i| {
                 sum + point(magnitude(proof.image[i])).square()
@@ -1169,11 +1373,10 @@ impl System {
         let mut uniqueness = proof.radius;
         let mut largest = uniqueness.into_iter().fold(0.0, f64::max);
         while largest <= BOX / 2.0 {
+            dec.charge_work(9)?;
             uniqueness = uniqueness.map(|r| r * 2.0);
             largest *= 2.0;
-            count(9);
         }
-        charge(dec)?;
         Ok(Some(SpineSpan {
             tau: t,
             model,
@@ -1327,7 +1530,6 @@ impl Spine {
         plane_index: Option<usize>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        PRODUCTS.with(|c| c.set(0));
         if definition.radius.sign() != Sign::Positive {
             return Err(definition_refusal("the radius must be positive"));
         }
@@ -1337,7 +1539,9 @@ impl Spine {
         if definition.axis > 1 {
             return Err(definition_refusal("the axis must be 0 (u) or 1 (v)"));
         }
-        if definition.seed.sign() == Sign::Negative || definition.seed > Rational::one() {
+        if definition.seed.sign() == Sign::Negative
+            || exact::cmp(&definition.seed, &Rational::one(), dec)?.is_gt()
+        {
             return Err(definition_refusal("the seed must lie in [0, 1]"));
         }
         let radius = Interval::from_rational(&definition.radius);
@@ -1351,24 +1555,26 @@ impl Spine {
                 Sign::Zero => return Err(definition_refusal("each side must be nonzero")),
             };
             let prepared = if plane_index == Some(i) {
-                let surface = Surface::BSpline(patch.clone().into());
-                let Some(Surface::Plane(plane)) = crate::flat_support(&surface) else {
+                let Some(normal) = flat_normal(patch, dec)? else {
                     return Err(definition_refusal(
                         "the analytic support must be a whole bilinear plane chart",
                     ));
                 };
-                let n = plane.normal;
                 let d = match orientation {
                     Sign::Positive => definition.radius.clone(),
                     Sign::Negative => -&definition.radius,
                     Sign::Zero => unreachable!("the side was validated"),
                 };
-                let translation = if let Some(n) = n.as_rational()
-                    && let Some(length) = crate::profile::sqrt(&n.norm_squared())
-                {
-                    n.scaled(&(&d / &length)).to_real()
+                let square = exact::dot(&normal, &normal, dec)?;
+                dec.reserve_uncounted_arithmetic(&square, &square, true)?;
+                let translation = if let Some(length) = crate::profile::sqrt(&square) {
+                    let factor = exact::div(&d, &length, dec)?;
+                    let [x, y, z] = exact::scale(&normal, &factor, dec)?;
+                    RVector3::new(x, y, z).to_real()
                 } else {
-                    n.scaled(&(&Real::from(d) / &n.norm_squared().sqrt()))
+                    let [x, y, z] = normal;
+                    let n = RVector3::new(x, y, z).to_real();
+                    n.scaled(&(&Real::from(d) / &Real::from(square).sqrt()))
                 };
                 let pose = Pose::new(Rotation::identity(), translation, dec)?;
                 Support::new(&patch.transformed(&pose), zero(), dec).map(|mut p| {
@@ -1380,17 +1586,18 @@ impl Spine {
             };
             supports.push(prepared?);
         }
-        let half_tolerance = &definition.tolerance / &Rational::from_i64(2);
+        let half_tolerance = exact::div(&definition.tolerance, &Rational::from_i64(2), dec)?;
         let target = TUBE_CAP.min(Interval::from_rational(&half_tolerance).lo());
-        let system = System {
+        let mut system = System {
             supports: [supports[0].clone(), supports[1].clone()],
             axis: definition.axis,
+            taylor_work: [0; 2],
         };
         let tau = system.tau();
         let seed_tau = Interval::from_rational(&definition.seed).mid();
-        let proposed = system.seed(seed_tau);
-        charge(dec)?;
-        let seed = proposed.ok_or_else(|| refusal("no spine point was found at the seed"))?;
+        let seed = system
+            .seed(seed_tau, dec)?
+            .ok_or_else(|| refusal("no spine point was found at the seed"))?;
         if system
             .contacts()
             .iter()
@@ -1425,6 +1632,7 @@ impl Spine {
         if !(ends[0].point[tau].hi() < seed_tau && seed_tau < ends[1].point[tau].lo()) {
             return Err(refusal("the border roots do not enclose the seed"));
         }
+        system.taylor_work = system.taylor_work(dec)?;
         let range = [ends[0].point[tau].lo(), ends[1].point[tau].hi()];
         let width = 0.5f64.powi(FIRST_LEVEL as i32);
         let first = (range[0] / width).floor().max(0.0) as i64;
@@ -1432,6 +1640,7 @@ impl Spine {
         let mut spans = Vec::new();
         let mut widest_failure: Option<f64> = None;
         for j in first..last {
+            dec.charge_work(2)?;
             let t = [j as f64 * width, (j + 1) as f64 * width];
             system.cover(
                 t,
@@ -1465,7 +1674,6 @@ impl Spine {
             seed_root: [zero(); 9],
         };
         spine.seed_root = spine.check(&spine.system, &seed, dec)?;
-        charge(dec)?;
         Ok(spine)
     }
 
@@ -1493,22 +1701,24 @@ impl Spine {
             if join.to_bits() != b.tau[0].to_bits() {
                 return Err(refused());
             }
+            dec.charge_work((4 * 8 * TERMS) as u64)?;
             if inside(a, 1.0, b, -1.0) || inside(b, -1.0, a, 1.0) {
                 continue;
             }
             // A span-wide enclosure can be too wide to fit in its neighbour,
             // even when their exact endpoint agrees. Isolate the root at the
             // shared parameter to tie both uniqueness boxes to that root.
+            dec.charge_work((8 * TERMS) as u64)?;
             let mut guess = [join; 9];
             for (i, &index) in unknowns.iter().enumerate() {
                 guess[index] = a.model_at(i, point(1.0)).mid();
             }
-            let proposed = system.newton(tau, guess);
-            charge(dec)?;
+            let proposed = system.newton(tau, guess, dec)?;
             let root = system
                 .prove_point(tau, &proposed.ok_or_else(refused)?, dec)?
                 .ok_or_else(refused)?;
             for (span, s) in [(a, 1.0), (b, -1.0)] {
+                dec.charge_work((8 * TERMS) as u64)?;
                 if !unknowns.iter().enumerate().all(|(i, &index)| {
                     let gap = root[index] - span.model_at(i, point(s));
                     gap.lo() > -span.radius[i] && gap.hi() < span.radius[i]
@@ -1532,6 +1742,7 @@ impl Spine {
                 if at.hi() < span.tau[0] || at.lo() > span.tau[1] {
                     continue;
                 }
+                dec.charge_work((8 * TERMS + 1) as u64)?;
                 let s = span.variable(at);
                 let inside = unknowns.iter().enumerate().all(|(i, &index)| {
                     let gap = root[index] - span.model_at(i, s);
@@ -1584,6 +1795,7 @@ impl Spine {
                 (0..self.spans.len()).rev().collect()
             };
             for k in order {
+                dec.charge_work(2)?;
                 let span = &self.spans[k];
                 let range = span.ranges()[slot];
                 if range.lo() >= 0.0 && range.hi() <= 1.0 {

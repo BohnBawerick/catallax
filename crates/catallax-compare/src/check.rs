@@ -605,8 +605,7 @@ pub(crate) fn run(
         Err(error) => {
             use catallax_field::ComparisonBuildRefusal;
             let e = match error {
-                ComparisonBuildRefusal::BeforeRoute(refusal)
-                | ComparisonBuildRefusal::Ordinary(refusal) => refusal,
+                ComparisonBuildRefusal::Ordinary(refusal) => refusal,
                 ComparisonBuildRefusal::Spline(refusal) => {
                     report.sampled_distance_upper = None;
                     refusal

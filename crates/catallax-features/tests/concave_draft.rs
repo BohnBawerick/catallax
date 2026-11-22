@@ -29,10 +29,7 @@ fn q(x: &str) -> Rational {
     Rational::parse(x).unwrap()
 }
 fn fixture(name: &str) -> Json {
-    let path = format!(
-        "{}/tests/fixtures/concave-draft/{name}.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = format!("tests/fixtures/concave-draft/{name}.json");
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 fn recipe(source: &Json) -> Recipe {

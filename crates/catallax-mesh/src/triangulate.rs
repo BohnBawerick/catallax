@@ -1248,8 +1248,16 @@ pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
 }
 
 pub(crate) fn check_surface(model: &Model, body: BodyId, mesh: &Mesh) -> Result<(), Refusal> {
+    check_surface_faces(model, model.faces_of_body(body), mesh)
+}
+
+pub(crate) fn check_surface_faces(
+    model: &Model,
+    faces: impl IntoIterator<Item = FaceId>,
+    mesh: &Mesh,
+) -> Result<(), Refusal> {
     let mut uses = BTreeMap::<EdgeId, usize>::new();
-    for face in model.faces_of_body(body) {
+    for face in faces {
         for boundary in &model.face(face).loops {
             if let Loop::Coedges(coedges) = model.loop_(*boundary) {
                 for coedge in coedges {

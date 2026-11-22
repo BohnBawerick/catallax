@@ -1,12 +1,18 @@
 //! Explicit IGES verification requests through the public stream and replay commands.
+
+mod support;
+
 use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+use support::bin_command;
+
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 fn scratch(name: &str) -> PathBuf {
@@ -58,7 +64,7 @@ fn request(problem: Value, out: &Path, max_work: u64) -> Value {
 }
 /// One worker process answering its requests in order.
 fn stream(requests: &[Value]) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -215,7 +221,7 @@ fn a_process_io_failure_is_not_a_geometric_refusal() {
     // A directory where the previous artifact should be makes cleanup fail.
     let dir = scratch("io");
     fs::create_dir_all(dir.join("answer.igs")).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -287,7 +293,7 @@ fn replay_and_worker_counts_reproduce_outcomes_work_and_bytes() {
     for (i, expected) in baseline.iter().enumerate() {
         let original = baseline_dir.join(i.to_string());
         let replay = original.join("replay");
-        let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        let output = bin_command!("catallax-verify")
             .args([
                 "replay",
                 original.join("question.json").to_str().unwrap(),
@@ -327,7 +333,7 @@ fn existing_recipe_requests_keep_their_artifacts_and_gain_no_iges_file() {
 
 #[test]
 fn about_advertises_the_source_and_problem_format() {
-    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let output = bin_command!("catallax-verify")
         .arg("about")
         .output()
         .unwrap();

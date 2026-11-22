@@ -1,10 +1,15 @@
 //! M19 release controls through the public print command and its artifact cleanup.
+
+mod support;
+
 use serde_json::{Value, json};
 use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
-    process::{Command, Stdio},
+    process::Stdio,
 };
+
+use support::bin_command;
 
 fn without_clocks(value: &mut Value) {
     match value {
@@ -44,7 +49,7 @@ fn check(label: &str, cases: &[(&str, Value, &str)], allowance: u64) {
     fs::create_dir_all(&dir).unwrap();
     let mut reference = None;
     for workers in [1, 2, 4] {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        let mut child = bin_command!("catallax-verify")
             .env_remove("CATALLAX_THREADS")
             .args(["--threads", &workers.to_string(), "stream"])
             .stdin(Stdio::piped())

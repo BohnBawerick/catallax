@@ -301,7 +301,7 @@ A numbered sub-milestone of 4.2, "the field catches up". Constant-radius rolling
 
 Rule: the field derives its own ball paths. It does not reuse the B-rep's `rolling_pipe`, `rolling_saddle`, `rolling_sphere` or `rolling_mitre`, because a shared bug would fool both kernels. The milestone document names any shared dependency (the M10 pair search is one).
 
-Field queries return inside or outside plus a guaranteed distance range near the surface (Q23). Note that `rolling_region` today answers inside or outside only; its own doc says it implies no exact distance. Steps 1 and 7 must extend it.
+Field queries return inside or outside plus a guaranteed distance range near the surface (Q23).
 
 Steps, easiest first:
 
@@ -326,7 +326,7 @@ Measured on this machine (release build, i7-9750H; logs in [docs/research/cp2-gr
 - M10 spine search 2,332,939 / 2,666,401 / 6,793,048 work on the three M11 edges, identical at 1, 2 and 4 workers, 0.14 s to 0.40 s per edge;
 - full B-rep fillet 5.25M / 6.97M / 16.43M work, within 78 / 5 / 80 nm of the exact fillet.
 
-The blocker comes first: the field cannot hold a spline face. `import_spline.rs` admits bilinear patches only. An implicit route does not scale (a bicubic patch has an implicit of degree up to 18). The model to copy is the closed-mesh leaf (`mesh.rs`): distance to the nearest face, sign by counting ray crossings. Estimate 1,500 to 3,000 lines for whole patches, about double with trimming.
+4.2a remains open. See [the step 7 evidence and remaining refusal](docs/M42A-FIELD-FILLETS.md#steps-75-to-77-near-tangency-and-a-plane-chart).
 
 Step 7 sub-steps:
 
@@ -336,7 +336,7 @@ Step 7 sub-steps:
 - 7.3 The field's own spine proof: prove the two end points on the face borders, then a parametric Krawczyk proof span by span. Tube width eps <= min(100 nm, part tolerance / 2). A build that cannot reach it refuses and reports the eps reached.
 - 7.4 The swept-ball distance query on that tube.
 - 7.5 Near-tangent sweep on a synthetic edge: record the smallest face angle proved inside 20M, then decide the tail policy (deflation per Leykin et al. 2006, or a labelled bound).
-- 7.6 Spline-with-analytic pairs: M10 needs both sides as rational patches. Write the analytic offset (same family) as a rational patch with offset 0. Untested.
+- 7.6 Spline-with-analytic pairs: write the analytic offset (same family) as a rational patch with offset 0.
 - 7.7 Typed refusals, including a singular-contact control.
 
 Step 7 done when, on the three M11 edges plus one spline-plane edge:

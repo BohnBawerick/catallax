@@ -6,13 +6,20 @@ mod spline;
 mod stations;
 mod turning;
 
-use crate::{Plan, features::Feature, profile::Profile};
+use crate::{ComparisonBuildRefusal, Plan, features::Feature, profile::Profile};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
     BooleanKind, LoftSection, LoftShape, Operation, Recipe, Role, StepId, SweepOrientation,
 };
 use catallax_shapes::{Pose, RPoint3, RVector3, Rotation};
 use std::collections::BTreeMap;
+
+struct PatchOutline {
+    bottom: Vec<RPoint3>,
+    top: Vec<RPoint3>,
+    outward: bool,
+    segments: Vec<catallax_recipe::ElementId>,
+}
 
 fn point(p: &catallax_recipe::Point3) -> RPoint3 {
     let [x, y, z] = p.0.each_ref().map(|n| n.value().clone());
@@ -360,22 +367,58 @@ impl Plan {
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
-        step: &StepId,
+        (step, shell_refusal): (&StepId, fn(Refusal) -> ComparisonBuildRefusal),
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<usize, ComparisonBuildRefusal> {
         if recipe.loft_parameterization().ok()
             != Some(catallax_recipe::LoftParameterization::RationalCharts)
         {
-            return Err(Refusal::new(
+            return Err(ComparisonBuildRefusal::Ordinary(Refusal::new(
                 "loft.legacy-parameterization",
                 "legacy arc-length lofts are not rational-chart lofts",
-            ));
+            )));
         }
         let first = &profiles[&sections[0].profile];
-        let last = &profiles[&sections.last().expect("checked sections").profile];
         if let Some(node) = self.circular_loft(recipe, sections, profiles, step, dec)? {
             return Ok(node);
         }
+        let refusal = match Self::loft_translation(recipe, sections, shape, profiles, dec)
+            .map_err(ComparisonBuildRefusal::Ordinary)?
+        {
+            Ok(None) => return Ok(0),
+            Ok(Some(vector)) => {
+                let built = Feature::extrude_vector(first, step, vector, false, dec)?;
+                return self
+                    .motion_feature(built, dec)
+                    .map_err(ComparisonBuildRefusal::Ordinary);
+            }
+            Err(refusal) => refusal,
+        };
+        if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
+            return Ok(node);
+        }
+        if let Some(outline) = Self::patch_outline(sections, profiles, dec)
+            .map_err(ComparisonBuildRefusal::Ordinary)?
+            && let Some(node) = self.patch_loft(outline, step, dec).map_err(shell_refusal)?
+        {
+            return Ok(node);
+        }
+        if let Some(node) = self.affine_loft(sections, profiles, dec)? {
+            return Ok(node);
+        }
+        self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
+            .ok_or(ComparisonBuildRefusal::Ordinary(refusal))
+    }
+
+    fn loft_translation(
+        recipe: &Recipe,
+        sections: &[LoftSection],
+        shape: LoftShape,
+        profiles: &BTreeMap<StepId, Profile>,
+        dec: &mut Decider,
+    ) -> Result<Result<Option<RVector3>, Refusal>, Refusal> {
+        let first = &profiles[&sections[0].profile];
+        let last = &profiles[&sections.last().expect("checked sections").profile];
         let vector = last
             .pose
             .translation
@@ -415,16 +458,9 @@ impl Plan {
                         .as_rational()
                         .is_some_and(|shift| shift.dot(&normal).is_zero())
             }) {
-                return Ok(0);
+                return Ok(Ok(None));
             }
-            return self.patch_or(
-                recipe,
-                fail(sections.len() - 1),
-                sections,
-                shape,
-                profiles,
-                dec,
-            );
+            return Ok(Err(fail(sections.len() - 1)));
         }
         let mut previous = Rational::zero();
         for (index, section) in sections.iter().enumerate() {
@@ -437,12 +473,12 @@ impl Plan {
                         || a.0.iter().zip(&b.0).any(|(a, b)| !same_segments(a, b))
                 })
             {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return Ok(Err(fail(index)));
             }
             if !p.pose.rotation.same_rotation(&first.pose.rotation, dec)?
                 || p.loops.len() != first.loops.len()
             {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return Ok(Err(fail(index)));
             }
             for (a, b) in first.loops.iter().zip(&p.loops) {
                 if a.len() != b.len()
@@ -453,7 +489,7 @@ impl Plan {
                             || a.full != b.full
                     })
                 {
-                    return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                    return Ok(Err(fail(index)));
                 }
             }
             for (a, b) in sections[0].start.iter().zip(&section.start) {
@@ -463,7 +499,7 @@ impl Plan {
                     })
                 };
                 if locate(original, a) != locate(current, b) {
-                    return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                    return Ok(Err(fail(index)));
                 }
             }
             let shift = p
@@ -474,44 +510,17 @@ impl Plan {
                 .ok_or_else(|| fail(index))?;
             let t = shift.dot(&normal) / height.clone();
             if !shift.cross(&vector).is_zero() || t < previous || t > Rational::one() {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return Ok(Err(fail(index)));
             }
             if shape == LoftShape::Smooth
                 && t != Rational::from_ratio(index as i64, (sections.len() - 1) as i64)
                     .expect("checked sections")
             {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return Ok(Err(fail(index)));
             }
             previous = t;
         }
-        self.motion_feature(
-            Feature::extrude_vector(first, step, vector, false, dec)?,
-            dec,
-        )
-    }
-
-    /// Tries the patch-shell lofts before returning the correspondence refusal.
-    fn patch_or(
-        &mut self,
-        recipe: &Recipe,
-        refusal: Refusal,
-        sections: &[LoftSection],
-        shape: LoftShape,
-        profiles: &BTreeMap<StepId, Profile>,
-        dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
-        if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
-            return Ok(node);
-        }
-        let node = self.patch_loft(sections, profiles, dec)?;
-        if let Some(node) = node {
-            return Ok(node);
-        }
-        if let Some(node) = self.affine_loft(sections, profiles, dec)? {
-            return Ok(node);
-        }
-        self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
-            .ok_or(refusal)
+        Ok(Ok(Some(vector)))
     }
 
     /// A loft between two parallel polygons, every slice of which is a
@@ -537,12 +546,86 @@ impl Plan {
     /// of corresponding line segments.
     fn patch_loft(
         &mut self,
-        sections: &[LoftSection],
-        profiles: &BTreeMap<StepId, Profile>,
+        outline: PatchOutline,
+        step: &StepId,
         dec: &mut Decider,
     ) -> Result<Option<usize>, Refusal> {
         use crate::patch_shell::{Face, PatchFace, Polygon, Shell};
         use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
+        let PatchOutline {
+            bottom,
+            top,
+            outward,
+            segments,
+        } = outline;
+        let n = bottom.len();
+        let control =
+            |p: &RPoint3| Point3::new(p.x.clone().into(), p.y.clone().into(), p.z.clone().into());
+        let knots = vec![
+            Rational::zero(),
+            Rational::zero(),
+            Rational::one(),
+            Rational::one(),
+        ];
+        let mut faces = Vec::with_capacity(n + 2);
+        for k in 0..n {
+            let next = (k + 1) % n;
+            let carrier = BSplineSurface::new(
+                [1, 1],
+                [knots.clone(), knots.clone()],
+                [2, 2],
+                vec![
+                    control(&bottom[k]),
+                    control(&top[k]),
+                    control(&bottom[next]),
+                    control(&top[next]),
+                ],
+                vec![catallax_numbers::Real::one(); 4],
+                dec,
+            )?;
+            let patch = match RationalPatch::new(carrier, dec) {
+                Ok(patch) => patch,
+                Err(refusal) if refusal.code == "shapes.rational-patch-unproven" => {
+                    return Ok(None);
+                }
+                Err(refusal) => return Err(refusal),
+            };
+            // `u` runs along the segments in the loop's sense and `v` toward
+            // the second section, so the natural normal points out of a
+            // counterclockwise loft that rises along the frame's normal.
+            faces.push(Face::Patch(Box::new(PatchFace::new(&patch, outward, dec)?)));
+        }
+        // Each cap's vertices run counterclockwise seen from outside: the
+        // first section is seen from below the loft, the second from above.
+        let mut bottom = bottom;
+        let mut top = top;
+        if outward {
+            bottom.reverse();
+        } else {
+            top.reverse();
+        }
+        faces.push(Face::Polygon(Box::new(Polygon::new(bottom)?)));
+        faces.push(Face::Polygon(Box::new(Polygon::new(top)?)));
+        let sides = segments
+            .into_iter()
+            .map(|segment| catallax_recipe::Origin {
+                step: step.clone(),
+                role: Role::Side {
+                    segment,
+                    path: None,
+                },
+            })
+            .collect();
+        let shell = Shell::new(faces)?.named_loft(sides);
+        self.leaf(crate::geometry::Leaf::Shell(Box::new(shell)), vec![], dec)
+            .map(Some)
+    }
+
+    fn patch_outline(
+        sections: &[LoftSection],
+        profiles: &BTreeMap<StepId, Profile>,
+        dec: &mut Decider,
+    ) -> Result<Option<PatchOutline>, Refusal> {
         if sections.len() != 2 {
             return Ok(None);
         }
@@ -634,60 +717,13 @@ impl Plan {
         let top: Vec<RPoint3> = (0..n)
             .map(|k| world(&last.pose, &b[(sb + k) % n].start))
             .collect();
-        let control =
-            |p: &RPoint3| Point3::new(p.x.clone().into(), p.y.clone().into(), p.z.clone().into());
-        let knots = vec![
-            Rational::zero(),
-            Rational::zero(),
-            Rational::one(),
-            Rational::one(),
-        ];
-        let mut faces = Vec::with_capacity(n + 2);
-        for k in 0..n {
-            let next = (k + 1) % n;
-            let carrier = BSplineSurface::new(
-                [1, 1],
-                [knots.clone(), knots.clone()],
-                [2, 2],
-                vec![
-                    control(&bottom[k]),
-                    control(&top[k]),
-                    control(&bottom[next]),
-                    control(&top[next]),
-                ],
-                vec![catallax_numbers::Real::one(); 4],
-                dec,
-            )?;
-            let patch = match RationalPatch::new(carrier, dec) {
-                Ok(patch) => patch,
-                Err(refusal) if refusal.code == "shapes.rational-patch-unproven" => {
-                    return Ok(None);
-                }
-                Err(refusal) => return Err(refusal),
-            };
-            // `u` runs along the segments in the loop's sense and `v` toward
-            // the second section, so the natural normal points out of a
-            // counterclockwise loft that rises along the frame's normal.
-            faces.push(Face::Patch(Box::new(PatchFace::new(
-                &patch,
-                counterclockwise == up,
-                dec,
-            )?)));
-        }
-        // Each cap's vertices run counterclockwise seen from outside: the
-        // first section is seen from below the loft, the second from above.
-        let mut bottom = bottom;
-        let mut top = top;
-        if counterclockwise == up {
-            bottom.reverse();
-        } else {
-            top.reverse();
-        }
-        faces.push(Face::Polygon(Box::new(Polygon::new(bottom)?)));
-        faces.push(Face::Polygon(Box::new(Polygon::new(top)?)));
-        let shell = Shell::new(faces)?;
-        self.leaf(crate::geometry::Leaf::Shell(Box::new(shell)), vec![], dec)
-            .map(Some)
+        let segments = (0..n).map(|k| a[(sa + k) % n].ids[0].clone()).collect();
+        Ok(Some(PatchOutline {
+            bottom,
+            top,
+            outward: counterclockwise == up,
+            segments,
+        }))
     }
 
     fn circular_loft(

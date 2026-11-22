@@ -415,6 +415,25 @@ and face queries cover convex removal, concave addition and blend origins.
 Application display and sampled whole-part comparison remain gated by
 periodic trimmed-face meshing.
 
+### Spline fillets in comparison
+
+`Plan::compile_for_comparison` can prove one convex fillet between adjacent
+sides of an unrounded, two-section ruled loft on the selected result's
+lineage. The sections must be single polygons with the same number of
+sides and the same frame rotation. Supply one edge reference that names
+both side roles and omit the `near` and `touching` selectors. The spline
+route closes at the original caps. Ordinary compilation and selections
+outside this scope use the regular fillet route. A valid empty selection
+preserves the input body.
+
+The rounded shell proves membership and exposes its blend origin and
+distance range through `Plan::spline_blend_origin` and
+`Plan::spline_blend_distance`. Mirrors and patterns that copy a rounded
+spline shell refuse with `field.spline-copy`. Copies of unrounded lofts
+support field queries and drop the loft side names. A later fillet using
+those original names returns `fillet.lost-edge`. See [the loft proof and cap
+cuts](M42A-FIELD-FILLETS.md#step-74-the-swept-ball-distance).
+
 ## Exact signs and surface directions
 
 Each primitive is an intersection of the exact polynomial inequalities of its supporting surfaces and caps. Tori use the ring-torus quartic, not a squared equation interpreted without its ring-radius restriction. A cone's cap inequalities select the intended nappe. Rational evaluation settles rational primitive signs, including exact boundary points, without a numerical tolerance; algebraic coefficients use certified shared decisions.

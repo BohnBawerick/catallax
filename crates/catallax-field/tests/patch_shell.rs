@@ -50,6 +50,10 @@ fn polygon(prefix: &str, points: &[(&str, &str)]) -> Value {
 fn recipe(top_start: &str, fillet: bool) -> Recipe {
     let bottom = polygon("a", &[("1", "-1"), ("1", "1"), ("-1", "1"), ("-1", "-1")]);
     let top = polygon("b", &[("1", "0"), ("0", "2"), ("-2", "0"), ("0", "-1")]);
+    ruled_loft(bottom, top, top_start, fillet)
+}
+
+fn ruled_loft(bottom: Value, top: Value, top_start: &str, fillet: bool) -> Recipe {
     let section = |i: usize, height: &str, loops: Value| {
         json!({"id":format!("section{i}"),"op":"sketch",
             "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]},
@@ -449,14 +453,208 @@ fn a_loft_whose_slices_are_not_convex_still_refuses() {
     assert_eq!(refusal.code, "field.loft-correspondence-unsupported");
 }
 
-/// The M11 fillet recipe now passes its loft in the field and reaches the
-/// fillet step, which refuses until the field's spline spine exists.
 #[test]
-fn the_m11_fillet_reaches_the_fillet_step_in_the_field() {
-    use catallax_field::Plan;
-    let refusal = Plan::compile(&recipe("b_0", true)).unwrap_err();
-    println!("M11 fillet in the field: {refusal:?}");
-    assert_ne!(refusal.code, "field.loft-correspondence-unsupported");
+fn points_inward_of_both_projected_rails_are_certifiably_inside() {
+    use catallax_field::{Plan, Workspace};
+
+    let bottom = polygon("a", &[("0", "0"), ("-2", "0"), ("-2", "-2"), ("0", "-2")]);
+    let top = polygon(
+        "b",
+        &[("3/2", "0"), ("-1/2", "0"), ("-1/2", "-2"), ("3/2", "-2")],
+    );
+    let plan = Plan::compile_for_comparison(
+        &ruled_loft(bottom, top, "b_0", true),
+        &catallax_features::ImportFiles::new(),
+        &mut decider(),
+    )
+    .unwrap();
+    let mut workspace = Workspace::default();
+    for (x, y) in [("3/4", "-1/10"), ("5/8", "0")] {
+        let point = RPoint3::new(r(x) - r("4/100"), r(y) - r("5/100"), q(1));
+        let proof = plan
+            .proven_checked(&point, &mut workspace, &mut decider())
+            .unwrap();
+        assert_eq!(proof.location, Location::Inside, "{point:?}");
+    }
+}
+
+#[test]
+fn the_m11_fillet_replaces_its_named_loft_edge() {
+    use catallax_field::{Plan, Workspace};
+    use catallax_numbers::with_operation_budget;
+    use catallax_recipe::Role;
+    let recipe = recipe("b_0", true);
+    assert_eq!(Plan::compile(&recipe).unwrap_err().code, "fillet.lost-edge");
+    let (plan, work) = with_operation_budget(20_000_000, || {
+        Plan::compile_for_comparison(
+            &recipe,
+            &catallax_features::ImportFiles::new(),
+            &mut decider(),
+        )
+    });
+    let plan = plan.unwrap();
+    let origin = plan.spline_blend_origin().expect("rounded loft face");
+    assert!(matches!(origin.role, Role::Blend { .. }));
+    assert_eq!(origin.step.as_str(), "round");
+    println!("M27 rounded loft: {} work", work.used);
+    for ([x, y, z], location) in [
+        (["1", "-1/2", "1"], Location::Outside),
+        (["1", "0", "2"], Location::Outside),
+        (["0", "0", "0"], Location::Boundary),
+        (["0", "0", "1"], Location::Inside),
+    ] {
+        let p = RPoint3::new(r(x), r(y), r(z));
+        let result = plan
+            .proven_checked(&p, &mut Workspace::default(), &mut decider())
+            .unwrap();
+        assert_eq!(result.location, location, "{p:?}: {result:?}");
+    }
+    let interior = RPoint3::new(r("1/3") + Q::one().mul_pow2(-2048), q(0), r("3/2"));
+    let (proof, work) = with_operation_budget(20_000_000, || {
+        plan.proven_checked(&interior, &mut Workspace::default(), &mut decider())
+    });
+    assert!(!work.exhausted, "{work:?}");
+    assert_eq!(proof.unwrap().location, Location::Inside);
+
+    let above = RPoint3::new(q(0), q(0), q(3) + Q::one().mul_pow2(-32_768));
+    let (outside, work) = with_operation_budget(16, || {
+        plan.proven_checked(&above, &mut Workspace::default(), &mut decider())
+    });
+    assert_eq!(outside.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted, "{work:?}");
+    assert_eq!(work.uncharged, 0, "{work:?}");
+    let rail = [0.9074607460926539, -0.5308464179691144, 1.0];
+    let x = r("0.9074607460926539");
+    let side_y = &x / &q(3) - r("5/6");
+    let mut workspace = Workspace::default();
+    for (offset, location) in [
+        ("-1/10000", Location::Outside),
+        ("1/10000", Location::Inside),
+    ] {
+        let point = RPoint3::new(x.clone(), &side_y + &r(offset), q(1));
+        let proof = plan
+            .proven_checked(&point, &mut workspace, &mut decider())
+            .unwrap();
+        assert_eq!(proof.location, location, "{point:?}");
+    }
+    assert!(plan.fast(rail, &mut workspace).unwrap().value.abs() < 1e-6);
+    assert!(
+        plan.unproved_preview(rail, &mut workspace)
+            .unwrap()
+            .value
+            .abs()
+            < 1e-6
+    );
+}
+
+#[test]
+fn rounded_loft_previews_skip_removed_corners_without_proof_work() {
+    use catallax_field::{Batch, Plan, UnprovedBatch, Workspace};
+    use catallax_numbers::with_operation_budget;
+
+    let plan = Plan::compile_for_comparison(
+        &recipe("b_0", true),
+        &catallax_features::ImportFiles::new(),
+        &mut decider(),
+    )
+    .unwrap();
+    let points = [
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.000000001, -0.5, 1.0],
+        [1.000000001, 0.0, 2.0],
+        [0.999999999, -0.5, 1.0],
+        [0.999999999, 0.0, 2.0],
+    ];
+    let ((), work) = with_operation_budget(0, || {
+        let mut workspace = Workspace::default();
+        let values = points.map(|p| {
+            let fast = plan.fast(p, &mut workspace).unwrap().value;
+            let preview = plan.unproved_preview(p, &mut workspace).unwrap();
+            assert!(!preview.true_distance_formula);
+            let preview = preview.value;
+            if p[0] == 0.0 {
+                assert!(fast < 0.0 && preview < 0.0);
+            } else {
+                assert!(fast > 0.01 && preview > 0.01, "{p:?}: {fast}, {preview}");
+            }
+            preview.to_bits()
+        });
+        for workers in [1, 2] {
+            let mut storage = UnprovedBatch::default();
+            let batch = plan
+                .unproved_preview_batch(&points, workers, &mut storage)
+                .unwrap();
+            assert!(batch.iter().map(|v| v.value.to_bits()).eq(values));
+            assert!(batch.iter().all(|v| !v.true_distance_formula));
+        }
+        let overflow = [1e200, 0.0, 1.0];
+        let mut batch = Batch::default();
+        let fast = plan.fast_batch(&points, &mut batch).unwrap();
+        assert!(fast.iter().all(|v| !v.true_distance_formula));
+        for code in [
+            plan.fast(overflow, &mut workspace).unwrap_err().code,
+            plan.unproved_preview(overflow, &mut workspace)
+                .unwrap_err()
+                .code,
+            plan.fast_batch(&[points[0], overflow], &mut batch)
+                .unwrap_err()
+                .code,
+            plan.unproved_preview_batch(&[points[0], overflow], 2, &mut UnprovedBatch::default())
+                .unwrap_err()
+                .code,
+        ] {
+            assert_eq!(code, "field.fast-range");
+        }
+    });
+    assert_eq!(work.used, 0);
+    assert!(!work.exhausted);
+    let far = RPoint3::new(Q::from_f64_exact(1e200).unwrap(), q(0), q(1));
+    let error = plan
+        .proven_checked(&far, &mut Workspace::default(), &mut decider())
+        .unwrap_err();
+    assert_eq!(error.code, "field.patch-shell", "{error:?}");
+}
+
+#[test]
+fn rounded_loft_preview_rejects_a_removed_cap_point() {
+    use catallax_field::{Batch, Plan, UnprovedBatch, Workspace};
+    use catallax_numbers::with_operation_budget;
+    let bottom = polygon("a", &[("0", "0"), ("-2", "0"), ("-2", "-2"), ("0", "-2")]);
+    let top = polygon("b", &[("2", "0"), ("0", "0"), ("0", "-2"), ("2", "-2")]);
+    let plan = Plan::compile_for_comparison(
+        &ruled_loft(bottom, top, "b_0", true),
+        &catallax_features::ImportFiles::new(),
+        &mut decider(),
+    )
+    .unwrap();
+    let [x, y, z] = [-0.09648786_f64, -0.00483167, 0.0];
+    let dx = x + 0.1 * 2.0_f64.sqrt();
+    let dy = y + 0.1;
+    assert!(dx > 0.0 && dy > 0.0 && dx * dx / 2.0 + dy * dy > 0.01);
+    let point = [x, y, z];
+    let ((), work) = with_operation_budget(0, || {
+        let mut workspace = Workspace::default();
+        let fast = plan.fast(point, &mut workspace).unwrap().value;
+        let preview = plan.unproved_preview(point, &mut workspace).unwrap().value;
+        assert!(fast > 1e-4 && preview > 1e-4, "{fast}, {preview}");
+        let points = [point; 2];
+        let mut batch = Batch::default();
+        let mut unproved = UnprovedBatch::default();
+        assert!(
+            plan.fast_batch(&points, &mut batch)
+                .unwrap()
+                .iter()
+                .all(|p| p.value.to_bits() == fast.to_bits())
+        );
+        assert!(
+            plan.unproved_preview_batch(&points, 2, &mut unproved)
+                .unwrap()
+                .iter()
+                .all(|p| p.value.to_bits() == preview.to_bits())
+        );
+    });
+    assert!(!work.exhausted && work.used == 0);
 }
 
 /// The print classifier settles a box of the loft only where the box meets

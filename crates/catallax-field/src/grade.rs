@@ -6,6 +6,7 @@
 
 use crate::geometry;
 use crate::metric::{PRECISION, Scalar};
+use catallax_features::grade::{Linear, rational_dot};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
 use catallax_recipe::Grade;
 use catallax_shapes::Vector3;
@@ -20,9 +21,6 @@ fn q(n: i64) -> Rational {
 fn f(r: &Rational) -> f64 {
     r.to_f64_nearest()
 }
-fn rational_dot(a: &[Rational; 3], b: &[Rational; 3]) -> Rational {
-    &(&a[0] * &b[0]) + &(&(&a[1] * &b[1]) + &(&a[2] * &b[2]))
-}
 fn imin(a: Interval, b: Interval) -> Interval {
     Interval::new(a.lo().min(b.lo()), a.hi().min(b.hi())).unwrap()
 }
@@ -34,16 +32,6 @@ fn clamp01(t: Interval) -> Interval {
         imax(t, Interval::point(0.0).unwrap()),
         Interval::point(1.0).unwrap(),
     )
-}
-
-/// A clamped linear grade with distinct anchors and distinct endpoint values.
-#[derive(Clone, Debug)]
-pub(crate) struct Linear {
-    pub(crate) from: [Rational; 3],
-    pub(crate) direction: [Rational; 3],
-    pub(crate) length_sq: Rational,
-    pub(crate) start: Rational,
-    pub(crate) end: Rational,
 }
 
 /// On a rectangular body the distance to each trimmed face is its inward
@@ -137,16 +125,12 @@ impl GradeDef {
                 if start == end {
                     return Ok(Some(Self::Constant(start.value().clone())));
                 }
-                let from = from.0.each_ref().map(|n| n.value().clone());
-                let to = to.0.each_ref().map(|n| n.value().clone());
-                let direction: [Rational; 3] = std::array::from_fn(|i| &to[i] - &from[i]);
-                Self::Linear(Box::new(Linear {
-                    length_sq: rational_dot(&direction, &direction),
-                    from,
-                    direction,
-                    start: start.value().clone(),
-                    end: end.value().clone(),
-                }))
+                Self::Linear(Box::new(Linear::new(
+                    from.0.each_ref().map(|n| n.value().clone()),
+                    to.0.each_ref().map(|n| n.value().clone()),
+                    start.value().clone(),
+                    end.value().clone(),
+                )))
             }
             Grade::Distance { .. } => return Ok(None),
             Grade::Point {
@@ -226,7 +210,7 @@ impl GradeDef {
             return faces.slope.clone();
         }
         if let Self::Radius(radius) = self {
-            return radius.slope.abs();
+            return radius.ramp.slope.abs();
         }
         let Self::Linear(linear) = self else {
             return q(0);
@@ -243,29 +227,16 @@ impl GradeDef {
             .expect("a positive lower bound on a nonzero length")
     }
 
-    fn parameter(linear: &Linear, p: &[Rational; 3]) -> Rational {
-        let rel: [Rational; 3] = std::array::from_fn(|i| &p[i] - &linear.from[i]);
-        rational_dot(&rel, &linear.direction)
-            .checked_div(&linear.length_sq)
-            .expect("distinct grade points")
-    }
-
-    fn interpolate(linear: &Linear, t: Rational) -> Rational {
-        let t = t.max(q(0)).min(q(1));
-        &linear.start + &(&t * &(&linear.end - &linear.start))
-    }
-
     /// The exact value for grades whose value at a rational point is rational.
     pub(crate) fn rational_value(&self, p: &[Rational; 3]) -> Option<Rational> {
         Some(match self {
             Self::Constant(c) => c.clone(),
-            Self::Linear(linear) => Self::interpolate(linear, Self::parameter(linear, p)),
-            Self::Faces(faces) => Self::interpolate(
-                &faces.planes[0],
+            Self::Linear(linear) => linear.interpolate(linear.parameter(p)),
+            Self::Faces(faces) => faces.planes[0].interpolate(
                 faces
                     .planes
                     .iter()
-                    .map(|plane| Self::parameter(plane, p))
+                    .map(|plane| plane.parameter(p))
                     .min()
                     .expect("selected faces"),
             ),
@@ -470,7 +441,7 @@ impl GradeDef {
                 }
             })
         };
-        [corner(false), corner(true)].map(|p| Self::parameter(linear, &p))
+        [corner(false), corner(true)].map(|p| linear.parameter(&p))
     }
 
     /// The piece that holds over a whole closed rational box, decided exactly, or
@@ -525,19 +496,16 @@ impl GradeDef {
                     .map(|plane| Self::parameter_range(plane, lo, hi))
                     .reduce(|[a, b], [c, d]| [a.min(c), b.min(d)])
                     .expect("selected faces");
-                let [a, b] = [lo, hi].map(|t| Self::interpolate(&faces.planes[0], t));
+                let [a, b] = [lo, hi].map(|t| faces.planes[0].interpolate(t));
                 [a.clone().min(b.clone()), a.max(b)]
             }
             Self::Linear(linear) => {
-                let [a, b] = Self::parameter_range(linear, lo, hi).map(|t| {
-                    let t = t.max(q(0)).min(q(1));
-                    &linear.start + &(&t * &(&linear.end - &linear.start))
-                });
+                let [a, b] = Self::parameter_range(linear, lo, hi).map(|t| linear.interpolate(t));
                 [a.clone().min(b.clone()), a.max(b)]
             }
             Self::Radius(radius) => {
                 let value = radius.interval(&interval_box(lo, hi));
-                let [a, b] = &radius.values;
+                let [a, b] = &radius.ramp.values;
                 [
                     Rational::from_f64_exact(value.lo()).unwrap_or_else(|| a.min(b).clone()),
                     Rational::from_f64_exact(value.hi()).unwrap_or_else(|| a.max(b).clone()),
@@ -570,7 +538,7 @@ impl GradeDef {
             end,
             ..
         } = linear.as_ref();
-        let t = Self::parameter(linear, p);
+        let t = linear.parameter(p);
         let along = &(&Real::from(direction[0].clone()) * &d.x)
             + &(&(&Real::from(direction[1].clone()) * &d.y)
                 + &(&Real::from(direction[2].clone()) * &d.z));
@@ -649,11 +617,7 @@ impl FaceDistance {
         d: &Vector3,
         dec: &mut Decider,
     ) -> Result<Option<Real>, Refusal> {
-        let parameters: Vec<_> = self
-            .planes
-            .iter()
-            .map(|plane| GradeDef::parameter(plane, p))
-            .collect();
+        let parameters: Vec<_> = self.planes.iter().map(|plane| plane.parameter(p)).collect();
         let first = parameters.iter().min().expect("selected faces");
         if first < &q(0) || first > &q(1) {
             return Ok(None);
@@ -695,9 +659,9 @@ pub(crate) fn check_certified(
 ) -> Result<(), Refusal> {
     if let GradeDef::Radius(radius) = grade {
         return check_limits(
-            radius.values.each_ref(),
+            radius.ramp.values.each_ref(),
             [low, high],
-            || radius.slope.abs(),
+            || radius.ramp.slope.abs(),
             max_slope,
             range,
         );

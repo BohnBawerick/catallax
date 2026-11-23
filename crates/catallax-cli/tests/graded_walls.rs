@@ -33,6 +33,21 @@ fn shell(open: Value, thickness: Value) -> Value {
     json!({"id":"wall","op":"shell_graded","body":"stock","open":open,"thickness":thickness})
 }
 
+fn open_sides() -> Vec<Value> {
+    ["x_min", "x_max", "y_min", "y_max"]
+        .map(|segment| json!({"face":{"step":"stock","role":{"side":{"segment":segment}}}}))
+        .into()
+}
+
+fn point_grade() -> Value {
+    json!({"point":{"centre":["5","4","-2"],"r0":"7","r1":"8","start":"1","end":"2"}})
+}
+
+fn radial_grade() -> Value {
+    json!({"radial":{"origin":["0","4","6"],"direction":["3","0","0"],
+        "r0":"0","r1":"8","start":"1","end":"2"}})
+}
+
 fn recipe(steps: Vec<Value>, result: &str) -> Recipe {
     Recipe::parse(
         &json!({
@@ -340,19 +355,145 @@ fn the_saved_graded_wall_accepts_a_later_feature_and_replays_exact_step() {
 }
 
 #[test]
+fn point_grade_certifies_each_face_in_its_own_clamp() {
+    let tray = recipe(
+        vec![stock(), shell(json!(open_sides()), point_grade())],
+        "wall",
+    );
+    let mut built = build(&tray);
+    volume(&built, "240");
+    probes(
+        &tray,
+        &mut built,
+        &[
+            (["5", "4", "1"], Location::Boundary),
+            (["5", "4", "2"], Location::Outside),
+            (["5", "4", "4"], Location::Boundary),
+            (["5", "4", "5"], Location::Inside),
+        ],
+    );
+    let sweep = recipe(vec![stock(), thicken("front", point_grade())], "wall");
+    let mut built = build(&sweep);
+    volume(&built, "160");
+    probes(
+        &sweep,
+        &mut built,
+        &[
+            (["5", "4", "8"], Location::Boundary),
+            (["1", "1", "15/2"], Location::Inside),
+            (["5", "4", "81/10"], Location::Outside),
+        ],
+    );
+}
+
+#[test]
+fn radial_grade_varies_on_both_sides_of_an_axis_in_the_face() {
+    let mut open = open_sides();
+    open.push(json!({"face":{"step":"stock","role":"start"}}));
+    let tray = recipe(vec![stock(), shell(json!(open), radial_grade())], "wall");
+    let mut built = build(&tray);
+    volume(&built, "100");
+    probes(
+        &tray,
+        &mut built,
+        &[
+            (["5", "4", "5"], Location::Boundary),
+            (["5", "2", "19/4"], Location::Boundary),
+            (["5", "6", "19/4"], Location::Boundary),
+            (["5", "4", "19/4"], Location::Outside),
+        ],
+    );
+    let sweep = recipe(vec![stock(), thicken("back", radial_grade())], "wall");
+    let mut built = build(&sweep);
+    volume(&built, "100");
+    probes(
+        &sweep,
+        &mut built,
+        &[
+            (["5", "4", "19/4"], Location::Outside),
+            (["5", "2", "19/4"], Location::Boundary),
+            (["5", "6", "19/4"], Location::Boundary),
+            (["5", "1", "19/4"], Location::Inside),
+        ],
+    );
+}
+
+#[test]
+fn oblique_shell_projects_onto_each_wall() {
+    let grade = json!({"linear":{"from":["0","0","0"],"to":["10","10","0"],
+        "start":"1","end":"3"}});
+    let tray = recipe(vec![stock(), shell(json!([]), grade)], "wall");
+    let mut built = build(&tray);
+    probes(
+        &tray,
+        &mut built,
+        &[
+            (["5", "3", "41/10"], Location::Outside),
+            (["5", "3", "21/5"], Location::Boundary),
+            (["5", "3", "43/10"], Location::Inside),
+            (["5", "3/2", "3"], Location::Boundary),
+            (["7/5", "4", "3"], Location::Boundary),
+        ],
+    );
+}
+
+#[test]
+fn oblique_thicken_certifies_both_clamps_and_accepts_a_later_cut() {
+    let grade = json!({"linear":{"from":["2","2","0"],"to":["6","6","0"],
+        "start":"1","end":"2"}});
+    let sweep = thicken("front", grade);
+    let thickened = recipe(vec![stock(), sweep.clone()], "wall");
+    let mut built = build(&thickened);
+    probes(
+        &thickened,
+        &mut built,
+        &[
+            (["1", "1", "7"], Location::Boundary),
+            (["4", "4", "15/2"], Location::Boundary),
+            (["8", "6", "8"], Location::Boundary),
+            (["4", "4", "151/20"], Location::Outside),
+        ],
+    );
+    let cut = recipe(
+        vec![
+            stock(),
+            sweep,
+            json!({"id":"tool","op":"block","size":["1","1","3"],"pose":pose(["4","4","6"])}),
+            json!({"id":"cut","op":"boolean","kind":"subtract","target":"wall","tool":"tool"}),
+        ],
+        "cut",
+    );
+    let cut = Recipe::parse(&cut.to_text()).unwrap();
+    let mut built = build(&cut);
+    probes(
+        &cut,
+        &mut built,
+        &[
+            (["9/2", "9/2", "7"], Location::Outside),
+            (["9/2", "11/2", "7"], Location::Inside),
+        ],
+    );
+}
+
+#[test]
 fn uncertified_selection_grade_and_source_have_named_refusals() {
     let mut multi = thicken("front", grade("0", "10", "3"));
     multi["faces"] = json!([{}]);
-    let mut diagonal = grade("0", "10", "3");
-    diagonal["linear"]["to"][1] = json!("4");
+    let mut curved = point_grade();
+    curved["point"]["r1"] = json!("10");
     let cylinder =
         json!({"id":"stock","op":"cylinder","radius":"4","height":"6","pose":pose(["0","0","0"])});
     for (source, op, code) in [
         (stock(), multi, "distance.grade-selection-unsupported"),
         (
             stock(),
-            thicken("front", diagonal),
-            "distance.grade-function-unsupported",
+            thicken("front", curved),
+            "distance.grade-curved-wall-unsupported",
+        ),
+        (
+            stock(),
+            shell(json!([]), radial_grade()),
+            "distance.grade-curved-wall-unsupported",
         ),
         (
             stock(),

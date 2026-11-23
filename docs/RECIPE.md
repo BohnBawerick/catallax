@@ -875,13 +875,15 @@ In `catallax-recipe/5`, `shell_graded` and `thicken_graded` use the same body an
 {"linear":{"from":["0","0","0"],"to":["10","0","0"],"start":"1","end":"3"}}
 ```
 
-Anchors are in part coordinates, in mm. A nonconstant grade varies along one part axis and clamps to the positive endpoint values outside the anchor planes. A `constant` grade or equal endpoint values use the scalar operation. Coincident anchors are a refusal.
+Anchors are in part coordinates, in mm. A linear grade follows the projection onto the line through its anchors and clamps to the positive endpoint values outside the anchor planes. The line can be oblique. Point and radial grades use distance to the centre or axis, with the same radius and clamp rules as graded lattice radii. A `constant` grade or a valid grade with equal endpoint values uses the scalar operation. Coincident linear anchors return `distance.grade-coincident-anchors`. Invalid radii or a zero radial direction return `distance.grade-invalid-radius`.
 
 `thicken_graded` certifies the normal sweep of one convex planar face of an exact convex planar solid. At each source point the sweep length is the grade at that point. `side` selects the same front or back direction as scalar Thicken. The base preserves the source origins, the outer patches use `offset.of`, and edge walls use `rim.edge`. A clamp inside the face can split the outer boundary into several patches with the same origin.
 
 `shell_graded` certifies an axis-aligned rectangular solid with an open or closed cavity. For a point in the box, each kept wall tests the inward normal clearance against the grade at that point's perpendicular foot on the source wall. The cavity consists of the points beyond the wall in every kept direction. The inner patches use `inner.of`. Outer faces and the rim of an opening inherit their source origins. Opening every face gives an empty body.
 
-A nonconstant grade outside this geometry returns `distance.grade-source-unsupported` or `distance.grade-selection-unsupported`. A shell whose opposing walls can consume the cavity returns `distance.grade-clearance`. Oblique or distance grades return `distance.grade-function-unsupported`. Both evaluators use exact planar cuts at the clamp planes and the same work allowances as the scalar operations.
+A point or radial grade can use a constant clamp when the entire selected or kept face lies within it. A radial axis in the plane of a face also gives an exact planar ramp on either side of the axis. Other point and radial ramps return `distance.grade-curved-wall-unsupported` because the exact planar wall construction cannot represent the curved offsets. Face-distance grades return `distance.grade-function-unsupported`.
+
+Sources and selections outside the supported geometry return `distance.grade-source-unsupported` or `distance.grade-selection-unsupported`. Shell checks for positive cavity width and returns `distance.grade-clearance` when the opposing wall thickness bounds consume that width. For oblique, point and radial grades, those bounds cover each full kept source face. Both evaluators use exact planar cuts and the same work allowances as the scalar operations.
 
 ### 4.10 Draft
 

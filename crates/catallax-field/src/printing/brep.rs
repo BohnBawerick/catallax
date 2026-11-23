@@ -22,6 +22,7 @@ pub struct Output {
     rounding_bound: Rational,
     options: Options,
     field_route: bool,
+    field_material_isotopy: bool,
 }
 
 /// Qualifies the exact supplied body, without rebuilding it or using its display.
@@ -203,6 +204,7 @@ fn qualify(
     Ok(Output {
         options: options.clone(),
         field_route: false,
+        field_material_isotopy: false,
         mesh: Mesh {
             positions,
             triangles,
@@ -319,6 +321,10 @@ impl Output {
     pub fn rounding_bound(&self) -> &Rational {
         &self.rounding_bound
     }
+    /// Whether this field export certifies material correspondence.
+    pub fn field_material_isotopy(&self) -> bool {
+        self.field_material_isotopy
+    }
     /// The existing print header; all contributions are conservatively rounded together.
     pub fn header(&mut self) -> Result<[u8; 80], Refusal> {
         header(self)
@@ -328,6 +334,49 @@ impl Output {
 /// Qualifies the native-field route with the same retained output controls.
 /// This never retries a failed B-rep request as a field request.
 pub fn field(plan: &crate::Plan, options: &Options, dec: &mut Decider) -> Result<Output, Refusal> {
+    if let Some(result) = super::lattice_isotopy::candidate(plan, options, dec) {
+        let certified = result?;
+        let mut positions = Vec::with_capacity(certified.points.len());
+        let mut rounding_bound = Rational::zero();
+        for p in &certified.points {
+            dec.charge_work(1)?;
+            let rounded = p.each_ref().map(|v| v.to_f64_nearest() as f32);
+            if rounded.iter().any(|v| !v.is_finite()) {
+                return Err(Refusal::new(
+                    "field.print-coordinate",
+                    "coordinate exceeds finite binary32 range",
+                ));
+            }
+            let error = (0..3).fold(Rational::zero(), |sum, i| {
+                &sum + &(&p[i] - &Rational::from_f64_exact(f64::from(rounded[i])).unwrap()).abs()
+            });
+            rounding_bound = rounding_bound.max(error);
+            positions.push(rounded);
+        }
+        let bound = &certified.displacement + &rounding_bound;
+        if bound > options.tolerance {
+            return Err(Refusal::new(
+                "field.print-coordinate",
+                "encoded lattice exceeds the accuracy allowance",
+            ));
+        }
+        qualification::topology(&certified.triangles, positions.len(), dec)?;
+        qualification::motion_rational(&certified.points, &positions, &certified.triangles, dec)?;
+        return Ok(Output {
+            mesh: Mesh {
+                positions,
+                triangles: certified.triangles,
+                max_deviation: bound,
+                cells: certified.cells,
+            },
+            model_bound: Rational::zero(),
+            tessellation_bound: certified.displacement,
+            rounding_bound,
+            options: options.clone(),
+            field_route: true,
+            field_material_isotopy: true,
+        });
+    }
     field_output(super::mesh_plan(plan, options, dec)?, options)
 }
 
@@ -341,5 +390,6 @@ pub(crate) fn field_output(mesh: Mesh, options: &Options) -> Result<Output, Refu
         rounding_bound: Rational::zero(),
         options: options.clone(),
         field_route: true,
+        field_material_isotopy: false,
     })
 }

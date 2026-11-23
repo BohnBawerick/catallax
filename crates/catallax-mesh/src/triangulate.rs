@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use catallax_numbers::{
     Answer, Answered, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, StrictSign,
 };
-use catallax_shapes::{Curve, Sphere, Surface, Vector3};
+use catallax_shapes::{
+    Curve, Sphere, SplineSupport, Surface, Vector3, tessellation::checked_triangle_bound,
+};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
@@ -53,14 +55,11 @@ struct FaceBuilder<'a> {
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
     filtered_hessian: [Interval; 3],
-    dec: &'a Decider,
+    dec: &'a mut Decider,
 }
 
 impl FaceBuilder<'_> {
     fn node(&mut self, uv: Uv, boundary: Option<usize>) -> Result<Node, Refusal> {
-        if self.positions.len() >= self.options.max_vertices {
-            return Err(failure("face triangulation reached max_vertices"));
-        }
         let canonical = self.chart.canonical(uv);
         let (mesh, error) = if let Some(&(mesh, error)) = self.canonical.get(&key(canonical)) {
             if boundary.is_some_and(|index| index != mesh) {
@@ -69,10 +68,11 @@ impl FaceBuilder<'_> {
                 ));
             }
             (mesh, error)
-        } else if self.unproved {
+        } else if self.unproved && self.chart.spline().is_none() {
             let mesh = if let Some(index) = boundary {
                 index
             } else {
+                self.reserve_vertex()?;
                 let point = self.chart.preview_position(canonical, self.dec)?;
                 let index = self.positions.len();
                 self.positions.push(point);
@@ -81,22 +81,38 @@ impl FaceBuilder<'_> {
             self.canonical.insert(key(canonical), (mesh, 0));
             (mesh, 0)
         } else {
-            let (p, residual) = self.chart.sample(
-                canonical,
-                boundary.map(|index| self.positions[index]),
-                &self.options.chord_tolerance,
-                self.dec,
-            )?;
+            let replacement = boundary.map(|index| self.positions[index]);
+            let (p, residual, filtered) = if let Some(spline) = self.chart.spline() {
+                let (p, residual) = spline.vertex(canonical, replacement, self.dec)?;
+                if !residual.is_finite() {
+                    return Err(failure("spline sample residual exceeds binary64"));
+                }
+                let exact = if self.unproved {
+                    Rational::zero()
+                } else {
+                    chart::q(residual.hi())
+                };
+                (p, exact, residual)
+            } else {
+                let (p, residual) = self.chart.sample(
+                    canonical,
+                    replacement,
+                    &self.options.chord_tolerance,
+                    self.dec,
+                )?;
+                let filtered = Interval::from_rational(&residual);
+                (p, residual, filtered)
+            };
             let mesh = if let Some(index) = boundary {
                 index
             } else {
+                self.reserve_vertex()?;
                 let index = self.positions.len();
                 self.positions.push(p);
                 index
             };
             let error = self.errors.len();
-            self.filtered_errors
-                .push(Interval::from_rational(&residual));
+            self.filtered_errors.push(filtered);
             self.errors.push(residual);
             self.canonical.insert(key(canonical), (mesh, error));
             (mesh, error)
@@ -121,6 +137,13 @@ impl FaceBuilder<'_> {
         self.cdt
             .insert(node)
             .map_err(|e| failure(format!("chart vertex insertion: {e}")))
+    }
+
+    fn reserve_vertex(&self) -> Result<(), Refusal> {
+        if self.positions.len() >= self.options.max_vertices {
+            return Err(failure("face triangulation reached max_vertices"));
+        }
+        Ok(())
     }
 
     fn queue(
@@ -419,6 +442,53 @@ impl FaceBuilder<'_> {
     }
 
     fn grid(&mut self) -> Result<(), Refusal> {
+        if let Some(spline) = self.chart.spline() {
+            let mut grid = spline.seed_grid(
+                &self.options.chord_tolerance,
+                self.options.max_vertices,
+                self.dec,
+            )?;
+            // Use the fixed trim before inserting any seeds. Remove those
+            // outside it and protect the shared segments' diametral disks,
+            // as for analytic trim lattices.
+            let labels = self.labels()?;
+            grid.retain(|&uv| match self.cdt.locate(self.place(uv)) {
+                PositionInTriangulation::OnFace(f) => labels[f.index()],
+                PositionInTriangulation::OnEdge(e) => {
+                    !self.cdt.is_constraint_edge(e.as_undirected())
+                        && labels[self.cdt.directed_edge(e).face().index()]
+                }
+                _ => false,
+            });
+            grid.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+            let mut protected = BTreeSet::new();
+            for edge in self
+                .cdt
+                .undirected_edges()
+                .filter(|edge| edge.is_constraint_edge())
+            {
+                self.dec.check_deadline()?;
+                let [a, b] = edge.positions();
+                let radius = libm::hypot(a.x - b.x, a.y - b.y) * 0.5;
+                let middle = (a.x + b.x) * 0.5;
+                let first = grid.partition_point(|uv| uv[0] < middle - radius);
+                for &uv in grid[first..]
+                    .iter()
+                    .take_while(|uv| uv[0] <= middle + radius)
+                {
+                    let at = self.place(uv);
+                    if (at.x - a.x) * (at.x - b.x) + (at.y - a.y) * (at.y - b.y) < 0.0 {
+                        protected.insert(key(uv));
+                    }
+                }
+            }
+            for uv in grid {
+                if !protected.contains(&key(uv)) {
+                    self.free_point(uv)?;
+                }
+            }
+            return Ok(());
+        }
         let widths = self.bounds.map(|b| b[1] - b[0]);
         let bounded_torus =
             matches!(self.chart.surface, Surface::Torus(_)) && !self.chart.periodic[1];
@@ -906,11 +976,24 @@ impl FaceBuilder<'_> {
         &mut self,
         face: FaceId,
         sense: Sense,
-        dec: &Decider,
     ) -> Result<(Vec<Triangle>, Rational, Rational, Option<Rational>), Refusal> {
         let filtered_tolerance = Interval::from_rational(&self.options.chord_tolerance);
+        let spline = self.chart.spline();
+        let cosine = if spline.is_some() {
+            self.options
+                .angular_deviation
+                .as_ref()
+                .map(|angle| {
+                    crate::controls::cosine_limit(angle, self.dec)
+                        .map(|q| Interval::from_rational(&q))
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let mut certificates = BTreeMap::<[usize; 3], (Rational, Rational)>::new();
         for _ in 0..48 {
-            dec.check_deadline()?;
+            self.dec.check_deadline()?;
             let labels = self.labels()?;
             let mut pending = BTreeMap::new();
             let mut triangles = Vec::new();
@@ -960,13 +1043,32 @@ impl FaceBuilder<'_> {
                 if split {
                     continue;
                 }
+                // A later CDT round does not move an unchanged spline facet.
+                // Key by the cyclic vertex order to retain its proved normal.
+                let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+                let mut certificate_key = vertices;
+                certificate_key.rotate_left(first);
+                if let Some((error, ratio)) = certificates.get(&certificate_key) {
+                    maximum = maximum.max(error.clone());
+                    aspect = aspect.max(ratio.clone());
+                    vertices = certificate_key;
+                    if sense == Sense::Reversed {
+                        vertices.swap(1, 2);
+                    }
+                    triangles.push(Triangle { vertices, face });
+                    continue;
+                }
                 let residual = nodes.iter().map(|n| &self.errors[n.error]).max().unwrap();
                 let filtered_residual = nodes
                     .iter()
                     .map(|n| self.filtered_errors[n.error].hi())
                     .fold(0.0_f64, f64::max);
                 let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
-                let filtered = if matches!(self.chart.surface, Surface::Cone(_)) {
+                let filtered = if let Some(spline) = spline {
+                    let replacement = Interval::point(filtered_residual).unwrap();
+                    spline.chord(&uvs, (filtered_tolerance - replacement).lo(), self.dec)?
+                        + replacement
+                } else if matches!(self.chart.surface, Surface::Cone(_)) {
                     let scale = Interval::point(vmax).unwrap()
                         / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))
                             .unwrap();
@@ -980,12 +1082,6 @@ impl FaceBuilder<'_> {
                 } else {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
-                };
-                let error = if filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo() {
-                    chart::q(filtered.hi())
-                } else {
-                    let hessian = self.chart.hessian(vmax, dec)?;
-                    &chord_bound(&uvs, &hessian) + residual
                 };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
@@ -1004,7 +1100,27 @@ impl FaceBuilder<'_> {
                         continue;
                     }
                 }
-                if error > self.options.chord_tolerance {
+                let error = if self.unproved {
+                    (filtered.hi() <= filtered_tolerance.lo()).then(Rational::zero)
+                } else {
+                    let (interpolation, replacement) = if spline.is_some()
+                        || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
+                    {
+                        if !filtered.is_finite() {
+                            return Err(failure("spline interpolation bound exceeds binary64"));
+                        }
+                        (chart::q(filtered.hi()), Rational::zero())
+                    } else {
+                        let hessian = self.chart.hessian(vmax, self.dec)?;
+                        (chord_bound(&uvs, &hessian), residual.clone())
+                    };
+                    checked_triangle_bound(
+                        &interpolation,
+                        &replacement,
+                        &self.options.chord_tolerance,
+                    )
+                };
+                let Some(error) = error else {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
                         if periodic {
@@ -1014,15 +1130,33 @@ impl FaceBuilder<'_> {
                     }
                     pending.insert(key(center), center);
                     continue;
-                }
-                let (ratio, angular_reached) = crate::controls::quality(
-                    self.chart,
-                    &uvs,
-                    vertices.map(|i| self.positions[i]),
-                    self.options.angular_deviation.as_ref(),
-                    dec,
-                )?;
-                let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                };
+                let positions = vertices.map(|i| self.positions[i]);
+                let angular_limit = if spline.is_some() {
+                    None
+                } else {
+                    self.options.angular_deviation.as_ref()
+                };
+                let (ratio, angular_reached) = if self.unproved {
+                    let spline = spline.expect("shared preview uses a spline chart");
+                    (
+                        Rational::zero(),
+                        spline.normals_within(&uvs, positions, cosine, self.dec)?,
+                    )
+                } else {
+                    let (ratio, mut reached) = crate::controls::quality(
+                        self.chart,
+                        &uvs,
+                        positions,
+                        angular_limit,
+                        self.dec,
+                    )?;
+                    let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                    if let Some(spline) = spline {
+                        reached = spline.normals_within(&uvs, positions, cosine, self.dec)?;
+                    }
+                    (ratio, reached)
+                };
                 if !angular_reached {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
@@ -1033,6 +1167,9 @@ impl FaceBuilder<'_> {
                     }
                     pending.insert(key(center), center);
                     continue;
+                }
+                if spline.is_some() {
+                    certificates.insert(certificate_key, (error.clone(), ratio.clone()));
                 }
                 aspect = aspect.max(ratio);
                 maximum = maximum.max(error);
@@ -1091,36 +1228,52 @@ fn ruled(model: &Model, face: FaceId, chart: &Chart, options: &MeshOptions) -> b
 fn face_mesh(
     model: &Model,
     face_id: FaceId,
-    chart: &mut Chart,
+    chart: &Chart,
     boundaries: &mut Boundaries,
-    options: &MeshOptions,
+    plan: Plan<'_>,
     prior_chords: &BTreeSet<(usize, usize)>,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let Plan { options, level } = plan;
     let face = model.face(face_id);
     let mut segments = Vec::new();
+    let mut trim_error = Rational::zero();
     let mut projected = Vec::new();
+    let mut parameters = BTreeMap::new();
+    let goal = options.chord_tolerance.mul_pow2(-6).to_f64_nearest();
+    let mut project = |index, seed, dec: &mut Decider| -> Result<Uv, Refusal> {
+        let position = boundaries.mesh.positions[index];
+        if let Some(spline) = chart.spline() {
+            if let Some(&uv) = parameters.get(&index) {
+                return Ok(uv);
+            }
+            let uv = spline.project(position, seed, goal, dec)?;
+            parameters.insert(index, uv);
+            Ok(uv)
+        } else {
+            Ok(chart.project(position))
+        }
+    };
     for &l in &face.loops {
         match model.loop_(l) {
-            Loop::Vertex(v) => {
-                projected.push(chart.project(boundaries.mesh.positions[boundaries.vertices[v]]))
-            }
+            Loop::Vertex(v) => projected.push(project(boundaries.vertices[v], None, dec)?),
             Loop::Coedges(cs) => {
+                let mut previous = None;
                 for &c in cs {
                     let c = model.coedge(c);
                     let edge = &boundaries.mesh.edges[boundaries.edges[&c.edge]];
+                    if chart.spline().is_some() && level != Level::Preview {
+                        trim_error = trim_error.max(edge.max_chord_error.clone());
+                    }
                     for pair in edge.vertices.windows(2) {
                         let pair = if c.sense == Sense::Same {
                             [pair[0], pair[1]]
                         } else {
                             [pair[1], pair[0]]
                         };
-                        let a = chart.project(boundaries.mesh.positions[pair[0]]);
-                        let b = align(
-                            chart.project(boundaries.mesh.positions[pair[1]]),
-                            a,
-                            chart.periodic,
-                        );
+                        let a = project(pair[0], previous, dec)?;
+                        let b = align(project(pair[1], Some(a), dec)?, a, chart.periodic);
+                        previous = Some(b);
                         projected.extend([a, b]);
                         segments.push((a, b, pair[0], pair[1]));
                     }
@@ -1151,14 +1304,25 @@ fn face_mesh(
             "face has no finite two-dimensional parameter region",
         ));
     }
-    let hessian = chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?;
+    let hessian = if chart.spline().is_some() {
+        std::array::from_fn(|_| Rational::zero())
+    } else {
+        chart
+            .hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?
+            .into_owned()
+    };
     let is_ruled = ruled(model, face_id, chart, options);
+    // Spade uses one metric per face. Scale its second coordinate by the
+    // physical speeds while evaluating and certifying in the original chart.
+    let stretch = chart
+        .spline()
+        .map_or(1.0, |spline| spline.triangulation_stretch());
     let mut builder = FaceBuilder {
         chart,
         options,
         ruled: is_ruled,
-        stretch: 1.0,
-        unproved: false,
+        stretch,
+        unproved: level == Level::Preview && chart.spline().is_some(),
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
         cdt: Cdt::new(),
@@ -1169,13 +1333,13 @@ fn face_mesh(
         prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
-        hessian: hessian.into_owned(),
+        hessian,
         dec,
     };
     builder.boundary(&segments, face.sense)?;
     builder.grid()?;
     let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
-        builder.finish(face_id, face.sense, dec).map_err(|mut e| {
+        builder.finish(face_id, face.sense).map_err(|mut e| {
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
@@ -1198,8 +1362,8 @@ fn face_mesh(
     boundaries.mesh.faces.push(FaceMesh {
         face: face_id,
         triangles: start..boundaries.mesh.triangles.len(),
-        max_chord_error,
-        max_aspect_ratio: Some(max_aspect_ratio),
+        max_chord_error: max_chord_error.max(trim_error),
+        max_aspect_ratio: (level != Level::Preview).then_some(max_aspect_ratio),
         max_angular_deviation,
     });
     Ok(())
@@ -1544,6 +1708,76 @@ fn regular_chart(
     ))
 }
 
+fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
+    match surface {
+        Surface::BSpline(
+            support @ (SplineSupport::BezierExtrusion(_)
+            | SplineSupport::RationalPatch(_)
+            | SplineSupport::SplineFillet(_)),
+        ) => Some(support),
+        Surface::BSpline(support @ SplineSupport::RationalAtlas(atlas))
+            if atlas.charts().len() == 1 =>
+        {
+            Some(support)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Level {
+    Preview,
+    Bounded,
+    Proven,
+}
+
+#[derive(Clone, Copy)]
+struct Plan<'a> {
+    options: &'a MeshOptions,
+    level: Level,
+}
+
+pub(crate) fn shared_spline_preview(
+    model: &Model,
+    body: BodyId,
+    options: &crate::PreviewOptions,
+    dec: &mut Decider,
+) -> Option<Result<crate::PreviewMesh, Refusal>> {
+    let faces = model.faces_of_body(body);
+    let mut found_spline = false;
+    for face in faces {
+        let surface = model.geom().surface(model.face(face).surface);
+        if matches!(surface, Surface::BSpline(_)) {
+            spline_chart(surface)?;
+            found_spline = true;
+        }
+    }
+    if !found_spline {
+        return None;
+    }
+    let options = MeshOptions {
+        chord_tolerance: options.chord_tolerance.clone(),
+        angular_deviation: options.angular_deviation.clone(),
+        max_vertices: options.max_vertices,
+        max_edge_length: None,
+        max_aspect_ratio: None,
+    };
+    Some(
+        build_junction(
+            model,
+            body,
+            Plan {
+                options: &options,
+                level: Level::Preview,
+            },
+            None,
+            None,
+            dec,
+        )
+        .map(|(mesh, _)| crate::PreviewMesh::from_mesh(mesh)),
+    )
+}
+
 pub(crate) fn build(
     model: &Model,
     body: BodyId,
@@ -1555,8 +1789,17 @@ pub(crate) fn build(
         return crate::oblique_draft::build(model, body, options, dec);
     }
     let faces = model.faces_of_body(body);
-    let junction = crate::junction::prepare(model, &faces, options, dec)?;
-    if junction.is_none()
+    let use_spline_charts = faces.iter().all(|&face| {
+        let surface = model.geom().surface(model.face(face).surface);
+        !matches!(surface, Surface::BSpline(_)) || spline_chart(surface).is_some()
+    });
+    let junction = if use_spline_charts {
+        None
+    } else {
+        crate::junction::prepare(model, &faces, options, dec)?
+    };
+    if !use_spline_charts
+        && junction.is_none()
         && faces.iter().any(|face| {
             matches!(
                 model.geom().surface(model.face(*face).surface),
@@ -1573,9 +1816,11 @@ pub(crate) fn build(
     let (value, marks) = build_junction(
         model,
         body,
-        options,
+        Plan {
+            options,
+            level: Level::Proven,
+        },
         junction,
-        false,
         previous.as_ref(),
         dec,
     )?;
@@ -1598,24 +1843,40 @@ pub(crate) fn build_position(
     }
     let faces = model.faces_of_body(body);
     let junction = crate::junction::prepare_position(model, &faces, options, dec)?;
-    build_junction(model, body, options, Some(junction), true, None, dec)
+    build_junction(
+        model,
+        body,
+        Plan {
+            options,
+            level: Level::Bounded,
+        },
+        Some(junction),
+        None,
+        dec,
+    )
 }
 
 fn build_junction(
     model: &Model,
     body: BodyId,
-    options: &MeshOptions,
+    plan: Plan<'_>,
     junction: Option<crate::junction::Junction>,
-    position_only: bool,
     previous: Option<&crate::reuse::Previous<'_>>,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
+    let Plan { options, level } = plan;
     let faces = model.faces_of_body(body);
     let fitted = |face: FaceId| junction.as_ref().is_some_and(|j| j.contains(face));
     let mut charts = faces
         .iter()
         .filter(|&&f| !fitted(f))
-        .map(|&f| Ok((f, regular_chart(model, f, options, dec)?)))
+        .map(|&f| {
+            let chart = match spline_chart(model.geom().surface(model.face(f).surface)) {
+                Some(support) if junction.is_none() => Chart::from_spline(support, dec)?,
+                _ => regular_chart(model, f, options, dec)?,
+            };
+            Ok((f, chart))
+        })
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
     let mut boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
     let boundary_limit = boundaries.mesh.positions.len();
@@ -1634,7 +1895,7 @@ fn build_junction(
                     face,
                     &mut boundaries,
                     options,
-                    position_only,
+                    level == Level::Bounded,
                 )?;
             } else if let Surface::Plane(plane) = &charts[&face].surface {
                 crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
@@ -1672,9 +1933,9 @@ fn build_junction(
                     let result = face_mesh(
                         model,
                         face,
-                        charts.get_mut(&face).unwrap(),
+                        &charts[&face],
                         &mut boundaries,
-                        options,
+                        plan,
                         &prior_chords,
                         dec,
                     );

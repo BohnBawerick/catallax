@@ -296,6 +296,43 @@ impl TracePiece {
         (Rational::zero(), Rational::one())
     }
 
+    /// The retained monotone cap equation of a fitted fillet trace.
+    pub fn fillet_cut(&self) -> Option<(&catallax_shapes::FilletCutTrace, bool)> {
+        match &self.coords {
+            TraceCoordinates::FilletCut(cut, forward) => Some((cut, *forward)),
+            _ => None,
+        }
+    }
+
+    /// Bernstein bounds for the retained spline piece in display parameters.
+    pub fn display_spline_span(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<Option<catallax_shapes::tessellation::RationalSpan>, Refusal> {
+        let TraceCoordinates::Explicit(piece) = &self.coords else {
+            return Ok(None);
+        };
+        match &piece.span {
+            Some(span) => span.display_span(dec),
+            None => Ok(None),
+        }
+    }
+
+    /// Chart parameters when this trace follows a shared spline boundary.
+    pub fn display_boundary_parameters(
+        &self,
+        surface: &catallax_shapes::BSplineSurface,
+        parameter: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 2]>, Refusal> {
+        let TraceCoordinates::Explicit(piece) = &self.coords else {
+            return Ok(None);
+        };
+        piece.span.as_ref().map_or(Ok(None), |span| {
+            span.display_parameters(surface, parameter, dec)
+        })
+    }
+
     /// Source chart jets when this piece retains a finite patch section.
     pub fn section_parameters(
         &self,

@@ -18,6 +18,7 @@ pub(crate) struct TraceCache {
     curves: HashMap<EdgeId, std::sync::Arc<CurveTrace>>,
     failed_gauges: BTreeSet<GaugeAttempt>,
     reuse_gauges: bool,
+    pub(crate) fitted_patches: bool,
     native_conics: bool,
     carriers: HashMap<catallax_shapes::CurveId, Option<Curve>>,
     torus_rectangles: HashMap<FaceId, Option<std::sync::Arc<crate::torus::rectangle::Domain>>>,
@@ -331,6 +332,7 @@ pub(crate) fn measure(
         )
         .collect();
     let mut prepared = Vec::new();
+    let mut marginals = crate::rational_patch::Marginals::default();
     for (id, planar) in pending {
         if let Some(planar) = planar {
             prepared.push(Prepared::PlanarArea {
@@ -342,9 +344,17 @@ pub(crate) fn measure(
         let face = model.face(id);
         let surface = model.geom().surface(face.surface);
         if matches!(surface, Surface::BSpline(SplineSupport::RationalPatch(_))) {
-            prepared.push(Prepared::RationalPatch(crate::rational_patch::prepare(
-                model, id, anchor, property, dec,
-            )?));
+            if let Some(band) = crate::rational_patch::prepare(
+                model,
+                id,
+                anchor,
+                property,
+                traces.fitted_patches,
+                &mut marginals,
+                dec,
+            )? {
+                prepared.push(Prepared::RationalPatch(band));
+            }
             continue;
         }
         if matches!(surface, Surface::BSpline(SplineSupport::BezierExtrusion(_))) {
@@ -608,6 +618,9 @@ pub(crate) fn measure(
             analytic_only,
         }));
     }
+    if let Some(band) = marginals.finish() {
+        prepared.push(Prepared::RationalPatch(band));
+    }
     // A band sets its effort by what the other faces leave, so it comes last.
     prepared.sort_by_key(|face| matches!(face, Prepared::Band(_) | Prepared::RationalPatch(_)));
     let mut best = None;
@@ -619,8 +632,16 @@ pub(crate) fn measure(
     };
     let mut depth = 0u32;
     let mut rectangle = true;
-    let mut working_precision = 128u32.min(policy.max_precision_bits);
+    let mut working_precision =
+        if traces.fitted_patches { 64u32 } else { 128u32 }.min(policy.max_precision_bits);
     let mut split_precision = false;
+    let mut tensor_depth = [0; 2];
+    let mut native_area = traces.fitted_patches
+        && property == Property::Area
+        && policy.max_precision_bits >= f64::MANTISSA_DIGITS
+        && prepared
+            .iter()
+            .any(|face| matches!(face, Prepared::RationalPatch(band) if band.has_native_area()));
     let mut volume_enclosure_reached = false;
     loop {
         dec.check_deadline()?;
@@ -634,6 +655,8 @@ pub(crate) fn measure(
             Err(Stop::Refusal(refusal)) => return Err(refusal),
             Err(_) => break,
         };
+        work.native_area = native_area;
+        work.tensor_depth = tensor_depth;
         let attempt = evaluate(
             &mut prepared,
             anchor,
@@ -668,9 +691,22 @@ pub(crate) fn measure(
                 }
                 if rectangle {
                     rectangle = false;
+                    if native_area && depth > 0 {
+                        tensor_depth[0] = depth;
+                        tensor_depth[1] = depth.saturating_sub(1);
+                    }
                     depth = 0;
                 } else if work.quadrature_dominates {
                     depth += 1;
+                    if native_area {
+                        let axis = usize::from(work.tensor_error[0] < work.tensor_error[1]);
+                        tensor_depth[axis] += 1;
+                    }
+                } else if native_area {
+                    // Binary64 has reached its rounding floor. The ball
+                    // integrator can still answer tighter requests.
+                    native_area = false;
+                    depth = tensor_depth[0].max(tensor_depth[1]);
                 } else if working_precision < policy.max_precision_bits {
                     working_precision = working_precision
                         .saturating_mul(2)
@@ -687,6 +723,10 @@ pub(crate) fn measure(
                 } else if rectangle {
                     rectangle = false;
                     depth = 0;
+                } else if native_area {
+                    let axis = usize::from(tensor_depth[0] > tensor_depth[1]);
+                    tensor_depth[axis] += 1;
+                    depth += 1;
                 } else if !split_precision && working_precision < policy.max_precision_bits {
                     working_precision = working_precision
                         .saturating_mul(2)

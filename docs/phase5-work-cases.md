@@ -492,3 +492,25 @@ not admit them again: the R2 rim's export costs 363,114 work, and reopening
 its file 11,491,278 where it took 1,085,655,205. See
 [the check-once note](milestones/3.0A-check-once.md).
 A box with all twelve edges rounded stays exact at 9,467 to 13,195 work.
+
+## Round-wire helical sweeps
+
+The application built the 34 mm coil diameter, 2 mm wire recipe with default
+numerical options. The 100M work allowance applies per application request:
+build, properties and STEP export are separate requests, each with its own
+allowance. Properties reached the default accuracy for the stored fit. STEP
+work includes reading and checking the bytes the writer produced.
+
+| Turns | Pitch | Build work | Properties work | STEP work |
+|---|---:|---:|---:|---:|
+| 1 | 3 mm | 5,410,369 | 3,561,459 | 2,959,788 |
+| 3 | 3 mm | 14,756,404 | 8,512,419 | 8,483,441 |
+| 8 | 3 mm | 37,388,739 | 20,607,139 | 21,603,071 |
+| 20 | 3 mm | 97,208,072 | 49,472,183 | 54,473,209 |
+| 20 | 4 mm | 97,579,650 | 49,467,043 | 54,168,307 |
+
+Twenty was the largest admitted integer turn count measured at either pitch.
+Both 21-turn recipes and the 22-turn, 3 mm recipe returned
+`numbers.operation-budget` during build. Long-spring build cost remains a
+follow-on. Display and preview at three and 20 turns exhausted the allowance
+on the existing mesher. Their acceptance belongs to the 3.5 coil pin bump.

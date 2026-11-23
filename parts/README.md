@@ -8,7 +8,7 @@ Original recipes and the historical census are unchanged. Private corpus
 wrappers are prepared at runtime with `tools/research/m5_scoreboard.py`;
 source geometry is not checked in.
 
-These are versioned `catallax-recipe` inputs for the roadmap's P0–P6 scoreboard. P5 uses version 4 for the [reviewed roll-over migration](../docs/interface-changes/2026-10-27-p5-roll-over-recipe-migration.md); the other inputs retain their declared versions. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P6 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
+These are versioned `catallax-recipe` inputs for the roadmap's target parts. P5 uses version 4 for the [reviewed roll-over migration](../docs/interface-changes/2026-10-27-p5-roll-over-recipe-migration.md). Dimensions use exact decimal or rational strings in millimetres. P0 has eight separate recipes so an early refusal cannot hide another hard-case family.
 
 | Input | Fixed dimensions and construction |
 | --- | --- |
@@ -27,6 +27,7 @@ These are versioned `catallax-recipe` inputs for the roadmap's P0–P6 scoreboar
 | `P4-shelled-tray.json` | Centred 40×30×12 block, inward wall thickness 2 and top face open. Intersect with a centred radius-23 cylinder extending from z=-1 to 13 to round its four corners. |
 | `P5-flanged-housing.json` | Stepped profile revolved about y. Inner radius 8, body outer radius 12 and height 30; flange radius 22 and thickness 5. A diameter-4 through cutter with diameter-8, 90-degree countersink is circular-patterned four times at 90 degrees on radius 17. Subtract the patterned cutters, then fillet the flange/body junction with radius 2. |
 | `P6-lattice-bracket.json` | L bracket within 12×8×8, 3 mm legs and a 1 mm enclosing shell. Cubic infill has 2 mm cells and radius 0.3; its region roots 0.25 into the cavity walls. A radius-0.5 through hole crosses the base. The shell is an explicit subtraction of the documented cavity, so this part does not depend on the separate shell feature. |
+| `P7-gyroid-bracket.json` | Same bracket, shell, infill region and through bore as P6. Infill is a level-zero network gyroid with a 2 mm period and an identity frame. |
 
 Stock quaternions are homogeneous and normalized by the existing exact placement code. Recipes keep operation IDs and origin references fixed. Do not rename them to accommodate a kernel failure. Change dimensions only as a reviewed corpus revision, with a new report and an explanation of why the old input was wrong.
 
@@ -46,6 +47,15 @@ python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py run /tmp/P
 ```
 
 The tolerance is an explicit print setting in millimetres, not a change to modelling tolerance or the scoreboard's allowance. An answered request writes `print.stl` and the matching `display.obj`. A printable mesh alone does not complete P6's mass-equivalent STEP stand-in gate.
+
+Run the independent STL check on a saved answer with an environment containing `libigl==2.6.2`. It checks the file hash, header, error budget, mesh manifoldness, CGAL self-intersections and shell orientation. Its shell report gives the Euler characteristic and nesting depth of the exported mesh. Source-to-mesh correspondence still requires the field certificate.
+
+```sh
+python -B .claude/skills/verify-catallax/scripts/check-stl.py \
+  /path/to/answer/print.stl /path/to/answer/manifest.json
+```
+
+The [4.3 printing controls](../docs/milestones/4.3-printing.md) record the P6 baseline, P7 and sheet results.
 
 For a scoreboard that also retains qualified print artifacts, add `--print-tolerance 0.5` to `parts`. Every row then includes a separate `print` response naming its route. Ordinary recipes use B-rep and native-field definitions use field. Use an explicit `route: "field"` wrapper to exercise the independent field print gate; a successful B-rep print does not close it. Unsupported print definitions keep their typed refusal with no route fallback.
 

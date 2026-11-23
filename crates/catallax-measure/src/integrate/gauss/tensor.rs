@@ -2,6 +2,15 @@
 
 use super::*;
 
+mod native_area;
+pub(crate) use native_area::NativeArea;
+
+// DLMF 3.5.E19. The jet holds the derivative divided by 16!.
+fn remainder_factor(widths: &[Rational; 2], axis: usize) -> Rational {
+    widths[axis].pow(17).unwrap() * widths[1 - axis].clone()
+        / Rational::from_i64(17 * 12870 * 12870)
+}
+
 impl Program {
     pub(crate) fn parameter_tensor_rectangle(
         &self,
@@ -26,6 +35,7 @@ impl Program {
         u: [&Rational; 2],
         v: [&Rational; 2],
         rule: &Rule,
+        track_dominance: bool,
         work: &mut Work,
     ) -> Checked<Vec<Ball>> {
         if u[0] >= u[1] || v[0] >= v[1] {
@@ -71,11 +81,12 @@ impl Program {
             input[1][0] = ranges[1].clone();
             input[axis][1] = one.clone();
             let remainder = self.evaluate(&input, Coefficients::GaussRemainder, work)?;
-            let factor = widths[axis].pow(17).expect("positive power") * widths[1 - axis].clone()
-                / Rational::from_i64(17 * 12870 * 12870);
-            let factor = work.rational(&factor)?;
+            let factor = work.rational(&remainder_factor(&widths, axis))?;
             for (sum, remainder) in sums.iter_mut().zip(remainder) {
                 let error = work.mul(&remainder[ORDER], &factor)?;
+                if track_dominance && error.rad() > sum.rad() {
+                    work.quadrature_dominates = true;
+                }
                 *sum = work.add(sum, &error)?;
             }
         }
@@ -86,6 +97,7 @@ impl Program {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::integrate::Builder;
     use catallax_numbers::{Decider, with_operation_budget};
 
@@ -107,7 +119,7 @@ mod tests {
             let zero = Rational::zero();
             let one = Rational::one();
             let value = program
-                .parameter_tensor_panel([&zero, &one], [&zero, &one], &rule, &mut work)
+                .parameter_tensor_panel([&zero, &one], [&zero, &one], &rule, false, &mut work)
                 .unwrap();
             let exact = Rational::from_ratio(1, 17 * 17).unwrap();
             assert!(value[0].lo() <= exact && value[0].hi() >= exact);

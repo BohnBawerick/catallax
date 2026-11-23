@@ -7,7 +7,7 @@
 //! stretch hold it by the convex hull property, so the box shrinks with the curve.
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
-use catallax_shapes::BSplineCurve;
+use catallax_shapes::{BSplineCurve, BSplineSurface, SplineBoundary, tessellation::RationalSpan};
 use std::sync::{Arc, Mutex};
 
 type Homogeneous = [Ball; 4];
@@ -55,6 +55,55 @@ impl SpanHull {
             range,
             controls: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn display_span(&self, dec: &mut Decider) -> Result<Option<RationalSpan>, Refusal> {
+        let bits = dec.policy().max_precision_bits.min(128);
+        let Some(controls) = self.controls(bits, dec)? else {
+            return Ok(None);
+        };
+        RationalSpan::from_curve(
+            controls
+                .iter()
+                .map(|p| p.each_ref().map(Ball::to_interval))
+                .collect(),
+            dec,
+        )
+        .map(Some)
+    }
+
+    pub(crate) fn display_parameters(
+        &self,
+        surface: &BSplineSurface,
+        parameter: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 2]>, Refusal> {
+        use SplineBoundary::{UMax, UMin, VMax, VMin};
+
+        let Some(side) = [UMin, UMax, VMin, VMax].into_iter().find(|&side| {
+            if self.curve.is_boundary_of(surface, side) {
+                return true;
+            }
+            let boundary = BSplineCurve::boundary(surface, side);
+            same_knot_span(&self.curve, self.span, &boundary)
+        }) else {
+            return Ok(None);
+        };
+        let [Some(from), Some(to)] = self.range.each_ref().map(Real::rational_ref) else {
+            return Ok(None);
+        };
+        let width = to - from;
+        dec.reserve_exact_arithmetic(&width, parameter, true)?;
+        let varying = (from + &(&width * parameter)).to_f64_nearest();
+        let [u, v] = surface
+            .domain()
+            .map(|ends| ends.map(Rational::to_f64_nearest));
+        Ok(Some(match side {
+            UMin => [u[0], varying],
+            UMax => [u[1], varying],
+            VMin => [varying, v[0]],
+            VMax => [varying, v[1]],
+        }))
     }
 
     // The span's own Bezier controls, as the blossom at its two knots.
@@ -157,4 +206,32 @@ impl SpanHull {
         }
         Ok(found)
     }
+}
+
+// A cropped boundary rail can retain the same active controls and knot
+// stencil without holding the surface reference. De Boor's recurrence reads
+// exactly this stencil and these controls on the open span.
+fn same_knot_span(curve: &BSplineCurve, span: usize, boundary: &BSplineCurve) -> bool {
+    let degree = curve.degree();
+    if degree != boundary.degree() {
+        return false;
+    }
+    let knots = curve.knots();
+    let target = boundary.knots();
+    let index = target.partition_point(|knot| knot <= &knots[span]);
+    if index <= degree || index > boundary.control_count() {
+        return false;
+    }
+    let other = index - 1;
+    knots[span + 1] == target[index]
+        && knots[span + 1 - degree..=span + degree] == target[index - degree..=other + degree]
+        && (0..=degree).all(|i| {
+            let a = span - degree + i;
+            let b = other - degree + i;
+            let [p, q] = [curve.control(a), boundary.control(b)];
+            p.x.same_definition(&q.x)
+                && p.y.same_definition(&q.y)
+                && p.z.same_definition(&q.z)
+                && curve.weight(a).same_definition(boundary.weight(b))
+        })
 }

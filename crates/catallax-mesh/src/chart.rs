@@ -7,9 +7,12 @@ use std::{
 };
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
-use catallax_shapes::{Surface, Vector3};
+use catallax_shapes::{SplineSupport, Surface, Vector3};
 
 use crate::failure;
+
+mod spline;
+pub(crate) use spline::SplineChart;
 
 pub(crate) const BITS: u32 = 128;
 pub(crate) type Uv = [f64; 2];
@@ -68,15 +71,24 @@ pub(crate) struct Chart {
     /// Enclosed inward normals of the hemispheres that meet in a proved convex
     /// corner. These select grid seeds only; every proof still applies.
     pub(crate) corner_planes: Option<[[Interval; 3]; 3]>,
+    sampling: Sampling,
+    centers: [Option<f64>; 2],
+    hessian: OnceCell<[Rational; 3]>,
+    filtered_hessian: OnceCell<[Interval; 3]>,
+    guards: RefCell<BTreeMap<([u64; 4], Rational), bool>>,
+}
+
+enum Sampling {
+    Analytic(Box<Analytic>),
+    Spline(SplineChart),
+}
+
+struct Analytic {
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
     turn: Option<Ball>,
     evaluator: crate::evaluate::Evaluator,
     ellipse_radii: Option<[f64; 2]>,
-    centers: [Option<f64>; 2],
-    hessian: OnceCell<[Rational; 3]>,
-    filtered_hessian: OnceCell<[Interval; 3]>,
-    guards: RefCell<BTreeMap<([u64; 4], Rational), bool>>,
 }
 
 impl Chart {
@@ -137,7 +149,6 @@ impl Chart {
         Ok(Self {
             surface: surface.clone(),
             periodic,
-            ellipse_radii: axes,
             centers: [None; 2],
             hessian: OnceCell::new(),
             filtered_hessian: OnceCell::new(),
@@ -145,15 +156,54 @@ impl Chart {
             normal_scale,
             great_circle_sector: false,
             corner_planes: None,
-            origin,
-            turn,
-            evaluator: crate::evaluate::Evaluator::new(surface, dec)?,
-            frame: [
-                unit(reference, dec)?,
-                unit(&axis.cross(reference), dec)?,
-                unit(axis, dec)?,
-            ],
+            sampling: Sampling::Analytic(Box::new(Analytic {
+                ellipse_radii: axes,
+                origin,
+                turn,
+                evaluator: crate::evaluate::Evaluator::new(surface, dec)?,
+                frame: [
+                    unit(reference, dec)?,
+                    unit(&axis.cross(reference), dec)?,
+                    unit(axis, dec)?,
+                ],
+            })),
         })
+    }
+
+    pub(crate) fn from_spline(support: &SplineSupport, dec: &mut Decider) -> Result<Self, Refusal> {
+        Ok(Self {
+            surface: Surface::BSpline(support.clone()),
+            periodic: [false; 2],
+            centers: [None; 2],
+            hessian: OnceCell::new(),
+            filtered_hessian: OnceCell::new(),
+            guards: RefCell::new(BTreeMap::new()),
+            normal_scale: Rational::one(),
+            great_circle_sector: false,
+            corner_planes: None,
+            sampling: Sampling::Spline(SplineChart::new(Self::carrier(support), dec)?),
+        })
+    }
+
+    pub(crate) fn carrier(support: &SplineSupport) -> &catallax_shapes::BSplineSurface {
+        match support {
+            SplineSupport::RationalAtlas(atlas) => atlas.charts()[0].patch().carrier(),
+            _ => support.carrier(),
+        }
+    }
+
+    fn analytic(&self) -> &Analytic {
+        let Sampling::Analytic(analytic) = &self.sampling else {
+            unreachable!("analytic chart used only for analytic operations");
+        };
+        analytic
+    }
+
+    pub(crate) fn spline(&self) -> Option<&SplineChart> {
+        match &self.sampling {
+            Sampling::Spline(chart) => Some(chart),
+            Sampling::Analytic(_) => None,
+        }
     }
 
     pub(crate) fn restrict(&mut self, dimension: usize, center: f64) {
@@ -162,8 +212,9 @@ impl Chart {
     }
 
     pub(crate) fn project(&self, p: [f64; 3]) -> Uv {
-        let d = std::array::from_fn(|i| p[i] - self.origin[i]);
-        let [x, y, z] = self.frame.map(|axis| dot(d, axis));
+        let analytic = self.analytic();
+        let d = std::array::from_fn(|i| p[i] - analytic.origin[i]);
+        let [x, y, z] = analytic.frame.map(|axis| dot(d, axis));
         if matches!(self.surface, Surface::Plane(_)) {
             return [x, y];
         }
@@ -172,7 +223,7 @@ impl Chart {
             // Leave enough mantissa bits for exact translations by -2..=2.
             libm::round(t * 281_474_976_710_656.0) / 281_474_976_710_656.0
         };
-        let u = if let Some([major, minor]) = self.ellipse_radii {
+        let u = if let Some([major, minor]) = analytic.ellipse_radii {
             angle(y / minor, x / major)
         } else {
             angle(y, x)
@@ -212,7 +263,7 @@ impl Chart {
 
     pub(crate) fn evaluate(&self, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         let mut parameters = uv.map(|x| Ball::from_rational(&q(x), BITS));
-        if let Some(turn) = &self.turn {
+        if let Some(turn) = &self.analytic().turn {
             parameters[0] = &parameters[0] * turn;
             if matches!(self.surface, Surface::Sphere(_) | Surface::Torus(_)) {
                 parameters[1] = &parameters[1] * turn;
@@ -222,7 +273,7 @@ impl Chart {
     }
 
     pub(crate) fn filtered_normal(&self, uv: Uv) -> Option<([Interval; 3], Interval)> {
-        self.evaluator.normal(&self.surface, uv)
+        self.analytic().evaluator.normal(&self.surface, uv)
     }
 
     /// Whether the outward interval filter puts this point outside a proved
@@ -245,7 +296,7 @@ impl Chart {
     /// Rounded definition samples for an explicitly unproved preview.
     pub(crate) fn preview_position(&self, uv: Uv, dec: &Decider) -> Result<[f64; 3], Refusal> {
         dec.check_deadline()?;
-        if let Some(values) = self.evaluator.evaluate(&self.surface, uv) {
+        if let Some(values) = self.analytic().evaluator.evaluate(&self.surface, uv) {
             return Ok(values.map(|value| value.mid()));
         }
         position(&self.evaluate(uv, dec)?)
@@ -259,7 +310,7 @@ impl Chart {
         dec: &Decider,
     ) -> Result<([f64; 3], Rational), Refusal> {
         dec.check_deadline()?;
-        if let Some(values) = self.evaluator.evaluate(&self.surface, uv) {
+        if let Some(values) = self.analytic().evaluator.evaluate(&self.surface, uv) {
             let position = boundary.unwrap_or_else(|| values.map(|v| v.mid()));
             let deltas = std::array::from_fn::<_, 3, _>(|i| {
                 catallax_numbers::Interval::point(position[i]).unwrap() - values[i]
@@ -313,7 +364,7 @@ impl Chart {
         if matches!(self.surface, Surface::Plane(_)) {
             return Ok(std::array::from_fn(|_| Rational::zero()));
         }
-        let tau = self.turn.as_ref().unwrap().hi();
+        let tau = self.analytic().turn.as_ref().unwrap().hi();
         let tau2 = &tau * &tau;
         let zero = Rational::zero();
         let upper = |value: &Real| -> Result<Rational, Refusal> {
@@ -408,10 +459,7 @@ pub(crate) fn filtered_chord_bound(uvs: &[Uv], hessian: &[Interval; 3]) -> Inter
         let hi = uvs.iter().map(|uv| uv[i]).fold(f64::NEG_INFINITY, f64::max);
         Interval::point(hi).unwrap() - Interval::point(lo).unwrap()
     });
-    (hessian[0] * u.square()
-        + hessian[1] * u * v * Interval::point(2.0).unwrap()
-        + hessian[2] * v.square())
-        * Interval::point(0.125).unwrap()
+    catallax_shapes::tessellation::chord_bound_interval([u, v], hessian)
 }
 
 /// Taylor's theorem bounds interpolation error by half a Hessian-weighted
@@ -423,11 +471,7 @@ pub(crate) fn chord_bound(uvs: &[Uv], hessian: &[Rational; 3]) -> Rational {
         let hi = uvs.iter().map(|uv| uv[i]).fold(f64::NEG_INFINITY, f64::max);
         q(hi) - q(lo)
     });
-    let [u, v] = &span;
-    (&(&hessian[0] * u) * u
-        + &(&hessian[1] * u) * v * Rational::from_i64(2)
-        + &(&hessian[2] * v) * v)
-        .mul_pow2(-3)
+    catallax_shapes::tessellation::chord_bound(span.each_ref(), hessian)
 }
 
 /// Strict UV orientation; an inconclusive filter retains the rational predicate.

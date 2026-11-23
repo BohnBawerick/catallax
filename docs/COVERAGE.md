@@ -101,7 +101,7 @@ Kernels: B = both OpenCASCADE and SMLib; O = OpenCASCADE only; S = SMLib only. "
 
 | ID | Capability | Kernels | 14 Nov | 19 Nov | Full bar |
 |---|---|---|---:|---:|---|
-| Q1 | Display meshes with chord and angle tolerances | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
+| Q1 | Display meshes with chord and angle tolerances | B | 1 | 1 | [Milestone 3.5](../ROADMAP.md#one-display-mesher) sets the full bar. |
 | Q2 | Mass properties: volume, area, centroid, inertia | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
 | Q3 | Point inside or outside a solid | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
 | Q4 | Closest point on a curve or surface | B | 0.5 | 0.5 | Closest point on any curve or surface. Change 12. |

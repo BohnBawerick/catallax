@@ -276,6 +276,33 @@ Done when, for one model: exact and tolerant entities coexist under the rules ab
 | 3.2 | Assemblies and exchange | The kernel holds several solids as an assembly. STEP carries structure, colours, names and annotations. | Needs import (1.2) to be solid first. | Whole products in one file, both ways. | A STEP assembly round-trips. IGES exports spheres and tori. |
 | 3.3 | Clash, clearance and mass | Clash, clear by a stated gap, or unresolved, for every pair. | Exact overlap already works. Distant and nested pairs are left. | A proven gap between parts. Refusals that state the largest radius or thickness that fits. | Every pair in a test assembly gets one of the three answers. |
 | 3.4 | <a id="smlib-modelling-tools"></a>Tools only SMLib has | Bend and twist. Curvature-continuous blends. Mesh Booleans and decimation. | Last because OpenCASCADE does not have them either. | The final three lines. | Each has a first build. |
+| 3.5 | <a id="one-display-mesher"></a>One display mesher | Mesh every face by one path. Sample shared edges first, triangulate each face in its own parameters and set density from second-derivative bounds. Preview, bounded and proven use the same path. | SolidDraft cannot draw the filleted M11 loft. Each new spline feature would otherwise need its own grid scheme. | Display of every spline body, whole-body two-kernel checks and per-face reuse after edits. | See below. |
+
+**3.5 steps**
+
+1. Freeze the display corpus and record current work, point counts, bounds and refusals. Include P1 to P5, the [phase 5 work cases](docs/phase5-work-cases.md), the three M11 loft fillets, the small-warp loft, saddle and ellipse fillets, phase 2 spline bodies, and the SolidDraft three-turn coil.
+2. Put spline charts on the shared path. Bound derivatives per span. Project in floating point, starting from the neighbouring point, and include the projection residual in the bound. Split charts where first derivatives vanish.
+3. Plan each edge once using the stricter of the curve chord rule and the chord and normal limits of both incident charts. Cache those checks and sample one polyline on the edge curve for both faces, without retries or exchanges between faces. Record the charged work on the frozen corpus. Reuse the analytic path's trim triangulation and keep its chord checks and the spline angle and no-fold checks. Remove the junction, spline prism and oblique family grids.
+4. Make preview, bounded and proven levels of one option. Fold the preview routes into it.
+5. Cache by face and tolerance and make the levels nest. After an edit, mesh only the changed faces.
+6. Share the bound formula and triangle check between B-rep and field display.
+7. Draw the 4.2a rolling fillets and patch shells with the shared charts. Add rolling and shell trim handling, a swept-arc chart for rolling pieces and the spline chart for shell faces.
+
+**3.5 done when**
+
+- Every body in the frozen corpus displays at 0.01 mm and 0.005 mm chord with no refusal, including the three M11 loft fillets.
+- At 0.005 mm each M11 loft body takes under 1M display work. Display work for each analytic body is at most its baseline.
+- Both faces at every shared edge use the same polyline. Every B-rep mesh passes the existing closed-mesh check and retains chord, angle and no-fold checks.
+- Independent dense sampling on every face finds no point farther from the mesh than the reported bound.
+- The point count predicted before meshing equals the point count produced.
+- Mesh bytes and work agree at 1, 2, 4 and 24 workers, and on two machines.
+- `catallax-mesh` has at least 2,000 fewer lines than at the baseline.
+- SolidDraft draws the M11 loft fillet with one later feature on top (R2).
+- Compare's whole-body forward pass runs on the M11 rows and the [P5 flanged housing](parts/P5-flanged-housing.json) inside 100M work.
+- SolidDraft's three-turn helical sweep (2 mm wire diameter, 34 mm coil diameter, 3 mm pitch) displays inside 100M work with its periodic seam represented in the display chart. Target under 20M display work for a few turns.
+- Field chart display draws each 4.2a fillet row the field builds, including the filleted M11 loft, and the patch shells without `field.display-unsupported`. The same dense-sampling test checks their proven two-sided bounds.
+
+This sets the full bar for [coverage line Q1](docs/COVERAGE.md#meshes-and-queries-8). Keep the existing display entry points, the 20M work target and the 100M allowance.
 
 **App, alongside:** assemblies in the browser, assembly drawings, BOM and balloons, Pack and Go, the remaining mates, drawing annotations, URDF and USD export with joints, the refusal assistant.
 

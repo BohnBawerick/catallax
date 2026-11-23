@@ -5,7 +5,7 @@ use std::ops::Range;
 use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
-use crate::{MeshOptions, Triangle};
+use crate::{Mesh, MeshOptions, Triangle};
 
 pub(crate) mod edges;
 mod imported;
@@ -89,6 +89,31 @@ impl<F, E> Default for PreviewMesh<F, E> {
     }
 }
 
+impl PreviewMesh {
+    pub(crate) fn from_mesh(mesh: Mesh) -> Self {
+        Self {
+            positions: mesh.positions,
+            triangles: mesh.triangles,
+            faces: mesh
+                .faces
+                .into_iter()
+                .map(|face| PreviewFace {
+                    face: face.face,
+                    triangles: face.triangles,
+                })
+                .collect(),
+            edges: mesh
+                .edges
+                .into_iter()
+                .map(|edge| PreviewEdge {
+                    edge: edge.edge,
+                    vertices: edge.vertices,
+                })
+                .collect(),
+        }
+    }
+}
+
 fn validate(options: &PreviewOptions) -> Result<(), Refusal> {
     if options.chord_tolerance <= Rational::zero()
         || options.max_vertices < 4
@@ -120,6 +145,9 @@ pub fn preview_mesh_body(
     validate(options)?;
     if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
         return crate::oblique_draft::preview(model, body, options, dec);
+    }
+    if let Some(preview) = crate::triangulate::shared_spline_preview(model, body, options, dec) {
+        return preview;
     }
     if crate::junction::present(model, body) {
         return crate::junction::preview(model, body, options, dec);

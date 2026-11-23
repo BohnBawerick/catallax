@@ -45,7 +45,10 @@ jobs:
           if [[ "$HISTORICAL_REPLAY" == true ]]; then flags+=(--allow-historical-replay); fi
           python3 -B tools/release/release.py check-replay \
             "$RUNNER_TEMP/release-evidence/replay-summary.json" --commit "$GITHUB_SHA" "${flags[@]}"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release -p catallax-cli --bin catallax-verify
       - name: Install independent STEP checker

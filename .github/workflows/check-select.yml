@@ -74,7 +74,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - name: Workflow parser
         run: |
           python3 -m venv "$RUNNER_TEMP/check-tools"

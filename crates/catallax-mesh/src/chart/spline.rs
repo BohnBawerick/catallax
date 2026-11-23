@@ -17,7 +17,7 @@ use pipe_normal::PipeNormal;
 
 pub(crate) enum SplineNormals<'a> {
     Carrier,
-    // Preserve the proof order and seeds of the existing rational face chart.
+    // Preserve the proof order and seeds of the existing finite spline charts.
     Patch,
     Saddle,
     Pipe(&'a RollingPipe),

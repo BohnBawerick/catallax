@@ -252,9 +252,10 @@ impl Chart {
             split_spans,
             normal_station,
             match support {
-                SplineSupport::RationalAtlas(_) | SplineSupport::RationalPatch(_) => {
-                    SplineNormals::Patch
-                }
+                SplineSupport::BezierExtrusion(_)
+                | SplineSupport::RationalAtlas(_)
+                | SplineSupport::RationalPatch(_)
+                | SplineSupport::SplineFillet(_) => SplineNormals::Patch,
                 SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
                 SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
                 _ => SplineNormals::Carrier,

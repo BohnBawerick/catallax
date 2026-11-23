@@ -207,7 +207,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
-            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}=>return None,
+            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}|Operation::ShellGraded{..}|Operation::ThickenGraded{..}=>return None,
             Operation::Path{..}|Operation::Sweep{..}|Operation::Loft{..}=>return None,
             Operation::Lattice{..}=>"B-rep lattice envelope is not an independent lattice construction",
             Operation::Gyroid{..}=>"B-rep gyroid envelope is not an independent gyroid construction",
@@ -1494,7 +1494,11 @@ pub(crate) fn run(
     let distance_sampling = if recipe.steps.iter().any(|step| {
         matches!(
             step.op,
-            Operation::Offset { .. } | Operation::Shell { .. } | Operation::Thicken { .. }
+            Operation::Offset { .. }
+                | Operation::Shell { .. }
+                | Operation::Thicken { .. }
+                | Operation::ShellGraded { .. }
+                | Operation::ThickenGraded { .. }
         )
     }) {
         field.visit_distance_candidates(options.divisions, |p, id| {

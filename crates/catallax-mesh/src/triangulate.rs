@@ -181,16 +181,11 @@ impl FaceBuilder<'_> {
                 ));
             }
             (mesh, error)
-        } else if self.unproved {
+        } else if self.unproved && self.chart.spline().is_none() {
             let mesh = if let Some(index) = boundary {
                 index
             } else {
-                let point = if self.chart.spline().is_some() {
-                    self.spline_position(canonical, at)?
-                        .map(|value| value.mid())
-                } else {
-                    self.chart.preview_position(canonical, self.dec)?
-                };
+                let point = self.chart.preview_position(canonical, self.dec)?;
                 let index = self.positions.len();
                 self.positions.push(point);
                 index
@@ -210,8 +205,12 @@ impl FaceBuilder<'_> {
                     if !bound.is_finite() {
                         return Err(failure("spline sample residual exceeds binary64"));
                     }
-                    let residual = chart::q(bound.hi());
-                    let filtered = if spline.patch_sampling() {
+                    let residual = if self.unproved {
+                        Rational::zero()
+                    } else {
+                        chart::q(bound.hi())
+                    };
+                    let filtered = if self.unproved || spline.patch_sampling() {
                         bound
                     } else {
                         Interval::from_rational(&residual)
@@ -1604,15 +1603,6 @@ impl FaceBuilder<'_> {
                 if split {
                     continue;
                 }
-                if self.unproved {
-                    if sense == Sense::Reversed {
-                        vertices.swap(1, 2);
-                    }
-                    let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
-                    vertices.rotate_left(first);
-                    triangles.push(Triangle { vertices, face });
-                    continue;
-                }
                 // A later CDT round does not move an unchanged spline facet.
                 // Key by the cyclic vertex order to retain its proved normal.
                 let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
@@ -1663,17 +1653,6 @@ impl FaceBuilder<'_> {
                 } else {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
-                };
-                let (interpolation, replacement) = if spline.is_some()
-                    || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
-                {
-                    if !filtered.is_finite() {
-                        return Err(failure("spline interpolation bound exceeds binary64"));
-                    }
-                    (chart::q(filtered.hi()), Rational::zero())
-                } else {
-                    let hessian = self.chart.hessian(vmax, self.dec)?;
-                    (chord_bound(&uvs, &hessian), residual.clone())
                 };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
@@ -1768,11 +1747,26 @@ impl FaceBuilder<'_> {
                         })
                         .unwrap_or(center)
                 };
-                let mut error = checked_triangle_bound(
-                    &interpolation,
-                    &replacement,
-                    &self.options.chord_tolerance,
-                );
+                let mut error = if self.unproved {
+                    (filtered.hi() <= filtered_tolerance.lo()).then(Rational::zero)
+                } else {
+                    let (interpolation, replacement) = if spline.is_some()
+                        || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
+                    {
+                        if !filtered.is_finite() {
+                            return Err(failure("spline interpolation bound exceeds binary64"));
+                        }
+                        (chart::q(filtered.hi()), Rational::zero())
+                    } else {
+                        let hessian = self.chart.hessian(vmax, self.dec)?;
+                        (chord_bound(&uvs, &hessian), residual.clone())
+                    };
+                    checked_triangle_bound(
+                        &interpolation,
+                        &replacement,
+                        &self.options.chord_tolerance,
+                    )
+                };
                 let positions = vertices.map(|i| self.positions[i]);
                 if error.is_none()
                     && protect_band
@@ -1798,9 +1792,21 @@ impl FaceBuilder<'_> {
                 } else {
                     self.options.angular_deviation.as_ref()
                 };
-                let (ratio, mut angular_reached) =
-                    crate::controls::quality(self.chart, &uvs, positions, angular_limit, self.dec)?;
-                let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                let (ratio, mut angular_reached) = if self.unproved {
+                    // The preview omits the aspect report. Its chart chord
+                    // and rounded-facet normal still qualify the geometry.
+                    (Rational::zero(), true)
+                } else {
+                    let (ratio, angular_reached) = crate::controls::quality(
+                        self.chart,
+                        &uvs,
+                        positions,
+                        angular_limit,
+                        self.dec,
+                    )?;
+                    let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                    (ratio, angular_reached)
+                };
                 let mut angle_violation = false;
                 if let Some(spline) = spline {
                     angular_reached = if let Some(bounds) = normal_bounds {
@@ -2087,7 +2093,7 @@ fn face_mesh(
         collapsed_station: chart.collapsed_station(),
         ruled: is_ruled,
         stretch,
-        unproved: level == Level::Preview && !protect_band,
+        unproved: level == Level::Preview && chart.spline().is_some() && !protect_band,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
         cdt: Cdt::new(),

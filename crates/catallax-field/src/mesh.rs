@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use catallax_import::mesh::ClosedMesh;
-use catallax_numbers::{Ball, Decider, Integer, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Integer, Interval, Rational, Refusal};
 use catallax_shapes::{Isometry, RPoint3, Rotation};
 
 use crate::Location;
@@ -221,6 +221,21 @@ impl MeshLeaf {
                 })
             })
             .collect()
+    }
+
+    pub(crate) fn boundary_disjoint(
+        &self,
+        xyz: &[Interval; 3],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let shifted: [Interval; 3] =
+            std::array::from_fn(|i| xyz[i] - Interval::from_rational(&self.translation[i]));
+        let scale = Interval::from_rational(self.mesh.scale());
+        let file = self.inverse_rotation.each_ref().map(|row| {
+            let [a, b, c] = row.each_ref().map(Interval::from_rational);
+            (a * shifted[0] + b * shifted[1] + c * shifted[2]) / scale
+        });
+        self.mesh.boundary_disjoint(&file, dec)
     }
 
     /// Exact unit-density moments in world coordinates, in the order volume,

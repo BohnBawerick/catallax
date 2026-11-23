@@ -987,9 +987,8 @@ impl ClosedMesh {
         Ok(best.map(|d| &d * &(&self.scale * &self.scale)))
     }
 
-    /// A rigorous lower bound on the squared distance from `p` to the plane of
-    /// triangle `t`, in file units.
-    fn plane_lower_bound(&self, t: u32, p: &[Interval; 3]) -> f64 {
+    /// Encloses the plane equation of triangle `t` over a box in file units.
+    fn plane_side(&self, t: u32, p: &[Interval; 3]) -> (Interval, [Interval; 3]) {
         let enclose = |v: u32| {
             self.approx[v as usize]
                 .map(|x| Interval::new(x.next_down(), x.next_up()).unwrap_or(Interval::entire()))
@@ -1003,9 +1002,37 @@ impl ClosedMesh {
             u[0] * v[1] - u[1] * v[0],
         ];
         let side = (p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1] + (p[2] - a[2]) * n[2];
+        (side, n)
+    }
+
+    /// A rigorous lower bound on the squared distance from `p` to the plane of
+    /// triangle `t`, in file units.
+    fn plane_lower_bound(&self, t: u32, p: &[Interval; 3]) -> f64 {
+        let (side, n) = self.plane_side(t, p);
         let length = n[0].square() + n[1].square() + n[2].square();
         let bound = (side.square() / length).lo();
         if bound.is_nan() { 0.0 } else { bound }
+    }
+
+    /// Proves a box in file coordinates misses the mesh boundary by excluding
+    /// the boxes or the planes of every triangle. False allows contact.
+    pub fn boundary_disjoint(
+        &self,
+        xyz: &[Interval; 3],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let query = (xyz.map(|x| x.lo()), xyz.map(|x| x.hi()));
+        let mut disjoint = Ok(true);
+        let mut meter = Meter::new(dec);
+        self.tree.query(&query, |t| {
+            disjoint = meter.tick(1).map(|()| {
+                let (side, _) = self.plane_side(t, xyz);
+                side.lo() > 0.0 || side.hi() < 0.0
+            });
+            matches!(disjoint, Ok(true))
+        });
+        meter.flush()?;
+        disjoint
     }
 
     /// Approximate squared distance in scaled units, for display only.

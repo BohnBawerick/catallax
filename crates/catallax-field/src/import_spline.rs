@@ -656,7 +656,9 @@ pub(crate) fn rectangular_shell(
         }
         faces.push(ShellFace::Polygon(Box::new(Polygon::new(vertices)?)));
     }
-    Ok(Leaf::Shell(Box::new(Shell::new(faces)?)))
+    Ok(Leaf::Shell(Box::new(
+        Shell::new(faces)?.rectangular_import(),
+    )))
 }
 
 /// Points of a curved bilinear patch at the centres of a regular grid of its

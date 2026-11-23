@@ -58,9 +58,11 @@ jobs:
         with:
           name: check-selection
           path: ${{ runner.temp }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
         with:
+          toolchain: stable
           components: rustfmt
+          step-name: Set up Rust toolchain
       - run: ci/run fmt
       - uses: ./.github/actions/check-evidence
         with:
@@ -79,9 +81,11 @@ jobs:
         with:
           name: check-selection
           path: ${{ runner.temp }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
         with:
+          toolchain: stable
           components: clippy
+          step-name: Set up Rust toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Lint selected crates and consumers
         env:
@@ -106,7 +110,10 @@ jobs:
         with:
           name: check-selection
           path: ${{ runner.temp }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -151,7 +158,10 @@ jobs:
         with:
           name: check-selection
           path: ${{ runner.temp }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - uses: actions/download-artifact@v4
         with:
           name: check-test-archive
@@ -184,7 +194,10 @@ jobs:
         with:
           name: check-selection
           path: ${{ runner.temp }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p catallax-cli --bins
       - run: target/release/catallax about

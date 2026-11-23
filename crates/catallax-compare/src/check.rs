@@ -1521,9 +1521,9 @@ pub(crate) fn run(
     // the trimmed-face coverage pass and let its origin and direction checks
     // decide whether the remaining samples suffice.
     let sampling_error = |result: Result<bool, Refusal>| {
-        result.err().filter(|error| {
-            !(graded_wall && error.code == "field.sample-algebraic-placement")
-        })
+        result
+            .err()
+            .filter(|error| !(graded_wall && error.code == "field.sample-algebraic-placement"))
     };
     let sampling_error = (sampling_error(sampling), sampling_error(distance_sampling));
     if sampling_error.0.is_none() && sampling_error.1.is_none() && !sampling_failed.get() {

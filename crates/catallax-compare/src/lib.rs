@@ -11,8 +11,10 @@ use catallax_shapes::RPoint3;
 use std::sync::{Arc, Mutex};
 
 mod check;
+mod fitted;
 mod import_checks;
 mod steps;
+pub use fitted::{FittedSweepReport, check_fitted_sweep};
 pub use steps::{Construction, IndependentStep, KernelBuild, independent_steps};
 
 /// Closed model-space edit region, in millimetres.

@@ -835,7 +835,7 @@ fn stage_validation_names_each_grade_refusal() {
         (
             "L-axis-other",
             with_radius(d0(), |g| g["linear"]["to"] = json!(["1", "0", "30"])),
-            Some("lattice.grade-function-unsupported"),
+            None,
         ),
         (
             "G-zero-span",
@@ -876,7 +876,7 @@ fn stage_validation_names_each_grade_refusal() {
         (
             "G-axis-other",
             with_level(g0(), |g| g["linear"]["to"] = json!(["1", "0", "1"])),
-            Some("gyroid.grade-function-unsupported"),
+            None,
         ),
         (
             "G-sheet-nonpositive",

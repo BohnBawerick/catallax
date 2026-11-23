@@ -1,21 +1,18 @@
-//! The supported position functions of RECIPE.md section 4.16, shared by the
-//! lattice radius and the gyroid level.
+//! Clamped grades shared by lattice radii and gyroid levels.
 //!
-//! A grade is a constant or `v0 + clamp(t, 0, 1) (v1 - v0)` with
-//! `t = ((p - f) · (g - f)) / |g - f|²`. Equal endpoints are the constant they
-//! equal, so a constant written either way compiles to the same definition. The
-//! anchors are part coordinates: nothing here reads a body's bounds, so editing
-//! the body never moves them.
-//!
-//! A terminal field certifies the subset whose anchors differ along exactly one
-//! part axis, with family limits on the endpoints and on the slope
-//! `K = |v1 - v0| / |g - f|`. Other valid grades stay valid definitions.
+//! Linear anchors, centres and axes are fixed in part coordinates. Face-distance
+//! grades resolve against the current region. The grade's endpoint values and slope
+//! determine admission to terminal certification.
 
 use crate::geometry;
 use crate::metric::{PRECISION, Scalar};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
 use catallax_recipe::Grade;
 use catallax_shapes::Vector3;
+
+mod faces;
+mod radius;
+use radius::Radius;
 
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)
@@ -49,11 +46,22 @@ pub(crate) struct Linear {
     pub(crate) end: Rational,
 }
 
+/// On a rectangular body the distance to each trimmed face is its inward
+/// plane distance. Outside the clip, the clamped planes extend the grade
+/// continuously without changing the clipped solid.
+#[derive(Clone, Debug)]
+pub(crate) struct FaceDistance {
+    planes: Vec<Linear>,
+    slope: Rational,
+}
+
 /// A compiled grade.
 #[derive(Clone, Debug)]
 pub(crate) enum GradeDef {
     Constant(Rational),
     Linear(Box<Linear>),
+    Faces(Box<FaceDistance>),
+    Radius(Box<Radius>),
 }
 
 /// The piece of a clamped linear grade that holds over a whole box.
@@ -65,12 +73,49 @@ pub(crate) enum Piece {
     Ramp,
     /// The constant end value, at or beyond the end anchor plane.
     End,
+    /// The ramp on one selected rectangular face's side of the bisectors.
+    Face(usize),
+    /// A smooth ramp in the distance to a centre or axis.
+    Curved,
 }
 
 impl GradeDef {
-    /// Compiles a constant or linear grade. A linear grade with coincident anchors
-    /// refuses with `impossible`; equal endpoint values give the constant. A
-    /// distance grade is not a position function here and returns `None`.
+    pub(crate) fn from_faces(
+        planes: impl IntoIterator<Item = (usize, bool, Rational)>,
+        near: &Rational,
+        far: &Rational,
+        span: &Rational,
+    ) -> Self {
+        if near == far {
+            return Self::Constant(near.clone());
+        }
+        let mut planes: Vec<_> = planes
+            .into_iter()
+            .map(|(axis, upper, position)| {
+                let mut from = [q(0), q(0), q(0)];
+                let mut direction = [q(0), q(0), q(0)];
+                from[axis] = position;
+                direction[axis] = if upper { -span } else { span.clone() };
+                Linear {
+                    from,
+                    direction,
+                    length_sq: span * span,
+                    start: near.clone(),
+                    end: far.clone(),
+                }
+            })
+            .collect();
+        if planes.len() == 1 {
+            return Self::Linear(Box::new(planes.pop().expect("one selected face")));
+        }
+        Self::Faces(Box::new(FaceDistance {
+            planes,
+            slope: &(far - near).abs() / span,
+        }))
+    }
+
+    /// Compiles a grade with no region dependency. Equal endpoint values give the
+    /// constant. Face-distance grades are resolved separately against a region.
     pub(crate) fn compile(
         grade: &Grade,
         impossible: &'static str,
@@ -104,14 +149,63 @@ impl GradeDef {
                 }))
             }
             Grade::Distance { .. } => return Ok(None),
+            Grade::Point {
+                centre,
+                r0,
+                r1,
+                start,
+                end,
+            } => {
+                catallax_features::lattice::validate_distance_radii(grade, impossible)?;
+                Self::from_radius(
+                    &centre.0,
+                    None,
+                    [r0.value(), r1.value()],
+                    [start.value(), end.value()],
+                )
+            }
+            Grade::Radial {
+                origin,
+                direction,
+                r0,
+                r1,
+                start,
+                end,
+            } => {
+                catallax_features::lattice::validate_distance_radii(grade, impossible)?;
+                Self::from_radius(
+                    &origin.0,
+                    Some(&direction.0),
+                    [r0.value(), r1.value()],
+                    [start.value(), end.value()],
+                )
+            }
         }))
+    }
+
+    fn from_radius(
+        origin: &[catallax_recipe::Number; 3],
+        direction: Option<&[catallax_recipe::Number; 3]>,
+        [r0, r1]: [&Rational; 2],
+        [start, end]: [&Rational; 2],
+    ) -> Self {
+        if start == end {
+            return Self::Constant(start.clone());
+        }
+        let values = |p: &[catallax_recipe::Number; 3]| p.each_ref().map(|n| n.value().clone());
+        Self::Radius(Box::new(Radius::new(
+            values(origin),
+            direction.map(values),
+            [r0.clone(), r1.clone()],
+            [start.clone(), end.clone()],
+        )))
     }
 
     /// The constant value, or `None` for a ramp.
     pub(crate) fn constant(&self) -> Option<&Rational> {
         match self {
             Self::Constant(c) => Some(c),
-            Self::Linear(_) => None,
+            Self::Linear(_) | Self::Faces(_) | Self::Radius(_) => None,
         }
     }
 
@@ -128,6 +222,12 @@ impl GradeDef {
     /// A rational upper bound on the slope `|v1 - v0| / |g - f|`, exact when the
     /// anchors differ along one axis. Zero for a constant.
     pub(crate) fn slope_bound(&self) -> Rational {
+        if let Self::Faces(faces) = self {
+            return faces.slope.clone();
+        }
+        if let Self::Radius(radius) = self {
+            return radius.slope.abs();
+        }
         let Self::Linear(linear) = self else {
             return q(0);
         };
@@ -150,40 +250,72 @@ impl GradeDef {
             .expect("distinct grade points")
     }
 
-    /// The exact value at a rational point.
-    pub(crate) fn value(&self, p: &[Rational; 3]) -> Rational {
-        match self {
+    fn interpolate(linear: &Linear, t: Rational) -> Rational {
+        let t = t.max(q(0)).min(q(1));
+        &linear.start + &(&t * &(&linear.end - &linear.start))
+    }
+
+    /// The exact value for grades whose value at a rational point is rational.
+    pub(crate) fn rational_value(&self, p: &[Rational; 3]) -> Option<Rational> {
+        Some(match self {
             Self::Constant(c) => c.clone(),
-            Self::Linear(linear) => {
-                let t = Self::parameter(linear, p).max(q(0)).min(q(1));
-                &linear.start + &(&t * &(&linear.end - &linear.start))
-            }
+            Self::Linear(linear) => Self::interpolate(linear, Self::parameter(linear, p)),
+            Self::Faces(faces) => Self::interpolate(
+                &faces.planes[0],
+                faces
+                    .planes
+                    .iter()
+                    .map(|plane| Self::parameter(plane, p))
+                    .min()
+                    .expect("selected faces"),
+            ),
+            Self::Radius(_) => return None,
+        })
+    }
+
+    pub(crate) fn real(&self, p: &[Rational; 3]) -> Real {
+        match self {
+            Self::Radius(radius) => radius.real(p),
+            _ => Real::from(self.rational_value(p).expect("rational grade")),
         }
+    }
+
+    pub(crate) fn ball(&self, p: &[Rational; 3]) -> Ball {
+        match self {
+            Self::Radius(radius) => radius.ball(p),
+            _ => Ball::from_rational(&self.rational_value(p).expect("rational grade"), PRECISION),
+        }
+    }
+
+    fn fast_parameter(linear: &Linear, p: [f64; 3]) -> f64 {
+        let rel: [f64; 3] = std::array::from_fn(|i| p[i] - f(&linear.from[i]));
+        let direction = linear.direction.each_ref().map(f);
+        rel[0]
+            .mul(&direction[0])
+            .add(&rel[1].mul(&direction[1]))
+            .add(&rel[2].mul(&direction[2]))
+            / f(&linear.length_sq)
     }
 
     /// The tentative value in binary64.
     pub(crate) fn fast(&self, p: [f64; 3]) -> f64 {
         match self {
             Self::Constant(c) => f(c),
-            Self::Linear(linear) => {
-                let Linear {
-                    from,
-                    direction,
-                    length_sq,
-                    start,
-                    end,
-                } = linear.as_ref();
-                let rel: [f64; 3] = std::array::from_fn(|i| p[i] - f(&from[i]));
-                let direction = direction.each_ref().map(f);
-                let t = rel[0]
-                    .mul(&direction[0])
-                    .add(&rel[1].mul(&direction[1]))
-                    .add(&rel[2].mul(&direction[2]))
-                    / f(length_sq);
-                let t = t.clamp(0.0, 1.0);
-                f(start) + t * (f(end) - f(start))
-            }
+            Self::Linear(linear) => Self::fast_interpolate(linear, Self::fast_parameter(linear, p)),
+            Self::Faces(faces) => Self::fast_interpolate(
+                &faces.planes[0],
+                faces
+                    .planes
+                    .iter()
+                    .map(|plane| Self::fast_parameter(plane, p))
+                    .fold(f64::INFINITY, f64::min),
+            ),
+            Self::Radius(radius) => radius.fast(p),
         }
+    }
+
+    fn fast_interpolate(linear: &Linear, t: f64) -> f64 {
+        f(&linear.start) + t.clamp(0.0, 1.0) * (f(&linear.end) - f(&linear.start))
     }
 
     fn interval_parameter(linear: &Linear, p: &[Interval; 3]) -> Interval {
@@ -199,17 +331,44 @@ impl GradeDef {
         match self {
             Self::Constant(c) => Interval::from_rational(c),
             Self::Linear(linear) => {
-                let t = clamp01(Self::interval_parameter(linear, p));
-                Interval::from_rational(&linear.start)
-                    + t * (Interval::from_rational(&linear.end)
-                        - Interval::from_rational(&linear.start))
+                Self::interval_interpolate(linear, clamp01(Self::interval_parameter(linear, p)))
             }
+            Self::Faces(faces) => Self::interval_interpolate(
+                &faces.planes[0],
+                clamp01(
+                    faces
+                        .planes
+                        .iter()
+                        .map(|plane| Self::interval_parameter(plane, p))
+                        .reduce(imin)
+                        .expect("selected faces"),
+                ),
+            ),
+            Self::Radius(radius) => radius.interval(p),
         }
+    }
+
+    fn interval_interpolate(linear: &Linear, t: Interval) -> Interval {
+        Interval::from_rational(&linear.start)
+            + t * (Interval::from_rational(&linear.end) - Interval::from_rational(&linear.start))
     }
 
     /// The piece that holds over the whole box, or `None` when the box meets an
     /// anchor plane's two sides. A constant is one ramp-free piece everywhere.
     pub(crate) fn piece(&self, p: &[Interval; 3]) -> Option<Piece> {
+        if let Self::Radius(radius) = self {
+            return radius.piece(p);
+        }
+        if let Self::Faces(faces) = self {
+            return face_piece(
+                &faces.planes,
+                |plane| {
+                    let t = Self::interval_parameter(plane, p);
+                    [t.lo(), t.hi()]
+                },
+                [0.0, 1.0],
+            );
+        }
         let Self::Linear(linear) = self else {
             return Some(Piece::Start);
         };
@@ -225,6 +384,10 @@ impl GradeDef {
         }
     }
 
+    pub(crate) fn has_affine_extension(&self) -> bool {
+        matches!(self, Self::Constant(_) | Self::Linear(_))
+    }
+
     /// The unclamped affine extension of the ramp over a box: `v0 + t (v1 - v0)`.
     /// It equals the grade between the anchor planes. A constant returns itself.
     pub(crate) fn affine(&self, p: &[Interval; 3]) -> Interval {
@@ -236,6 +399,7 @@ impl GradeDef {
                         * (Interval::from_rational(&linear.end)
                             - Interval::from_rational(&linear.start))
             }
+            Self::Faces(_) | Self::Radius(_) => unreachable!("this grade has no affine extension"),
         }
     }
 
@@ -243,11 +407,28 @@ impl GradeDef {
     pub(crate) fn gradient(&self) -> [Interval; 3] {
         match self {
             Self::Constant(_) => [Interval::point(0.0).unwrap(); 3],
-            Self::Linear(linear) => {
-                let scale = (&linear.end - &linear.start)
-                    .checked_div(&linear.length_sq)
-                    .expect("distinct grade points");
-                std::array::from_fn(|i| Interval::from_rational(&(&linear.direction[i] * &scale)))
+            Self::Linear(linear) => Self::linear_gradient(linear),
+            Self::Faces(_) | Self::Radius(_) => unreachable!("this grade has no affine extension"),
+        }
+    }
+
+    fn linear_gradient(linear: &Linear) -> [Interval; 3] {
+        let scale = (&linear.end - &linear.start)
+            .checked_div(&linear.length_sq)
+            .expect("distinct grade points");
+        std::array::from_fn(|i| Interval::from_rational(&(&linear.direction[i] * &scale)))
+    }
+
+    pub(crate) fn piece_value(&self, piece: Piece, p: &[Interval; 3]) -> Interval {
+        match piece {
+            Piece::Ramp => self.affine(p),
+            Piece::Start | Piece::End | Piece::Curved => self.interval(p),
+            Piece::Face(i) => {
+                let Self::Faces(faces) = self else {
+                    unreachable!("face grade piece")
+                };
+                let plane = &faces.planes[i];
+                Self::interval_interpolate(plane, Self::interval_parameter(plane, p))
             }
         }
     }
@@ -256,8 +437,24 @@ impl GradeDef {
     pub(crate) fn piece_gradient(&self, piece: Piece) -> [Interval; 3] {
         match piece {
             Piece::Ramp => self.gradient(),
-            Piece::Start | Piece::End => [Interval::point(0.0).unwrap(); 3],
+            Piece::Start | Piece::End | Piece::Curved => [Interval::point(0.0).unwrap(); 3],
+            Piece::Face(i) => {
+                let Self::Faces(faces) = self else {
+                    unreachable!("face grade piece")
+                };
+                Self::linear_gradient(&faces.planes[i])
+            }
         }
+    }
+
+    pub(crate) fn curved_derivatives(
+        &self,
+        p: &[Interval; 3],
+    ) -> Option<([Interval; 3], [[Interval; 3]; 3])> {
+        let Self::Radius(radius) = self else {
+            return None;
+        };
+        radius.derivatives(p)
     }
 
     /// The exact range of `t` over a closed rational box.
@@ -279,6 +476,16 @@ impl GradeDef {
     /// The piece that holds over a whole closed rational box, decided exactly, or
     /// `None` when the box meets both sides of an anchor plane.
     pub(crate) fn exact_piece(&self, lo: &[Rational; 3], hi: &[Rational; 3]) -> Option<Piece> {
+        if let Self::Radius(radius) = self {
+            return radius.piece(&interval_box(lo, hi));
+        }
+        if let Self::Faces(faces) = self {
+            return face_piece(
+                &faces.planes,
+                |plane| Self::parameter_range(plane, lo, hi),
+                [q(0), q(1)],
+            );
+        }
         let Self::Linear(linear) = self else {
             return Some(Piece::Start);
         };
@@ -306,16 +513,35 @@ impl GradeDef {
         Some((axis, [from, to]))
     }
 
-    /// The exact range of the grade over a closed rational box.
+    /// Bounds a grade over a closed rational box. Constants and linear grades
+    /// return the exact extremes.
     pub(crate) fn range(&self, lo: &[Rational; 3], hi: &[Rational; 3]) -> [Rational; 2] {
         match self {
             Self::Constant(c) => [c.clone(), c.clone()],
+            Self::Faces(faces) => {
+                let [lo, hi] = faces
+                    .planes
+                    .iter()
+                    .map(|plane| Self::parameter_range(plane, lo, hi))
+                    .reduce(|[a, b], [c, d]| [a.min(c), b.min(d)])
+                    .expect("selected faces");
+                let [a, b] = [lo, hi].map(|t| Self::interpolate(&faces.planes[0], t));
+                [a.clone().min(b.clone()), a.max(b)]
+            }
             Self::Linear(linear) => {
                 let [a, b] = Self::parameter_range(linear, lo, hi).map(|t| {
                     let t = t.max(q(0)).min(q(1));
                     &linear.start + &(&t * &(&linear.end - &linear.start))
                 });
                 [a.clone().min(b.clone()), a.max(b)]
+            }
+            Self::Radius(radius) => {
+                let value = radius.interval(&interval_box(lo, hi));
+                let [a, b] = &radius.values;
+                [
+                    Rational::from_f64_exact(value.lo()).unwrap_or_else(|| a.min(b).clone()),
+                    Rational::from_f64_exact(value.hi()).unwrap_or_else(|| a.max(b).clone()),
+                ]
             }
         }
     }
@@ -328,6 +554,12 @@ impl GradeDef {
         d: &Vector3,
         dec: &mut Decider,
     ) -> Result<Option<Real>, Refusal> {
+        if let Self::Faces(faces) = self {
+            return faces.rate(p, d, dec);
+        }
+        if let Self::Radius(radius) = self {
+            return radius.rate(p, d, dec);
+        }
         let Self::Linear(linear) = self else {
             return Ok(None);
         };
@@ -363,7 +595,13 @@ impl GradeDef {
 
     /// Composes a rational rigid motion `x -> M x + t` into the anchors.
     pub(crate) fn transform(&mut self, m: &[[Rational; 3]; 3], t: &[Rational; 3]) {
-        if let Self::Linear(linear) = self {
+        let planes = match self {
+            Self::Constant(_) => return,
+            Self::Linear(linear) => std::slice::from_mut(linear.as_mut()),
+            Self::Faces(faces) => &mut faces.planes,
+            Self::Radius(radius) => return radius.transform(m, t),
+        };
+        for linear in planes {
             let apply = |v: &[Rational; 3]| -> [Rational; 3] {
                 std::array::from_fn(|i| rational_dot(&m[i], v))
             };
@@ -374,27 +612,145 @@ impl GradeDef {
     }
 }
 
-/// Checks the terminal certification subset of one field family. A constant, or
-/// a linear grade whose endpoints are equal, is always in it. Otherwise the
-/// anchors must differ along exactly one part axis (`{family}.grade-function-unsupported`),
-/// both endpoints must lie in `[low, high]` and the slope must be at most
-/// `max_slope` (`{family}.grade-range-unsupported`). Nothing is clamped.
+fn interval_box(lo: &[Rational; 3], hi: &[Rational; 3]) -> [Interval; 3] {
+    std::array::from_fn(|i| Interval::from_rational(&lo[i]).hull(&Interval::from_rational(&hi[i])))
+}
+
+fn face_piece<T: PartialOrd>(
+    planes: &[Linear],
+    range: impl Fn(&Linear) -> [T; 2],
+    [zero, one]: [T; 2],
+) -> Option<Piece> {
+    let ranges = planes.iter().map(&range);
+    if ranges.clone().any(|[_, hi]| hi <= zero) {
+        return Some(Piece::Start);
+    }
+    if ranges.clone().all(|[lo, _]| lo >= one) {
+        return Some(Piece::End);
+    }
+    for (i, [lo, hi]) in ranges.clone().enumerate() {
+        if lo >= zero
+            && hi <= one
+            && ranges
+                .clone()
+                .enumerate()
+                .all(|(j, [low, _])| i == j || hi <= low)
+        {
+            return Some(Piece::Face(i));
+        }
+    }
+    None
+}
+
+impl FaceDistance {
+    fn rate(
+        &self,
+        p: &[Rational; 3],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<Real>, Refusal> {
+        let parameters: Vec<_> = self
+            .planes
+            .iter()
+            .map(|plane| GradeDef::parameter(plane, p))
+            .collect();
+        let first = parameters.iter().min().expect("selected faces");
+        if first < &q(0) || first > &q(1) {
+            return Ok(None);
+        }
+        let mut rate: Option<Real> = None;
+        for (plane, parameter) in self.planes.iter().zip(&parameters) {
+            if parameter != first {
+                continue;
+            }
+            let [x, y, z] = plane.direction.clone().map(Real::from);
+            let along = Vector3::new(x, y, z).dot(d);
+            if let Some(previous) = &rate
+                && geometry::sign(&(&along - previous), dec)? != Sign::Negative
+            {
+                continue;
+            }
+            rate = Some(along);
+        }
+        let rate = rate.expect("one closest face");
+        if (first == &q(0) && geometry::sign(&rate, dec)? != Sign::Positive)
+            || (first == &q(1) && geometry::sign(&rate, dec)? != Sign::Negative)
+        {
+            return Ok(None);
+        }
+        let plane = &self.planes[0];
+        Ok(Some(
+            &rate * &Real::from(&(&plane.end - &plane.start) / &plane.length_sq),
+        ))
+    }
+}
+
+/// Checks the endpoint and slope limits of one field family. Constants keep
+/// their own route. Face distances check these limits before face resolution.
 pub(crate) fn check_certified(
     grade: &GradeDef,
-    [function, range]: [&'static str; 2],
+    range: &'static str,
     [low, high]: [&Rational; 2],
     max_slope: &Rational,
 ) -> Result<(), Refusal> {
+    if let GradeDef::Radius(radius) = grade {
+        return check_limits(
+            radius.values.each_ref(),
+            [low, high],
+            || radius.slope.abs(),
+            max_slope,
+            range,
+        );
+    }
     let GradeDef::Linear(linear) = grade else {
         return Ok(());
     };
     if grade.axis().is_none() {
-        return Err(Refusal::new(
-            function,
-            "a terminal field certifies linear grades whose anchors differ along one part axis",
-        ));
+        check_endpoints([&linear.start, &linear.end], [low, high], range)?;
+        let rise = &linear.end - &linear.start;
+        let allowed_sq = &(max_slope * max_slope) * &linear.length_sq;
+        if &rise * &rise > allowed_sq {
+            return Err(slope_refusal(&grade.slope_bound(), max_slope, range));
+        }
+        return Ok(());
     }
-    for value in [&linear.start, &linear.end] {
+    check_limits(
+        [&linear.start, &linear.end],
+        [low, high],
+        || grade.slope_bound(),
+        max_slope,
+        range,
+    )
+}
+
+fn check_limits(
+    endpoints: [&Rational; 2],
+    [low, high]: [&Rational; 2],
+    slope: impl FnOnce() -> Rational,
+    max_slope: &Rational,
+    range: &'static str,
+) -> Result<(), Refusal> {
+    check_endpoints(endpoints, [low, high], range)?;
+    let slope = slope();
+    if &slope > max_slope {
+        return Err(slope_refusal(&slope, max_slope, range));
+    }
+    Ok(())
+}
+
+fn slope_refusal(slope: &Rational, max_slope: &Rational, range: &'static str) -> Refusal {
+    Refusal::new(
+        range,
+        format!("grade slope {slope} per mm exceeds the certified {max_slope} per mm"),
+    )
+}
+
+fn check_endpoints(
+    endpoints: [&Rational; 2],
+    [low, high]: [&Rational; 2],
+    range: &'static str,
+) -> Result<(), Refusal> {
+    for value in endpoints {
         if value < low || value > high {
             return Err(Refusal::new(
                 range,
@@ -402,24 +758,40 @@ pub(crate) fn check_certified(
             ));
         }
     }
-    let slope = grade.slope_bound();
-    if &slope > max_slope {
-        return Err(Refusal::new(
-            range,
-            format!("grade slope {slope} per mm exceeds the certified {max_slope} per mm"),
-        ));
-    }
     Ok(())
 }
 
-/// The exact range of a constant or linear grade over a closed rational box, as a
-/// terminal field reads it. A box across an anchor plane holds the clamped value,
-/// never an unclamped endpoint or the value at the box centre.
+pub(crate) fn check_distance(
+    [near, far, span]: [&Rational; 3],
+    [low, high]: [&Rational; 2],
+    max_slope: &Rational,
+    [impossible, range]: [&'static str; 2],
+) -> Result<(), Refusal> {
+    if span.sign() != Sign::Positive {
+        return Err(Refusal::new(
+            impossible,
+            "a distance grade needs a positive span",
+        ));
+    }
+    if near == far {
+        return Ok(());
+    }
+    check_limits(
+        [near, far],
+        [low, high],
+        || &(far - near).abs() / span,
+        max_slope,
+        range,
+    )
+}
+
+/// Bounds a grade over a closed rational box. Constant and linear grades return
+/// their exact clamped range. Point and radial grades return an enclosure.
 ///
 /// Refusals: `field.grade-box` when a lower corner exceeds its upper corner,
-/// `field.grade-unsupported` for a distance grade, the family-neutral
-/// `field.grade-impossible` for coincident anchors, and the decider's work and
-/// deadline outcomes.
+/// `field.grade-unsupported` for a grade needing region faces,
+/// `field.grade-impossible` for invalid grade parameters, and the decider's
+/// work and deadline outcomes.
 pub fn grade_range(
     grade: &Grade,
     lo: &[Rational; 3],

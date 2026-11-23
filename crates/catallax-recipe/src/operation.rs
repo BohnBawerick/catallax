@@ -1051,6 +1051,34 @@ pub enum Grade {
         /// The distance over which the value changes.
         span: Number,
     },
+    /// Linear between two distances from a centre in part coordinates.
+    Point {
+        /// The centre from which to measure distance.
+        centre: Point3,
+        /// Radius at which the value starts to change.
+        r0: Number,
+        /// Radius at which the value stops changing.
+        r1: Number,
+        /// The value at and below r0.
+        start: Number,
+        /// The value at and above r1.
+        end: Number,
+    },
+    /// Linear between two perpendicular distances from an axis in part coordinates.
+    Radial {
+        /// A point on the axis.
+        origin: Point3,
+        /// The nonzero direction of the axis. Its length does not affect the grade.
+        direction: Vector3,
+        /// Radius at which the value starts to change.
+        r0: Number,
+        /// Radius at which the value stops changing.
+        r1: Number,
+        /// The value at and below r0.
+        start: Number,
+        /// The value at and above r1.
+        end: Number,
+    },
 }
 
 /// Whether a gyroid is a sheet or a network.

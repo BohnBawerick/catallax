@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
@@ -132,10 +135,20 @@ struct Cap<'a> {
     coefficient: Rational,
 }
 
+#[derive(Clone)]
 struct EdgePoint {
     xyz: [Ball; 3],
     cap_hint: Option<Uv>,
     edge_end: Option<usize>,
+}
+
+struct RailLeaf {
+    piece: Arc<TracePiece>,
+    range: [Rational; 2],
+    indices: [usize; 2],
+    endpoints: [EdgePoint; 2],
+    depth: u32,
+    bound: Rational,
 }
 
 struct Sampler<'a> {
@@ -150,6 +163,8 @@ struct Sampler<'a> {
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
     exact_positions: Option<&'a mut BTreeMap<usize, Position>>,
+    rail: Option<&'a mut Vec<RailLeaf>>,
+    split_leaf: bool,
 }
 
 struct IncidentChart<'a> {
@@ -274,6 +289,7 @@ impl Sampler<'_> {
         endpoints: [&EdgePoint; 2],
     ) -> Result<(), Refusal> {
         self.dec.check_deadline()?;
+        let split_leaf = std::mem::take(&mut self.split_leaf);
         let [first, last] = indices;
         let [a, b] = endpoints;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
@@ -327,7 +343,7 @@ impl Sampler<'_> {
                             .trim
                             .map(|trim| trim.fixed)
                             .or_else(|| incident.fixed_v.map(|v| (1, v))),
-                        Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3)),
+                        self.options,
                         self.spline_cosine,
                         self.dec,
                     )?;
@@ -367,7 +383,17 @@ impl Sampler<'_> {
                 self.dec,
             )?;
         }
-        if small {
+        if small && !split_leaf {
+            if let Some(rail) = &mut self.rail {
+                rail.push(RailLeaf {
+                    piece: Arc::clone(self.piece),
+                    range: [lo, hi],
+                    indices,
+                    endpoints: [a.clone(), b.clone()],
+                    depth,
+                    bound: bound.clone(),
+                });
+            }
             *self.error = self.error.clone().max(bound);
             self.indices.push(last);
             return Ok(());
@@ -394,6 +420,93 @@ impl Sampler<'_> {
             Some(&acceleration),
             [&middle_point, b],
         )
+    }
+}
+
+fn plan_collar_rail(
+    mut leaves: Vec<RailLeaf>,
+    charts: &[IncidentChart<'_>],
+    edge_cosine: Option<Interval>,
+    options: &MeshOptions,
+    positions: &mut Vec<[f64; 3]>,
+    dec: &mut Decider,
+) -> Result<(Vec<usize>, Rational), Refusal> {
+    let angle = options.angular_deviation.as_ref().expect("angular rail");
+    let cosine = crate::controls::cosine_enclosure(angle, dec)?;
+    let mut checked = BTreeSet::new();
+    loop {
+        let mut split = None;
+        for i in 0..leaves.len() {
+            let j = (i + leaves.len() - 1) % leaves.len();
+            let [a, b] = leaves[j].indices;
+            let [start, c] = leaves[i].indices;
+            debug_assert_eq!(b, start);
+            let key = [a, b, c];
+            if checked.contains(&key) {
+                continue;
+            }
+            let samples = key.map(|index| positions[index]);
+            let mut fits = true;
+            for incident in charts {
+                if let Some(row) = incident.fixed_v
+                    && matches!(
+                        incident.chart.surface,
+                        Surface::BSpline(SplineSupport::RollingSaddle(_))
+                    )
+                {
+                    let chart = incident.chart.spline().expect("saddle band chart");
+                    fits &=
+                        chart.rail_pair_fits(samples, row, options, cosine, edge_cosine, dec)?;
+                }
+            }
+            if !fits {
+                // Splitting a leaf reruns the ordinary edge checks for both
+                // incident charts. The rest of the shared polyline stays fixed.
+                let left = crate::controls::length_squared(samples[0], samples[1]);
+                let right = crate::controls::length_squared(samples[1], samples[2]);
+                split = Some(if left >= right { j } else { i });
+                break;
+            }
+            checked.insert(key);
+        }
+        let Some(i) = split else {
+            let mut indices = vec![leaves[0].indices[0]];
+            let mut error = Rational::zero();
+            for leaf in leaves {
+                indices.push(leaf.indices[1]);
+                error = error.max(leaf.bound);
+            }
+            return Ok((indices, error));
+        };
+        let leaf = &leaves[i];
+        let mut children = Vec::new();
+        let mut unused_indices = Vec::new();
+        let mut error = Rational::zero();
+        let spline = leaf.piece.display_spline_span(dec)?;
+        Sampler {
+            piece: &leaf.piece,
+            cap: None,
+            spline,
+            charts,
+            spline_cosine: edge_cosine,
+            options,
+            dec,
+            positions,
+            indices: &mut unused_indices,
+            error: &mut error,
+            exact_positions: None,
+            rail: Some(&mut children),
+            split_leaf: true,
+        }
+        .segment(
+            leaf.range[0].clone(),
+            leaf.range[1].clone(),
+            leaf.indices,
+            leaf.depth,
+            None,
+            leaf.endpoints.each_ref(),
+        )?;
+        leaves.splice(i..=i, children);
     }
 }
 
@@ -589,6 +702,33 @@ pub(crate) fn sample_selected(
         None
     };
     for edge_id in selected {
+        let local_options = adjacent.get(&edge_id).and_then(|charts| {
+            let chord = charts
+                .iter()
+                .filter_map(|incident| incident.chart.chord_goal.as_ref())
+                .min()?;
+            Some(MeshOptions {
+                chord_tolerance: chord.clone(),
+                ..options.clone()
+            })
+        });
+        let options = local_options.as_ref().unwrap_or(options);
+        let spline_cosine = if adjacent.get(&edge_id).is_some_and(|charts| {
+            charts.iter().any(|incident| {
+                matches!(
+                    incident.chart.surface,
+                    Surface::BSpline(SplineSupport::RollingSaddle(_))
+                )
+            })
+        }) {
+            options
+                .angular_deviation
+                .as_ref()
+                .map(|angle| crate::controls::cosine_enclosure(&angle.mul_pow2(-1), dec))
+                .transpose()?
+        } else {
+            spline_cosine
+        };
         if let Some(seed) = junction.and_then(|junction| junction.seed(edge_id)) {
             seeded(model, edge_id, seed, options, dec, &mut result)?;
             continue;
@@ -642,6 +782,17 @@ pub(crate) fn sample_selected(
         };
         let mut indices = vec![first];
         let mut error = Rational::zero();
+        let plan_collar = from == to
+            && !planar
+            && options.angular_deviation.is_some()
+            && adjacent[&edge_id].iter().any(|incident| {
+                incident.fixed_v.is_some()
+                    && matches!(
+                        incident.chart.surface,
+                        Surface::BSpline(SplineSupport::RollingSaddle(_))
+                    )
+            });
+        let mut rail = Vec::new();
         for (i, piece) in pieces.iter().enumerate() {
             let next_values;
             let first_values = if i == 0 {
@@ -709,6 +860,8 @@ pub(crate) fn sample_selected(
                 indices: &mut indices,
                 error: &mut error,
                 exact_positions: planar.then_some(&mut result.exact_positions),
+                rail: plan_collar.then_some(&mut rail),
+                split_leaf: false,
             }
             .segment(
                 Rational::zero(),
@@ -717,6 +870,16 @@ pub(crate) fn sample_selected(
                 0,
                 None,
                 [&first_point, &last_point],
+            )?;
+        }
+        if plan_collar {
+            (indices, error) = plan_collar_rail(
+                rail,
+                &adjacent[&edge_id],
+                spline_cosine,
+                options,
+                &mut result.mesh.positions,
+                dec,
             )?;
         }
         // Chart seams can add a trace sample closer to an endpoint than the

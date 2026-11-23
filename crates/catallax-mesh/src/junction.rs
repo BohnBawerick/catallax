@@ -11,9 +11,12 @@ mod spline_fillet;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
-    BoundaryRow, Curve, EnvelopeGrid, RollingMitre, RollingSaddle, SplineSupport, Surface,
+    BoundaryRow, Curve, EnvelopeGrid, RollingEnvelope, RollingMitre, RollingSaddle, SplineSupport,
+    Surface,
 };
-use catallax_topology::{BodyId, EdgeId, FaceId, Model, RollingMitreBand, Sense, saddle_rows};
+use catallax_topology::{
+    BodyId, EdgeId, FaceId, Model, RollingMitreBand, Sense, envelope_rows, saddle_rows,
+};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
@@ -78,7 +81,11 @@ pub(crate) fn present(model: &Model, body: BodyId) -> bool {
     model.faces_of_body(body).iter().any(|&face| {
         matches!(
             model.geom().surface(model.face(face).surface),
-            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingMitre(_))
+            Surface::BSpline(
+                SplineSupport::RollingEnvelope(_)
+                    | SplineSupport::RollingSaddle(_)
+                    | SplineSupport::RollingMitre(_)
+            )
         )
     })
 }
@@ -230,11 +237,65 @@ pub(crate) fn prepare(
             Surface::BSpline(SplineSupport::RollingMitre(mitre)) => {
                 mitre_band(model, face, mitre, &tolerance, options, &mut seeds, dec)?
             }
+            Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                envelope_band(model, face, envelope, &tolerance, options, &mut seeds, dec)?
+            }
             _ => continue,
         };
         envelopes.insert(face, envelope);
     }
     Ok((!envelopes.is_empty()).then_some(Junction { envelopes, seeds }))
+}
+
+fn envelope_band(
+    model: &Model,
+    face: FaceId,
+    envelope: &RollingEnvelope,
+    tolerance: &Rational,
+    options: &MeshOptions,
+    seeds: &mut BTreeMap<EdgeId, Seed>,
+    dec: &mut Decider,
+) -> Result<Envelope, Refusal> {
+    let grid = envelope.display_grid(tolerance, options.max_vertices, dec)?;
+    let mut rows = Vec::with_capacity(4);
+    let mut along_u = None;
+    for (edge, row, sense) in envelope_rows(model, face, dec)? {
+        let points = row_points(&grid, row);
+        let definition = model.edge(edge);
+        let (Some(start), Some(end)) = (definition.start, definition.end) else {
+            return Err(failure("a rolling-envelope row has two ends"));
+        };
+        let [start, end] = [start, end].map(|v| model.geom().position(model.vertex(v).point));
+        let distance = |point: &catallax_shapes::Point3| -> Result<Rational, Refusal> {
+            let xyz = [&point.x, &point.y, &point.z].map(|x| dec.enclose_at(x, BITS));
+            let mut sum = Rational::zero();
+            for (i, value) in xyz.into_iter().enumerate() {
+                sum = sum + (&value?.mid() - &points[0][i].mid()).abs();
+            }
+            Ok(sum)
+        };
+        let forward = distance(&start)? <= distance(&end)?;
+        if row == BoundaryRow::Rail {
+            along_u = Some((sense == Sense::Same) == forward);
+        }
+        rows.push((edge, row, forward));
+        seeds.insert(
+            edge,
+            Seed {
+                points,
+                error: grid.chord.clone(),
+                forward,
+                exact: Vec::new(),
+            },
+        );
+    }
+    Ok(Envelope {
+        grid,
+        rows,
+        along_u: along_u.ok_or_else(|| failure("a rolling-envelope face has no rail"))?,
+        ends: Ends::Meridians,
+        rational: None,
+    })
 }
 
 // A band over a mitre: its rails are the grid's first and last rows, its

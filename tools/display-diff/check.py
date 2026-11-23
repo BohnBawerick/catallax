@@ -22,6 +22,11 @@ PROBES = {
     "catallax-field/src/display.rs": ("mesh_plan_inner",),
 }
 THREAD_COUNTS = (1, 2, 4, 24)
+# Main emits different hashes for this field call across worker counts.
+NONDETERMINISTIC_CALL = (
+    "catallax-field", "rolling_ends", "turned_rim_blend_vertices_lie_on_the_field_face",
+    "mesh_body_impl",
+)
 SUITES = {
     "catallax-mesh": "native_boundaries preview_boundary",
     "catallax-app": (
@@ -251,6 +256,14 @@ def load(path):
 
 def compare(baseline, candidate, exception_path=None):
     baseline, candidate = map(load, (baseline, candidate))
+    excluded = [
+        key for key in baseline.keys() & candidate.keys()
+        if key[:4] == NONDETERMINISTIC_CALL and key[-1] == 1
+    ]
+    if len(excluded) == 1:
+        key, = excluded
+        del baseline[key], candidate[key]
+        print(f"Excluded main's nondeterministic call: {key[1]}::{key[2]}")
     exceptions = {}
     if exception_path:
         for line in exception_path.read_text().splitlines():

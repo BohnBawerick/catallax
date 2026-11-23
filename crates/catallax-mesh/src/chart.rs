@@ -13,7 +13,8 @@ use catallax_topology::{EdgeId, FaceId, LinearFilletBand, Model};
 use crate::failure;
 
 mod spline;
-pub(crate) use spline::SplineChart;
+use spline::SplineNormals;
+pub(crate) use spline::{CollarBridge, NormalProof, SplineChart};
 
 pub(crate) const BITS: u32 = 128;
 pub(crate) type Uv = [f64; 2];
@@ -78,6 +79,7 @@ pub(crate) struct Chart {
     /// Enclosed inward normals of the hemispheres that meet in a proved convex
     /// corner. These select grid seeds only; every proof still applies.
     pub(crate) corner_planes: Option<[[Interval; 3]; 3]>,
+    pub(crate) chord_goal: Option<Rational>,
     sampling: Sampling,
     trims: BTreeMap<EdgeId, Trim>,
     centers: [Option<f64>; 2],
@@ -164,6 +166,7 @@ impl Chart {
             normal_scale,
             great_circle_sector: false,
             corner_planes: None,
+            chord_goal: None,
             trims: BTreeMap::new(),
             sampling: Sampling::Analytic(Box::new(Analytic {
                 ellipse_radii: axes,
@@ -242,17 +245,19 @@ impl Chart {
         } else {
             [None; 2]
         };
-        let mut spline = SplineChart::new(
+        let spline = SplineChart::new(
             Self::carrier(support),
             periodic,
             join_scale,
             split_spans,
             normal_station,
+            match support {
+                SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
+                SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
+                _ => SplineNormals::Carrier,
+            },
             dec,
         )?;
-        if matches!(support, SplineSupport::RollingSaddle(_)) {
-            spline.refine_normal_enclosures();
-        }
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
             periodic,
@@ -263,6 +268,7 @@ impl Chart {
             normal_scale: Rational::one(),
             great_circle_sector: false,
             corner_planes: None,
+            chord_goal: None,
             trims,
             sampling: Sampling::Spline(spline),
         })

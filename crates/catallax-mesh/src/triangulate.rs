@@ -9,13 +9,13 @@ use catallax_shapes::{
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use spade::{
-    ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
-    PositionInTriangulation, Triangulation,
+    ConstrainedDelaunayTriangulation, FloatTriangulation, HasPosition, HierarchyHintGenerator,
+    Point2, PositionInTriangulation, Triangulation,
 };
 
 use crate::{
     FaceMesh, Mesh, MeshOptions, Triangle,
-    chart::{self, Chart, Uv, align, chord_bound, key},
+    chart::{self, Chart, CollarBridge, NormalProof, SplineChart, Uv, align, chord_bound, key},
     edges::{self, Boundaries},
     failure,
 };
@@ -123,6 +123,9 @@ struct FaceBuilder<'a> {
     errors: Vec<Rational>,
     filtered_errors: Vec<Interval>,
     interior_left: BTreeSet<(usize, usize)>,
+    collar_edges: BTreeSet<[usize; 2]>,
+    protected_trim: Vec<[Point2<f64>; 2]>,
+    separation: f64,
     prior_chords: &'a BTreeSet<(usize, usize)>,
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
@@ -137,12 +140,25 @@ fn clears_constraints(at: Point2<f64>, segments: &[[Point2<f64>; 2]]) -> bool {
     let x = point(at.x);
     let y = point(at.y);
     segments.iter().all(|[a, b]| {
+        if (at.x <= a.x.min(b.x) || at.x >= a.x.max(b.x))
+            && (at.y <= a.y.min(b.y) || at.y >= a.y.max(b.y))
+        {
+            return true;
+        }
         let dot = (x - point(a.x)) * (x - point(b.x)) + (y - point(a.y)) * (y - point(b.y));
         dot.lo() >= 0.0
     })
 }
 
 impl FaceBuilder<'_> {
+    fn protects_band(&self) -> bool {
+        self.band.is_some()
+            && matches!(
+                self.chart.surface,
+                Surface::BSpline(SplineSupport::RollingSaddle(_))
+            )
+    }
+
     fn spline_position(&mut self, uv: Uv, at: Point2<f64>) -> Result<[Interval; 3], Refusal> {
         let spline = self.chart.spline().expect("spline chart");
         if self.collapsed_station.is_some() {
@@ -268,7 +284,12 @@ impl FaceBuilder<'_> {
     }
 
     fn bulk_load(&mut self, nodes: Vec<Node>) -> Result<(), Refusal> {
-        let constraints = self.interior_left.iter().map(|&(a, b)| [a, b]).collect();
+        let constraints = self
+            .interior_left
+            .iter()
+            .map(|&(a, b)| [a, b])
+            .chain(self.collar_edges.iter().copied())
+            .collect();
         let mut conflict = false;
         // Input UVs are unique. Spade's stable bulk loader therefore preserves
         // the indices used by the oriented boundary constraints.
@@ -342,18 +363,251 @@ impl FaceBuilder<'_> {
                 self.interior_left.insert(pair);
             }
         }
-        if let Some(band) = self.band {
-            self.seam(band, &mut nodes, &mut indices)?;
+        let anchors = if self.protects_band() {
+            segments
+                .iter()
+                .map(|&(a, b, _, _)| {
+                    SplineChart::rail_anchor(a, b, self.stretch)
+                        .ok_or_else(|| failure("shared edge has no planned collar altitude"))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        let seam_collars = if let Some(band) = self.band {
+            let caps = if self.protects_band() && self.options.angular_deviation.is_some() {
+                Some(Self::seam_collar_points(band, segments, &anchors)?)
+            } else {
+                None
+            };
+            let seam = self.seam(band, &anchors, caps, &mut nodes, &mut indices)?;
+            caps.map(|points| (points, seam))
+        } else {
+            None
+        };
+        if self.protects_band() {
+            self.protected_trim = self
+                .interior_left
+                .iter()
+                .map(|&(a, b)| [nodes[a].at, nodes[b].at])
+                .collect();
+            self.separation = self
+                .protected_trim
+                .iter()
+                .map(|[a, b]| libm::hypot(b.x - a.x, b.y - a.y))
+                .fold(f64::INFINITY, f64::min)
+                / 64.0;
+            if !self.separation.is_finite() || self.separation <= 0.0 {
+                return Err(failure("periodic band has no positive trim separation"));
+            }
+            self.collar(segments, anchors, &mut nodes, &mut indices, seam_collars)?;
         }
         self.bulk_load(nodes)
+    }
+
+    fn seam_collar_points(
+        band: BandCut,
+        rails: &[Segment],
+        anchors: &[Uv],
+    ) -> Result<[Uv; 2], Refusal> {
+        let [lo, hi] = band.ends.map(|(uv, _)| uv[0]);
+        let at = |v| lo + (hi - lo) * v;
+        let mut caps = [[0.0; 2]; 2];
+        for (row, (start, _)) in band.ends.into_iter().enumerate() {
+            let find_anchor = |end| {
+                rails
+                    .iter()
+                    .zip(anchors)
+                    .find_map(|(&(a, b, _, _), &apex)| (a == end || b == end).then_some(apex))
+            };
+            let right = find_anchor(start)
+                .ok_or_else(|| failure("seam collar has no first rail segment"))?;
+            let mut left = find_anchor([start[0] + 1.0, start[1]])
+                .ok_or_else(|| failure("seam collar has no last rail segment"))?;
+            left[0] -= 1.0;
+            let x = at(left[1]) - left[0];
+            let y = right[0] - at(right[1]);
+            if x <= 0.0 || y <= 0.0 {
+                return Err(failure("seam collar apex is outside its copy of the band"));
+            }
+            let v = left[1] + (right[1] - left[1]) * (x / (x + y));
+            caps[row] = [chart::quantize_turn(at(v)), v];
+        }
+        Ok(caps)
+    }
+
+    fn collar(
+        &mut self,
+        rails: &[Segment],
+        anchors: Vec<Uv>,
+        nodes: &mut Vec<Node>,
+        indices: &mut BTreeMap<[u64; 2], usize>,
+        seam_collars: Option<([Uv; 2], Vec<[usize; 2]>)>,
+    ) -> Result<(), Refusal> {
+        let band = self.band.expect("saddle band");
+        let [lo, hi] = band.ends.map(|(uv, _)| uv[0]);
+        #[derive(Clone, Copy)]
+        struct Neighbor {
+            apex: usize,
+            endpoint: usize,
+        }
+        let mut neighbors = BTreeMap::<usize, [Option<Neighbor>; 2]>::new();
+        for (&(a, b, _, _), inward) in rails.iter().zip(anchors) {
+            let at = self.place(inward);
+            let rho = self.separation;
+            let x = (at.x - rho).next_down()..=(at.x + rho).next_up();
+            let y = (at.y - rho).next_down()..=(at.y + rho).next_up();
+            if !chart::positive_turn([hi, 1.0], [lo, 0.0], inward)
+                || !chart::positive_turn([lo + 1.0, 0.0], [hi + 1.0, 1.0], inward)
+                || !clears_constraints(at, &self.protected_trim)
+                || !(a[0].min(b[0]) < inward[0] && inward[0] < a[0].max(b[0]))
+                || nodes
+                    .iter()
+                    .any(|node| x.contains(&node.at.x) && y.contains(&node.at.y))
+            {
+                return Err(failure("periodic band collar encroaches on its trim"));
+            }
+            let ends = [a, b].map(|uv| {
+                let at = self.place(uv);
+                indices[&key([at.x, at.y])]
+            });
+            let middle = self.queue(nodes, indices, inward, None)?;
+            for end in ends {
+                self.collar_edges.insert([end.min(middle), end.max(middle)]);
+            }
+            if self.options.angular_deviation.is_some() {
+                let [left, right] = if a[0] < b[0] {
+                    ends
+                } else {
+                    [ends[1], ends[0]]
+                };
+                neighbors.entry(left).or_default()[1] = Some(Neighbor {
+                    apex: middle,
+                    endpoint: right,
+                });
+                neighbors.entry(right).or_default()[0] = Some(Neighbor {
+                    apex: middle,
+                    endpoint: left,
+                });
+            }
+        }
+        let Some(angle) = &self.options.angular_deviation else {
+            return Ok(());
+        };
+        let cosine = crate::controls::cosine_enclosure(angle, self.dec)?;
+        let spline = self.chart.spline().expect("saddle band chart");
+        let uv = |i: usize| [nodes[i].uv.x, nodes[i].uv.y];
+        if let Some((caps, seam)) = seam_collars {
+            for (row, cap) in caps.into_iter().enumerate() {
+                let tip = seam
+                    .iter()
+                    .position(|pair| nodes[pair[0]].uv.y == cap[1])
+                    .ok_or_else(|| failure("seam collar has no planned tip"))?;
+                let end = if row == 0 { 0 } else { seam.len() - 1 };
+                for side in 0..2 {
+                    let apex = neighbors[&seam[end][side]]
+                        .into_iter()
+                        .flatten()
+                        .next()
+                        .expect("one collar apex at each seam end")
+                        .apex;
+                    for pair in seam[end.min(tip)..=end.max(tip)].windows(2) {
+                        let mut triangle = [pair[0][side], pair[1][side], apex];
+                        let [a, b, c] = triangle.map(uv);
+                        if !chart::positive_turn(a, b, c) {
+                            triangle.swap(0, 1);
+                        }
+                        let vertices = triangle.map(|i| self.positions[nodes[i].mesh]);
+                        let residual = triangle
+                            .iter()
+                            .map(|&i| self.filtered_errors[nodes[i].error].hi())
+                            .fold(0.0_f64, f64::max);
+                        if !spline.collar_facet_fits(
+                            &triangle.map(uv),
+                            vertices,
+                            residual,
+                            self.options,
+                            cosine,
+                            self.dec,
+                        )? {
+                            return Err(failure(format!(
+                                "periodic seam collar exceeds its facet certificate at {:?}",
+                                triangle.map(uv),
+                            )));
+                        }
+                        for endpoint in [pair[0][side], pair[1][side]] {
+                            self.collar_edges
+                                .insert([apex.min(endpoint), apex.max(endpoint)]);
+                        }
+                    }
+                }
+            }
+        }
+        for (rail, [left, right]) in neighbors {
+            let (Some(left), Some(right)) = (left, right) else {
+                continue;
+            };
+            let apex_indices = [left.apex, right.apex];
+            let triangle = [rail, left.apex, right.apex];
+            let bridge = CollarBridge {
+                rail: [left.endpoint, rail, right.endpoint].map(uv),
+                apices: apex_indices.map(uv),
+                positions: triangle.map(|i| self.positions[nodes[i].mesh]),
+                residual: triangle
+                    .into_iter()
+                    .map(|i| self.filtered_errors[nodes[i].error].hi())
+                    .fold(0.0_f64, f64::max),
+            };
+            if spline.collar_bridge_fits(bridge, self.options, cosine, self.dec)? {
+                self.collar_edges
+                    .insert([left.apex.min(right.apex), left.apex.max(right.apex)]);
+            }
+        }
+        Ok(())
+    }
+
+    fn outside_collar(
+        &self,
+        face: spade::handles::FixedFaceHandle<spade::handles::InnerTag>,
+    ) -> bool {
+        self.cdt
+            .face(face)
+            .adjacent_edges()
+            .iter()
+            .any(|edge| !edge.is_constraint_edge())
+    }
+
+    fn separated(&self, at: Point2<f64>) -> bool {
+        let rho = self.separation;
+        let lower = Point2::new((at.x - rho).next_down(), (at.y - rho).next_down());
+        let upper = Point2::new((at.x + rho).next_up(), (at.y + rho).next_up());
+        self.cdt
+            .get_vertices_in_rectangle(lower, upper)
+            .next()
+            .is_none()
+    }
+
+    fn admissible(&self, uv: Uv, labels: &[bool]) -> bool {
+        let at = self.place(uv);
+        let inside = match self.cdt.locate(at) {
+            PositionInTriangulation::OnFace(f) => labels[f.index()] && self.outside_collar(f),
+            PositionInTriangulation::OnEdge(e) => {
+                !self.cdt.is_constraint_edge(e.as_undirected())
+                    && labels[self.cdt.directed_edge(e).face().index()]
+            }
+            _ => false,
+        };
+        inside && clears_constraints(at, &self.protected_trim) && self.separated(at)
     }
 
     fn seam(
         &mut self,
         band: BandCut,
+        anchors: &[Uv],
+        caps: Option<[Uv; 2]>,
         nodes: &mut Vec<Node>,
         indices: &mut BTreeMap<[u64; 2], usize>,
-    ) -> Result<(), Refusal> {
+    ) -> Result<Vec<[usize; 2]>, Refusal> {
         let spline = self
             .chart
             .spline()
@@ -364,12 +618,22 @@ impl FaceBuilder<'_> {
             .angular_deviation
             .as_ref()
             .map(|angle| {
-                crate::controls::cosine_limit(angle, self.dec).map(|q| Interval::from_rational(&q))
+                if self.protects_band() {
+                    crate::controls::cosine_enclosure(angle, self.dec)
+                } else {
+                    crate::controls::cosine_limit(angle, self.dec)
+                        .map(|q| Interval::from_rational(&q))
+                }
             })
             .transpose()?;
         let [(lo, lo_index), (hi, hi_index)] = band.ends;
+        let anchor_positions: Vec<_> = anchors.iter().map(|&uv| self.place(uv)).collect();
         let mut points = vec![lo];
-        let mut pending = vec![(lo, hi, 0)];
+        let mut pending = if let Some([a, b]) = caps {
+            vec![(b, hi, 2), (a, b, 2), (lo, a, 2)]
+        } else {
+            vec![(lo, hi, 0)]
+        };
         while let Some((a, b, depth)) = pending.pop() {
             let middle = [
                 chart::quantize_turn(a[0].midpoint(b[0])),
@@ -387,7 +651,22 @@ impl FaceBuilder<'_> {
             } else {
                 true
             };
-            if within_length && spline.seam_within([a, middle, b], chord, cosine, self.dec)? {
+            let cuts = [
+                [self.place(a), self.place(b)],
+                [
+                    self.place([a[0] + 1.0, a[1]]),
+                    self.place([b[0] + 1.0, b[1]]),
+                ],
+            ];
+            // Both seam copies use the stricter subdivision. Resolve their
+            // encroachment before either one becomes a fixed constraint.
+            let clear = anchor_positions
+                .iter()
+                .all(|&at| clears_constraints(at, &cuts));
+            if clear
+                && within_length
+                && spline.seam_within([a, middle, b], chord, cosine, self.dec)?
+            {
                 points.push(b);
                 continue;
             }
@@ -403,6 +682,7 @@ impl FaceBuilder<'_> {
         // Both copies use the same canonical UV and mesh vertex. In parameter
         // space they are independent boundary constraints with opposite winding.
         let last = points.len() - 1;
+        let mut seam = Vec::with_capacity(points.len());
         let mut previous: Option<[usize; 2]> = None;
         for (i, uv) in points.into_iter().enumerate() {
             let boundary = if i == 0 {
@@ -418,8 +698,9 @@ impl FaceBuilder<'_> {
                 self.interior_left.extend([(left, a), (b, right)]);
             }
             previous = Some([left, right]);
+            seam.push([left, right]);
         }
-        Ok(())
+        Ok(seam)
     }
 
     fn place(&self, uv: Uv) -> Point2<f64> {
@@ -668,13 +949,20 @@ impl FaceBuilder<'_> {
             // outside it and protect the shared segments' diametral disks,
             // as for analytic trim lattices.
             let labels = self.labels()?;
-            grid.retain(|&uv| match self.cdt.locate(self.place(uv)) {
-                PositionInTriangulation::OnFace(f) => labels[f.index()],
-                PositionInTriangulation::OnEdge(e) => {
-                    !self.cdt.is_constraint_edge(e.as_undirected())
-                        && labels[self.cdt.directed_edge(e).face().index()]
+            let protect_band = self.protects_band();
+            grid.retain(|&uv| {
+                if protect_band {
+                    self.admissible(uv, &labels)
+                } else {
+                    match self.cdt.locate(self.place(uv)) {
+                        PositionInTriangulation::OnFace(f) => labels[f.index()],
+                        PositionInTriangulation::OnEdge(e) => {
+                            !self.cdt.is_constraint_edge(e.as_undirected())
+                                && labels[self.cdt.directed_edge(e).face().index()]
+                        }
+                        _ => false,
+                    }
                 }
-                _ => false,
             });
             let at_x = |uv: Uv| {
                 if self.collapsed_station.is_some() {
@@ -688,7 +976,7 @@ impl FaceBuilder<'_> {
             for edge in self
                 .cdt
                 .undirected_edges()
-                .filter(|edge| edge.is_constraint_edge())
+                .filter(|edge| !protect_band && edge.is_constraint_edge())
             {
                 self.dec.check_deadline()?;
                 let [a, b] = edge.positions();
@@ -706,6 +994,9 @@ impl FaceBuilder<'_> {
                 }
             }
             for uv in grid {
+                if protect_band && !self.separated(self.place(uv)) {
+                    continue;
+                }
                 if !protected.contains(&key(uv)) {
                     for shift in self.shifts() {
                         self.free_point([uv[0] + shift[0], uv[1] + shift[1]])?;
@@ -1023,8 +1314,11 @@ impl FaceBuilder<'_> {
             while let Some(f) = queue.pop_front() {
                 group.push(f.index());
                 for e in self.cdt.face(f).adjacent_edges() {
-                    if e.is_constraint_edge() {
-                        let pair = (e.from().index(), e.to().index());
+                    let pair = (e.from().index(), e.to().index());
+                    let collar = self
+                        .collar_edges
+                        .contains(&[pair.0.min(pair.1), pair.0.max(pair.1)]);
+                    if e.is_constraint_edge() && !collar {
                         let left = self.interior_left.contains(&pair);
                         let right = self.interior_left.contains(&(pair.1, pair.0));
                         if left == right {
@@ -1210,37 +1504,30 @@ impl FaceBuilder<'_> {
         let filtered_tolerance = Interval::from_rational(&self.options.chord_tolerance);
         let spline = self.chart.spline();
         let collapsed_station = self.collapsed_station.is_some();
+        let protect_band = self.protects_band();
         let cosine = if spline.is_some() {
             self.options
                 .angular_deviation
                 .as_ref()
                 .map(|angle| {
-                    crate::controls::cosine_limit(angle, self.dec)
-                        .map(|q| Interval::from_rational(&q))
+                    if spline.is_some_and(SplineChart::has_normal_cover) {
+                        crate::controls::cosine_enclosure(angle, self.dec)
+                    } else {
+                        crate::controls::cosine_limit(angle, self.dec)
+                            .map(|q| Interval::from_rational(&q))
+                    }
                 })
                 .transpose()?
         } else {
             None
         };
-        let protect_band = self.band.is_some()
-            && matches!(
-                self.chart.surface,
-                Surface::BSpline(SplineSupport::RollingSaddle(_))
-            );
-        let segments: Vec<_> = if protect_band {
-            self.cdt
-                .undirected_edges()
-                .filter(|edge| edge.is_constraint_edge())
-                .map(|edge| edge.positions())
-                .collect()
-        } else {
-            Vec::new()
-        };
         let mut certificates = BTreeMap::<[usize; 3], (Rational, Rational)>::new();
+        let mut angular_failures = BTreeMap::new();
         for _ in 0..48 {
             self.dec.check_deadline()?;
             let labels = self.labels()?;
             let mut pending = BTreeMap::new();
+            let mut angular_rows = BTreeSet::new();
             let mut triangles = Vec::new();
             let mut maximum = Rational::zero();
             let mut aspect = Rational::zero();
@@ -1392,9 +1679,47 @@ impl FaceBuilder<'_> {
                 }
                 let station = self.collapsed_station;
                 let split_edge = self.band.is_some() || collapsed_station;
-                let refine_at = |builder: &Self| {
+                let refine_at = |builder: &Self, prefer_transverse: bool| {
                     if !split_edge {
                         return center;
+                    }
+                    if prefer_transverse {
+                        let split = f
+                            .adjacent_edges()
+                            .into_iter()
+                            .filter(|edge| !edge.is_constraint_edge())
+                            .filter_map(|edge| {
+                                let a = *edge.from().data();
+                                let b = *edge.to().data();
+                                let span = (a.uv.y - b.uv.y).abs();
+                                if span == 0.0 {
+                                    return None;
+                                }
+                                // The midpoint can encroach while a point
+                                // farther along this same edge clears the trim.
+                                [0.5, 0.25, 0.75, 0.125, 0.875, 0.0625, 0.9375]
+                                    .into_iter()
+                                    .map(|weight| {
+                                        let uv = [
+                                            a.uv.x + weight * (b.uv.x - a.uv.x),
+                                            a.uv.y + weight * (b.uv.y - a.uv.y),
+                                        ];
+                                        builder.refinement_uv(uv, true)
+                                    })
+                                    .find(|&point| {
+                                        matches!(
+                                            builder.cdt.locate(builder.place(point)),
+                                            PositionInTriangulation::OnEdge(found)
+                                                if found.as_undirected() == edge.fix().as_undirected()
+                                        ) && builder.admissible(point, &labels)
+                                    })
+                                    .map(|point| (span, point))
+                            })
+                            .max_by(|a, b| a.0.total_cmp(&b.0));
+                        if let Some((_, point)) = split {
+                            // Inserting on the free edge removes it from the CDT.
+                            return point;
+                        }
                     }
                     // A centroid can leave the long edge of a thin facet
                     // intact. Split a free edge so its chord span shrinks.
@@ -1410,32 +1735,46 @@ impl FaceBuilder<'_> {
                         })
                         .max_by(|a, b| a.0.total_cmp(&b.0))
                         .map_or(center, |(_, point)| point);
-                    if !protect_band
-                        || clears_constraints(
-                            builder.place(builder.refinement_uv(point, true)),
-                            &segments,
-                        )
-                    {
+                    if !protect_band {
                         return point;
                     }
                     let at = f.circumcenter();
-                    let uv = [at.x, at.y / builder.stretch];
-                    if (-1.0..2.0).contains(&uv[0]) && (0.0..1.0).contains(&uv[1]) {
-                        uv
-                    } else {
-                        center
-                    }
+                    let circumcenter = [at.x, at.y / builder.stretch];
+                    [circumcenter, point, center]
+                        .map(|uv| builder.refinement_uv(uv, true))
+                        .into_iter()
+                        .find(|&uv| {
+                            uv[0].is_finite()
+                                && uv[1].is_finite()
+                                && builder.admissible(uv, &labels)
+                        })
+                        .unwrap_or(center)
                 };
-                let Some(error) = checked_triangle_bound(
+                let mut error = checked_triangle_bound(
                     &interpolation,
                     &replacement,
                     &self.options.chord_tolerance,
-                ) else {
-                    let center = self.refinement_uv(refine_at(self), true);
+                );
+                let positions = vertices.map(|i| self.positions[i]);
+                if error.is_none()
+                    && protect_band
+                    && cosine.is_some()
+                    && let Some(spline) = spline
+                {
+                    let bound = spline.split_chord(&uvs, positions, filtered_residual, self.dec)?;
+                    if bound.is_finite() {
+                        error = checked_triangle_bound(
+                            &chart::q(bound.hi()),
+                            &Rational::zero(),
+                            &self.options.chord_tolerance,
+                        );
+                    }
+                }
+                let Some(error) = error else {
+                    let center = self.refinement_uv(refine_at(self, false), true);
                     pending.insert(key(center), center);
                     continue;
                 };
-                let positions = vertices.map(|i| self.positions[i]);
                 let angular_limit = if spline.is_some() {
                     None
                 } else {
@@ -1444,15 +1783,46 @@ impl FaceBuilder<'_> {
                 let (ratio, mut angular_reached) =
                     crate::controls::quality(self.chart, &uvs, positions, angular_limit, self.dec)?;
                 let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                let mut angle_violation = false;
                 if let Some(spline) = spline {
                     angular_reached = if let Some(bounds) = normal_bounds {
                         spline.facet_normals_within(bounds, positions, cosine, self.dec)?
                     } else {
-                        spline.normals_within(&uvs, positions, cosine, self.dec)?
+                        let mut chart_key = uvs.map(key);
+                        chart_key.rotate_left(first);
+                        let key = (certificate_key, chart_key);
+                        let proof = if let Some(&proof) = angular_failures.get(&key) {
+                            proof
+                        } else {
+                            let proof = spline.normal_proof(&uvs, positions, cosine, self.dec)?;
+                            if protect_band && cosine.is_some() && proof != NormalProof::Proven {
+                                angular_failures.insert(key, proof);
+                            }
+                            proof
+                        };
+                        angle_violation = proof == NormalProof::Violation;
+                        proof == NormalProof::Proven
                     };
                 }
                 if !angular_reached {
-                    let center = self.refinement_uv(refine_at(self), true);
+                    let center =
+                        self.refinement_uv(refine_at(self, protect_band && angle_violation), true);
+                    if protect_band
+                        && angle_violation
+                        && let Some(spline) = spline
+                        && let PositionInTriangulation::OnEdge(handle) =
+                            self.cdt.locate(self.place(center))
+                    {
+                        let edge = self.cdt.directed_edge(handle);
+                        let a = edge.from().data().uv;
+                        let b = edge.to().data().uv;
+                        if a.x == b.x && a.y != b.y {
+                            angular_rows.insert((
+                                spline.longitudinal_span(a.x),
+                                key([a.y.min(b.y), a.y.max(b.y)]),
+                            ));
+                        }
+                    }
                     pending.insert(key(center), center);
                     continue;
                 }
@@ -1468,6 +1838,49 @@ impl FaceBuilder<'_> {
                 vertices.rotate_left(min);
                 triangles.push(Triangle { vertices, face });
             }
+            if !angular_rows.is_empty()
+                && let Some(spline) = spline
+            {
+                // A split can otherwise transfer a long transverse span to
+                // the next column of an aligned grid. Split the matching
+                // free edges in the strip and the matching column immediately
+                // beyond each end, while their endpoints still exist.
+                let active_ranges: BTreeSet<_> =
+                    angular_rows.iter().map(|&(_, range)| range).collect();
+                let mut columns = BTreeMap::<_, Vec<_>>::new();
+                for edge in self.cdt.undirected_edges() {
+                    if edge.is_constraint_edge() {
+                        continue;
+                    }
+                    let [a, b] = edge.vertices().map(|v| v.data().uv);
+                    let range = key([a.y.min(b.y), a.y.max(b.y)]);
+                    if a.x == b.x && active_ranges.contains(&range) {
+                        let active = angular_rows.contains(&(spline.longitudinal_span(a.x), range));
+                        columns.entry(range).or_default().push((
+                            [a.x, a.y.midpoint(b.y)],
+                            edge.fix(),
+                            active,
+                        ));
+                    }
+                }
+                for columns in columns.values_mut() {
+                    columns.sort_unstable_by(|a, b| a.0[0].total_cmp(&b.0[0]));
+                    for (i, &(point, target, active)) in columns.iter().enumerate() {
+                        let neighbor = i.checked_sub(1).is_some_and(|j| columns[j].2)
+                            || columns.get(i + 1).is_some_and(|column| column.2);
+                        if !active && !neighbor {
+                            continue;
+                        }
+                        if matches!(
+                            self.cdt.locate(self.place(point)),
+                            PositionInTriangulation::OnEdge(found) if found.as_undirected() == target
+                        ) && self.admissible(point, &labels)
+                        {
+                            pending.insert(key(point), point);
+                        }
+                    }
+                }
+            }
             if pending.is_empty() {
                 triangles.sort_unstable_by_key(|t| t.vertices);
                 return Ok((
@@ -1478,18 +1891,7 @@ impl FaceBuilder<'_> {
                 ));
             }
             if protect_band {
-                pending.retain(|_, point| {
-                    let at = self.place(*point);
-                    let inside = match self.cdt.locate(at) {
-                        PositionInTriangulation::OnFace(f) => labels[f.index()],
-                        PositionInTriangulation::OnEdge(e) => {
-                            !self.cdt.is_constraint_edge(e.as_undirected())
-                                && labels[self.cdt.directed_edge(e).face().index()]
-                        }
-                        _ => false,
-                    };
-                    inside && clears_constraints(at, &segments)
-                });
+                pending.retain(|_, point| self.admissible(*point, &labels));
                 if pending.is_empty() {
                     return Err(failure(
                         "periodic band has no refinement point clear of its fixed trim",
@@ -1498,6 +1900,9 @@ impl FaceBuilder<'_> {
             }
             let mut added = false;
             for center in pending.into_values() {
+                if protect_band && !self.separated(self.place(center)) {
+                    continue;
+                }
                 for shift in self.shifts() {
                     added |= self.free_point([center[0] + shift[0], center[1] + shift[1]])?;
                 }
@@ -1643,22 +2048,20 @@ fn face_mesh(
     let is_ruled = ruled(model, face_id, chart, options);
     // Spade uses one metric per face. Scale its second coordinate by the
     // physical speeds while evaluating and certifying in the original chart.
-    let stretch = chart
-        .spline()
-        .map_or(1.0, |spline| spline.triangulation_stretch());
     let protect_band = band.is_some()
         && matches!(
             chart.surface,
             Surface::BSpline(SplineSupport::RollingSaddle(_))
         );
-    let stretch = if protect_band {
+    let stretch = chart.spline().map_or(1.0, |spline| {
         // Refinement can put several samples on the same UV line. A rounded
         // metric product can turn them into a facet with no parameter area.
-        let (_, exponent) = libm::frexp(stretch);
-        libm::ldexp(1.0, exponent - 1)
-    } else {
-        stretch
-    };
+        if spline.has_normal_cover() {
+            spline.exact_metric_stretch()
+        } else {
+            spline.triangulation_stretch()
+        }
+    });
     let mut builder = FaceBuilder {
         chart,
         options,
@@ -1674,6 +2077,9 @@ fn face_mesh(
         errors: Vec::new(),
         filtered_errors: Vec::new(),
         interior_left: BTreeSet::new(),
+        collar_edges: BTreeSet::new(),
+        protected_trim: Vec::new(),
+        separation: 0.0,
         prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
@@ -1682,29 +2088,11 @@ fn face_mesh(
     };
     builder.boundary(&segments, sense)?;
     builder.grid()?;
-    let (triangles, max_chord_error, max_aspect_ratio, mut max_angular_deviation) =
+    let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
         builder.finish(face_id, sense).map_err(|mut e| {
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
-    if max_angular_deviation.is_some()
-        && matches!(
-            chart.surface,
-            Surface::BSpline(SplineSupport::RollingEnvelope(_))
-        )
-    {
-        // The angular test encloses the fitted carrier. The fit's certificate
-        // supplies only a position bound against the rolling envelope.
-        max_angular_deviation = None;
-        boundaries
-            .mesh
-            .unavailable_controls
-            .push(crate::UnavailableControl {
-                face: face_id,
-                control: crate::MeshControl::AngularDeviation,
-                reason: "the rolling envelope fit certifies position only",
-            });
-    }
     let start = boundaries.mesh.triangles.len();
     boundaries.mesh.triangles.extend(triangles);
     if options
@@ -2109,7 +2497,6 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
             | SplineSupport::LinearFillet(_)
             | SplineSupport::ObliqueDraft(_)
             | SplineSupport::RationalPatch(_)
-            | SplineSupport::RollingEnvelope(_)
             | SplineSupport::RollingPipe(_)
             | SplineSupport::RollingSphere(_)
             | SplineSupport::SplineFillet(_)),
@@ -2296,10 +2683,20 @@ fn build_junction(
             Ok((f, chart))
         })
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
+    constrain_lens_chord(model, &mut charts, options, dec)?;
     let mut boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
     let boundary_limit = boundaries.mesh.positions.len();
     let mut prior_chords = BTreeSet::new();
     for face in faces {
+        let local_options = charts
+            .get(&face)
+            .and_then(|chart| chart.chord_goal.as_ref())
+            .map(|chord| MeshOptions {
+                chord_tolerance: chord.clone(),
+                ..options.clone()
+            });
+        let options = local_options.as_ref().unwrap_or(options);
+        let plan = Plan { options, level };
         let start = boundaries.mesh.triangles.len();
         let reused = previous
             .map(|previous| {
@@ -2402,6 +2799,51 @@ fn build_junction(
     }
     compact(&mut boundaries.mesh);
     Ok((boundaries.mesh, boundaries.marks))
+}
+
+fn constrain_lens_chord(
+    model: &Model,
+    charts: &mut BTreeMap<FaceId, Chart>,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<(), Refusal> {
+    let mut limits = BTreeMap::<FaceId, Rational>::new();
+    for (&face, chart) in charts.iter() {
+        let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) = &chart.surface else {
+            continue;
+        };
+        let law = saddle.definition().law();
+        if law.ring != catallax_shapes::SaddleRing::Overlap || law.sides != [-1, -1] {
+            continue;
+        }
+        // In an overlap inside both cylinders, the cylinder facets and the
+        // rounded strip cut into the same small volume. Sample all three
+        // surfaces at a chord tied to the roll radius, even in a coarse view.
+        let goal = dec.enclose_at(&law.radius, chart::BITS)?.lo().mul_pow2(-3);
+        if goal >= options.chord_tolerance || goal <= Rational::zero() {
+            continue;
+        }
+        let rails = catallax_topology::saddle_rows(model, face)
+            .ok_or_else(|| failure("overlap saddle has no checked rails"))?;
+        let incident = rails.into_iter().flat_map(|(edge, _)| {
+            model
+                .coedges_of_edge(edge)
+                .into_iter()
+                .filter_map(|coedge| model.owner_of_coedge(coedge).map(|(_, face)| face))
+        });
+        for face in incident.chain(std::iter::once(face)) {
+            let limit = limits.entry(face).or_insert_with(|| goal.clone());
+            if goal < *limit {
+                *limit = goal.clone();
+            }
+        }
+    }
+    for (face, limit) in limits {
+        if let Some(chart) = charts.get_mut(&face) {
+            chart.chord_goal = Some(limit);
+        }
+    }
+    Ok(())
 }
 
 /// Shares the chart and boundary machinery, but never runs facet certification.
@@ -2532,6 +2974,9 @@ pub(crate) fn build_preview(
             errors: Vec::new(),
             filtered_errors: Vec::new(),
             interior_left: BTreeSet::new(),
+            collar_edges: BTreeSet::new(),
+            protected_trim: Vec::new(),
+            separation: 0.0,
             prior_chords: &prior_chords,
             bounds,
             filtered_hessian: hessian.each_ref().map(Interval::from_rational),

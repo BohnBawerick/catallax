@@ -4,13 +4,36 @@ use std::{cell::RefCell, collections::BTreeMap};
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::{
-    BSplineSurface,
+    BSplineSurface, RollingPipe,
     tessellation::{
         RationalSpan, chord_bound_interval, rational_spans, triangle_chord_bound_interval,
     },
 };
 
 use super::{Uv, align, failure, quantize_turn};
+
+mod pipe_normal;
+use pipe_normal::PipeNormal;
+
+pub(crate) enum SplineNormals<'a> {
+    Carrier,
+    Saddle,
+    Pipe(&'a RollingPipe),
+}
+
+pub(crate) struct CollarBridge {
+    pub(crate) rail: [Uv; 3],
+    pub(crate) apices: [Uv; 2],
+    pub(crate) positions: [[f64; 3]; 3],
+    pub(crate) residual: f64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NormalProof {
+    Proven,
+    Violation,
+    Unresolved,
+}
 
 pub(crate) struct SplineChart {
     spans: Vec<Span>,
@@ -19,10 +42,13 @@ pub(crate) struct SplineChart {
     source_domain: [[f64; 2]; 2],
     normal_station: Option<f64>,
     subdivide_normals: bool,
+    stretch: f64,
     // A chart lives for one mesh request. The edge plan uses a projection
     // goal at least as strict as the face that consumes it.
     edge_parameters: RefCell<BTreeMap<[u64; 3], Uv>>,
 }
+
+type NormalRow = [[Interval; 3]; 5];
 
 struct Span {
     rational: RationalSpan,
@@ -33,7 +59,11 @@ struct Span {
     local_affine_hessian: Option<[Interval; 3]>,
     normal: [Interval; 3],
     normal_station: Option<f64>,
+    pipe_normal: Option<PipeNormal>,
     normal_cells: RefCell<BTreeMap<[u64; 4], [Interval; 3]>>,
+    normal_rows: RefCell<BTreeMap<[u64; 3], NormalRow>>,
+    shared_normals: RefCell<BTreeMap<[u64; 3], [Interval; 3]>>,
+    angular_cones: RefCell<BTreeMap<[u64; 3], [Interval; 3]>>,
 }
 
 struct Seam {
@@ -41,6 +71,19 @@ struct Seam {
     at: f64,
     transverse: [f64; 2],
     jump: Interval,
+}
+
+struct NormalFootprint {
+    rectangle: [Interval; 2],
+    // Each inequality is nonnegative on the triangle, in local span UV.
+    sides: Option<[[Interval; 3]; 3]>,
+    clip_first: bool,
+}
+
+#[derive(Clone, Copy)]
+struct NormalTriangle<'a> {
+    uv: &'a [Uv; 3],
+    clip_first: bool,
 }
 
 fn point(value: f64) -> Interval {
@@ -53,6 +96,7 @@ impl Span {
         domain: [[&Rational; 2]; 2],
         periodic: [bool; 2],
         normal_station: Option<f64>,
+        pipe_normal: Option<PipeNormal>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let bounds = std::array::from_fn(|i| {
@@ -87,18 +131,23 @@ impl Span {
             local[2] / v.square(),
         ];
         let full = Interval::new(0.0, 1.0).unwrap();
-        let normal = rational.normal_box([full, normal_station.map_or(full, point)], dec)?;
-        Ok(Self {
+        let mut span = Self {
             rational,
             bounds,
             width,
             periodic,
             affine_hessian,
             local_affine_hessian,
-            normal,
+            normal: [full; 3],
             normal_station,
+            pipe_normal,
             normal_cells: RefCell::default(),
-        })
+            normal_rows: RefCell::default(),
+            shared_normals: RefCell::default(),
+            angular_cones: RefCell::default(),
+        };
+        span.normal = span.normal_box([full; 2], dec)?;
+        Ok(span)
     }
 
     fn contains(&self, uv: Uv) -> bool {
@@ -181,10 +230,54 @@ impl Span {
         mut local: [Interval; 2],
         dec: &mut Decider,
     ) -> Result<[Interval; 3], Refusal> {
+        if let Some(pipe) = &self.pipe_normal {
+            let source = self.rational.domain();
+            let [lo, hi] = source[0].each_ref().map(Rational::to_f64_nearest);
+            let quarter = lo.floor();
+            let u = point(lo - quarter) + local[0] * (point(hi) - point(lo));
+            let [lo, hi] = source[1].each_ref().map(Rational::to_f64_nearest);
+            let v = point(lo) + local[1] * (point(hi) - point(lo));
+            let u = Interval::new(u.lo().max(0.0), u.hi().min(1.0)).unwrap();
+            let v = Interval::new(v.lo().max(0.0), v.hi().min(1.0)).unwrap();
+            return pipe.bounds(quarter as usize, [u, v], dec);
+        }
         if let Some(station) = self.normal_station {
             local[1] = point(station);
         }
         self.rational.normal_box(local, dec)
+    }
+
+    fn facet_vertex_normal(
+        &self,
+        triangle: &[Uv; 3],
+        i: usize,
+        shift: Uv,
+        dec: &mut Decider,
+    ) -> Result<Option<[Interval; 3]>, Refusal> {
+        let vertex = triangle[i];
+        let mut local = [point(0.0); 2];
+        for axis in 0..2 {
+            // Periodic span bounds are quantized turns, so the integer
+            // lift is exact. A non-periodic span has zero shift.
+            let [lo, hi] = self.bounds[axis].map(|bound| bound + shift[axis]);
+            let u = vertex[axis];
+            if u < lo || u > hi {
+                return Ok(None);
+            }
+            if u == lo || u == hi {
+                // A knot can have a different normal on each side. The
+                // direction toward the centroid must enter this span.
+                let a = point(vertex[axis]);
+                let inward = (point(triangle[(i + 1) % 3][axis]) - a)
+                    + (point(triangle[(i + 2) % 3][axis]) - a);
+                if (u == lo && inward.lo() <= 0.0) || (u == hi && inward.hi() >= 0.0) {
+                    return Ok(None);
+                }
+            }
+            let fraction = (point(u) - point(lo)) / self.width[axis];
+            local[axis] = Interval::new(fraction.lo().max(0.0), fraction.hi().min(1.0)).unwrap();
+        }
+        self.normal_cell(local, dec).map(Some)
     }
 
     fn normal_cell(
@@ -208,6 +301,144 @@ impl Span {
         self.normal_cells.borrow_mut().insert(key, normal);
         Ok(normal)
     }
+
+    fn normal_row(
+        &self,
+        u: Interval,
+        v: [f64; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<NormalRow>, Refusal> {
+        if self.pipe_normal.is_some() {
+            return Ok(None);
+        }
+        let key = |lo: f64| [u.lo().to_bits(), u.hi().to_bits(), lo.to_bits()];
+        let [lo, hi] = v;
+        // The midpoint uniquely identifies a dyadic cell within the unit interval.
+        let middle = lo.midpoint(hi);
+        if let Some(&row) = self.normal_rows.borrow().get(&key(middle)) {
+            return Ok(Some(row));
+        }
+        if v == [0.0, 1.0] {
+            let row = self.rational.quadratic_normal_row(u, dec)?;
+            if let Some(row) = row {
+                self.normal_rows.borrow_mut().insert(key(middle), row);
+            }
+            return Ok(row);
+        }
+        let width = (hi - lo) * 2.0;
+        let start = (lo / width).floor() * width;
+        let end = start + width;
+        let center = start.midpoint(end);
+        let Some(mut work) = self.normal_row(u, [start, end], dec)? else {
+            return Ok(None);
+        };
+        let mut children = [work; 2];
+        dec.charge_work(3 * 10)?;
+        for level in 1..5 {
+            let last = 4 - level;
+            for i in 0..=last {
+                work[i] = std::array::from_fn(|j| (work[i][j] + work[i + 1][j]) * point(0.5));
+            }
+            children[0][level] = work[0];
+            children[1][last] = work[last];
+        }
+        let mut rows = self.normal_rows.borrow_mut();
+        rows.insert(key(start.midpoint(center)), children[0]);
+        rows.insert(key(center.midpoint(end)), children[1]);
+        Ok(Some(children[usize::from(lo >= center)]))
+    }
+
+    fn shared_normal(
+        &self,
+        [u, v]: [Interval; 2],
+        dec: &mut Decider,
+    ) -> Result<[Interval; 3], Refusal> {
+        let key = [u.lo().to_bits(), u.hi().to_bits(), v.mid().to_bits()];
+        if let Some(&normal) = self.shared_normals.borrow().get(&key) {
+            return Ok(normal);
+        }
+        let Some(row) = self.normal_row(u, [v.lo(), v.hi()], dec)? else {
+            return self.normal_cell([u, v], dec);
+        };
+        // Each coefficient may be rescaled by a positive factor before
+        // bounding its direction. The new convex hull covers the same rays.
+        dec.charge_work(5 * 3)?;
+        let scaled = row.map(|normal| {
+            let length = normal.iter().map(|c| c.mid().abs()).fold(0.0_f64, f64::max);
+            if !length.is_finite() || length == 0.0 {
+                return normal;
+            }
+            let scale = length.recip();
+            if !scale.is_finite() || scale == 0.0 {
+                return normal;
+            }
+            normal.map(|x| x * point(scale))
+        });
+        let normal = std::array::from_fn(|i| {
+            scaled
+                .iter()
+                .skip(1)
+                .fold(scaled[0][i], |hull, control| hull.hull(&control[i]))
+        });
+        self.shared_normals.borrow_mut().insert(key, normal);
+        Ok(normal)
+    }
+
+    fn angular_cone(
+        &self,
+        [u, v]: [Interval; 2],
+        dec: &mut Decider,
+    ) -> Result<[Interval; 3], Refusal> {
+        let key = [u.lo().to_bits(), u.hi().to_bits(), v.mid().to_bits()];
+        if let Some(&cone) = self.angular_cones.borrow().get(&key) {
+            return Ok(cone);
+        }
+        let Some(row) = self.normal_row(u, [v.lo(), v.hi()], dec)? else {
+            return self.normal_cell([u, v], dec);
+        };
+        let cone = if let Some((axis, sign)) = normal_cone_axis(&row) {
+            // Divide each control by its positive projection onto the same
+            // axis. The resulting box lies in a plane at distance one, and
+            // the original Bernstein normal is in the cone over that box.
+            dec.charge_work(5 * 3)?;
+            let project = |control: [Interval; 3]| {
+                let scale = point(sign) * control[axis];
+                std::array::from_fn(|i| {
+                    if i == axis {
+                        point(sign)
+                    } else {
+                        control[i] / scale
+                    }
+                })
+            };
+            row.into_iter()
+                .map(project)
+                .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
+                .unwrap()
+        } else {
+            self.shared_normal([u, v], dec)?
+        };
+        self.angular_cones.borrow_mut().insert(key, cone);
+        Ok(cone)
+    }
+}
+
+fn normal_cone_axis(row: &NormalRow) -> Option<(usize, f64)> {
+    let mut best = None;
+    let mut margin = 0.0;
+    for axis in 0..3 {
+        let hull = row
+            .iter()
+            .skip(1)
+            .fold(row[0][axis], |a, b| a.hull(&b[axis]));
+        for (component, sign) in [(hull.lo(), 1.0), (-hull.hi(), -1.0)] {
+            if component > margin {
+                margin = component;
+                best = Some((axis, sign));
+            }
+        }
+    }
+    best
 }
 
 /// A cover of at most two adjacent cells at the range's dyadic scale.
@@ -231,6 +462,7 @@ impl SplineChart {
         join_scale: [Option<Interval>; 2],
         subdivide: bool,
         normal_station: Option<f64>,
+        normals: SplineNormals<'_>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         // Internal knot multiplicity at most the degree gives a continuous
@@ -254,15 +486,42 @@ impl SplineChart {
                 ));
             }
         }
-        let pieces = if subdivide {
+        let saddle = matches!(normals, SplineNormals::Saddle);
+        let pipe_normal = match normals {
+            SplineNormals::Pipe(pipe) => Some(PipeNormal::new(pipe, dec)?),
+            _ => None,
+        };
+        let pieces = if saddle {
+            let mut pieces = Vec::new();
+            for span in rational_spans(surface, dec)? {
+                for half in span.bisect(0, dec)? {
+                    pieces.extend(half.bisect(1, dec)?);
+                }
+            }
+            pieces
+        } else if subdivide {
             split_spans(surface, dec)?
         } else {
             rational_spans(surface, dec)?
         };
         let spans: Vec<_> = pieces
             .into_iter()
-            .map(|span| Span::new(span, source_domain, periodic, normal_station, dec))
+            .map(|span| {
+                Span::new(
+                    span,
+                    source_domain,
+                    periodic,
+                    normal_station,
+                    pipe_normal,
+                    dec,
+                )
+            })
             .collect::<Result<_, _>>()?;
+        let [du, dv] = spans.iter().fold([0.0_f64; 2], |speed, span| {
+            let local = span.rational.first_derivative_bounds();
+            std::array::from_fn(|i| speed[i].max(local[i].hi() / span.width[i].lo()))
+        });
+        let stretch = dv / du;
         let mut seams = Vec::new();
         for span in &spans {
             let domain = span.rational.domain();
@@ -298,13 +557,14 @@ impl SplineChart {
             periodic,
             source_domain: source_domain.map(|bounds| bounds.map(Rational::to_f64_nearest)),
             normal_station,
-            subdivide_normals: false,
+            subdivide_normals: saddle,
+            stretch: if stretch.is_finite() && stretch > 0.0 {
+                stretch
+            } else {
+                1.0
+            },
             edge_parameters: RefCell::default(),
         })
-    }
-
-    pub(super) fn refine_normal_enclosures(&mut self) {
-        self.subdivide_normals = true;
     }
 
     fn lifts(&self, bounds: [[f64; 2]; 2]) -> impl Iterator<Item = Uv> + use<> {
@@ -319,13 +579,13 @@ impl SplineChart {
         u.flat_map(move |i| v.clone().map(move |j| [f64::from(i), f64::from(j)]))
     }
 
-    fn cover(&self, bounds: [[f64; 2]; 2]) -> impl Iterator<Item = (&Span, [[f64; 2]; 2])> {
+    fn cover(&self, bounds: [[f64; 2]; 2]) -> impl Iterator<Item = (&Span, [[f64; 2]; 2], Uv)> {
         self.lifts(bounds).flat_map(move |shift| {
             let local = subtract_shift(bounds, shift);
             self.spans
                 .iter()
                 .filter(move |span| overlaps(span.bounds, local))
-                .map(move |span| (span, local))
+                .map(move |span| (span, local, shift))
         })
     }
 
@@ -419,16 +679,184 @@ impl SplineChart {
     }
 
     pub(crate) fn triangulation_stretch(&self) -> f64 {
-        let [du, dv] = self.spans.iter().fold([0.0_f64; 2], |speed, span| {
-            let local = span.rational.first_derivative_bounds();
-            std::array::from_fn(|i| speed[i].max(local[i].hi() / span.width[i].lo()))
+        self.stretch
+    }
+
+    pub(crate) fn has_normal_cover(&self) -> bool {
+        self.subdivide_normals || self.spans[0].pipe_normal.is_some()
+    }
+
+    pub(crate) fn longitudinal_span(&self, u: f64) -> u64 {
+        let u = u.rem_euclid(1.0);
+        self.spans
+            .iter()
+            .map(|span| span.bounds[0])
+            .find(|[a, b]| *a <= u && u < *b)
+            .map_or(u.to_bits(), |[a, _]| a.to_bits())
+    }
+
+    pub(crate) fn exact_metric_stretch(&self) -> f64 {
+        let (_, exponent) = libm::frexp(self.triangulation_stretch());
+        libm::ldexp(1.0, exponent - 1)
+    }
+
+    pub(crate) fn rail_anchor(a: Uv, b: Uv, stretch: f64) -> Option<Uv> {
+        // The altitude is strictly outside the diametral disk. Keep opposite
+        // collars apart, even when the rails have very different spacings.
+        let offset = (b[0] - a[0]).abs() * (0.625 / stretch);
+        (offset > 0.0 && offset <= 0.25).then(|| {
+            [
+                quantize_turn(a[0].midpoint(b[0])),
+                if a[1] == 0.0 { offset } else { 1.0 - offset },
+            ]
+        })
+    }
+
+    pub(crate) fn collar_bridge_fits(
+        &self,
+        bridge: CollarBridge,
+        options: &crate::MeshOptions,
+        cosine: Interval,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let CollarBridge {
+            rail: [left, base, right],
+            apices: [a, b],
+            mut positions,
+            residual,
+        } = bridge;
+        // Both disk centers must be on the rail side of the bridge by at
+        // least their radii, using the rounded metric positions seen by CDT.
+        dec.charge_work(31)?;
+        let stretch = self.exact_metric_stretch();
+        let width = point(b[0]) - point(a[0]);
+        let rise = point(b[1] * stretch) - point(a[1] * stretch);
+        let side = point(if base[1] == 0.0 { -1.0 } else { 1.0 });
+        let length_sq = width.square() + rise.square();
+        let clear = [left, right].into_iter().all(|end| {
+            let center = (point(end[0]) + point(base[0])) * point(0.5);
+            let radius = (point(end[0]) - point(base[0])) * point(0.5);
+            let distance = side
+                * (width * (point(base[1] * stretch) - point(a[1] * stretch))
+                    - rise * (center - point(a[0])));
+            distance.lo() > 0.0 && distance.square().lo() > (radius.square() * length_sq).hi()
         });
-        let stretch = dv / du;
-        if stretch.is_finite() && stretch > 0.0 {
-            stretch
-        } else {
-            1.0
+        if !clear {
+            return Ok(false);
         }
+        let mut uv = [base, a, b];
+        if base[1] == 0.0 {
+            uv.swap(1, 2);
+            positions.swap(1, 2);
+        }
+        self.collar_facet_fits(&uv, positions, residual, options, cosine, dec)
+    }
+
+    pub(crate) fn collar_facet_fits(
+        &self,
+        uv: &[Uv; 3],
+        positions: [[f64; 3]; 3],
+        residual: f64,
+        options: &crate::MeshOptions,
+        cosine: Interval,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if let Some(limit) = &options.max_edge_length
+            && (0..3).any(|i| {
+                crate::controls::length_squared(positions[i], positions[(i + 1) % 3])
+                    > limit * limit
+            })
+        {
+            return Ok(false);
+        }
+        let tolerance = Interval::from_rational(&options.chord_tolerance).lo();
+        if (self.chord(uv, dec)? + point(residual)).hi() > tolerance
+            && self.split_chord(uv, positions, residual, dec)?.hi() > tolerance
+        {
+            return Ok(false);
+        }
+        Ok(self.normal_proof(uv, positions, Some(cosine), dec)? == NormalProof::Proven)
+    }
+
+    pub(crate) fn rail_pair_fits(
+        &self,
+        samples: [[f64; 3]; 3],
+        row: f64,
+        options: &crate::MeshOptions,
+        cosine: Interval,
+        seam_cosine: Option<Interval>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let goal = Interval::from_rational(&options.chord_tolerance.mul_pow2(-6)).lo();
+        let mut rail = [[0.0; 2]; 3];
+        for (uv, sample) in rail.iter_mut().zip(samples) {
+            *uv = self.project_edge(sample, None, None, Some((1, row)), goal, dec)?;
+        }
+        let base = rail[1];
+        rail[0] = align(rail[0], base, self.periodic);
+        rail[2] = align(rail[2], base, self.periodic);
+        if rail[0][0] > rail[2][0] {
+            rail.swap(0, 2);
+        }
+        let stretch = self.exact_metric_stretch();
+        let [Some(left), Some(right)] = [
+            Self::rail_anchor(rail[0], base, stretch),
+            Self::rail_anchor(base, rail[2], stretch),
+        ] else {
+            return Ok(false);
+        };
+        let canonical = |uv: Uv| [uv[0].rem_euclid(1.0), uv[1]];
+        let left_position = self
+            .evaluate(canonical(left), dec)?
+            .map(|value| value.mid());
+        let right_position = self
+            .evaluate(canonical(right), dec)?
+            .map(|value| value.mid());
+        let positions = [samples[1], left_position, right_position];
+        let mut residual = 0.0_f64;
+        for (uv, position) in [base, left, right].into_iter().zip(positions) {
+            residual = residual.max(self.residual(canonical(uv), position, dec)?.hi());
+        }
+        if !self.collar_bridge_fits(
+            CollarBridge {
+                rail,
+                apices: [left, right],
+                positions,
+                residual,
+            },
+            options,
+            cosine,
+            dec,
+        )? {
+            return Ok(false);
+        }
+        if base[0] != 0.0 {
+            return Ok(true);
+        }
+        // At the chart join, both sides of the wrapped bridge meet a
+        // single seam sample. Qualify that seam segment and its two
+        // facets before either neighboring rail leaf becomes fixed.
+        let fraction = -left[0] / (right[0] - left[0]);
+        let tip = [0.0, left[1] + (right[1] - left[1]) * fraction];
+        let middle = [0.0, base[1].midpoint(tip[1])];
+        let chord = Interval::from_rational(&options.chord_tolerance.mul_pow2(-3));
+        if !self.seam_within([base, middle, tip], chord, seam_cosine, dec)? {
+            return Ok(false);
+        }
+        let tip_position = self.evaluate(tip, dec)?.map(|value| value.mid());
+        residual = residual.max(self.residual(tip, tip_position, dec)?.hi());
+        for (apex, position) in [(left, left_position), (right, right_position)] {
+            let mut uv = [base, tip, apex];
+            let mut points = [samples[1], tip_position, position];
+            if !super::positive_turn(uv[0], uv[1], uv[2]) {
+                uv.swap(0, 1);
+                points.swap(0, 1);
+            }
+            if !self.collar_facet_fits(&uv, points, residual, options, cosine, dec)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub(crate) fn chord(&self, uv: &[Uv; 3], dec: &mut Decider) -> Result<Interval, Refusal> {
@@ -438,16 +866,16 @@ impl SplineChart {
             std::array::from_fn(|axis| point(uv[(i + 1) % 3][axis]) - point(uv[i][axis]))
         });
         let mut cover = self.cover(b);
-        let (first, _) = cover
+        let (first, _, _) = cover
             .next()
             .ok_or_else(|| failure("triangle has no spline span"))?;
-        let Some((second, second_bounds)) = cover.next() else {
+        let Some(second) = cover.next() else {
             let local = [width[0] / first.width[0], width[1] / first.width[1]];
             let edges = edges.map(|e| [e[0] / first.width[0], e[1] / first.width[1]]);
             return first.chord_bound(local, Some(edges), dec);
         };
         let mut hessian = first.affine_hessian;
-        for (span, _) in std::iter::once((second, second_bounds)).chain(cover) {
+        for (span, _, _) in std::iter::once(second).chain(cover) {
             hessian = std::array::from_fn(|i| hessian[i].hull(&span.affine_hessian[i]));
         }
         dec.charge_work(6 + 2 + 3 * 4)?;
@@ -471,6 +899,84 @@ impl SplineChart {
             }
         }
         Ok(bound)
+    }
+
+    pub(crate) fn split_chord(
+        &self,
+        uv: &[Uv; 3],
+        positions: [[f64; 3]; 3],
+        vertex_error: f64,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        let bounds = parameter_box(uv);
+        let half = point(0.5);
+        let widths = bounds.map(|[lo, hi]| (point(hi) - point(lo)) * half);
+        let hessian = self
+            .cover(bounds)
+            .map(|(span, _, _)| span.affine_hessian)
+            .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
+            .ok_or_else(|| failure("triangle has no spline span"))?;
+        dec.charge_work(6)?;
+        // The four virtual subtriangles have half the original chart widths.
+        // Their common Hessian bound applies to S minus the affine facet, too.
+        let mut error = chord_bound_interval(widths, &hessian);
+        for shift in self.lifts(bounds) {
+            let local = subtract_shift(bounds, shift);
+            for seam in &self.seams {
+                let [lo, hi] = local[seam.axis];
+                let [a, z] = local[1 - seam.axis];
+                if lo < seam.at
+                    && seam.at < hi
+                    && a <= seam.transverse[1]
+                    && z >= seam.transverse[0]
+                {
+                    dec.charge_work(2)?;
+                    error = error + point(0.25) * widths[seam.axis] * seam.jump;
+                }
+            }
+        }
+        let mut nodal_error = vertex_error;
+        for i in 0..3 {
+            let j = (i + 1) % 3;
+            let midpoint: [Interval; 2] =
+                std::array::from_fn(|axis| (point(uv[i][axis]) + point(uv[j][axis])) * half);
+            let midpoint = std::array::from_fn(|axis| {
+                let [lo, hi] = bounds[axis];
+                [midpoint[axis].lo().max(lo), midpoint[axis].hi().min(hi)]
+            });
+            let mut found = false;
+            for shift in self.lifts(midpoint) {
+                let local: [Interval; 2] = std::array::from_fn(|axis| {
+                    let [lo, hi] = midpoint[axis];
+                    Interval::new(lo, hi).unwrap() - point(shift[axis])
+                });
+                for span in &self.spans {
+                    let local_bounds = local.map(|range| [range.lo(), range.hi()]);
+                    if !overlaps(span.bounds, local_bounds) {
+                        continue;
+                    }
+                    let clipped = std::array::from_fn(|axis| {
+                        [
+                            local[axis].lo().max(span.bounds[axis][0]),
+                            local[axis].hi().min(span.bounds[axis][1]),
+                        ]
+                    });
+                    let actual = span.rational.evaluate_box(span.local_box(clipped), dec)?;
+                    dec.charge_work(12)?;
+                    let squared = (0..3).fold(point(0.0), |sum, axis| {
+                        let affine = (point(positions[i][axis]) + point(positions[j][axis])) * half;
+                        sum + (actual[axis] - affine).square()
+                    });
+                    let distance = squared.sqrt().expect("sum of squared residuals");
+                    nodal_error = nodal_error.max(distance.hi());
+                    found = true;
+                }
+            }
+            if !found {
+                return Err(failure("triangle midpoint has no spline span"));
+            }
+        }
+        Ok(error + point(nodal_error))
     }
 
     // The singular station uses x = u*w and y = ±w, where w is the
@@ -532,13 +1038,15 @@ impl SplineChart {
 
     pub(crate) fn edge_within(
         &self,
-        [a, middle, b]: [[f64; 3]; 3],
+        positions: [[f64; 3]; 3],
         [first_hint, middle_hint, last_hint]: [Option<Uv>; 3],
         fixed: Option<(usize, f64)>,
-        chord: Interval,
+        options: &crate::MeshOptions,
         cosine: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        let [a, middle, b] = positions;
+        let chord = Interval::from_rational(&options.chord_tolerance.mul_pow2(-3));
         let goal = (chord * point(0.125)).lo();
         let a = self.project_edge(a, first_hint, None, fixed, goal, dec)?;
         let b = align(
@@ -549,7 +1057,51 @@ impl SplineChart {
         let seed = std::array::from_fn(|i| a[i].midpoint(b[i]));
         let middle = self.project_edge(middle, middle_hint, Some(seed), fixed, goal, dec)?;
         let m = align(middle, seed, self.periodic);
-        self.edge_parameters_within([a, m, b], middle, chord, cosine, dec)
+        let saddle_rail = self.subdivide_normals && matches!(fixed, Some((1, 0.0 | 1.0)));
+        // Both adjacent surfaces interpolate the same sampled polyline.
+        // Reserve half the edge allowance for each side of the collar.
+        let rail_chord = if saddle_rail {
+            chord * point(0.5)
+        } else {
+            chord
+        };
+        if !self.edge_parameters_within([a, m, b], middle, rail_chord, cosine, dec)? {
+            return Ok(false);
+        }
+        if saddle_rail {
+            let Some(inward) = Self::rail_anchor(a, b, self.exact_metric_stretch()) else {
+                return Ok(false);
+            };
+            let uv = if (a[0] < b[0]) == (a[1] == 0.0) {
+                [a, b, inward]
+            } else {
+                [b, a, inward]
+            };
+            if self.chord(&uv, dec)?.hi() > (point(4.0) * chord).lo() {
+                return Ok(false);
+            }
+            let inside = self.evaluate([inward[0].rem_euclid(1.0), inward[1]], dec)?;
+            let inside = inside.map(|value| value.mid());
+            let positions = if (a[0] < b[0]) == (a[1] == 0.0) {
+                [positions[0], positions[2], inside]
+            } else {
+                [positions[2], positions[0], inside]
+            };
+            if let Some(length) = &options.max_edge_length {
+                let squared = length * length;
+                if positions[..2]
+                    .iter()
+                    .any(|&endpoint| crate::controls::length_squared(endpoint, inside) > squared)
+                {
+                    return Ok(false);
+                }
+            }
+            let facet_cosine = cosine
+                .filter(|cosine| cosine.hi() > 0.0)
+                .map(|cosine| point(2.0) * cosine.square() - point(1.0));
+            return self.normals_within(&uv, positions, facet_cosine, dec);
+        }
+        Ok(true)
     }
 
     pub(crate) fn seam_within(
@@ -606,7 +1158,7 @@ impl SplineChart {
         }
         let at = span.normal_box(span.local_box(middle.map(|x| [x; 2])), dec)?;
         let direction = at.map(|n| point(n.mid()));
-        self.check_normal_box(bounds, direction, cosine, dec)
+        Ok(self.check_normal_box(bounds, None, direction, cosine, dec)? == NormalProof::Proven)
     }
 
     fn project_edge(
@@ -766,7 +1318,35 @@ impl SplineChart {
         cosine: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
-        self.facet_normals_within(parameter_box(uv), positions, cosine, dec)
+        Ok(self.triangle_normals(uv, positions, cosine, false, dec)? == NormalProof::Proven)
+    }
+
+    pub(crate) fn normal_proof(
+        &self,
+        uv: &[Uv; 3],
+        positions: [[f64; 3]; 3],
+        cosine: Option<Interval>,
+        dec: &mut Decider,
+    ) -> Result<NormalProof, Refusal> {
+        self.triangle_normals(uv, positions, cosine, self.subdivide_normals, dec)
+    }
+
+    fn triangle_normals(
+        &self,
+        uv: &[Uv; 3],
+        positions: [[f64; 3]; 3],
+        cosine: Option<Interval>,
+        clip_first: bool,
+        dec: &mut Decider,
+    ) -> Result<NormalProof, Refusal> {
+        if self.has_normal_cover() && !super::positive_turn(uv[0], uv[1], uv[2]) {
+            return Err(failure("spline facet has no positive parameter area"));
+        }
+        let triangle = NormalTriangle {
+            uv,
+            clip_first: clip_first && cosine.is_some(),
+        };
+        self.facet_normals(parameter_box(uv), Some(triangle), positions, cosine, dec)
     }
 
     pub(crate) fn facet_normals_within(
@@ -776,6 +1356,17 @@ impl SplineChart {
         cosine: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        Ok(self.facet_normals(bounds, None, positions, cosine, dec)? == NormalProof::Proven)
+    }
+
+    fn facet_normals(
+        &self,
+        bounds: [[f64; 2]; 2],
+        triangle: Option<NormalTriangle<'_>>,
+        positions: [[f64; 3]; 3],
+        cosine: Option<Interval>,
+        dec: &mut Decider,
+    ) -> Result<NormalProof, Refusal> {
         let p = positions.map(|p| p.map(point));
         let a: [Interval; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
         let b: [Interval; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
@@ -785,17 +1376,18 @@ impl SplineChart {
             a[2] * b[0] - a[0] * b[2],
             a[0] * b[1] - a[1] * b[0],
         ];
-        self.check_normal_box(bounds, facet, cosine, dec)
+        self.check_normal_box(bounds, triangle, facet, cosine, dec)
     }
 
     fn check_normal_box(
         &self,
         bounds: [[f64; 2]; 2],
+        triangle: Option<NormalTriangle<'_>>,
         direction: [Interval; 3],
         cosine: Option<Interval>,
         dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
-        for (span, bounds) in self.cover(bounds) {
+    ) -> Result<NormalProof, Refusal> {
+        for (span, bounds, shift) in self.cover(bounds) {
             if normals_agree(direction, span.normal, cosine, dec)? {
                 continue;
             }
@@ -806,6 +1398,49 @@ impl SplineChart {
                 ]
             });
             let local = span.local_box(intersection);
+            if self.has_normal_cover() {
+                let unit = [Interval::new(0.0, 1.0).unwrap(); 2];
+                if triangle.is_some() {
+                    dec.charge_work(12)?;
+                }
+                let sides = triangle.map(|triangle| {
+                    let uv = triangle.uv;
+                    let origin: [Interval; 2] =
+                        std::array::from_fn(|i| point(span.bounds[i][0]) + point(shift[i]));
+                    std::array::from_fn(|i| {
+                        let a = uv[i].map(point);
+                        let b = uv[(i + 1) % 3].map(point);
+                        let u = b[0] - a[0];
+                        let v = b[1] - a[1];
+                        [
+                            -v * span.width[0],
+                            u * span.width[1],
+                            u * (origin[1] - a[1]) - v * (origin[0] - a[0]),
+                        ]
+                    })
+                });
+                let target = NormalFootprint {
+                    rectangle: local,
+                    sides,
+                    clip_first: triangle.is_some_and(|triangle| triangle.clip_first),
+                };
+                if cosine.is_some_and(|value| value.lo() > 0.0)
+                    && let Some(triangle) = triangle
+                {
+                    for i in 0..3 {
+                        if let Some(normal) =
+                            span.facet_vertex_normal(triangle.uv, i, shift, dec)?
+                            && normal_relation(direction, normal, cosine, true, dec)?.1
+                        {
+                            return Ok(NormalProof::Violation);
+                        }
+                    }
+                }
+                match normal_subcells(span, unit, &target, direction, cosine, 0, dec)? {
+                    NormalProof::Proven => continue,
+                    result => return Ok(result),
+                }
+            }
             // Whole-cell certificates can serve adjacent facets with different
             // trim triangles. Fall back to the triangle's tighter rectangle.
             let cell = local.map(dyadic_cell);
@@ -816,44 +1451,91 @@ impl SplineChart {
             {
                 continue;
             }
-            // Narrow the proof before changing a facet next to a fixed rail.
-            if !self.subdivide_normals || !normal_subcells(span, local, direction, cosine, 0, dec)?
-            {
-                return Ok(false);
-            }
+            return Ok(NormalProof::Unresolved);
         }
-        Ok(true)
+        Ok(NormalProof::Proven)
     }
 }
 
 fn normal_subcells(
     span: &Span,
     uv: [Interval; 2],
+    target: &NormalFootprint,
     direction: [Interval; 3],
     cosine: Option<Interval>,
     depth: u8,
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
-    const MAX_DEPTH: u8 = 8;
+) -> Result<NormalProof, Refusal> {
+    const MAX_DEPTH: u8 = 14;
     if depth == MAX_DEPTH {
-        return Ok(false);
+        let clipped = std::array::from_fn(|axis| {
+            let range = target.rectangle[axis];
+            Interval::new(uv[axis].lo().max(range.lo()), uv[axis].hi().min(range.hi()))
+                .expect("the shared cell meets the facet rectangle")
+        });
+        return Ok(
+            if normals_agree(direction, span.normal_box(clipped, dec)?, cosine, dec)? {
+                NormalProof::Proven
+            } else {
+                NormalProof::Unresolved
+            },
+        );
     }
     let axis = usize::from(uv[1].width() > uv[0].width());
     let range = uv[axis];
     let middle = range.mid();
     if middle <= range.lo() || middle >= range.hi() {
-        return Ok(false);
+        return Ok(NormalProof::Unresolved);
     }
     for (lo, hi) in [(range.lo(), middle), (middle, range.hi())] {
+        if hi < target.rectangle[axis].lo() || lo > target.rectangle[axis].hi() {
+            continue;
+        }
         let mut child = uv;
         child[axis] = Interval::new(lo, hi).unwrap();
-        if !normals_agree(direction, span.normal_cell(child, dec)?, cosine, dec)?
-            && !normal_subcells(span, child, direction, cosine, depth + 1, dec)?
-        {
-            return Ok(false);
+        let outside_triangle = |dec: &mut Decider| {
+            let Some(sides) = &target.sides else {
+                return Ok(false);
+            };
+            dec.charge_work(6)?;
+            Ok::<_, Refusal>(
+                sides
+                    .iter()
+                    .any(|[x, y, constant]| (*x * child[0] + *y * child[1] + *constant).hi() < 0.0),
+            )
+        };
+        if target.clip_first && outside_triangle(dec)? {
+            continue;
+        }
+        let angular = cosine.is_some_and(|value| value.hi() > 0.0);
+        let normal = if angular {
+            span.angular_cone(child, dec)?
+        } else {
+            span.shared_normal(child, dec)?
+        };
+        let (accepts, rejects) = normal_relation(direction, normal, cosine, angular, dec)?;
+        if !accepts {
+            if !target.clip_first && outside_triangle(dec)? {
+                continue;
+            }
+            if let Some(sides) = &target.sides {
+                if rejects {
+                    let middle = child.map(|range| point(range.mid()));
+                    dec.charge_work(6)?;
+                    if sides.iter().all(|[x, y, constant]| {
+                        (*x * middle[0] + *y * middle[1] + *constant).lo() >= 0.0
+                    }) {
+                        return Ok(NormalProof::Violation);
+                    }
+                }
+            }
+            match normal_subcells(span, child, target, direction, cosine, depth + 1, dec)? {
+                NormalProof::Proven => {}
+                result => return Ok(result),
+            }
         }
     }
-    Ok(true)
+    Ok(NormalProof::Proven)
 }
 
 // The rolling band has large weight ratios within a quarter turn. Extract
@@ -939,10 +1621,23 @@ fn normals_agree(
     cosine: Option<Interval>,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    normal_relation(facet, normal, cosine, false, dec).map(|(accepts, _)| accepts)
+}
+
+fn normal_relation(
+    facet: [Interval; 3],
+    normal: [Interval; 3],
+    cosine: Option<Interval>,
+    counterexample: bool,
+    dec: &mut Decider,
+) -> Result<(bool, bool), Refusal> {
     dec.charge_work(3)?;
     let dot = facet[0] * normal[0] + facet[1] * normal[1] + facet[2] * normal[2];
-    if dot.lo() <= 0.0 {
-        return Ok(false);
+    if dot.hi() <= 0.0 {
+        return Ok((false, counterexample));
+    }
+    if dot.lo() <= 0.0 && !counterexample {
+        return Ok((false, false));
     }
     if let Some(cosine) = cosine.filter(|cosine| cosine.hi() > 0.0) {
         // With a positive dot product, the angle is bounded by the ratio of
@@ -957,9 +1652,18 @@ fn normals_agree(
         let cross_sq = cross.into_iter().fold(point(0.0), |s, x| s + x.square());
         let cosine_sq = cosine.square();
         let required = (point(1.0) - cosine_sq) * dot.square();
-        Ok((cross_sq * cosine_sq).hi() <= required.lo())
+        let accepts = dot.lo() > 0.0 && (cross_sq * cosine_sq).hi() <= required.lo();
+        let rejects = if counterexample && !accepts && cosine.lo() > 0.0 {
+            dec.charge_work(7)?;
+            let cosine_sq = point(cosine.lo()).square();
+            let required = (point(1.0) - cosine_sq) * point(dot.hi()).square();
+            (cross_sq * cosine_sq).lo() > required.hi()
+        } else {
+            false
+        };
+        Ok((accepts, rejects))
     } else {
-        Ok(true)
+        Ok((dot.lo() > 0.0, false))
     }
 }
 
@@ -1009,8 +1713,16 @@ mod tests {
             &mut dec,
         )
         .unwrap();
-        let chart =
-            SplineChart::new(&surface, [true, false], [None; 2], false, None, &mut dec).unwrap();
+        let chart = SplineChart::new(
+            &surface,
+            [true, false],
+            [None; 2],
+            false,
+            None,
+            SplineNormals::Carrier,
+            &mut dec,
+        )
+        .unwrap();
         for u in [0.0, 1.0] {
             assert!(chart.evaluate([u, 0.5], &mut dec).unwrap()[0].contains(1.0));
         }
@@ -1021,6 +1733,31 @@ mod tests {
                 [-0.25 + shift, 1.0],
             ];
             assert!(chart.chord(&triangle, &mut dec).unwrap().hi() >= 1.0);
+        }
+    }
+
+    #[test]
+    fn bisected_bezier_span_encloses_the_same_weighted_point() {
+        let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+        let controls = [[0, 0], [0, 2], [2, 0], [2, 2]]
+            .map(|[x, y]| Point3::new(Real::from_i64(x), Real::from_i64(y), Real::zero()));
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [2, 2],
+            controls.to_vec(),
+            [1, 1, 1, 2].map(Real::from_i64).to_vec(),
+            &mut dec,
+        )
+        .unwrap();
+        let span = rational_spans(&surface, &mut dec).unwrap().pop().unwrap();
+        let [left, _] = span.bisect(0, &mut dec).unwrap();
+        let [_, upper] = left.bisect(1, &mut dec).unwrap();
+        let value = upper.evaluate([0.5, 0.5], &mut dec).unwrap();
+        for (bound, numerator) in value.into_iter().zip([14, 30, 0]) {
+            let expected = Interval::from_rational(&Rational::from_ratio(numerator, 19).unwrap());
+            assert!(bound.lo() <= expected.lo() && expected.hi() <= bound.hi());
         }
     }
 
@@ -1043,16 +1780,24 @@ mod tests {
             &mut dec,
         )
         .unwrap();
-        let chart =
-            SplineChart::new(&surface, [false; 2], [None; 2], false, None, &mut dec).unwrap();
-        let chord = point(0.00125);
+        let chart = SplineChart::new(
+            &surface,
+            [false; 2],
+            [None; 2],
+            false,
+            None,
+            SplineNormals::Carrier,
+            &mut dec,
+        )
+        .unwrap();
+        let options = crate::MeshOptions::default();
         let half_angle = Interval::from_rational(
             &crate::controls::cosine_limit(&Rational::from_ratio(13, 100).unwrap(), &dec).unwrap(),
         );
         let edge = |a: f64, b: f64| [a, (a + b) * 0.5, b].map(|u| [u, 0.0, 0.0]);
         assert!(
             chart
-                .edge_within(edge(0.0, 1.0), [None; 3], None, chord, None, &mut dec)
+                .edge_within(edge(0.0, 1.0), [None; 3], None, &options, None, &mut dec)
                 .unwrap()
         );
         assert!(
@@ -1061,7 +1806,7 @@ mod tests {
                     edge(0.0, 1.0),
                     [None; 3],
                     None,
-                    chord,
+                    &options,
                     Some(half_angle),
                     &mut dec
                 )
@@ -1073,7 +1818,7 @@ mod tests {
                     edge(0.0, 0.0625),
                     [None; 3],
                     None,
-                    chord,
+                    &options,
                     Some(half_angle),
                     &mut dec
                 )
@@ -1111,8 +1856,16 @@ mod tests {
             &mut dec,
         )
         .unwrap();
-        let chart =
-            SplineChart::new(&surface, [false; 2], [None; 2], false, None, &mut dec).unwrap();
+        let chart = SplineChart::new(
+            &surface,
+            [false; 2],
+            [None; 2],
+            false,
+            None,
+            SplineNormals::Carrier,
+            &mut dec,
+        )
+        .unwrap();
         let bound = chart
             .chord(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], &mut dec)
             .unwrap();

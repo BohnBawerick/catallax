@@ -422,10 +422,13 @@ impl FaceBuilder<'_> {
         let mut caps = [[0.0; 2]; 2];
         for (row, (start, _)) in band.ends.into_iter().enumerate() {
             let find_anchor = |end| {
+                let end = key(end);
                 rails
                     .iter()
                     .zip(anchors)
-                    .find_map(|(&(a, b, _, _), &apex)| (a == end || b == end).then_some(apex))
+                    .find_map(|(&(a, b, _, _), &apex)| {
+                        (key(a) == end || key(b) == end).then_some(apex)
+                    })
             };
             let right = find_anchor(start)
                 .ok_or_else(|| failure("seam collar has no first rail segment"))?;

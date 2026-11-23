@@ -1635,15 +1635,15 @@ fn normal_subcells(
             if !target.clip_first && outside_triangle(dec)? {
                 continue;
             }
-            if let Some(sides) = &target.sides {
-                if rejects {
-                    let middle = child.map(|range| point(range.mid()));
-                    dec.charge_work(6)?;
-                    if sides.iter().all(|[x, y, constant]| {
-                        (*x * middle[0] + *y * middle[1] + *constant).lo() >= 0.0
-                    }) {
-                        return Ok(NormalProof::Violation);
-                    }
+            if let Some(sides) = &target.sides
+                && rejects
+            {
+                let middle = child.map(|range| point(range.mid()));
+                dec.charge_work(6)?;
+                if sides.iter().all(|[x, y, constant]| {
+                    (*x * middle[0] + *y * middle[1] + *constant).lo() >= 0.0
+                }) {
+                    return Ok(NormalProof::Violation);
                 }
             }
             match normal_subcells(span, child, target, direction, cosine, depth + 1, dec)? {

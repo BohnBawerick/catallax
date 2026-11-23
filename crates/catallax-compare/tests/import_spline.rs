@@ -333,7 +333,7 @@ fn check(case: &Case, pose: Pose) {
         (&outside, Location::Outside),
     ] {
         let answer = field.proven(p, &mut Workspace::default());
-        record(kind, &answer);
+        record(kind, answer);
         assert_eq!(answer.location, expected, "{kind} at {p:?}");
     }
     let holding = |p: &RPoint3| {
@@ -550,7 +550,7 @@ fn saddle_roof_distance_residual_is_a_lower_bound_never_beyond_a_witness() {
     for (z, gap) in [("6", 1.875), ("5", 0.875), ("17/4", 0.125)] {
         let p = point(["1", "3/2", z]);
         let query = field.proven(&p, &mut Workspace::default());
-        record(case.kind, &query);
+        record(case.kind, query);
         assert_eq!(query.location, Location::Outside, "z = {z}");
         let lower = query.distance.millimetres.lo();
         assert!(lower >= 0.0 && lower <= gap + 1e-9, "z = {z}: {lower}");

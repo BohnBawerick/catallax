@@ -13,6 +13,13 @@ use catallax_recipe::{FileRef, Operation, Pose, Recipe, Step, StepId};
 use catallax_shapes::{Pose as ShapePose, RPoint3, RVector3, Rotation};
 use std::collections::BTreeSet;
 
+fn record(case: &str, value: impl std::fmt::Debug) {
+    if std::env::var_os("CATALLAX_IMPORTS_DIFFERENTIAL").is_some() {
+        let hash = catallax_import::sha256_hex(format!("{value:?}").as_bytes());
+        println!("imports-differential spline {case} {hash}");
+    }
+}
+
 fn q(text: &str) -> Rational {
     Rational::parse(text).unwrap()
 }
@@ -313,6 +320,7 @@ fn check(case: &Case, pose: Pose) {
     let [named, brep] = names(&field, &built);
     assert_eq!(named, brep, "{kind}");
     assert_eq!(named.len(), 6, "{kind}");
+    record(kind, &named);
     for origin in &named {
         assert!(field.select(origin).is_some(), "{kind}: {origin:?}");
     }
@@ -324,11 +332,9 @@ fn check(case: &Case, pose: Pose) {
         (&boundary, Location::Boundary),
         (&outside, Location::Outside),
     ] {
-        assert_eq!(
-            field.proven(p, &mut Workspace::default()).location,
-            expected,
-            "{kind} at {p:?}"
-        );
+        let answer = field.proven(p, &mut Workspace::default());
+        record(kind, answer);
+        assert_eq!(answer.location, expected, "{kind} at {p:?}");
     }
     let holding = |p: &RPoint3| {
         (0..field.faces().len())
@@ -374,6 +380,7 @@ fn check(case: &Case, pose: Pose) {
         report.refusal,
         report.findings.first()
     );
+    record(kind, &report);
     let imported = report.import_agreement.unwrap();
     assert!(imported.points.iter().all(|p| p.brep == p.field), "{kind}");
     assert!(imported.volume_agrees, "{kind}");
@@ -426,6 +433,7 @@ fn spline_part_answers_repeat_with_one_two_four_and_all_workers() {
             .iter()
             .map(|p| field.proven(p, &mut Workspace::default()))
             .collect();
+        record(case.kind, &expected);
         for workers in [1, 2, 4, all] {
             let actual = std::thread::scope(|scope| {
                 let handles: Vec<_> = points
@@ -452,7 +460,10 @@ fn spline_part_answers_repeat_with_one_two_four_and_all_workers() {
 }
 
 fn refused(bytes: &[u8]) -> catallax_numbers::Refusal {
-    Plan::compile_with_files(&recipe(bytes, Pose::identity()), &sources(bytes)).unwrap_err()
+    let refusal =
+        Plan::compile_with_files(&recipe(bytes, Pose::identity()), &sources(bytes)).unwrap_err();
+    record(&catallax_import::sha256_hex(bytes), &refusal);
+    refusal
 }
 
 #[test]
@@ -539,6 +550,7 @@ fn saddle_roof_distance_residual_is_a_lower_bound_never_beyond_a_witness() {
     for (z, gap) in [("6", 1.875), ("5", 0.875), ("17/4", 0.125)] {
         let p = point(["1", "3/2", z]);
         let query = field.proven(&p, &mut Workspace::default());
+        record(case.kind, query);
         assert_eq!(query.location, Location::Outside, "z = {z}");
         let lower = query.distance.millimetres.lo();
         assert!(lower >= 0.0 && lower <= gap + 1e-9, "z = {z}: {lower}");

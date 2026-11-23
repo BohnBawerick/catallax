@@ -24,7 +24,7 @@ pub(crate) fn sides(
             start: negate(start),
             end: negate(end),
         },
-        Grade::Distance { .. } => {
+        Grade::Distance { .. } | Grade::Point { .. } | Grade::Radial { .. } => {
             return Err(Refusal::new(
                 "gyroid.unsupported",
                 "distance-graded sheets need a certified grade evaluator",

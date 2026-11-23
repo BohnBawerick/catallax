@@ -27,6 +27,7 @@ mod empty;
 mod end_condition;
 mod features;
 mod fillet;
+pub mod fitted_motion;
 mod geometry;
 mod grade;
 mod gyroid;
@@ -78,7 +79,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_recipe::{
-    BooleanKind, EdgeSelection, FilletOverflow, LoftShape, Operation, Origin, Recipe, Role, Segment,
+    BooleanKind, EdgeSelection, FilletOverflow, Grade, LoftShape, Operation, Origin, Recipe, Role,
+    Segment,
 };
 use catallax_shapes::{Isometry, Pose, RPoint3, RVector3, Surface, Vector3};
 
@@ -1307,7 +1309,29 @@ impl Plan {
                         frame,
                         radius,
                     } => {
-                        let lattice = lattice::Lattice::new(cell, size.value(), frame, radius)?;
+                        let resolved = if let Grade::Distance {
+                            faces,
+                            near,
+                            far,
+                            span,
+                        } = radius
+                            && !faces.is_empty()
+                        {
+                            lattice_stage::check_lattice_distance(
+                                size.value(),
+                                [near.value(), far.value(), span.value()],
+                            )?;
+                            plan.compile_face_grade(
+                                steps[region],
+                                &step_faces[region],
+                                radius,
+                                dec,
+                            )?
+                        } else {
+                            None
+                        };
+                        let lattice =
+                            lattice::Lattice::new(cell, size.value(), frame, radius, resolved)?;
                         if lattice.is_empty() {
                             0
                         } else {
@@ -1332,7 +1356,31 @@ impl Plan {
                                 dec,
                             )?));
                         }
-                        let gyroid = gyroid::Gyroid::new(period.value(), level, *kind, frame)?;
+                        let gyroid = if let Grade::Distance {
+                            faces,
+                            near,
+                            far,
+                            span,
+                        } = level
+                            && !faces.is_empty()
+                        {
+                            gyroid::check_distance_grade(near.value(), far.value(), span.value())?;
+                            let resolved = plan.compile_face_grade(
+                                steps[region],
+                                &step_faces[region],
+                                level,
+                                dec,
+                            )?;
+                            gyroid::Gyroid::certified_resolved(
+                                period.value(),
+                                level,
+                                *kind,
+                                frame,
+                                resolved,
+                            )?
+                        } else {
+                            gyroid::Gyroid::new(period.value(), level, *kind, frame)?
+                        };
                         match gyroid.saturated() {
                             Some(true) => steps[region],
                             Some(false) => 0,

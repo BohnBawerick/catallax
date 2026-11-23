@@ -1,7 +1,7 @@
 //! Moments of an axis box clipped by one smooth field leaf, through monotone graphs.
 //!
 //! The region is an intersection of axis-aligned blocks or prisms. The leaf is a
-//! gyroid, or an axis cubic lattice whose radius is an axis grade. Blocks of the
+//! gyroid, or an axis cubic lattice with a certified grade. Blocks of the
 //! region are split until the leaf is classified, or until one smooth expression
 //! `F` defines the leaf over the block and one partial derivative `F_d` keeps its
 //! sign there. The material of such a block lies on one side of a graph
@@ -228,7 +228,7 @@ struct Model<'a> {
 }
 
 /// The axis bounds of a convex prism whose faces are all axis planes.
-pub(super) fn prism(
+pub(crate) fn prism(
     feature: &crate::features::Feature,
     dec: &mut Decider,
 ) -> Result<Option<Bounds>, Refusal> {
@@ -305,7 +305,7 @@ impl<'a> Model<'a> {
                     }
                     continue;
                 }
-                geometry::Leaf::Lattice(lattice) if lattice.axis_graded() => {
+                geometry::Leaf::Lattice(lattice) if lattice.certified_grade() => {
                     if smooth.replace(Smooth::Lattice(lattice)).is_some() {
                         return Ok(None);
                     }

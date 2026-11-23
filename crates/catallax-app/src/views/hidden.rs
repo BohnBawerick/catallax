@@ -267,16 +267,12 @@ pub(super) struct Stroke {
     /// The two ends are one point: the whole closed carrier from there.
     anchored: bool,
     closed: bool,
+    /// A finite line with ends on its exact carrier.
+    exact_line_trim: bool,
     /// Binary64 parameters of the span, unwrapped.
     range: [f64; 2],
     /// Sheet bounds of the span.
     sheet: [f64; 4],
-}
-
-impl Stroke {
-    pub(super) fn is_line(&self) -> bool {
-        matches!(self.form, Form::Line { .. })
-    }
 }
 
 fn point64(p: &Point3, floor: &Rational, dec: &mut Decider) -> Result<V3, Refusal> {
@@ -487,6 +483,7 @@ fn stroke(
             ends,
             anchored,
             closed: c.closed,
+            exact_line_trim: false,
             range,
             sheet: bounds,
         },
@@ -1125,6 +1122,11 @@ pub fn hidden_line_view(
         let fine = tolerance::floor_minimum_mm();
         let d64 = unit_direction(&d, &fine, dec)?;
         let sheet = Sheet::new(d64);
+        let algebraic_trim = model.tolerant_entity(body).is_none()
+            && model.faces_of_body(body).iter().any(|&face| {
+                matches!(model.geom().surface(model.face(face).surface), Surface::Plane(plane)
+                    if plane.origin.as_rational().is_none() || plane.normal.as_rational().is_none())
+            });
 
         let mut strokes: Vec<Stroke> = Vec::new();
         let mut edge_boxes = std::collections::BTreeMap::new();
@@ -1174,6 +1176,7 @@ pub fn hidden_line_view(
             if !on_sheet {
                 continue;
             }
+            s.exact_line_trim = algebraic_trim && matches!(s.form, Form::Line { .. });
             s.seam = faces.len() == 1 && uses.len() >= 2;
             if let [f, g] = faces.as_slice() {
                 let (a, b) = (
@@ -1217,6 +1220,8 @@ pub fn hidden_line_view(
             if arc.fit.is_some() {
                 s.fit = arc.fit.clone();
             }
+            s.exact_line_trim =
+                algebraic_trim && s.fit.is_none() && matches!(s.form, Form::Line { .. });
             strokes.push(s);
         }
 

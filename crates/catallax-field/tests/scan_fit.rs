@@ -6,11 +6,14 @@
 #[path = "../examples/scan_fit/sampler.rs"]
 mod sampler;
 
+mod scan_support;
+
 use catallax_field::reconstruction::scan::{
-    ScanFit, ScanFitOptions, Surface, SurfaceKind, SurfaceUse, fit_scan,
+    ScanFit, ScanFitOptions, Surface, SurfaceKind, SurfaceUse,
 };
 use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{FileRef, Number, Operation, Pose};
+use scan_support::fit_recorded;
 
 const SIGMA: f64 = 0.01;
 
@@ -30,7 +33,7 @@ fn fit(bytes: &[u8], workers: usize) -> ScanFit {
         workers,
         ..ScanFitOptions::default()
     };
-    fit_scan(&step(bytes), bytes, &options, &mut Decider::default()).expect("fit")
+    fit_recorded(&step(bytes), bytes, &options, &mut Decider::default()).expect("fit")
 }
 
 fn cloud(patches: &[sampler::Patch], count: usize, seed: u64) -> Vec<u8> {
@@ -212,7 +215,7 @@ fn one_two_and_four_workers_give_identical_fits() {
             let limit = dec.policy().max_work;
             let (result, work) = catallax_numbers::with_operation_budget(limit, || {
                 catallax_field::workers::with_workers(workers, || {
-                    fit_scan(
+                    fit_recorded(
                         &step(&bytes),
                         &bytes,
                         &ScanFitOptions {
@@ -332,7 +335,7 @@ fn one_two_and_four_workers_give_identical_fits() {
 #[test]
 fn too_few_samples_and_a_wrong_hash_refuse() {
     let bytes = cloud(&sampler::plate_with_bore(false), 50, 7);
-    let refusal = fit_scan(
+    let refusal = fit_recorded(
         &step(&bytes),
         &bytes,
         &ScanFitOptions::default(),
@@ -342,7 +345,7 @@ fn too_few_samples_and_a_wrong_hash_refuse() {
     .unwrap();
     assert_eq!(refusal.code, "reconstruction.too-few-samples");
     let other = step(b"other");
-    let refusal = fit_scan(
+    let refusal = fit_recorded(
         &other,
         &bytes,
         &ScanFitOptions::default(),
@@ -381,7 +384,7 @@ fn six_near_orthogonal_plane_classes_refuse_without_a_panic() {
         }
     }
     let bytes = sampler::obj(&sampler::sample(&patches, 12_000, 0.0, 19)).into_bytes();
-    let fit = fit_scan(
+    let fit = fit_recorded(
         &step(&bytes),
         &bytes,
         &ScanFitOptions {
@@ -440,7 +443,7 @@ fn collapsed_binary64_neighbours_exhaust_the_actual_work_allowance() {
     }));
     let limit = read_work.used + 300_000;
     let (result, work) = with_operation_budget(limit, || {
-        fit_scan(
+        fit_recorded(
             &scan_step,
             &bytes,
             &ScanFitOptions {

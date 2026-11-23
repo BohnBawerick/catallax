@@ -16,6 +16,8 @@ use catallax_recipe::Recipe;
 use catallax_shapes::{BSplineCurve, Curve, Point3, PointDef, Pose, RPoint3, RVector3, Rotation};
 use catallax_topology::{BodyId, Model, block, cone, cylinder, sphere};
 
+mod view_records;
+
 const TARGET: u64 = 20_000_000;
 
 fn vector(x: i64, y: i64, z: i64) -> RVector3 {
@@ -369,7 +371,9 @@ fn face_loops_chain_and_strokes_keep_their_exact_ends_on_the_p1_bracket() {
             assert!(length(sub(last(&drawn.value.curve), b)) < 1e-9);
         }
     }
-    let view = hidden_line_view(&model, body, &vector(1, -1, 1), &mut Decider::default()).unwrap();
+    let direction = vector(1, -1, 1);
+    let view = hidden_line_view(&model, body, &direction, &mut Decider::default()).unwrap();
+    view_records::emit(&view, &direction);
     for stroke in &view.value.strokes {
         let drawn = stroke_drawing(&view.value, stroke, &mut Decider::default()).unwrap();
         if let (Some(a), Some(b)) = (stroke.start, stroke.end) {

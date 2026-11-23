@@ -228,6 +228,29 @@ fn positive_rational_weights_internal_knots_and_reverse_travel_are_supported() {
         let app = build(&value);
         assert!(app.built.model.check(app.built.result).is_empty());
         assert_eq!(app.names.faces.len(), 6);
+        let preview = catallax_mesh::preview_mesh_body(
+            &app.built.model,
+            app.built.result,
+            &catallax_mesh::PreviewOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            preview
+                .faces
+                .iter()
+                .map(|face| face.face)
+                .collect::<BTreeSet<_>>(),
+            app.names.faces.keys().copied().collect(),
+        );
+        assert_eq!(
+            preview
+                .edges
+                .iter()
+                .map(|edge| edge.edge)
+                .collect::<BTreeSet<_>>(),
+            app.names.edges.keys().copied().collect(),
+        );
         let volume = catallax_measure::volume(
             &app.built.model,
             app.built.result,

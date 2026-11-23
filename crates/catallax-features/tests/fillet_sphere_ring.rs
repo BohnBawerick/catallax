@@ -77,8 +77,7 @@ fn both_rings_round_with_certified_bands() {
                 "at {coordinates:?}: {actual:?}"
             );
         }
-        // Volume, area and centroid are measured; see the test below. A box and
-        // a mesh still need the carrier itself, and each says so.
+        // Bounds and display qualify independently against the fitted carrier.
         let accuracy = Accuracy {
             relative: q("1/1000000"),
             absolute: q("1/1000000"),
@@ -87,14 +86,15 @@ fn both_rings_round_with_certified_bands() {
             catallax_measure::bounding_box(&model, built.result, &accuracy, &mut decider())
                 .unwrap_err();
         assert!(refusal.code.starts_with("measure."), "{refusal:?}");
+        let options = MeshOptions::default();
+        let mesh = catallax_mesh::mesh_body(&model, built.result, &options, &mut decider())
+            .unwrap()
+            .value;
+        assert_eq!(mesh.faces.len(), model.faces_of_body(built.result).len());
         assert!(
-            catallax_mesh::mesh_body(
-                &model,
-                built.result,
-                &MeshOptions::default(),
-                &mut decider()
-            )
-            .is_err()
+            mesh.faces
+                .iter()
+                .all(|face| face.max_chord_error <= options.chord_tolerance)
         );
     });
 }

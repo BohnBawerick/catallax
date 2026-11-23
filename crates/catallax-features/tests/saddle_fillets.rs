@@ -11,7 +11,9 @@ use catallax_measure::{
     volume, volume_area_centroid,
 };
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
-use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, with_operation_log};
+use catallax_numbers::{
+    BudgetPolicy, Decider, Outcome, Rational, with_operation_budget, with_operation_log,
+};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::{EnvelopeGrid, RPoint3, SplineSupport, Surface};
 use catallax_step::write_step;
@@ -1364,7 +1366,15 @@ fn assert_close_to(built: &Built, plain: &Recipe) {
             })
             .sum()
     };
-    let mesh = fine(built);
+    let (mesh, work) = with_operation_budget(100_000_000, || fine(built));
+    assert!(!work.exhausted);
+    let saddle_faces = bands(built);
+    let chord = q("1/4");
+    for face in saddle_faces {
+        let entry = mesh.faces.iter().find(|entry| entry.face == face).unwrap();
+        assert!(!entry.triangles.is_empty());
+        assert!(entry.max_chord_error <= chord);
+    }
     assert_closed(&mesh);
     let [rounded, sharp] = [size(&mesh), size(&fine(&build(plain)))];
     assert!(

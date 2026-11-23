@@ -9,7 +9,6 @@ use crate::{Mesh, MeshOptions, Triangle};
 
 pub(crate) mod edges;
 mod imported;
-mod spline;
 mod tolerant;
 pub use imported::{StepPreview, preview_step};
 pub use tolerant::preview_tolerant_body;
@@ -134,8 +133,7 @@ fn validate(options: &PreviewOptions) -> Result<(), Refusal> {
 ///
 /// This synchronous call uses the caller's decider and active work allowance.
 /// It never starts, replaces, or enlarges an allowance and never calls
-/// [`crate::mesh_body`]. Failure returns no partial preview. A rolling-envelope
-/// body has no chart for a cheaper sampling, so it shares the structured grid.
+/// [`crate::mesh_body`]. Failure returns no partial preview.
 pub fn preview_mesh_body(
     model: &Model,
     body: BodyId,
@@ -143,22 +141,11 @@ pub fn preview_mesh_body(
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
     validate(options)?;
-    if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
-        return crate::oblique_draft::preview(model, body, options, dec);
-    }
     if let Some(preview) = crate::triangulate::shared_spline_preview(model, body, options, dec) {
         return preview;
     }
     if crate::junction::present(model, body) {
         return crate::junction::preview(model, body, options, dec);
-    }
-    if model.faces_of_body(body).iter().any(|&face| {
-        matches!(
-            model.geom().surface(model.face(face).surface),
-            catallax_shapes::Surface::BSpline(_)
-        )
-    }) {
-        return spline::build(model, body, options, dec);
     }
     crate::triangulate::build_preview(model, body, options, dec)
 }

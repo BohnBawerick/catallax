@@ -171,9 +171,27 @@ impl Chart {
     }
 
     pub(crate) fn from_spline(support: &SplineSupport, dec: &mut Decider) -> Result<Self, Refusal> {
+        if matches!(support, SplineSupport::EllipticOffset(_)) {
+            // The prism chart and both rails enclose the same algebraic controls.
+            catallax_numbers::reuse_operation_enclosures();
+        }
+        let periodic = support
+            .param_kinds()
+            .map(|kind| kind == catallax_shapes::ParamKind::PeriodicFinite);
+        let join_scale = if matches!(
+            support,
+            SplineSupport::RollingPipe(_) | SplineSupport::ObliqueDraft(_)
+        ) {
+            // Its exact four-quarter construction doubles each denominator
+            // factor per quarter. Each factor contributes degree two in u.
+            let degree = Self::carrier(support).degrees()[0] as i32;
+            [Interval::point(libm::ldexp(1.0, 2 * degree)), None]
+        } else {
+            [None; 2]
+        };
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
-            periodic: [false; 2],
+            periodic,
             centers: [None; 2],
             hessian: OnceCell::new(),
             filtered_hessian: OnceCell::new(),
@@ -181,7 +199,13 @@ impl Chart {
             normal_scale: Rational::one(),
             great_circle_sector: false,
             corner_planes: None,
-            sampling: Sampling::Spline(SplineChart::new(Self::carrier(support), dec)?),
+            sampling: Sampling::Spline(SplineChart::new(
+                Self::carrier(support),
+                periodic,
+                join_scale,
+                join_scale[0].is_some(),
+                dec,
+            )?),
         })
     }
 
@@ -221,7 +245,7 @@ impl Chart {
         let angle = |y, x| {
             let t = libm::atan2(y, x) / std::f64::consts::TAU;
             // Leave enough mantissa bits for exact translations by -2..=2.
-            libm::round(t * 281_474_976_710_656.0) / 281_474_976_710_656.0
+            quantize_turn(t)
         };
         let u = if let Some([major, minor]) = analytic.ellipse_radii {
             angle(y / minor, x / major)
@@ -451,6 +475,11 @@ pub(crate) fn align(mut b: Uv, a: Uv, periodic: [bool; 2]) -> Uv {
         }
     }
     b
+}
+
+pub(crate) fn quantize_turn(turn: f64) -> f64 {
+    const SAMPLES_PER_TURN: f64 = (1_u64 << 48) as f64;
+    libm::round(turn * SAMPLES_PER_TURN) / SAMPLES_PER_TURN
 }
 
 pub(crate) fn filtered_chord_bound(uvs: &[Uv], hessian: &[Interval; 3]) -> Interval {

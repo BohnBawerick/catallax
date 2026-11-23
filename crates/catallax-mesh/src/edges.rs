@@ -125,38 +125,6 @@ fn reserve_position(count: usize, options: &MeshOptions) -> Result<(), Refusal> 
     Ok(())
 }
 
-pub(crate) struct ChordProof {
-    pub(crate) error: Rational,
-    pub(crate) replacement: Rational,
-    pub(crate) endpoints: [[Ball; 3]; 2],
-}
-
-/// Taylor's full-interval chord bound, including actual output-point replacement.
-pub(crate) fn trace_chord(
-    piece: &TracePiece,
-    interval: [&Rational; 2],
-    positions: [&[f64; 3]; 2],
-    dec: &Decider,
-) -> Result<ChordProof, Refusal> {
-    let [lo, hi] = interval;
-    let a = piece.evaluate(&Ball::from_rational(lo, BITS), dec)?;
-    let b = piece.evaluate(&Ball::from_rational(hi, BITS), dec)?;
-    let interval = Ball::from_rational(lo, BITS).hull(&Ball::from_rational(hi, BITS));
-    let second = piece.taylor(&interval, 2, dec)?.pop().unwrap();
-    let acceleration = second.iter().fold(Rational::zero(), |sum, x| {
-        sum + x.lo().abs().max(x.hi().abs())
-    });
-    let width = hi - lo;
-    let replacement = chart::residual(positions[0], &a).max(chart::residual(positions[1], &b));
-    let curvature = &(&acceleration * &width) * &width * Rational::from_ratio(1, 4).unwrap();
-    let error = &curvature + &replacement;
-    Ok(ChordProof {
-        error,
-        replacement,
-        endpoints: [a, b],
-    })
-}
-
 struct Cap<'a> {
     trace: &'a FilletCutTrace,
     chart: DisplayCut,
@@ -173,7 +141,7 @@ struct Sampler<'a> {
     piece: &'a Arc<TracePiece>,
     cap: Option<Cap<'a>>,
     spline: Option<RationalSpan>,
-    charts: &'a [&'a Chart],
+    charts: &'a [IncidentChart<'a>],
     spline_cosine: Option<Interval>,
     options: &'a MeshOptions,
     dec: &'a mut Decider,
@@ -181,6 +149,11 @@ struct Sampler<'a> {
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
     exact_positions: Option<&'a mut BTreeMap<usize, Position>>,
+}
+
+struct IncidentChart<'a> {
+    chart: &'a Chart,
+    fixed_v: Option<f64>,
 }
 
 impl Sampler<'_> {
@@ -321,7 +294,8 @@ impl Sampler<'_> {
             small &= crate::controls::length_squared(self.positions[first], self.positions[last])
                 <= limit * limit;
         }
-        for chart in self.charts {
+        for incident in self.charts {
+            let chart = incident.chart;
             if let (Some(spline), Surface::BSpline(support)) = (chart.spline(), &chart.surface) {
                 if small {
                     let hints = if let (Some(cap), SplineSupport::SplineFillet(fillet)) =
@@ -343,6 +317,7 @@ impl Sampler<'_> {
                     small = spline.edge_within(
                         [self.positions[first], middle, self.positions[last]],
                         hints,
+                        incident.fixed_v,
                         Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3)),
                         self.spline_cosine,
                         self.dec,
@@ -531,14 +506,43 @@ pub(crate) fn sample_selected(
         rails: Rails::default(),
         marks: model.body(body).marks.clone(),
     };
-    let mut adjacent = BTreeMap::<EdgeId, Vec<&Chart>>::new();
+    let mut adjacent = BTreeMap::<EdgeId, Vec<IncidentChart>>::new();
     for (&face, chart) in charts {
+        let band_rails = match &chart.surface {
+            Surface::BSpline(SplineSupport::RollingPipe(_)) => {
+                let rows = match catallax_topology::pipe_rows(model, face, dec)? {
+                    Some(rows) => Some(rows),
+                    None => catallax_topology::partial_pipe_rows(model, face, dec)?,
+                };
+                rows.map(|rows| rows.map(|(edge, _)| edge))
+            }
+            Surface::BSpline(SplineSupport::EllipticOffset(_)) => {
+                Some(catallax_topology::SplinePrism::check(model, body, dec)?.rings())
+            }
+            Surface::BSpline(SplineSupport::ObliqueDraft(_)) => {
+                let cell = catallax_topology::DraftedCylinder::check(model, body, dec)?;
+                if face == cell.faces()[2] {
+                    Some(cell.rings())
+                } else {
+                    cell.hole().map(|(_, _, rings)| rings)
+                }
+            }
+            _ => None,
+        };
         for &l in &model.face(face).loops {
             match model.loop_(l) {
                 Loop::Coedges(cs) => {
                     for &c in cs {
-                        let incident = adjacent.entry(model.coedge(c).edge).or_default();
-                        incident.push(chart);
+                        let edge = model.coedge(c).edge;
+                        let fixed_v = band_rails.and_then(|rows| {
+                            rows.iter()
+                                .position(|&rail| rail == edge)
+                                .map(|row| row as f64)
+                        });
+                        adjacent
+                            .entry(edge)
+                            .or_default()
+                            .push(IncidentChart { chart, fixed_v });
                     }
                 }
                 Loop::Vertex(v) => {
@@ -593,7 +597,7 @@ pub(crate) fn sample_selected(
             .transpose()?;
         let planar = adjacent[&edge_id]
             .iter()
-            .any(|chart| matches!(chart.surface, catallax_shapes::Surface::Plane(_)));
+            .any(|incident| matches!(incident.chart.surface, Surface::Plane(_)));
         let first = if let Some(v) = from {
             result.vertex(model, v, options, dec)?
         } else {
@@ -663,7 +667,7 @@ pub(crate) fn sample_selected(
             let last_point = endpoint(1, last_values);
             let spline = if adjacent[&edge_id]
                 .iter()
-                .any(|chart| chart.spline().is_some())
+                .any(|incident| incident.chart.spline().is_some())
             {
                 piece.display_spline_span(dec)?
             } else {
@@ -697,7 +701,8 @@ pub(crate) fn sample_selected(
         let mut i = 1;
         while i < indices.len() {
             let (a, b) = (indices[i - 1], indices[i]);
-            let collapses = adjacent[&edge_id].iter().any(|chart| {
+            let collapses = adjacent[&edge_id].iter().any(|incident| {
+                let chart = incident.chart;
                 chart.spline().is_none()
                     && chart::key(chart.canonical(chart.project(result.mesh.positions[a])))
                         == chart::key(chart.canonical(chart.project(result.mesh.positions[b])))

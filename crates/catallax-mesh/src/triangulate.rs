@@ -35,9 +35,79 @@ impl HasPosition for Node {
 }
 type Cdt = ConstrainedDelaunayTriangulation<Node, (), (), (), HierarchyHintGenerator<f64>>;
 
+type Segment = (Uv, Uv, usize, usize);
+
+#[derive(Clone, Copy)]
+struct BandCut {
+    ends: [(Uv, usize); 2],
+    sense: Sense,
+}
+
+impl BandCut {
+    // The rails already have an authoritative set of samples. Rotate each
+    // loop to an existing sample and lift its edges into one finite band.
+    fn open(segments: &mut [Segment]) -> Result<Self, Refusal> {
+        let choose = |row: f64, near: f64| {
+            segments
+                .iter()
+                .filter(|(a, _, _, _)| a[1].to_bits() == row.to_bits())
+                .map(|&(uv, _, index, _)| (align(uv, [near, row], [true, false]), index))
+                .min_by(|(a, _), (b, _)| (a[0] - near).abs().total_cmp(&(b[0] - near).abs()))
+                .ok_or_else(|| failure("periodic band is missing a sampled rail"))
+        };
+        let lower = choose(0.0, 0.0)?;
+        let upper = choose(1.0, lower.0[0])?;
+        let direction = segments
+            .iter()
+            .find(|(a, _, _, _)| a[1] == 0.0)
+            .is_some_and(|(a, b, _, _)| a[0] < b[0]);
+        let sense = if direction {
+            Sense::Same
+        } else {
+            Sense::Reversed
+        };
+        let ends = [lower, upper];
+        let mut winding = [0.0; 2];
+        for (a, b, _, _) in segments {
+            let row = usize::from(a[1].to_bits() == 1.0_f64.to_bits());
+            if a[1].to_bits() != (row as f64).to_bits() || b[1].to_bits() != a[1].to_bits() {
+                return Err(failure("periodic band rail leaves its chart row"));
+            }
+            let step = b[0] - a[0];
+            if step == 0.0 || (step > 0.0) != (direction != (row == 1)) {
+                return Err(failure(
+                    "periodic band rails must wind in opposite directions",
+                ));
+            }
+            winding[row] += step;
+            let left = ends[row].0[0];
+            let shift = libm::ceil(left - a[0].min(b[0]));
+            a[0] += shift;
+            b[0] += shift;
+            if a[0].max(b[0]) > left + 1.0 {
+                return Err(failure("periodic band seam crosses a rail segment"));
+            }
+        }
+        if winding[0].abs().to_bits() != 1.0_f64.to_bits()
+            || winding[1].abs().to_bits() != 1.0_f64.to_bits()
+        {
+            return Err(failure("periodic band rails must each wind once"));
+        }
+        Ok(Self { ends, sense })
+    }
+
+    fn lift(self, mut uv: Uv) -> Uv {
+        let [lo, hi] = self.ends.map(|(end, _)| end[0]);
+        let left = lo + (hi - lo) * uv[1];
+        uv[0] += libm::ceil(left - uv[0]);
+        uv
+    }
+}
+
 struct FaceBuilder<'a> {
     chart: &'a Chart,
     options: &'a MeshOptions,
+    band: Option<BandCut>,
     // A cylinder trimmed obliquely, which gets ruled columns and rows.
     ruled: bool,
     // Delaunay distances use the seed-cell metric, not mixed turns and
@@ -60,6 +130,9 @@ struct FaceBuilder<'a> {
 
 impl FaceBuilder<'_> {
     fn node(&mut self, uv: Uv, boundary: Option<usize>) -> Result<Node, Refusal> {
+        if self.positions.len() >= self.options.max_vertices {
+            return Err(failure("face triangulation reached max_vertices"));
+        }
         let canonical = self.chart.canonical(uv);
         let (mesh, error) = if let Some(&(mesh, error)) = self.canonical.get(&key(canonical)) {
             if boundary.is_some_and(|index| index != mesh) {
@@ -68,12 +141,17 @@ impl FaceBuilder<'_> {
                 ));
             }
             (mesh, error)
-        } else if self.unproved && self.chart.spline().is_none() {
+        } else if self.unproved {
             let mesh = if let Some(index) = boundary {
                 index
             } else {
-                self.reserve_vertex()?;
-                let point = self.chart.preview_position(canonical, self.dec)?;
+                let point = if let Some(spline) = self.chart.spline() {
+                    spline
+                        .evaluate(canonical, self.dec)?
+                        .map(|value| value.mid())
+                } else {
+                    self.chart.preview_position(canonical, self.dec)?
+                };
                 let index = self.positions.len();
                 self.positions.push(point);
                 index
@@ -82,37 +160,37 @@ impl FaceBuilder<'_> {
             (mesh, 0)
         } else {
             let replacement = boundary.map(|index| self.positions[index]);
-            let (p, residual, filtered) = if let Some(spline) = self.chart.spline() {
-                let (p, residual) = spline.vertex(canonical, replacement, self.dec)?;
+            let (p, residual) = if let Some(spline) = self.chart.spline() {
+                let enclosed = spline.evaluate(canonical, self.dec)?;
+                let p = replacement.unwrap_or_else(|| enclosed.map(|component| component.mid()));
+                let mut residual = Interval::point(0.0).unwrap();
+                for (actual, expected) in p.into_iter().zip(enclosed) {
+                    let delta = Interval::point(actual).unwrap() - expected;
+                    residual =
+                        residual + Interval::point(delta.lo().abs().max(delta.hi().abs())).unwrap();
+                }
                 if !residual.is_finite() {
                     return Err(failure("spline sample residual exceeds binary64"));
                 }
-                let exact = if self.unproved {
-                    Rational::zero()
-                } else {
-                    chart::q(residual.hi())
-                };
-                (p, exact, residual)
+                (p, chart::q(residual.hi()))
             } else {
-                let (p, residual) = self.chart.sample(
+                self.chart.sample(
                     canonical,
                     replacement,
                     &self.options.chord_tolerance,
                     self.dec,
-                )?;
-                let filtered = Interval::from_rational(&residual);
-                (p, residual, filtered)
+                )?
             };
             let mesh = if let Some(index) = boundary {
                 index
             } else {
-                self.reserve_vertex()?;
                 let index = self.positions.len();
                 self.positions.push(p);
                 index
             };
             let error = self.errors.len();
-            self.filtered_errors.push(filtered);
+            self.filtered_errors
+                .push(Interval::from_rational(&residual));
             self.errors.push(residual);
             self.canonical.insert(key(canonical), (mesh, error));
             (mesh, error)
@@ -137,13 +215,6 @@ impl FaceBuilder<'_> {
         self.cdt
             .insert(node)
             .map_err(|e| failure(format!("chart vertex insertion: {e}")))
-    }
-
-    fn reserve_vertex(&self) -> Result<(), Refusal> {
-        if self.positions.len() >= self.options.max_vertices {
-            return Err(failure("face triangulation reached max_vertices"));
-        }
-        Ok(())
     }
 
     fn queue(
@@ -187,30 +258,42 @@ impl FaceBuilder<'_> {
         Ok(())
     }
 
+    fn tiled(&self) -> [bool; 2] {
+        if self.band.is_some() {
+            [false; 2]
+        } else {
+            self.chart.periodic
+        }
+    }
+
+    fn refinement_uv(&self, uv: Uv, round: bool) -> Uv {
+        let mut uv = if self.band.is_some() {
+            uv
+        } else {
+            self.chart.canonical(uv)
+        };
+        if round || self.band.is_some() {
+            for (value, periodic) in uv.iter_mut().zip(self.chart.periodic) {
+                if periodic {
+                    *value = chart::quantize_turn(*value);
+                }
+            }
+        }
+        uv
+    }
+
     fn shifts(&self) -> impl Iterator<Item = Uv> + use<> {
-        let u = if self.chart.periodic[0] {
-            -1..=1
-        } else {
-            0..=0
-        };
-        let v = if self.chart.periodic[1] {
-            -1..=1
-        } else {
-            0..=0
-        };
+        let u = if self.tiled()[0] { -1..=1 } else { 0..=0 };
+        let v = if self.tiled()[1] { -1..=1 } else { 0..=0 };
         u.flat_map(move |i| v.clone().map(move |j| [f64::from(i), f64::from(j)]))
     }
 
-    fn boundary(
-        &mut self,
-        segments: &[(Uv, Uv, usize, usize)],
-        sense: Sense,
-    ) -> Result<(), Refusal> {
+    fn boundary(&mut self, segments: &[Segment], sense: Sense) -> Result<(), Refusal> {
         let mut nodes = Vec::new();
         let mut indices = BTreeMap::new();
         for &(mut a, mut b, first, last) in segments {
             for i in 0..2 {
-                if self.chart.periodic[i] {
+                if self.tiled()[i] {
                     let shift = libm::floor(a[i]);
                     a[i] -= shift;
                     b[i] -= shift;
@@ -236,7 +319,84 @@ impl FaceBuilder<'_> {
                 self.interior_left.insert(pair);
             }
         }
+        if let Some(band) = self.band {
+            self.seam(band, &mut nodes, &mut indices)?;
+        }
         self.bulk_load(nodes)
+    }
+
+    fn seam(
+        &mut self,
+        band: BandCut,
+        nodes: &mut Vec<Node>,
+        indices: &mut BTreeMap<[u64; 2], usize>,
+    ) -> Result<(), Refusal> {
+        let spline = self
+            .chart
+            .spline()
+            .expect("a finite band has a spline chart");
+        let chord = Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3));
+        let cosine = self
+            .options
+            .angular_deviation
+            .as_ref()
+            .map(|angle| {
+                crate::controls::cosine_limit(angle, self.dec).map(|q| Interval::from_rational(&q))
+            })
+            .transpose()?;
+        let [(lo, lo_index), (hi, hi_index)] = band.ends;
+        let mut points = vec![lo];
+        let mut pending = vec![(lo, hi, 0)];
+        while let Some((a, b, depth)) = pending.pop() {
+            let middle = [
+                chart::quantize_turn(a[0].midpoint(b[0])),
+                a[1].midpoint(b[1]),
+            ];
+            let within_length = if let Some(limit) = &self.options.max_edge_length {
+                let [a, b] = [a, b].map(|uv| {
+                    let uv = self.chart.canonical(uv);
+                    self.canonical.get(&key(uv)).map_or_else(
+                        || spline.evaluate(uv, self.dec).map(|p| p.map(|x| x.mid())),
+                        |&(index, _)| Ok(self.positions[index]),
+                    )
+                });
+                crate::controls::length_squared(a?, b?) <= limit * limit
+            } else {
+                true
+            };
+            if within_length && spline.seam_within([a, middle, b], chord, cosine, self.dec)? {
+                points.push(b);
+                continue;
+            }
+            if depth == 48
+                || points.len().saturating_add(pending.len()) >= self.options.max_vertices
+            {
+                return Err(failure("periodic band seam exceeds the subdivision limit"));
+            }
+            pending.push((middle, b, depth + 1));
+            pending.push((a, middle, depth + 1));
+        }
+
+        // Both copies use the same canonical UV and mesh vertex. In parameter
+        // space they are independent boundary constraints with opposite winding.
+        let last = points.len() - 1;
+        let mut previous: Option<[usize; 2]> = None;
+        for (i, uv) in points.into_iter().enumerate() {
+            let boundary = if i == 0 {
+                Some(lo_index)
+            } else if i == last {
+                Some(hi_index)
+            } else {
+                None
+            };
+            let left = self.queue(nodes, indices, uv, boundary)?;
+            let right = self.queue(nodes, indices, [uv[0] + 1.0, uv[1]], boundary)?;
+            if let Some([a, b]) = previous {
+                self.interior_left.extend([(left, a), (b, right)]);
+            }
+            previous = Some([left, right]);
+        }
+        Ok(())
     }
 
     fn place(&self, uv: Uv) -> Point2<f64> {
@@ -443,11 +603,21 @@ impl FaceBuilder<'_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
+            let remaining = self
+                .options
+                .max_vertices
+                .saturating_sub(self.positions.len());
             let mut grid = spline.seed_grid(
-                &self.options.chord_tolerance,
-                self.options.max_vertices,
+                &self.options.chord_tolerance.mul_pow2(-1),
+                remaining,
                 self.dec,
             )?;
+            for uv in &mut grid {
+                *uv = self.chart.canonical(*uv);
+                if let Some(band) = self.band {
+                    *uv = band.lift(*uv);
+                }
+            }
             // Use the fixed trim before inserting any seeds. Remove those
             // outside it and protect the shared segments' diametral disks,
             // as for analytic trim lattices.
@@ -484,7 +654,9 @@ impl FaceBuilder<'_> {
             }
             for uv in grid {
                 if !protected.contains(&key(uv)) {
-                    self.free_point(uv)?;
+                    for shift in self.shifts() {
+                        self.free_point([uv[0] + shift[0], uv[1] + shift[1]])?;
+                    }
                 }
             }
             return Ok(());
@@ -564,7 +736,7 @@ impl FaceBuilder<'_> {
         }
         let mut counts = [1usize; 2];
         for (i, count) in counts.iter_mut().enumerate() {
-            if self.chart.periodic[i] {
+            if self.tiled()[i] {
                 *count = 8;
             }
         }
@@ -662,7 +834,7 @@ impl FaceBuilder<'_> {
             self.bulk_load(nodes)?;
         }
         let ranges: [(i64, i64); 2] = std::array::from_fn(|i| {
-            if self.chart.periodic[i] {
+            if self.tiled()[i] {
                 (-(counts[i] as i64), 2 * counts[i] as i64)
             } else {
                 (0, counts[i] as i64)
@@ -763,7 +935,7 @@ impl FaceBuilder<'_> {
             let mut keys = points.map(|p| {
                 let mut uv = [p.x, p.y];
                 for i in 0..2 {
-                    if self.chart.periodic[i] {
+                    if self.tiled()[i] {
                         uv[i] -= libm::floor(center[i]);
                     }
                     if uv[i] == 0.0 {
@@ -830,18 +1002,13 @@ impl FaceBuilder<'_> {
     }
 
     fn central(&self, uv: Uv) -> bool {
-        (0..2).all(|i| !self.chart.periodic[i] || (0.0..1.0).contains(&uv[i]))
+        (0..2).all(|i| !self.tiled()[i] || (0.0..1.0).contains(&uv[i]))
     }
 
     fn ear_point(&self, uvs: &[Uv; 3], center: Uv) -> Result<Uv, Refusal> {
-        let mut point = self.chart.canonical(center);
-        for (value, periodic) in point.iter_mut().zip(self.chart.periodic) {
-            if periodic {
-                *value = libm::round(*value * 281_474_976_710_656.0) / 281_474_976_710_656.0;
-            }
-        }
-        let point = self.chart.canonical(point);
-        let lifted = align(point, center, self.chart.periodic);
+        let point = self.refinement_uv(center, true);
+        let point = self.refinement_uv(point, false);
+        let lifted = align(point, center, self.tiled());
         // Strict orientation certifies an interior chart point, rather than a
         // rounded point on the shared polyline. Uncertain filters remain exact.
         let inside = (0..3).all(|i| chart::positive_turn(uvs[i], uvs[(i + 1) % 3], lifted));
@@ -1033,14 +1200,24 @@ impl FaceBuilder<'_> {
                             .prior_chords
                             .contains(&(a.mesh.min(b.mesh), a.mesh.max(b.mesh)))
                     {
-                        let midpoint = self
-                            .chart
-                            .canonical([(a.uv.x + b.uv.x) * 0.5, (a.uv.y + b.uv.y) * 0.5]);
+                        let midpoint = self.refinement_uv(
+                            [(a.uv.x + b.uv.x) * 0.5, (a.uv.y + b.uv.y) * 0.5],
+                            false,
+                        );
                         pending.insert(key(midpoint), midpoint);
                         split = true;
                     }
                 }
                 if split {
+                    continue;
+                }
+                if self.unproved {
+                    if sense == Sense::Reversed {
+                        vertices.swap(1, 2);
+                    }
+                    let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+                    vertices.rotate_left(first);
+                    triangles.push(Triangle { vertices, face });
                     continue;
                 }
                 // A later CDT round does not move an unchanged spline facet.
@@ -1065,9 +1242,7 @@ impl FaceBuilder<'_> {
                     .fold(0.0_f64, f64::max);
                 let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
                 let filtered = if let Some(spline) = spline {
-                    let replacement = Interval::point(filtered_residual).unwrap();
-                    spline.chord(&uvs, (filtered_tolerance - replacement).lo(), self.dec)?
-                        + replacement
+                    spline.chord(&uvs, self.dec)? + Interval::point(filtered_residual).unwrap()
                 } else if matches!(self.chart.surface, Surface::Cone(_)) {
                     let scale = Interval::point(vmax).unwrap()
                         / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))
@@ -1083,6 +1258,17 @@ impl FaceBuilder<'_> {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
                 };
+                let (interpolation, replacement) = if spline.is_some()
+                    || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
+                {
+                    if !filtered.is_finite() {
+                        return Err(failure("spline interpolation bound exceeds binary64"));
+                    }
+                    (chart::q(filtered.hi()), Rational::zero())
+                } else {
+                    let hessian = self.chart.hessian(vmax, self.dec)?;
+                    (chord_bound(&uvs, &hessian), residual.clone())
+                };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
                         crate::controls::length_squared(
@@ -1093,41 +1279,39 @@ impl FaceBuilder<'_> {
                     let longest = (0..3).max_by_key(|&i| &lengths[i]).unwrap();
                     if lengths[longest] > limit * limit {
                         let next = (longest + 1) % 3;
-                        let midpoint = self.chart.canonical(std::array::from_fn(|i| {
-                            (uvs[longest][i] + uvs[next][i]) * 0.5
-                        }));
+                        let midpoint = self.refinement_uv(
+                            std::array::from_fn(|i| (uvs[longest][i] + uvs[next][i]) * 0.5),
+                            false,
+                        );
                         pending.insert(key(midpoint), midpoint);
                         continue;
                     }
                 }
-                let error = if self.unproved {
-                    (filtered.hi() <= filtered_tolerance.lo()).then(Rational::zero)
-                } else {
-                    let (interpolation, replacement) = if spline.is_some()
-                        || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
-                    {
-                        if !filtered.is_finite() {
-                            return Err(failure("spline interpolation bound exceeds binary64"));
-                        }
-                        (chart::q(filtered.hi()), Rational::zero())
-                    } else {
-                        let hessian = self.chart.hessian(vmax, self.dec)?;
-                        (chord_bound(&uvs, &hessian), residual.clone())
-                    };
-                    checked_triangle_bound(
-                        &interpolation,
-                        &replacement,
-                        &self.options.chord_tolerance,
-                    )
-                };
-                let Some(error) = error else {
-                    let mut center = self.chart.canonical(center);
-                    for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
-                        if periodic {
-                            *value =
-                                libm::round(*value * 281_474_976_710_656.0) / 281_474_976_710_656.0;
-                        }
+                let refine_band = self.band.is_some();
+                let refine_at = || {
+                    if !refine_band {
+                        return center;
                     }
+                    // A centroid can leave the long edge of a thin facet
+                    // intact. Split a free edge so its chord span shrinks.
+                    f.adjacent_edges()
+                        .into_iter()
+                        .filter(|edge| !edge.is_constraint_edge())
+                        .map(|edge| {
+                            let a = *edge.from().data();
+                            let b = *edge.to().data();
+                            let length = libm::hypot(a.at.x - b.at.x, a.at.y - b.at.y);
+                            (length, [a.uv.x.midpoint(b.uv.x), a.uv.y.midpoint(b.uv.y)])
+                        })
+                        .max_by(|a, b| a.0.total_cmp(&b.0))
+                        .map_or(center, |(_, point)| point)
+                };
+                let Some(error) = checked_triangle_bound(
+                    &interpolation,
+                    &replacement,
+                    &self.options.chord_tolerance,
+                ) else {
+                    let center = self.refinement_uv(refine_at(), true);
                     pending.insert(key(center), center);
                     continue;
                 };
@@ -1137,34 +1321,14 @@ impl FaceBuilder<'_> {
                 } else {
                     self.options.angular_deviation.as_ref()
                 };
-                let (ratio, angular_reached) = if self.unproved {
-                    let spline = spline.expect("shared preview uses a spline chart");
-                    (
-                        Rational::zero(),
-                        spline.normals_within(&uvs, positions, cosine, self.dec)?,
-                    )
-                } else {
-                    let (ratio, mut reached) = crate::controls::quality(
-                        self.chart,
-                        &uvs,
-                        positions,
-                        angular_limit,
-                        self.dec,
-                    )?;
-                    let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
-                    if let Some(spline) = spline {
-                        reached = spline.normals_within(&uvs, positions, cosine, self.dec)?;
-                    }
-                    (ratio, reached)
-                };
+                let (ratio, mut angular_reached) =
+                    crate::controls::quality(self.chart, &uvs, positions, angular_limit, self.dec)?;
+                let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                if let Some(spline) = spline {
+                    angular_reached = spline.normals_within(&uvs, positions, cosine, self.dec)?;
+                }
                 if !angular_reached {
-                    let mut center = self.chart.canonical(center);
-                    for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
-                        if periodic {
-                            *value =
-                                libm::round(*value * 281_474_976_710_656.0) / 281_474_976_710_656.0;
-                        }
-                    }
+                    let center = self.refinement_uv(refine_at(), true);
                     pending.insert(key(center), center);
                     continue;
                 }
@@ -1281,6 +1445,13 @@ fn face_mesh(
             }
         }
     }
+    let band =
+        if chart.spline().is_some() && chart.periodic == [true, false] && face.loops.len() == 2 {
+            Some(BandCut::open(&mut segments)?)
+        } else {
+            None
+        };
+    let sense = band.map_or(face.sense, |band| band.sense);
     let bounds = std::array::from_fn(|i| {
         if chart.periodic[i] {
             [0.0, 1.0]
@@ -1320,9 +1491,10 @@ fn face_mesh(
     let mut builder = FaceBuilder {
         chart,
         options,
+        band,
         ruled: is_ruled,
         stretch,
-        unproved: level == Level::Preview && chart.spline().is_some(),
+        unproved: level == Level::Preview,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
         cdt: Cdt::new(),
@@ -1336,13 +1508,31 @@ fn face_mesh(
         hessian,
         dec,
     };
-    builder.boundary(&segments, face.sense)?;
+    builder.boundary(&segments, sense)?;
     builder.grid()?;
-    let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
-        builder.finish(face_id, face.sense).map_err(|mut e| {
+    let (triangles, max_chord_error, max_aspect_ratio, mut max_angular_deviation) =
+        builder.finish(face_id, sense).map_err(|mut e| {
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
+    if max_angular_deviation.is_some()
+        && matches!(
+            chart.surface,
+            Surface::BSpline(SplineSupport::RollingEnvelope(_))
+        )
+    {
+        // The angular test encloses the fitted carrier. The fit's certificate
+        // supplies only a position bound against the rolling envelope.
+        max_angular_deviation = None;
+        boundaries
+            .mesh
+            .unavailable_controls
+            .push(crate::UnavailableControl {
+                face: face_id,
+                control: crate::MeshControl::AngularDeviation,
+                reason: "the rolling envelope fit certifies position only",
+            });
+    }
     let start = boundaries.mesh.triangles.len();
     boundaries.mesh.triangles.extend(triangles);
     if options
@@ -1712,7 +1902,11 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
     match surface {
         Surface::BSpline(
             support @ (SplineSupport::BezierExtrusion(_)
+            | SplineSupport::EllipticOffset(_)
+            | SplineSupport::ObliqueDraft(_)
             | SplineSupport::RationalPatch(_)
+            | SplineSupport::RollingEnvelope(_)
+            | SplineSupport::RollingPipe(_)
             | SplineSupport::SplineFillet(_)),
         ) => Some(support),
         Surface::BSpline(support @ SplineSupport::RationalAtlas(atlas))
@@ -1743,6 +1937,16 @@ pub(crate) fn shared_spline_preview(
     options: &crate::PreviewOptions,
     dec: &mut Decider,
 ) -> Option<Result<crate::PreviewMesh, Refusal>> {
+    let source = model;
+    let expansion = source
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells());
+    let prepared =
+        expansion.and_then(|cover| crate::rational_atlas::expanded_surface(source, body, cover));
+    let (model, body) = prepared.as_ref().map_or_else(
+        || (source, expansion.map_or(body, |cover| cover.body())),
+        |(model, body)| (model, *body),
+    );
     let faces = model.faces_of_body(body);
     let mut found_spline = false;
     for face in faces {
@@ -1774,7 +1978,12 @@ pub(crate) fn shared_spline_preview(
             None,
             dec,
         )
-        .map(|(mesh, _)| crate::PreviewMesh::from_mesh(mesh)),
+        .and_then(|(mut mesh, _)| {
+            if let Some(cover) = expansion {
+                crate::rational_atlas::remap(source, cover, &mut mesh)?;
+            }
+            Ok(crate::PreviewMesh::from_mesh(mesh))
+        }),
     )
 }
 
@@ -1785,9 +1994,6 @@ pub(crate) fn build(
     previous: Option<(&Model, &Mesh)>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
-    if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
-        return crate::oblique_draft::build(model, body, options, dec);
-    }
     let faces = model.faces_of_body(body);
     let use_spline_charts = faces.iter().all(|&face| {
         let surface = model.geom().surface(model.face(face).surface);
@@ -1798,19 +2004,18 @@ pub(crate) fn build(
     } else {
         crate::junction::prepare(model, &faces, options, dec)?
     };
-    if !use_spline_charts
-        && junction.is_none()
-        && faces.iter().any(|face| {
-            matches!(
-                model.geom().surface(model.face(*face).surface),
-                Surface::BSpline(_)
-            )
-        })
-    {
-        return crate::spline_prism::build(model, body, &faces, options, dec);
-    }
     let previous = previous
-        .filter(|_| !faces.is_empty())
+        .filter(|_| {
+            !faces.is_empty()
+                && faces.iter().all(|&face| {
+                    !matches!(
+                        model.geom().surface(model.face(face).surface),
+                        Surface::BSpline(
+                            SplineSupport::EllipticOffset(_) | SplineSupport::ObliqueDraft(_)
+                        )
+                    )
+                })
+        })
         .map(|(model, mesh)| crate::reuse::Previous::new(model, mesh, dec))
         .transpose()?;
     let (value, marks) = build_junction(
@@ -2102,6 +2307,7 @@ pub(crate) fn build_preview(
         let mut builder = FaceBuilder {
             chart,
             options: &options,
+            band: None,
             ruled: is_ruled,
             stretch: 1.0,
             unproved: true,

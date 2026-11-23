@@ -5,18 +5,16 @@
 //! seams without adding topological edges. All traversal and refinement orders
 //! are fixed; the implementation has no thread-local or process-global state.
 //!
-//! Checked spline prisms use one adaptive paired ring grid for both planar caps
-//! and the ruled side. Whole-span chord bounds include coordinate rounding, and
-//! interval orientation checks preserve outward triangles. These bounds concern
-//! the represented spline model; its error to an original feature definition is
-//! a separate body certificate, not an enlarged display tolerance.
+//! Spline faces use rational charts split at their knots and checked periodic
+//! joins. Whole-span chord bounds include coordinate rounding, and interval
+//! orientation checks preserve outward triangles. These bounds concern the
+//! represented spline model. Any fit error to the feature definition has its
+//! own body certificate.
 //!
 //! Spline faces report certified rounded-facet aspect bounds and unmet requested
 //! aspect controls explicitly. A requested edge-length limit is checked against
-//! every returned triangle and ring segment; a grid requiring further interior
-//! refinement refuses. Checked spline-prism angular controls bound every ruled
-//! side normal over each complete parameter span against the rounded facets.
-//! The planar caps include facet rounding in the same angular check.
+//! every returned triangle and ring segment. Angular controls compare rounded
+//! facets with normal enclosures over their whole parameter triangles.
 
 use std::{io::Write, ops::Range};
 
@@ -34,7 +32,6 @@ pub use display::{
 mod edges;
 mod evaluate;
 mod junction;
-mod oblique_draft;
 mod periodic;
 mod planar;
 /// Unproved preview sampling, separate from certified display and export meshes.
@@ -46,7 +43,6 @@ pub use preview::{
 mod rational_atlas;
 mod reuse;
 mod ruled;
-mod spline_prism;
 mod triangulate;
 
 /// Display meshing controls. Lengths use the model's millimetres.

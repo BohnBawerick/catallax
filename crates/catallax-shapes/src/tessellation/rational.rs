@@ -413,17 +413,19 @@ impl RationalSpan {
         self.affine_hessian
     }
 
-    /// Bounds the jump in the transverse first derivative across a common knot.
+    /// Bounds the transverse first derivative jump between the end of this span
+    /// and the start of the next span, including checked periodic joins.
     ///
-    /// The two spans must share homogeneous boundary controls and the same
-    /// transverse parameter interval. Widths map unit-span derivatives into
-    /// the caller's coordinates. Bernstein differences bound the quotient
-    /// derivative on the entire common seam.
+    /// The two spans must share homogeneous boundary controls up to a common
+    /// positive scale and have the same transverse parameter interval.
+    /// `next_scale` expresses the next span in this span's homogeneous scale.
+    /// Widths map unit-span derivatives into the caller's coordinates.
     pub fn first_jump(
         &self,
         next: &Self,
         axis: usize,
         widths: [Interval; 2],
+        next_scale: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<Interval, Refusal> {
         if axis > 1 {
@@ -432,7 +434,8 @@ impl RationalSpan {
         let secondary = 1 - axis;
         if self.degree != next.degree
             || self.domain[secondary] != next.domain[secondary]
-            || self.domain[axis][1] != next.domain[axis][0]
+            || (next_scale.is_none() && self.domain[axis][1] != next.domain[axis][0])
+            || next_scale.is_some_and(|scale| scale.lo() <= 0.0 || !scale.is_finite())
             || widths.iter().any(|width| width.lo() <= 0.0)
         {
             return Err(refuse(
@@ -449,7 +452,8 @@ impl RationalSpan {
         // Translate the next span's first derivative net to this span's origin.
         // Per sample there are three translation, three squared norm, and
         // one radius product.
-        dec.charge_work(7 * (degree[secondary] as u64 + 1))?;
+        let scale_products = if next_scale.is_some() { 4 } else { 0 };
+        dec.charge_work((7 + scale_products) * (degree[secondary] as u64 + 1))?;
         let mut bound = 0.0_f64;
         for i in 0..=degree[secondary] {
             let [end, start] = if axis == 0 {
@@ -458,7 +462,10 @@ impl RationalSpan {
                 [i * v_count + degree[1], i * v_count]
             };
             let before = self.first[axis][end].map(|value| value / widths[0]);
-            let after = next.first[axis][start].map(|value| value / widths[1]);
+            let after = next.first[axis][start].map(|value| {
+                let derivative = value / widths[1];
+                next_scale.map_or(derivative, |scale| scale * derivative)
+            });
             let xyz = std::array::from_fn(|k| after[k] + delta_centre[k] * after[3] - before[k]);
             let weight = magnitude(after[3] - before[3]);
             let jump = (vector_length(xyz) + self.radius * weight) / self.min_weight;

@@ -10,8 +10,8 @@ use catallax_numbers::{
     Answered, Ball, Decider, Interval, Outcome, Rational, Refusal, StrictOrder, uncounted_memo,
 };
 use catallax_shapes::{
-    Apart, CurveId, GeomStore, Point3, PointId, SplineSupport, Surface, SurfaceId, SurfaceKind,
-    Vector3,
+    Apart, CurveId, GeomStore, Plane, Point3, PointId, SplineSupport, Surface, SurfaceId,
+    SurfaceKind, Vector3,
 };
 use std::{
     collections::VecDeque,
@@ -592,6 +592,17 @@ pub fn intersect_curve_surface_with_line_parameter(
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
     hits::with_line_parameter(geom, c, s, dec)
+}
+
+/// Unordered intersection points with a cutting plane, without contact types.
+/// `None` means the curve is contained, and an empty list means it misses.
+pub fn intersect_curve_plane_points(
+    geom: &mut GeomStore,
+    curve: CurveId,
+    plane: Plane,
+    dec: &mut Decider,
+) -> Answered<Option<Vec<PointId>>> {
+    hits::plane_points(geom, curve, plane, dec)
 }
 
 /// Whether exact controls identify a complete section of a checked Bezier extrusion.

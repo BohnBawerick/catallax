@@ -733,7 +733,7 @@ impl Plan {
                                 &thickness,
                                 dec,
                             )?,
-                            Thickness::Linear(grade) => {
+                            Thickness::Graded(grade) => {
                                 plan.graded_shell(steps[body], open, &grade, &step.id, dec)?
                             }
                         }
@@ -769,7 +769,7 @@ impl Plan {
                                 true,
                                 dec,
                             )?,
-                            Thickness::Linear(grade) => plan.graded_thicken(
+                            Thickness::Graded(grade) => plan.graded_thicken(
                                 steps[body],
                                 faces,
                                 &grade,
@@ -812,7 +812,7 @@ impl Plan {
                                 &recipe.step(body).expect("checked input").op,
                                 Operation::ThickenGraded { thickness, .. }
                                     if matches!(catallax_features::graded_wall::Thickness::new(thickness)?,
-                                        catallax_features::graded_wall::Thickness::Linear(_))
+                                        catallax_features::graded_wall::Thickness::Graded(_))
                             ) {
                             // Each named offset facet has positive area in its
                             // grade band. The other bands can only touch its edge.

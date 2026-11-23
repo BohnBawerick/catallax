@@ -1963,7 +1963,7 @@ fn evaluate_impl(
                             &step.id,
                             dec,
                         )?,
-                        Thickness::Linear(grade) => crate::distance_build::graded_shell(
+                        Thickness::Graded(grade) => crate::distance_build::graded_shell(
                             model, input.body, open, &grade, &step.id, dec,
                         )?,
                     };
@@ -1994,7 +1994,7 @@ fn evaluate_impl(
                             )?,
                             thickness,
                         ),
-                        Thickness::Linear(grade) => (
+                        Thickness::Graded(grade) => (
                             crate::distance_build::graded_thicken(
                                 model, input.body, faces, &grade, *side, &step.id, dec,
                             )?,

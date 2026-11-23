@@ -6,7 +6,7 @@ use catallax_shapes::Surface;
 use catallax_topology::{Body, BodyId, BodyKind, Face, Loop, Lump, Model, Sense, Shell};
 
 use crate::{
-    graded_wall::{Linear, opens_all, unsupported_source},
+    graded_wall::{WallGrade, opens_all, unsupported_source},
     polyhedron::{ConvexCell, PlaneFace},
     profile::sign,
     radial::RadialBand,
@@ -768,7 +768,7 @@ pub(crate) fn graded_shell(
     model: &mut Model,
     body: BodyId,
     open: &[FaceRef],
-    grade: &Linear,
+    grade: &WallGrade,
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
@@ -800,7 +800,7 @@ pub(crate) fn graded_thicken(
     model: &mut Model,
     body: BodyId,
     faces: &[FaceRef],
-    grade: &Linear,
+    grade: &WallGrade,
     side: ThickenSide,
     step: &StepId,
     dec: &mut Decider,

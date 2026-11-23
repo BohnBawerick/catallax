@@ -1,7 +1,7 @@
 //! Distance-feature reductions from the field's own constraints and face registry.
 
 use catallax_features::{
-    graded_wall::{Linear, opens_all, unsupported_source},
+    graded_wall::{WallGrade, opens_all, unsupported_source},
     polyhedron::{ConvexCell, PlaneFace},
     radial::RadialBand,
 };
@@ -736,7 +736,7 @@ impl Plan {
         &mut self,
         node: usize,
         open: &[FaceRef],
-        grade: &Linear,
+        grade: &WallGrade,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
@@ -764,7 +764,7 @@ impl Plan {
         &mut self,
         node: usize,
         faces: &[FaceRef],
-        grade: &Linear,
+        grade: &WallGrade,
         side: ThickenSide,
         step: &StepId,
         dec: &mut Decider,

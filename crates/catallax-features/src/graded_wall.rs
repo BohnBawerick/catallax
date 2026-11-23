@@ -1,24 +1,38 @@
-//! Exact normal displacements for a clamped linear thickness in part coordinates.
+//! Exact normal displacements for a clamped thickness in part coordinates.
 
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{FaceRef, Grade, Origin, Role, StepId, ThickenSide};
 use catallax_shapes::{Plane, Point3, Vector3};
 
 use crate::{
+    grade::{self, RadiusRamp},
     polyhedron::{ConvexCell, PlaneFace},
     profile::sign,
 };
+
+mod spatial;
+use spatial::Spatial;
 
 /// A positive thickness law admitted by the graded distance operations.
 pub enum Thickness {
     /// The scalar distance operation covers a constant law.
     Constant(Rational),
-    /// The nonconstant law in increasing part-axis order.
-    Linear(Box<Linear>),
+    /// A nonconstant law evaluated at the perpendicular foot on each source face.
+    Graded(WallGrade),
+}
+
+/// Nonconstant wall thickness in part coordinates.
+pub struct WallGrade {
+    law: Law,
+}
+
+enum Law {
+    Axis(Box<Linear>),
+    Spatial(Box<Spatial>),
 }
 
 /// Positive, clamped linear thickness along one part axis.
-pub struct Linear {
+struct Linear {
     axis: usize,
     anchors: [Rational; 2],
     values: [Rational; 2],
@@ -38,7 +52,7 @@ pub fn opens_all(open: &[FaceRef]) -> bool {
 }
 
 impl Thickness {
-    /// Checks positivity and the part-axis law before any geometry is attempted.
+    /// Validates the grade and its positive endpoint thicknesses.
     pub fn new(grade: &Grade) -> Result<Self, Refusal> {
         let positive = |value: &Rational| {
             if value.sign() != Sign::Positive {
@@ -50,8 +64,8 @@ impl Thickness {
                 Ok(value.clone())
             }
         };
-        Ok(match grade {
-            Grade::Constant(value) => Self::Constant(positive(value.value())?),
+        let law = match grade {
+            Grade::Constant(value) => return Ok(Self::Constant(positive(value.value())?)),
             Grade::Linear {
                 from,
                 to,
@@ -70,29 +84,111 @@ impl Thickness {
                 }
                 let axes: Vec<_> = (0..3).filter(|&i| from.0[i] != to.0[i]).collect();
                 let [axis] = *axes.as_slice() else {
-                    return Err(Refusal::new(
-                        "distance.grade-function-unsupported",
-                        "linear wall thickness anchors must differ along one part axis",
-                    ));
+                    let coordinates =
+                        |p: &catallax_recipe::Point3| p.0.each_ref().map(|n| n.value().clone());
+                    let ramp = grade::Linear::new(
+                        coordinates(from),
+                        coordinates(to),
+                        values[0].clone(),
+                        values[1].clone(),
+                    );
+                    return Ok(Self::graded(Law::Spatial(Box::new(Spatial::Linear(ramp)))));
                 };
                 let mut anchors = [from.0[axis].value().clone(), to.0[axis].value().clone()];
                 if anchors[0] > anchors[1] {
                     anchors.swap(0, 1);
                     values.swap(0, 1);
                 }
-                Self::Linear(Box::new(Linear {
+                Law::Axis(Box::new(Linear {
                     axis,
                     anchors,
                     values,
                 }))
             }
+            Grade::Point {
+                r0, r1, start, end, ..
+            }
+            | Grade::Radial {
+                r0, r1, start, end, ..
+            } => {
+                let values = [positive(start.value())?, positive(end.value())?];
+                crate::lattice::validate_distance_radii(grade, "distance.grade-invalid-radius")?;
+                if values[0] == values[1] {
+                    return Ok(Self::Constant(values[0].clone()));
+                }
+                let ramp = RadiusRamp::new([r0.value().clone(), r1.value().clone()], values);
+                let (origin, direction) = match grade {
+                    Grade::Point { centre, .. } => (&centre.0, None),
+                    Grade::Radial {
+                        origin, direction, ..
+                    } => (&origin.0, Some(&direction.0)),
+                    _ => unreachable!("point or radial grade"),
+                };
+                let coordinates =
+                    |p: &[catallax_recipe::Number; 3]| p.each_ref().map(|n| n.value().clone());
+                Law::Spatial(Box::new(Spatial::Radius {
+                    origin: coordinates(origin),
+                    direction: direction.map(coordinates),
+                    ramp: Box::new(ramp),
+                }))
+            }
             Grade::Distance { .. } => {
                 return Err(Refusal::new(
                     "distance.grade-function-unsupported",
-                    "wall thickness supports a constant or a clamped part-axis linear grade",
+                    "wall thickness needs a grade defined in part coordinates",
                 ));
             }
-        })
+        };
+        Ok(Self::graded(law))
+    }
+
+    fn graded(law: Law) -> Self {
+        Self::Graded(WallGrade { law })
+    }
+}
+
+impl WallGrade {
+    /// Upper bound on displacement, including the clamps.
+    pub fn maximum(&self) -> &Rational {
+        let (start, end) = match &self.law {
+            Law::Axis(grade) => (&grade.values[0], &grade.values[1]),
+            Law::Spatial(grade) => match grade.as_ref() {
+                Spatial::Linear(grade) => (&grade.start, &grade.end),
+                Spatial::Radius { ramp, .. } => (&ramp.values[0], &ramp.values[1]),
+            },
+        };
+        std::cmp::max(start, end)
+    }
+
+    /// Constructs the exact front or back sweep of a selected planar face.
+    pub fn thicken(
+        &self,
+        source: &ConvexCell,
+        refs: &[FaceRef],
+        side: ThickenSide,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Vec<ConvexCell>, Refusal> {
+        let index = select_face(source, refs, dec)?;
+        match &self.law {
+            Law::Axis(grade) => grade.thicken(source, index, side, step, dec),
+            Law::Spatial(grade) => grade.thicken(source, index, side, step, dec),
+        }
+    }
+
+    /// Constructs the exact cavity in an axis-aligned rectangular source.
+    pub fn cavity(
+        &self,
+        source: &ConvexCell,
+        open: &[bool],
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Vec<ConvexCell>, Refusal> {
+        let walls = box_walls(source, dec)?;
+        match &self.law {
+            Law::Axis(grade) => grade.cavity(source, open, &walls, step, dec),
+            Law::Spatial(grade) => grade.cavity(source, open, &walls, step, dec),
+        }
     }
 }
 
@@ -142,11 +238,6 @@ enum Band {
 }
 
 impl Linear {
-    /// Upper bound on displacement, including the clamped ends.
-    pub fn maximum(&self) -> &Rational {
-        std::cmp::max(&self.values[0], &self.values[1])
-    }
-
     fn law(&self, band: Band, coordinate: &Real) -> (Real, Real) {
         let slope = match band {
             Band::Low => return (self.values[0].clone().into(), Real::zero()),
@@ -214,33 +305,14 @@ impl Linear {
 
     /// A single convex planar face's swept solid, with the grade evaluated at
     /// the perpendicular projection onto the source face.
-    pub fn thicken(
+    fn thicken(
         &self,
         source: &ConvexCell,
-        refs: &[FaceRef],
+        index: usize,
         side: ThickenSide,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<Vec<ConvexCell>, Refusal> {
-        let selected: Vec<_> = source
-            .select(refs, dec)?
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, selected)| selected.then_some(i))
-            .collect();
-        let [index] = *selected.as_slice() else {
-            return Err(if selected.is_empty() {
-                Refusal::new(
-                    "reference.lost-face",
-                    "thicken needs a surviving selected face",
-                )
-            } else {
-                Refusal::new(
-                    "distance.grade-selection-unsupported",
-                    "graded thicken needs exactly one selected face",
-                )
-            });
-        };
         let base = &source.faces[index].plane;
         let axis = basis(self.axis);
         let outward = unit(&base.normal, dec)?;
@@ -274,59 +346,23 @@ impl Linear {
     /// The box cavity. A kept wall tests the clearance along its inward normal
     /// at the perpendicular foot on that source face. Open walls bound the
     /// cavity at the original box planes.
-    pub fn cavity(
+    fn cavity(
         &self,
         source: &ConvexCell,
         open: &[bool],
+        walls: &[[usize; 2]; 3],
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<Vec<ConvexCell>, Refusal> {
-        let mut walls = [[None; 2]; 3];
-        if source.faces.len() != 6 || source.vertices().len() != 8 {
-            return Err(unsupported_source(
-                "graded shell needs an axis-aligned rectangular solid",
-            ));
-        }
-        for (i, face) in source.faces.iter().enumerate() {
-            let n = &face.plane.normal;
-            let mut components = Vec::new();
-            for (axis, component) in [&n.x, &n.y, &n.z].into_iter().enumerate() {
-                let direction = sign(component, dec)?;
-                if direction != Sign::Zero {
-                    components.push((axis, usize::from(direction == Sign::Positive)));
-                }
-            }
-            let [(axis, side)] = *components.as_slice() else {
-                return Err(unsupported_source(
-                    "graded shell needs an axis-aligned rectangular solid",
-                ));
-            };
-            if walls[axis][side].replace(i).is_some() {
-                return Err(unsupported_source(
-                    "graded shell needs one source face on each side of the box",
-                ));
-            }
-        }
         let coordinate = |axis: usize, side: usize| {
-            axis_coordinate(
-                &source.faces[walls[axis][side].expect("six distinct box walls")]
-                    .plane
-                    .origin,
-                axis,
-            )
-        };
-        let clearance = || {
-            Refusal::new(
-                "distance.grade-clearance",
-                "graded shell needs positive cavity width between opposing walls throughout the cavity",
-            )
+            axis_coordinate(&source.faces[walls[axis][side]].plane.origin, axis)
         };
         let mut limits = [
             coordinate(self.axis, 0).clone(),
             coordinate(self.axis, 1).clone(),
         ];
         for (side, limit) in limits.iter_mut().enumerate() {
-            if !open[walls[self.axis][side].expect("six distinct box walls")] {
+            if !open[walls[self.axis][side]] {
                 let value = self.sample(limit, dec)?;
                 *limit = if side == 0 {
                     &*limit + &value
@@ -349,10 +385,7 @@ impl Linear {
             .enumerate()
             .filter(|(axis, _)| *axis != self.axis)
         {
-            let kept = pair
-                .iter()
-                .filter(|wall| !open[wall.expect("six distinct box walls")])
-                .count();
+            let kept = pair.iter().filter(|&&wall| !open[wall]).count();
             let gap = coordinate(axis, 1) - coordinate(axis, 0);
             if sign(&(&gap - &(max * &Real::from_i64(kept as i64))), dec)? != Sign::Positive {
                 return Err(clearance());
@@ -395,4 +428,64 @@ impl Linear {
             dec,
         )
     }
+}
+
+fn select_face(source: &ConvexCell, refs: &[FaceRef], dec: &mut Decider) -> Result<usize, Refusal> {
+    let selected: Vec<_> = source
+        .select(refs, dec)?
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, selected)| selected.then_some(i))
+        .collect();
+    let [index] = *selected.as_slice() else {
+        return Err(if selected.is_empty() {
+            Refusal::new(
+                "reference.lost-face",
+                "thicken needs a surviving selected face",
+            )
+        } else {
+            Refusal::new(
+                "distance.grade-selection-unsupported",
+                "graded thicken needs exactly one selected face",
+            )
+        });
+    };
+    Ok(index)
+}
+
+fn box_walls(source: &ConvexCell, dec: &mut Decider) -> Result<[[usize; 2]; 3], Refusal> {
+    let mut walls = [[None; 2]; 3];
+    if source.faces.len() != 6 || source.vertices().len() != 8 {
+        return Err(unsupported_source(
+            "graded shell needs an axis-aligned rectangular solid",
+        ));
+    }
+    for (i, face) in source.faces.iter().enumerate() {
+        let n = &face.plane.normal;
+        let mut components = Vec::new();
+        for (axis, component) in [&n.x, &n.y, &n.z].into_iter().enumerate() {
+            let direction = sign(component, dec)?;
+            if direction != Sign::Zero {
+                components.push((axis, usize::from(direction == Sign::Positive)));
+            }
+        }
+        let [(axis, side)] = *components.as_slice() else {
+            return Err(unsupported_source(
+                "graded shell needs an axis-aligned rectangular solid",
+            ));
+        };
+        if walls[axis][side].replace(i).is_some() {
+            return Err(unsupported_source(
+                "graded shell needs one source face on each side of the box",
+            ));
+        }
+    }
+    Ok(walls.map(|pair| pair.map(|wall| wall.expect("six distinct box walls"))))
+}
+
+fn clearance() -> Refusal {
+    Refusal::new(
+        "distance.grade-clearance",
+        "graded shell needs positive cavity width between opposing walls throughout the cavity",
+    )
 }

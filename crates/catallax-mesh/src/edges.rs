@@ -437,6 +437,7 @@ fn plan_collar_rail(
     loop {
         let mut split = None;
         for i in 0..leaves.len() {
+            dec.charge_work(1)?;
             let j = (i + leaves.len() - 1) % leaves.len();
             let [a, b] = leaves[j].indices;
             let [start, c] = leaves[i].indices;
@@ -448,6 +449,7 @@ fn plan_collar_rail(
             let samples = key.map(|index| positions[index]);
             let mut fits = true;
             for incident in charts {
+                dec.charge_work(1)?;
                 if let Some(row) = incident.fixed_v
                     && matches!(
                         incident.chart.surface,
@@ -470,6 +472,7 @@ fn plan_collar_rail(
             checked.insert(key);
         }
         let Some(i) = split else {
+            dec.charge_work(leaves.len() as u64)?;
             let mut indices = vec![leaves[0].indices[0]];
             let mut error = Rational::zero();
             for leaf in leaves {
@@ -506,6 +509,7 @@ fn plan_collar_rail(
             None,
             leaf.endpoints.each_ref(),
         )?;
+        dec.charge_work((leaves.len() - i - 1) as u64)?;
         leaves.splice(i..=i, children);
     }
 }

@@ -399,6 +399,30 @@ fn exact_empty_boolean_identity_cannot_regain_material_under_another_offset() {
 }
 
 #[test]
+fn short_offset_prism_display_keeps_the_height_margin() {
+    let certified = build(&recipe("-1/4", "5001/10000"));
+    let built = certified.built();
+    let mut dec = Decider::default();
+    let prism = SplinePrism::check(&built.model, built.result, &mut dec).unwrap();
+    let height = dec.enclose_at(prism.spline().height(), 128).unwrap();
+    assert!(height.contains(&r("1/10000")));
+    let limit = height.lo().mul_pow2(-4);
+    let mesh = catallax_mesh::mesh_body(&built.model, built.result, &Default::default(), &mut dec)
+        .unwrap()
+        .value;
+    let side = mesh
+        .faces
+        .iter()
+        .find(|f| f.face == prism.faces()[2])
+        .unwrap();
+    assert!(side.max_chord_error <= limit, "side chord exceeds {limit}");
+    assert!(
+        mesh.edges.iter().all(|edge| edge.max_chord_error <= limit),
+        "rail chord exceeds {limit}"
+    );
+}
+
+#[test]
 fn spline_display_is_watertight_shared_and_within_model_relative_accuracy() {
     let options = catallax_mesh::MeshOptions {
         chord_tolerance: r("1/1000"),

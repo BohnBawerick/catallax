@@ -135,19 +135,103 @@ struct FaceBuilder<'a> {
 
 // A band refinement point may enter only if every fixed segment's disk
 // excludes it. The interval comparison is allowed to decline a tangent point.
-fn clears_constraints(at: Point2<f64>, segments: &[[Point2<f64>; 2]]) -> bool {
+fn clears_constraints(
+    at: Point2<f64>,
+    segments: &[[Point2<f64>; 2]],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let point = |x| Interval::point(x).unwrap();
     let x = point(at.x);
     let y = point(at.y);
-    segments.iter().all(|[a, b]| {
+    for [a, b] in segments {
+        dec.charge_work(1)?;
         if (at.x <= a.x.min(b.x) || at.x >= a.x.max(b.x))
             && (at.y <= a.y.min(b.y) || at.y >= a.y.max(b.y))
         {
-            return true;
+            continue;
         }
         let dot = (x - point(a.x)) * (x - point(b.x)) + (y - point(a.y)) * (y - point(b.y));
-        dot.lo() >= 0.0
-    })
+        if dot.lo() >= 0.0 {
+            continue;
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+#[cfg(test)]
+mod traversal_tests {
+    use super::*;
+
+    #[test]
+    fn fixed_trim_checks_charge_every_visited_segment() {
+        let at = Point2::new(0.0, 0.0);
+        let segment = [Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
+        let segments = [segment; 17];
+        let mut dec = Decider::default();
+        let (clear, work) = catallax_numbers::with_operation_budget(34, || {
+            clears_constraints(at, &segments, &mut dec)
+        });
+        assert!(clear.unwrap());
+        assert_eq!(dec.stats().work, 17);
+        assert_eq!(work.used, 34);
+        assert!(!work.exhausted);
+        let (refused, work) = catallax_numbers::with_operation_budget(33, || {
+            clears_constraints(at, &segments, &mut dec)
+        });
+        assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
+        assert!(work.exhausted);
+    }
+}
+
+fn separated(cdt: &Cdt, at: Point2<f64>, rho: f64, dec: &mut Decider) -> Result<bool, Refusal> {
+    dec.charge_work(1)?;
+    let lower = Point2::new((at.x - rho).next_down(), (at.y - rho).next_down());
+    let upper = Point2::new((at.x + rho).next_up(), (at.y + rho).next_up());
+    Ok(cdt.get_vertices_in_rectangle(lower, upper).next().is_none())
+}
+
+struct FixedTrim<'a> {
+    cdt: &'a Cdt,
+    segments: &'a [[Point2<f64>; 2]],
+    separation: f64,
+}
+
+impl FixedTrim<'_> {
+    fn admits(&self, at: Point2<f64>, labels: &[bool], dec: &mut Decider) -> Result<bool, Refusal> {
+        dec.charge_work(1)?;
+        let inside = match self.cdt.locate(at) {
+            PositionInTriangulation::OnFace(face) => {
+                labels[face.index()]
+                    && self
+                        .cdt
+                        .face(face)
+                        .adjacent_edges()
+                        .iter()
+                        .any(|edge| !edge.is_constraint_edge())
+            }
+            PositionInTriangulation::OnEdge(edge) => {
+                !self.cdt.is_constraint_edge(edge.as_undirected())
+                    && labels[self.cdt.directed_edge(edge).face().index()]
+            }
+            _ => false,
+        };
+        Ok(inside
+            && clears_constraints(at, self.segments, dec)?
+            && separated(self.cdt, at, self.separation, dec)?)
+    }
+}
+
+fn refinement_uv(chart: &Chart, finite_band: bool, uv: Uv, round: bool) -> Uv {
+    let mut uv = if finite_band { uv } else { chart.canonical(uv) };
+    if round || finite_band {
+        for (value, periodic) in uv.iter_mut().zip(chart.periodic) {
+            if periodic {
+                *value = chart::quantize_turn(*value);
+            }
+        }
+    }
+    uv
 }
 
 impl FaceBuilder<'_> {
@@ -342,19 +426,7 @@ impl FaceBuilder<'_> {
     }
 
     fn refinement_uv(&self, uv: Uv, round: bool) -> Uv {
-        let mut uv = if self.band.is_some() {
-            uv
-        } else {
-            self.chart.canonical(uv)
-        };
-        if round || self.band.is_some() {
-            for (value, periodic) in uv.iter_mut().zip(self.chart.periodic) {
-                if periodic {
-                    *value = chart::quantize_turn(*value);
-                }
-            }
-        }
-        uv
+        refinement_uv(self.chart, self.band.is_some(), uv, round)
     }
 
     fn shifts(&self) -> impl Iterator<Item = Uv> + use<> {
@@ -366,7 +438,11 @@ impl FaceBuilder<'_> {
     fn boundary(&mut self, segments: &[Segment], sense: Sense) -> Result<(), Refusal> {
         let mut nodes = Vec::new();
         let mut indices = BTreeMap::new();
+        let protect_band = self.protects_band();
         for &(mut a, mut b, first, last) in segments {
+            if protect_band {
+                self.dec.charge_work(1)?;
+            }
             for i in 0..2 {
                 if self.tiled()[i] {
                     let shift = libm::floor(a[i]);
@@ -394,7 +470,8 @@ impl FaceBuilder<'_> {
                 self.interior_left.insert(pair);
             }
         }
-        let anchors = if self.protects_band() {
+        let anchors = if protect_band {
+            self.dec.charge_work(segments.len() as u64)?;
             segments
                 .iter()
                 .map(|&(a, b, _, _)| {
@@ -406,8 +483,10 @@ impl FaceBuilder<'_> {
             Vec::new()
         };
         let seam_collars = if let Some(band) = self.band {
-            let caps = if self.protects_band() && self.options.angular_deviation.is_some() {
-                Some(Self::seam_collar_points(band, segments, &anchors)?)
+            let caps = if protect_band && self.options.angular_deviation.is_some() {
+                Some(Self::seam_collar_points(
+                    band, segments, &anchors, self.dec,
+                )?)
             } else {
                 None
             };
@@ -416,7 +495,8 @@ impl FaceBuilder<'_> {
         } else {
             None
         };
-        if self.protects_band() {
+        if protect_band {
+            self.dec.charge_work(2 * self.interior_left.len() as u64)?;
             self.protected_trim = self
                 .interior_left
                 .iter()
@@ -440,23 +520,25 @@ impl FaceBuilder<'_> {
         band: BandCut,
         rails: &[Segment],
         anchors: &[Uv],
+        dec: &mut Decider,
     ) -> Result<[Uv; 2], Refusal> {
         let [lo, hi] = band.ends.map(|(uv, _)| uv[0]);
         let at = |v| lo + (hi - lo) * v;
         let mut caps = [[0.0; 2]; 2];
         for (row, (start, _)) in band.ends.into_iter().enumerate() {
-            let find_anchor = |end| {
+            let mut find_anchor = |end| {
                 let end = key(end);
-                rails
-                    .iter()
-                    .zip(anchors)
-                    .find_map(|(&(a, b, _, _), &apex)| {
-                        (key(a) == end || key(b) == end).then_some(apex)
-                    })
+                for (&(a, b, _, _), &apex) in rails.iter().zip(anchors) {
+                    dec.charge_work(1)?;
+                    if key(a) == end || key(b) == end {
+                        return Ok(Some(apex));
+                    }
+                }
+                Ok::<_, Refusal>(None)
             };
-            let right = find_anchor(start)
+            let right = find_anchor(start)?
                 .ok_or_else(|| failure("seam collar has no first rail segment"))?;
-            let mut left = find_anchor([start[0] + 1.0, start[1]])
+            let mut left = find_anchor([start[0] + 1.0, start[1]])?
                 .ok_or_else(|| failure("seam collar has no last rail segment"))?;
             left[0] -= 1.0;
             let x = at(left[1]) - left[0];
@@ -487,19 +569,23 @@ impl FaceBuilder<'_> {
         }
         let mut neighbors = BTreeMap::<usize, [Option<Neighbor>; 2]>::new();
         for (&(a, b, _, _), inward) in rails.iter().zip(anchors) {
+            self.dec.charge_work(1)?;
             let at = self.place(inward);
             let rho = self.separation;
             let x = (at.x - rho).next_down()..=(at.x + rho).next_up();
             let y = (at.y - rho).next_down()..=(at.y + rho).next_up();
             if !chart::positive_turn([hi, 1.0], [lo, 0.0], inward)
                 || !chart::positive_turn([lo + 1.0, 0.0], [hi + 1.0, 1.0], inward)
-                || !clears_constraints(at, &self.protected_trim)
+                || !clears_constraints(at, &self.protected_trim, self.dec)?
                 || !(a[0].min(b[0]) < inward[0] && inward[0] < a[0].max(b[0]))
-                || nodes
-                    .iter()
-                    .any(|node| x.contains(&node.at.x) && y.contains(&node.at.y))
             {
                 return Err(failure("periodic band collar encroaches on its trim"));
+            }
+            for node in &*nodes {
+                self.dec.charge_work(1)?;
+                if x.contains(&node.at.x) && y.contains(&node.at.y) {
+                    return Err(failure("periodic band collar encroaches on its trim"));
+                }
             }
             let ends = [a, b].map(|uv| {
                 let at = self.place(uv);
@@ -533,10 +619,15 @@ impl FaceBuilder<'_> {
         let uv = |i: usize| [nodes[i].uv.x, nodes[i].uv.y];
         if let Some((caps, seam)) = seam_collars {
             for (row, cap) in caps.into_iter().enumerate() {
-                let tip = seam
-                    .iter()
-                    .position(|pair| (nodes[pair[0]].uv.y - cap[1]) == 0.0)
-                    .ok_or_else(|| failure("seam collar has no planned tip"))?;
+                let mut tip = None;
+                for (index, pair) in seam.iter().enumerate() {
+                    self.dec.charge_work(1)?;
+                    if nodes[pair[0]].uv.y == cap[1] {
+                        tip = Some(index);
+                        break;
+                    }
+                }
+                let tip = tip.ok_or_else(|| failure("seam collar has no planned tip"))?;
                 let end = if row == 0 { 0 } else { seam.len() - 1 };
                 for side in 0..2 {
                     let apex = neighbors[&seam[end][side]]
@@ -546,6 +637,7 @@ impl FaceBuilder<'_> {
                         .expect("one collar apex at each seam end")
                         .apex;
                     for pair in seam[end.min(tip)..=end.max(tip)].windows(2) {
+                        self.dec.charge_work(1)?;
                         let mut triangle = [pair[0][side], pair[1][side], apex];
                         let [a, b, c] = triangle.map(uv);
                         if !chart::positive_turn(a, b, c) {
@@ -578,6 +670,7 @@ impl FaceBuilder<'_> {
             }
         }
         for (rail, [left, right]) in neighbors {
+            self.dec.charge_work(1)?;
             let (Some(left), Some(right)) = (left, right) else {
                 continue;
             };
@@ -598,40 +691,6 @@ impl FaceBuilder<'_> {
             }
         }
         Ok(())
-    }
-
-    fn outside_collar(
-        &self,
-        face: spade::handles::FixedFaceHandle<spade::handles::InnerTag>,
-    ) -> bool {
-        self.cdt
-            .face(face)
-            .adjacent_edges()
-            .iter()
-            .any(|edge| !edge.is_constraint_edge())
-    }
-
-    fn separated(&self, at: Point2<f64>) -> bool {
-        let rho = self.separation;
-        let lower = Point2::new((at.x - rho).next_down(), (at.y - rho).next_down());
-        let upper = Point2::new((at.x + rho).next_up(), (at.y + rho).next_up());
-        self.cdt
-            .get_vertices_in_rectangle(lower, upper)
-            .next()
-            .is_none()
-    }
-
-    fn admissible(&self, uv: Uv, labels: &[bool]) -> bool {
-        let at = self.place(uv);
-        let inside = match self.cdt.locate(at) {
-            PositionInTriangulation::OnFace(f) => labels[f.index()] && self.outside_collar(f),
-            PositionInTriangulation::OnEdge(e) => {
-                !self.cdt.is_constraint_edge(e.as_undirected())
-                    && labels[self.cdt.directed_edge(e).face().index()]
-            }
-            _ => false,
-        };
-        inside && clears_constraints(at, &self.protected_trim) && self.separated(at)
     }
 
     fn seam(
@@ -661,6 +720,7 @@ impl FaceBuilder<'_> {
             })
             .transpose()?;
         let [(lo, lo_index), (hi, hi_index)] = band.ends;
+        self.dec.charge_work(anchors.len() as u64)?;
         let anchor_positions: Vec<_> = anchors.iter().map(|&uv| self.place(uv)).collect();
         let mut points = vec![lo];
         let mut pending = if let Some([a, b]) = caps {
@@ -694,9 +754,14 @@ impl FaceBuilder<'_> {
             ];
             // Both seam copies use the stricter subdivision. Resolve their
             // encroachment before either one becomes a fixed constraint.
-            let clear = anchor_positions
-                .iter()
-                .all(|&at| clears_constraints(at, &cuts));
+            let mut clear = true;
+            for &at in &anchor_positions {
+                self.dec.charge_work(1)?;
+                if !clears_constraints(at, &cuts, self.dec)? {
+                    clear = false;
+                    break;
+                }
+            }
             if clear
                 && within_length
                 && spline.seam_within([a, middle, b], chord, cosine, self.dec)?
@@ -995,20 +1060,29 @@ impl FaceBuilder<'_> {
             // as for analytic trim lattices.
             let labels = self.labels()?;
             let protect_band = self.protects_band();
-            grid.retain(|&uv| {
-                if protect_band {
-                    self.admissible(uv, &labels)
-                } else {
-                    match self.cdt.locate(self.place(uv)) {
-                        PositionInTriangulation::OnFace(f) => labels[f.index()],
-                        PositionInTriangulation::OnEdge(e) => {
-                            !self.cdt.is_constraint_edge(e.as_undirected())
-                                && labels[self.cdt.directed_edge(e).face().index()]
-                        }
-                        _ => false,
+            if protect_band {
+                let trim = FixedTrim {
+                    cdt: &self.cdt,
+                    segments: &self.protected_trim,
+                    separation: self.separation,
+                };
+                let mut accepted = Vec::with_capacity(grid.len());
+                for uv in grid {
+                    if trim.admits(self.place(uv), &labels, self.dec)? {
+                        accepted.push(uv);
                     }
                 }
-            });
+                grid = accepted;
+            } else {
+                grid.retain(|&uv| match self.cdt.locate(self.place(uv)) {
+                    PositionInTriangulation::OnFace(f) => labels[f.index()],
+                    PositionInTriangulation::OnEdge(e) => {
+                        !self.cdt.is_constraint_edge(e.as_undirected())
+                            && labels[self.cdt.directed_edge(e).face().index()]
+                    }
+                    _ => false,
+                });
+            }
             let at_x = |uv: Uv| {
                 if self.collapsed_station.is_some() {
                     self.place(uv).x
@@ -1039,7 +1113,8 @@ impl FaceBuilder<'_> {
                 }
             }
             for uv in grid {
-                if protect_band && !self.separated(self.place(uv)) {
+                if protect_band && !separated(&self.cdt, self.place(uv), self.separation, self.dec)?
+                {
                     continue;
                 }
                 if !protected.contains(&key(uv)) {
@@ -1568,15 +1643,36 @@ impl FaceBuilder<'_> {
         };
         let mut certificates = BTreeMap::<[usize; 3], (Rational, Rational)>::new();
         let mut angular_failures = BTreeMap::new();
+        let chart = self.chart;
+        let finite_band = self.band.is_some();
+        let stretch = self.stretch;
+        let unproved = self.unproved;
+        let place_band = |[u, v]: Uv| {
+            let point = Point2::new(u, v * stretch);
+            if unproved {
+                spade::mitigate_underflow(point)
+            } else {
+                point
+            }
+        };
+        let round = |uv| refinement_uv(chart, finite_band, uv, true);
         for _ in 0..48 {
             self.dec.check_deadline()?;
             let labels = self.labels()?;
+            let trim = FixedTrim {
+                cdt: &self.cdt,
+                segments: &self.protected_trim,
+                separation: self.separation,
+            };
             let mut pending = BTreeMap::new();
             let mut angular_rows = BTreeSet::new();
             let mut triangles = Vec::new();
             let mut maximum = Rational::zero();
             let mut aspect = Rational::zero();
             for f in self.cdt.inner_faces() {
+                if protect_band {
+                    self.dec.charge_work(1)?;
+                }
                 if !labels[f.index()] {
                     continue;
                 }
@@ -1709,77 +1805,80 @@ impl FaceBuilder<'_> {
                 }
                 let station = self.collapsed_station;
                 let split_edge = self.band.is_some() || collapsed_station;
-                let refine_at = |builder: &Self, prefer_transverse: bool| {
-                    if !split_edge {
-                        return center;
-                    }
-                    if prefer_transverse {
-                        let split = f
-                            .adjacent_edges()
-                            .into_iter()
-                            .filter(|edge| !edge.is_constraint_edge())
-                            .filter_map(|edge| {
+                let refine_at =
+                    |prefer_transverse: bool, dec: &mut Decider| -> Result<Uv, Refusal> {
+                        if !split_edge {
+                            return Ok(center);
+                        }
+                        if prefer_transverse {
+                            let mut best = None::<(f64, Uv)>;
+                            for edge in f
+                                .adjacent_edges()
+                                .into_iter()
+                                .filter(|edge| !edge.is_constraint_edge())
+                            {
                                 let a = *edge.from().data();
                                 let b = *edge.to().data();
                                 let span = (a.uv.y - b.uv.y).abs();
                                 if span == 0.0 {
-                                    return None;
+                                    continue;
                                 }
-                                // The midpoint can encroach while a point
-                                // farther along this same edge clears the trim.
-                                [0.5, 0.25, 0.75, 0.125, 0.875, 0.0625, 0.9375]
-                                    .into_iter()
-                                    .map(|weight| {
-                                        let uv = [
-                                            a.uv.x + weight * (b.uv.x - a.uv.x),
-                                            a.uv.y + weight * (b.uv.y - a.uv.y),
-                                        ];
-                                        builder.refinement_uv(uv, true)
-                                    })
-                                    .find(|&point| {
-                                        matches!(
-                                            builder.cdt.locate(builder.place(point)),
-                                            PositionInTriangulation::OnEdge(found)
-                                                if found.as_undirected() == edge.fix().as_undirected()
-                                        ) && builder.admissible(point, &labels)
-                                    })
-                                    .map(|point| (span, point))
-                            })
-                            .max_by(|a, b| a.0.total_cmp(&b.0));
-                        if let Some((_, point)) = split {
-                            // Inserting on the free edge removes it from the CDT.
-                            return point;
+                                // The midpoint can encroach while a point farther
+                                // along this same edge clears the trim.
+                                for weight in [0.5, 0.25, 0.75, 0.125, 0.875, 0.0625, 0.9375] {
+                                    dec.charge_work(1)?;
+                                    let point = round([
+                                        a.uv.x + weight * (b.uv.x - a.uv.x),
+                                        a.uv.y + weight * (b.uv.y - a.uv.y),
+                                    ]);
+                                    let at = place_band(point);
+                                    if matches!(
+                                        trim.cdt.locate(at),
+                                        PositionInTriangulation::OnEdge(found)
+                                            if found.as_undirected() == edge.fix().as_undirected()
+                                    ) && trim.admits(at, &labels, dec)?
+                                    {
+                                        if best.is_none_or(|(previous, _)| span >= previous) {
+                                            best = Some((span, point));
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            if let Some((_, point)) = best {
+                                // Inserting on the free edge removes it from the CDT.
+                                return Ok(point);
+                            }
                         }
-                    }
-                    // A centroid can leave the long edge of a thin facet
-                    // intact. Split a free edge so its chord span shrinks.
-                    let point = f
-                        .adjacent_edges()
-                        .into_iter()
-                        .filter(|edge| !edge.is_constraint_edge())
-                        .map(|edge| {
-                            let a = *edge.from().data();
-                            let b = *edge.to().data();
-                            let length = libm::hypot(a.at.x - b.at.x, a.at.y - b.at.y);
-                            (length, Self::midpoint(station, a, b))
-                        })
-                        .max_by(|a, b| a.0.total_cmp(&b.0))
-                        .map_or(center, |(_, point)| point);
-                    if !protect_band {
-                        return point;
-                    }
-                    let at = f.circumcenter();
-                    let circumcenter = [at.x, at.y / builder.stretch];
-                    [circumcenter, point, center]
-                        .map(|uv| builder.refinement_uv(uv, true))
-                        .into_iter()
-                        .find(|&uv| {
-                            uv[0].is_finite()
+                        // A centroid can leave the long edge of a thin facet
+                        // intact. Split a free edge so its chord span shrinks.
+                        let point = f
+                            .adjacent_edges()
+                            .into_iter()
+                            .filter(|edge| !edge.is_constraint_edge())
+                            .map(|edge| {
+                                let a = *edge.from().data();
+                                let b = *edge.to().data();
+                                let length = libm::hypot(a.at.x - b.at.x, a.at.y - b.at.y);
+                                (length, Self::midpoint(station, a, b))
+                            })
+                            .max_by(|a, b| a.0.total_cmp(&b.0))
+                            .map_or(center, |(_, point)| point);
+                        if !protect_band {
+                            return Ok(point);
+                        }
+                        let at = f.circumcenter();
+                        let circumcenter = [at.x, at.y / stretch];
+                        for uv in [circumcenter, point, center].map(round) {
+                            if uv[0].is_finite()
                                 && uv[1].is_finite()
-                                && builder.admissible(uv, &labels)
-                        })
-                        .unwrap_or(center)
-                };
+                                && trim.admits(place_band(uv), &labels, dec)?
+                            {
+                                return Ok(uv);
+                            }
+                        }
+                        Ok(center)
+                    };
                 let mut error = if self.unproved {
                     (filtered.hi() <= filtered_tolerance.lo()).then(Rational::zero)
                 } else {
@@ -1816,7 +1915,7 @@ impl FaceBuilder<'_> {
                     }
                 }
                 let Some(error) = error else {
-                    let center = self.refinement_uv(refine_at(self, false), true);
+                    let center = round(refine_at(false, self.dec)?);
                     pending.insert(key(center), center);
                     continue;
                 };
@@ -1862,8 +1961,7 @@ impl FaceBuilder<'_> {
                     };
                 }
                 if !angular_reached {
-                    let center =
-                        self.refinement_uv(refine_at(self, protect_band && angle_violation), true);
+                    let center = round(refine_at(protect_band && angle_violation, self.dec)?);
                     if protect_band
                         && angle_violation
                         && let Some(spline) = spline
@@ -1902,10 +2000,12 @@ impl FaceBuilder<'_> {
                 // the next column of an aligned grid. Split the matching
                 // free edges in the strip and the matching column immediately
                 // beyond each end, while their endpoints still exist.
+                self.dec.charge_work(angular_rows.len() as u64)?;
                 let active_ranges: BTreeSet<_> =
                     angular_rows.iter().map(|&(_, range)| range).collect();
                 let mut columns = BTreeMap::<_, Vec<_>>::new();
                 for edge in self.cdt.undirected_edges() {
+                    self.dec.charge_work(1)?;
                     if edge.is_constraint_edge() {
                         continue;
                     }
@@ -1923,6 +2023,7 @@ impl FaceBuilder<'_> {
                 for columns in columns.values_mut() {
                     columns.sort_unstable_by(|a, b| a.0[0].total_cmp(&b.0[0]));
                     for (i, &(point, target, active)) in columns.iter().enumerate() {
+                        self.dec.charge_work(1)?;
                         let neighbor = i.checked_sub(1).is_some_and(|j| columns[j].2)
                             || columns.get(i + 1).is_some_and(|column| column.2);
                         if !active && !neighbor {
@@ -1931,7 +2032,7 @@ impl FaceBuilder<'_> {
                         if matches!(
                             self.cdt.locate(self.place(point)),
                             PositionInTriangulation::OnEdge(found) if found.as_undirected() == target
-                        ) && self.admissible(point, &labels)
+                        ) && trim.admits(place_band(point), &labels, self.dec)?
                         {
                             pending.insert(key(point), point);
                         }
@@ -1948,7 +2049,13 @@ impl FaceBuilder<'_> {
                 ));
             }
             if protect_band {
-                pending.retain(|_, point| self.admissible(*point, &labels));
+                let mut accepted = BTreeMap::new();
+                for (key, point) in pending {
+                    if trim.admits(place_band(point), &labels, self.dec)? {
+                        accepted.insert(key, point);
+                    }
+                }
+                pending = accepted;
                 if pending.is_empty() {
                     return Err(failure(
                         "periodic band has no refinement point clear of its fixed trim",
@@ -1957,7 +2064,9 @@ impl FaceBuilder<'_> {
             }
             let mut added = false;
             for center in pending.into_values() {
-                if protect_band && !self.separated(self.place(center)) {
+                if protect_band
+                    && !separated(&self.cdt, place_band(center), self.separation, self.dec)?
+                {
                     continue;
                 }
                 for shift in self.shifts() {
@@ -2741,6 +2850,33 @@ fn build_junction(
         })
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
     constrain_lens_chord(model, &mut charts, options, dec)?;
+    constrain_annular_chord(model, body, &mut charts, options, dec)?;
+    for chart in charts.values_mut() {
+        let Surface::BSpline(SplineSupport::EllipticOffset(spline)) = &chart.surface else {
+            continue;
+        };
+        let Surface::EllipticCylinder(original) = spline.definition().original() else {
+            unreachable!("checked elliptic sweep");
+        };
+        let radius = dec
+            .enclose_at(
+                &(&original.minor_sq.sqrt()
+                    - spline.definition().distance()
+                    - Real::from_rational(spline.bound().upper.clone())),
+                chart::BITS,
+            )?
+            .lo();
+        let height = dec.enclose_at(spline.height(), chart::BITS)?.lo();
+        let goal = radius.min(height).mul_pow2(-4);
+        if goal <= Rational::zero() {
+            return Err(failure(
+                "display needs a positive proved interior/height margin",
+            ));
+        }
+        if goal < options.chord_tolerance {
+            chart.chord_goal = Some(goal);
+        }
+    }
     let mut boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
     let boundary_limit = boundaries.mesh.positions.len();
     let mut prior_chords = BTreeSet::new();
@@ -2856,6 +2992,40 @@ fn build_junction(
     }
     compact(&mut boundaries.mesh);
     Ok((boundaries.mesh, boundaries.marks))
+}
+
+fn constrain_annular_chord(
+    model: &Model,
+    body: BodyId,
+    charts: &mut BTreeMap<FaceId, Chart>,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    if !charts.iter().any(|(&face, chart)| {
+        model.face(face).sense == Sense::Reversed
+            && matches!(
+                chart.surface,
+                Surface::BSpline(SplineSupport::ObliqueDraft(_))
+            )
+    }) {
+        return Ok(());
+    }
+    let annulus = catallax_topology::DraftedCylinder::check(model, body, dec)?;
+    let clearance = annulus
+        .wall_clearance(dec)?
+        .ok_or_else(|| failure("oblique annulus is missing a wall clearance bound"))?;
+    let goal = dec.enclose_at(&clearance, chart::BITS)?.lo().mul_pow2(-3);
+    if goal <= Rational::zero() {
+        return Err(failure(
+            "display needs positive proved annular wall clearance",
+        ));
+    }
+    if goal < options.chord_tolerance {
+        for chart in charts.values_mut() {
+            chart.chord_goal = Some(goal.clone());
+        }
+    }
+    Ok(())
 }
 
 fn constrain_lens_chord(

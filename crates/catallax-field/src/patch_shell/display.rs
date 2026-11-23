@@ -11,8 +11,6 @@ use crate::{
     display::{Mesh, Options, Triangle},
 };
 
-type Cell = [[f64; 2]; 2];
-
 struct Sample {
     position: [f64; 3],
     error: Rational,
@@ -71,18 +69,61 @@ impl Shell {
                 == Sign::Negative,
             vertices: BTreeMap::new(),
         };
+        let mut sides = BTreeMap::new();
+        for (face, &id) in self.faces.iter().zip(faces) {
+            if let Face::Patch(patch) = face {
+                let carrier = patch.support.carrier();
+                let spans = rational_spans(carrier, dec)?;
+                let [span]: [RationalSpan; 1] = spans.try_into().map_err(|_| unsupported_loft())?;
+                if carrier.degrees() != [1, 1]
+                    || carrier
+                        .weights()
+                        .iter()
+                        .any(|w| w.as_rational() != Some(Rational::one()))
+                {
+                    return Err(unsupported_loft());
+                }
+                sides.insert(id.index(), span.affine_hessian());
+            }
+        }
+        // Every side uses the same dyadic fractions along the two section
+        // polygons. Its other two edges are straight and need only endpoints.
+        let half_tolerance = Interval::from_rational(&options.tolerance.mul_pow2(-1));
+        let mut columns = 1_usize;
+        loop {
+            dec.charge_work(sides.len() as u64)?;
+            let width = [singleton(1.0 / columns as f64), singleton(1.0)];
+            if sides
+                .values()
+                .all(|hessian| chord_bound_interval(width, hessian).hi() <= half_tolerance.lo())
+            {
+                break;
+            }
+            columns = columns
+                .checked_mul(2)
+                .filter(|&n| n <= options.max_cells)
+                .ok_or_else(exhausted)?;
+        }
         for (face, &id) in self.faces.iter().zip(faces) {
             match face {
                 Face::Patch(patch) => {
-                    for span in rational_spans(patch.support.carrier(), dec)? {
-                        builder.patch(&span, id, patch.outward, dec)?;
-                    }
+                    let hessian = &sides[&id.index()];
+                    let width = [singleton(1.0 / columns as f64), singleton(1.0)];
+                    let chord = exact(chord_bound_interval(width, hessian).hi());
+                    builder.patch(patch, id, columns, &chord, dec)?;
                 }
-                Face::Polygon(polygon) => builder.polygon(polygon, id, dec)?,
+                Face::Polygon(polygon) => builder.polygon(polygon, id, columns, dec)?,
             }
         }
         Ok(builder.mesh)
     }
+}
+
+fn unsupported_loft() -> Refusal {
+    Refusal::new(
+        "field.display-unsupported",
+        "patch-shell loft side is not one bilinear span",
+    )
 }
 
 impl Builder<'_> {
@@ -169,64 +210,66 @@ impl Builder<'_> {
 
     fn patch(
         &mut self,
-        span: &RationalSpan,
+        patch: &PatchFace,
         face: FaceId,
-        outward: bool,
+        columns: usize,
+        chord: &Rational,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
-        let mut pending: Vec<Cell> = vec![[[0.0, 1.0]; 2]];
-        let hessian = span.affine_hessian();
-        while let Some(cell) = pending.pop() {
+        let [a, d, b, c] = patch.support.carrier().controls() else {
+            return Err(unsupported_loft());
+        };
+        let local = |p: &catallax_shapes::Point3| {
+            let [x, y, z] =
+                [&p.x, &p.y, &p.z].map(|x| x.as_rational().ok_or_else(unsupported_loft));
+            Ok::<_, Refusal>([x?, y?, z?])
+        };
+        let [a, b, c, d] = [local(a)?, local(b)?, local(c)?, local(d)?];
+        let mut left = [
+            self.section_point(&a, &b, 0, columns, dec)?,
+            self.section_point(&d, &c, 0, columns, dec)?,
+        ];
+        for i in 1..=columns {
             self.visit(dec)?;
-            let [[u0, u1], [v0, v1]] = cell;
-            let width = [singleton(u1) - singleton(u0), singleton(v1) - singleton(v0)];
-            let chord = chord_bound_interval(width, &hessian);
-            if !chord.is_finite() {
-                return Err(exhausted());
-            }
-            if chord.hi() <= self.options.tolerance.to_f64_nearest() {
-                let [a, b, c, d] = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]
-                    .map(|uv| self.sample(span.evaluate(uv, dec)?));
-                let [a, b, c, d] = [a?, b?, c?, d?];
-                let replacement = [&a, &b, &c, &d]
-                    .into_iter()
-                    .map(|s| &s.error)
-                    .max()
-                    .unwrap();
-                if let Some(bound) =
-                    checked_triangle_bound(&exact(chord.hi()), replacement, &self.options.tolerance)
-                {
-                    self.triangle([&a, &b, &c], face, outward, dec)?;
-                    self.triangle([&a, &c, &d], face, outward, dec)?;
-                    self.mesh.max_deviation = self.mesh.max_deviation.clone().max(bound);
-                    continue;
-                }
-            }
-            let axis = (0..2)
-                .max_by(|&a, &b| {
-                    (hessian[2 * a] * width[a].square())
-                        .hi()
-                        .total_cmp(&(hessian[2 * b] * width[b].square()).hi())
-                        .then_with(|| width[a].hi().total_cmp(&width[b].hi()))
-                })
+            let right = [
+                self.section_point(&a, &b, i, columns, dec)?,
+                self.section_point(&d, &c, i, columns, dec)?,
+            ];
+            let error = left
+                .iter()
+                .chain(&right)
+                .map(|sample| &sample.error)
+                .max()
                 .unwrap();
-            let [lo, hi] = cell[axis];
-            let mid = lo.midpoint(hi);
-            if !(lo < mid && mid < hi) {
-                return Err(exhausted());
-            }
-            let [mut first, mut second] = [cell; 2];
-            first[axis][1] = mid;
-            second[axis][0] = mid;
-            pending.extend([second, first]);
+            let bound = checked_triangle_bound(chord, error, &self.options.tolerance)
+                .ok_or_else(exhausted)?;
+            self.triangle([&left[0], &right[0], &right[1]], face, patch.outward, dec)?;
+            self.triangle([&left[0], &right[1], &left[1]], face, patch.outward, dec)?;
+            self.mesh.max_deviation = self.mesh.max_deviation.clone().max(bound);
+            left = right;
         }
         Ok(())
+    }
+
+    fn section_point(
+        &self,
+        a: &V,
+        b: &V,
+        i: usize,
+        columns: usize,
+        dec: &mut Decider,
+    ) -> Result<Sample, Refusal> {
+        dec.charge_work(1)?;
+        let t = Rational::from_ratio(i as i64, columns as i64).unwrap();
+        let p: V = std::array::from_fn(|axis| &a[axis] + &(&t * &(&b[axis] - &a[axis])));
+        self.sample(p.each_ref().map(Interval::from_rational))
     }
 
     fn polygon(
         &mut self,
         polygon: &Polygon,
         face: FaceId,
+        columns: usize,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
         if !polygon.other_rings.is_empty() {
@@ -236,7 +279,7 @@ impl Builder<'_> {
             ));
         }
         let ring = &polygon.vertices;
-        // Check both coverage and winding before using a fan from the first corner.
+        // A fan from an interior point keeps every subdivided rim segment.
         for (a, b) in polygon.segments() {
             for at in ring {
                 dec.charge_work(1)?;
@@ -248,18 +291,27 @@ impl Builder<'_> {
                 }
             }
         }
-        let samples = ring
-            .iter()
-            .map(|p| self.sample(p.each_ref().map(Interval::from_rational)))
-            .collect::<Result<Vec<_>, _>>()?;
-        let error = samples.iter().map(|p| &p.error).max().unwrap();
-        let bound = checked_triangle_bound(&Rational::zero(), error, &self.options.tolerance)
-            .ok_or_else(exhausted)?;
-        for i in 1..samples.len() - 1 {
-            self.visit(dec)?;
-            self.triangle([&samples[0], &samples[i], &samples[i + 1]], face, true, dec)?;
+        dec.charge_work(ring.len() as u64)?;
+        let count = Rational::from_i64(ring.len() as i64);
+        let centre: V = std::array::from_fn(|axis| {
+            let sum = ring.iter().fold(Rational::zero(), |sum, p| &sum + &p[axis]);
+            &sum / &count
+        });
+        let centre = self.sample(centre.each_ref().map(Interval::from_rational))?;
+        for (a, b) in polygon.segments() {
+            let mut last = self.section_point(a, b, 0, columns, dec)?;
+            for i in 1..=columns {
+                self.visit(dec)?;
+                let next = self.section_point(a, b, i, columns, dec)?;
+                let error = (&centre.error).max(&last.error).max(&next.error);
+                let bound =
+                    checked_triangle_bound(&Rational::zero(), error, &self.options.tolerance)
+                        .ok_or_else(exhausted)?;
+                self.triangle([&centre, &last, &next], face, true, dec)?;
+                self.mesh.max_deviation = self.mesh.max_deviation.clone().max(bound);
+                last = next;
+            }
         }
-        self.mesh.max_deviation = self.mesh.max_deviation.clone().max(bound);
         Ok(())
     }
 }

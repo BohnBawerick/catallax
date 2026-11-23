@@ -545,13 +545,19 @@ impl SplineChart {
                 }) else {
                     continue;
                 };
-                let jump = span.rational.first_jump(
-                    &next.rational,
-                    axis,
-                    [span.width[axis], next.width[axis]],
-                    wraps.then(|| join_scale[axis].unwrap_or_else(|| point(1.0))),
-                    dec,
-                )?;
+                let widths = [span.width[axis], next.width[axis]];
+                let jump = if wraps {
+                    span.rational.periodic_first_jump(
+                        &next.rational,
+                        axis,
+                        widths,
+                        join_scale[axis].unwrap_or_else(|| point(1.0)),
+                        dec,
+                    )?
+                } else {
+                    span.rational
+                        .first_jump(&next.rational, axis, widths, dec)?
+                };
                 seams.push(Seam {
                     axis,
                     at: span.bounds[axis][1],

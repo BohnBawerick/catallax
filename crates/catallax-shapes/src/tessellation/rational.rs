@@ -455,14 +455,38 @@ impl RationalSpan {
         self.affine_hessian
     }
 
-    /// Bounds the transverse first derivative jump between the end of this span
-    /// and the start of the next span, including checked periodic joins.
+    /// Bounds the first derivative jump between two adjacent spans.
+    ///
+    /// The spans must share homogeneous boundary controls. Widths map
+    /// unit-span derivatives into the caller's coordinates.
+    pub fn first_jump(
+        &self,
+        next: &Self,
+        axis: usize,
+        widths: [Interval; 2],
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        self.first_jump_scaled(next, axis, widths, None, dec)
+    }
+
+    /// Bounds the first derivative jump across a checked periodic join.
     ///
     /// The two spans must share homogeneous boundary controls up to a common
     /// positive scale and have the same transverse parameter interval.
     /// `next_scale` expresses the next span in this span's homogeneous scale.
     /// Widths map unit-span derivatives into the caller's coordinates.
-    pub fn first_jump(
+    pub fn periodic_first_jump(
+        &self,
+        next: &Self,
+        axis: usize,
+        widths: [Interval; 2],
+        next_scale: Interval,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        self.first_jump_scaled(next, axis, widths, Some(next_scale), dec)
+    }
+
+    fn first_jump_scaled(
         &self,
         next: &Self,
         axis: usize,

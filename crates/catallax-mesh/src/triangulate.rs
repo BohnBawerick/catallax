@@ -940,18 +940,24 @@ impl FaceBuilder<'_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
-            let (chord, remaining) = if spline.patch_sampling() {
-                (
-                    self.options.chord_tolerance.clone(),
-                    self.options.max_vertices,
-                )
+            let angular_pipe = self.options.angular_deviation.is_some()
+                && matches!(
+                    self.chart.surface,
+                    Surface::BSpline(SplineSupport::RollingPipe(_))
+                );
+            // The radial normal proof guides angular pipe refinement from the
+            // full-chord grid. Every resulting facet is checked against both limits.
+            let chord = if spline.patch_sampling() || angular_pipe {
+                self.options.chord_tolerance.clone()
             } else {
-                (
-                    self.options.chord_tolerance.mul_pow2(-1),
-                    self.options
-                        .max_vertices
-                        .saturating_sub(self.positions.len()),
-                )
+                self.options.chord_tolerance.mul_pow2(-1)
+            };
+            let remaining = if spline.patch_sampling() {
+                self.options.max_vertices
+            } else {
+                self.options
+                    .max_vertices
+                    .saturating_sub(self.positions.len())
             };
             let mut grid = spline.seed_grid(&chord, remaining, self.dec)?;
             for uv in &mut grid {

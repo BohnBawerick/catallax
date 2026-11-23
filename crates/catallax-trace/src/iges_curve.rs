@@ -136,7 +136,7 @@ pub fn iges_126_curve(
     }
     let mut rational = false;
     for &w in weights {
-        if w < MIN_WEIGHT || w > MAX_WEIGHT {
+        if !(MIN_WEIGHT..=MAX_WEIGHT).contains(&w) {
             return Err(Fault::Degenerate);
         }
         if w != weights[0] {

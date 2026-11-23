@@ -2460,6 +2460,8 @@ impl Tracer {
             solution.start.value = EFF_ZERO;
         }
         let ratio = solution.start.value / solution.end.value;
+        // A NaN ratio must pass this filter.
+        #[allow(clippy::manual_range_contains)]
         if ratio > 100.0 || ratio < 0.01 {
             return Ok(());
         }

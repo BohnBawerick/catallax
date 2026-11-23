@@ -9,7 +9,7 @@ use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, FaceRef, Origin, Recipe, StepId, ThickenSide};
 use catallax_shapes::Surface;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{Instruction, Plan, geometry};
 
@@ -336,10 +336,22 @@ impl Plan {
         }
         Ok(result)
     }
-    fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
+    fn planar_skin(
+        &self,
+        node: usize,
+        graded: bool,
+        dec: &mut Decider,
+    ) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
+        let mut visited = BTreeSet::new();
         let mut faces = Vec::new();
         while let Some(node) = stack.pop() {
+            if graded {
+                if !visited.insert(node) {
+                    continue;
+                }
+                dec.charge_work(1)?;
+            }
             match self.instructions[node] {
                 Instruction::Boolean {
                     kind: BooleanKind::Intersect,
@@ -350,6 +362,16 @@ impl Plan {
                     stack.push(a);
                 }
                 Instruction::Leaf(leaf) => {
+                    if graded
+                        && (!matches!(
+                            &self.leaves[leaf],
+                            geometry::Leaf::Primitive(_)
+                                | geometry::Leaf::Feature(_)
+                                | geometry::Leaf::Cell(_)
+                        ) || self.leaves[leaf].constraints().is_empty())
+                    {
+                        return Err(bad("source has no exact planar halfspaces"));
+                    }
                     if matches!(self.leaves[leaf], geometry::Leaf::Draft(_)) {
                         return Err(bad(
                             "a draft region needs its retained trimmed boundary before distance construction",
@@ -522,7 +544,7 @@ impl Plan {
                 None => Ok(0),
             };
         }
-        let cell = self.planar_skin(node, dec)?;
+        let cell = self.planar_skin(node, false, dec)?;
         if d > &Rational::zero() {
             return self.unite_distance_pieces(
                 node,
@@ -684,28 +706,7 @@ impl Plan {
 
     fn graded_planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
         let bad = || unsupported_source("graded walls need one exact convex planar solid");
-        let mut stack = vec![node];
-        while let Some(node) = stack.pop() {
-            dec.check_deadline()?;
-            match self.instructions[node] {
-                Instruction::Boolean {
-                    kind: BooleanKind::Intersect,
-                    a,
-                    b,
-                } => {
-                    stack.extend([b, a]);
-                }
-                Instruction::Leaf(leaf)
-                    if matches!(
-                        &self.leaves[leaf],
-                        geometry::Leaf::Primitive(_)
-                            | geometry::Leaf::Feature(_)
-                            | geometry::Leaf::Cell(_)
-                    ) && !self.leaves[leaf].constraints().is_empty() => {}
-                _ => return Err(bad()),
-            }
-        }
-        let cell = self.planar_skin(node, dec).map_err(|error| {
+        let mut cell = self.planar_skin(node, true, dec).map_err(|error| {
             if error.code == "distance.unsupported-envelope" {
                 bad()
             } else {
@@ -715,6 +716,7 @@ impl Plan {
         if cell.is_empty() {
             return Err(bad());
         }
+        cell.retain_facets();
         Ok(cell)
     }
 
@@ -868,7 +870,7 @@ impl Plan {
                 .boolean(BooleanKind::Subtract, node, cavity, dec)
                 .map(ShellResult::Complete);
         }
-        let cell = match self.planar_skin(node, dec) {
+        let cell = match self.planar_skin(node, false, dec) {
             Ok(cell) => cell,
             Err(error) if error.code == "distance.unsupported-envelope" => {
                 return Ok(ShellResult::PlanarBoundary(bound));
@@ -1009,7 +1011,7 @@ impl Plan {
             let sweep = skin.face_sweep(*index, &t.clone().into(), side, step, dec)?;
             return self.cone_sweep(&sweep, &bound, dec);
         }
-        let cell = match self.planar_skin(node, dec) {
+        let cell = match self.planar_skin(node, false, dec) {
             Ok(cell) => cell,
             Err(e) => return self.planar_cap_thicken(node, refs, t, side, step, e, dec),
         };

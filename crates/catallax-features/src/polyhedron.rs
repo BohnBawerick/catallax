@@ -212,6 +212,15 @@ impl ConvexCell {
         self.points.is_empty()
     }
 
+    /// Drops defining planes that do not bound a polygon of the solid.
+    pub fn retain_facets(&mut self) {
+        (self.faces, self.polygons) = std::mem::take(&mut self.faces)
+            .into_iter()
+            .zip(std::mem::take(&mut self.polygons))
+            .filter(|(_, polygon)| !polygon.is_empty())
+            .unzip();
+    }
+
     /// Exact vertices, used for containment and projection proofs.
     pub fn vertices(&self) -> &[Point3] {
         &self.points

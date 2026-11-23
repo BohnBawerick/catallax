@@ -6,7 +6,7 @@ use catallax_features::ImportFiles;
 use catallax_field::lattice_stage::{
     GyroidSpec, LatticeSpec, Proof, Settings, Stage, TerminalField, default_preview_options,
 };
-use catallax_numbers::{Decider, Rational, with_operation_budget};
+use catallax_numbers::{Decider, Rational, current_operation_work, with_operation_budget};
 use catallax_recipe::{
     FileRef, GyroidKind, LatticeCell, Number, Operation, Pose, Recipe, Step, StepId,
 };
@@ -86,6 +86,25 @@ fn source(bytes: &[u8], step: bool) -> (Recipe, ImportFiles<'_>) {
     )
 }
 
+fn stage_preview<S: TerminalField>(
+    body: &Recipe,
+    files: &ImportFiles<'_>,
+    spec: S,
+    settings: Settings,
+    dec: &mut Decider,
+) -> Stage<S> {
+    let stage = Stage::new_with_files(body, files, spec, settings, dec).unwrap();
+    assert_eq!(&stage.recipe().steps[..body.steps.len()], &body.steps);
+    assert_eq!(stage.recipe().result, *stage.lattice_step());
+    let preview = stage
+        .preview(&default_preview_options(stage.plan(), dec).unwrap(), dec)
+        .unwrap();
+    assert_eq!(preview.proof, Proof::Unproved);
+    assert!(!preview.mesh.triangles.is_empty());
+    assert!(current_operation_work().used <= TARGET);
+    stage
+}
+
 fn stage_print<S: TerminalField>(
     body: &Recipe,
     files: &ImportFiles<'_>,
@@ -94,17 +113,7 @@ fn stage_print<S: TerminalField>(
 ) -> (Stage<S>, Vec<u8>) {
     let ((stage, bytes), work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
-        let stage = Stage::new_with_files(body, files, spec, settings.clone(), &mut dec).unwrap();
-        assert_eq!(&stage.recipe().steps[..body.steps.len()], &body.steps);
-        assert_eq!(stage.recipe().result, *stage.lattice_step());
-        let preview = stage
-            .preview(
-                &default_preview_options(stage.plan(), &mut dec).unwrap(),
-                &mut dec,
-            )
-            .unwrap();
-        assert_eq!(preview.proof, Proof::Unproved);
-        assert!(!preview.mesh.triangles.is_empty());
+        let stage = stage_preview(body, files, spec, settings.clone(), &mut dec);
         let (bytes, output) = stage.export(&mut dec).unwrap().labelled_stl().unwrap();
         let verdict = output.verdict();
         assert!(verdict.closed && verdict.connected && verdict.non_self_intersecting);
@@ -125,15 +134,14 @@ fn stage_print<S: TerminalField>(
 }
 
 #[test]
-fn rectangular_step_clips_lattice_and_network_gyroid() {
+fn rectangular_step_clips_lattice_to_a_certified_stl() {
     let step = import_support::trimmed_loft();
     let (body, files) = source(step.as_bytes(), true);
     stage_print(&body, &files, lattice(), settings("1/2"));
-    stage_print(&body, &files, gyroid(), settings("1/2"));
 }
 
 #[test]
-fn closed_mesh_clips_both_fields_and_restages_at_a_new_accuracy() {
+fn closed_mesh_clips_lattice_and_restages_at_a_new_accuracy() {
     let (body, files) = source(CUBE, false);
     let (first, original) = stage_print(&body, &files, lattice(), settings("1/2"));
     let recipe = first.recipe().clone();
@@ -143,7 +151,34 @@ fn closed_mesh_clips_both_fields_and_restages_at_a_new_accuracy() {
     let (restaged, replacement) = stage_print(&returned, &files, spec, options);
     assert_eq!(*restaged.recipe(), recipe);
     assert_ne!(original, replacement);
-    stage_print(&body, &files, gyroid(), settings("1/2"));
+}
+
+fn check_gyroid_refusal(body: &Recipe, files: &ImportFiles<'_>) {
+    let (refusal, work) = with_operation_budget(ALLOWANCE, || {
+        let mut dec = Decider::default();
+        let stage = stage_preview(body, files, gyroid(), settings("1/2"), &mut dec);
+        stage.export(&mut dec).unwrap_err()
+    });
+    assert!(!work.exhausted);
+    assert_eq!(refusal.code, "field.print-unresolved", "{refusal:?}");
+    assert!(
+        refusal.detail.contains("minimum detail allows"),
+        "{refusal:?}"
+    );
+    println!("{} work before refusal: {refusal:?}", work.used);
+}
+
+#[test]
+fn rectangular_step_gyroid_refuses_at_the_minimum_detail() {
+    let step = import_support::trimmed_loft();
+    let (body, files) = source(step.as_bytes(), true);
+    check_gyroid_refusal(&body, &files);
+}
+
+#[test]
+fn closed_mesh_gyroid_refuses_at_the_minimum_detail() {
+    let (body, files) = source(CUBE, false);
+    check_gyroid_refusal(&body, &files);
 }
 
 #[test]

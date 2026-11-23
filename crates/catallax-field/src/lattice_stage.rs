@@ -346,7 +346,10 @@ impl<S: TerminalField> Stage<S> {
     pub fn export(&self, dec: &mut Decider) -> Result<Output, Refusal> {
         let floor = &self.settings.minimum_detail * &Rational::from_ratio(1, 4).unwrap();
         let options = self.settings.print_options();
-        let mesh = if options.tolerance < floor || printing::graded(&self.plan) {
+        let mesh = if options.tolerance < floor
+            || printing::graded(&self.plan)
+            || printing::has_imported_boundary(&self.plan)
+        {
             printing::certified::mesh(&self.plan, &options, &floor, dec)?
         } else {
             printing::mesh_plan_floor(&self.plan, &options, Some(&floor), dec)?

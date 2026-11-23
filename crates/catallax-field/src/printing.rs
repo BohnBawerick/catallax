@@ -339,7 +339,7 @@ enum Definition {
     ImportedMesh([Interval; 3]),
     ImportedShell {
         bounds: [Interval; 3],
-        boundary: crate::patch_shell::print_boundary::Boundary,
+        boundary: Box<crate::patch_shell::print_boundary::Boundary>,
     },
 }
 /// Which leaf definitions a classifier prepares. Mass keeps its original
@@ -540,7 +540,7 @@ impl<'a> Prepared<'a> {
                         bounds: interval_box(&shell.bounds().map(|[lo, hi]| {
                             Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
                         })),
-                        boundary,
+                        boundary: Box::new(boundary),
                     }));
                 }
                 // A patch shell has no carrier polynomials; like a mesh, it
@@ -1203,6 +1203,20 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
 /// uniform-grid print route.
 pub(crate) fn graded(plan: &Plan) -> bool {
     plan.leaves.iter().any(geometry::Leaf::axis_graded)
+}
+
+pub(crate) fn has_imported_boundary(plan: &Plan) -> bool {
+    plan.leaves
+        .iter()
+        .zip(&plan.leaf_registers)
+        .any(|(leaf, live)| {
+            live.is_some()
+                && match leaf {
+                    geometry::Leaf::Mesh(_) => true,
+                    geometry::Leaf::Shell(shell) => shell.is_rectangular_import(),
+                    _ => false,
+                }
+        })
 }
 
 /// As [`mesh_plan`], but boundary-coverage refinement may not go below a grid edge of

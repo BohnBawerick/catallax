@@ -708,46 +708,31 @@ impl Plan {
                         body,
                         open,
                         thickness,
+                    } => plan.recipe_distance_shell(
+                        recipe,
+                        (body, &step.id),
+                        (&steps, &step_faces),
+                        open,
+                        thickness.value(),
+                        dec,
+                    )?,
+                    Operation::ShellGraded {
+                        body,
+                        open,
+                        thickness,
                     } => {
-                        if let Some(source) =
-                            plan.bored_shell_source(recipe, body, (&steps, &step_faces), dec)?
-                        {
-                            plan.bored_distance_shell(
-                                steps[body],
-                                source,
+                        use catallax_features::graded_wall::Thickness;
+                        match Thickness::new(thickness)? {
+                            Thickness::Constant(thickness) => plan.recipe_distance_shell(
+                                recipe,
+                                (body, &step.id),
+                                (&steps, &step_faces),
                                 open,
-                                thickness.value(),
-                                &step.id,
+                                &thickness,
                                 dec,
-                            )?
-                        } else {
-                            match plan.distance_shell(
-                                steps[body],
-                                open,
-                                thickness.value(),
-                                &step.id,
-                                dec,
-                            )? {
-                                distance_features::ShellResult::Complete(node) => node,
-                                distance_features::ShellResult::PlanarBoundary(bound) => {
-                                    let skin = plan
-                                        .draft_source_skin(recipe, body, &steps, &step_faces, dec)
-                                        .map_err(|error| {
-                                            if error.code.starts_with("draft.") {
-                                                error.with_code("distance.unsupported-envelope")
-                                            } else {
-                                                error
-                                            }
-                                        })?;
-                                    plan.planar_distance_shell(
-                                        (steps[body], bound),
-                                        skin,
-                                        open,
-                                        thickness.value(),
-                                        &step.id,
-                                        dec,
-                                    )?
-                                }
+                            )?,
+                            Thickness::Linear(grade) => {
+                                plan.graded_shell(steps[body], open, &grade, &step.id, dec)?
                             }
                         }
                     }
@@ -765,6 +750,33 @@ impl Plan {
                         recipe.format != catallax_recipe::FORMAT,
                         dec,
                     )?,
+                    Operation::ThickenGraded {
+                        body,
+                        faces,
+                        thickness,
+                        side,
+                    } => {
+                        use catallax_features::graded_wall::Thickness;
+                        match Thickness::new(thickness)? {
+                            Thickness::Constant(thickness) => plan.distance_thicken(
+                                steps[body],
+                                faces,
+                                &thickness,
+                                *side,
+                                &step.id,
+                                true,
+                                dec,
+                            )?,
+                            Thickness::Linear(grade) => plan.graded_thicken(
+                                steps[body],
+                                faces,
+                                &grade,
+                                *side,
+                                &step.id,
+                                dec,
+                            )?,
+                        }
+                    }
                     Operation::Extrude {
                         profile,
                         distance,
@@ -792,13 +804,39 @@ impl Plan {
                     } => {
                         let profile = &profiles[profile];
                         catallax_features::check_face_profile(&profile.pose, dec)?;
-                        let boundary = planar_face::recovery::skin(&plan, steps[body], dec)?;
-                        let planes = boundary
-                            .patches
-                            .into_iter()
-                            .filter(|patch| patch.origins.iter().any(|origin| face.matches(origin)))
-                            .map(|patch| patch.plane)
-                            .collect::<Vec<_>>();
+                        let planes = if matches!(&face.role, Some(Role::Offset { .. }))
+                            && &face.step == body
+                            && matches!(
+                                &recipe.step(body).expect("checked input").op,
+                                Operation::ThickenGraded { thickness, .. }
+                                    if matches!(catallax_features::graded_wall::Thickness::new(thickness)?,
+                                        catallax_features::graded_wall::Thickness::Linear(_))
+                            ) {
+                            // Each named offset facet has positive area in its
+                            // grade band. The other bands can only touch its edge.
+                            step_faces[body]
+                                .iter()
+                                .filter_map(|&i| {
+                                    let candidate = &plan.faces[i];
+                                    if !face.matches(&candidate.origin) {
+                                        return None;
+                                    }
+                                    let Surface::Plane(plane) = &candidate.surface else {
+                                        unreachable!("a graded normal sweep uses planes")
+                                    };
+                                    Some(plane.clone())
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            planar_face::recovery::skin(&plan, steps[body], dec)?
+                                .patches
+                                .into_iter()
+                                .filter(|patch| {
+                                    patch.origins.iter().any(|origin| face.matches(origin))
+                                })
+                                .map(|patch| patch.plane)
+                                .collect::<Vec<_>>()
+                        };
                         let [x, y, z] = x_direction.0.each_ref().map(|n| n.value().clone());
                         let [nx, ny, nz] = normal_direction.0.each_ref().map(|n| n.value().clone());
                         let map = catallax_features::face_placement(
@@ -1368,7 +1406,9 @@ impl Plan {
                     Operation::ExtrudeThrough { target, .. } | Operation::Hole { target, .. } => {
                         step_faces[target].clone()
                     }
-                    Operation::Shell { body, .. } => step_faces[body].clone(),
+                    Operation::Shell { body, .. } | Operation::ShellGraded { body, .. } => {
+                        step_faces[body].clone()
+                    }
                     Operation::Lattice { region, .. } | Operation::Gyroid { region, .. } => {
                         step_faces[region].clone()
                     }

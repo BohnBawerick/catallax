@@ -107,34 +107,36 @@ def scalar_recipes(value, files=None):
 
 def corpus(captured, out):
     cases = {}
-    sources = {p.name.removeprefix("source-"): p.read_text()
+    sources = {p.name.removeprefix("source-"): p.read_bytes().decode()
                for p in captured.glob("source-*")}
-    tracked = subprocess.check_output(["git", "-C", ROOT, "ls-files", "-z", "*.json"])
+    tracked = subprocess.check_output(["git", "-C", ROOT, "ls-files", "-z", "*.json", "*.jsonl"])
     captured_recipes = sorted(captured.glob("recipe-*.json"))
     paths = [ROOT / os.fsdecode(name) for name in tracked.split(b"\0") if name]
     for path in paths + captured_recipes:
         raw = path.read_text()
         if "catallax-recipe/" not in raw or not any(f'"{op}"' in raw for op in OPS):
             continue
-        for recipe, files, prefix in scalar_recipes(json.loads(raw)):
-            steps = recipe["steps"]
-            source_files = files or {
-                step["file"]["sha256"]: sources[step["file"]["sha256"]]
-                for step in steps if step.get("op") in {"import_step", "import_iges", "import_mesh"}
-                and step["file"]["sha256"] in sources
-            }
-            ids = {step["id"] for step in steps[:prefix]}
-            if recipe["result"] == steps[prefix - 1]["id"] and prefix == len(steps):
-                variants = [recipe]
-            else:
-                wall = recipe | {"steps": steps[:prefix], "result": steps[prefix - 1]["id"]}
-                if "materials" in recipe:
-                    wall["materials"] = [m for m in recipe["materials"] if m["region"] in ids]
-                variants = [recipe, wall]
-            for variant in variants:
-                case = ({"format": "catallax-import-recipe/1", "recipe": variant,
-                         "files": source_files} if source_files else variant)
-                cases[encoded(case)] = case
+        values = [json.loads(line) for line in raw.splitlines() if line.strip()] if path.suffix == ".jsonl" else [json.loads(raw)]
+        for value in values:
+            for recipe, files, prefix in scalar_recipes(value):
+                steps = recipe["steps"]
+                source_files = files or {
+                    step["file"]["sha256"]: sources[step["file"]["sha256"]]
+                    for step in steps if step.get("op") in {"import_step", "import_iges", "import_mesh"}
+                    and step["file"]["sha256"] in sources
+                }
+                ids = {step["id"] for step in steps[:prefix]}
+                if recipe["result"] == steps[prefix - 1]["id"] and prefix == len(steps):
+                    variants = [recipe]
+                else:
+                    wall = recipe | {"steps": steps[:prefix], "result": steps[prefix - 1]["id"]}
+                    if "materials" in recipe:
+                        wall["materials"] = [m for m in recipe["materials"] if m["region"] in ids]
+                    variants = [recipe, wall]
+                for variant in variants:
+                    case = ({"format": "catallax-import-recipe/1", "recipe": variant,
+                             "files": source_files} if source_files else variant)
+                    cases[encoded(case)] = case
     if not cases:
         raise ValueError("no scalar wall recipes found")
     out.mkdir(parents=True, exist_ok=False)

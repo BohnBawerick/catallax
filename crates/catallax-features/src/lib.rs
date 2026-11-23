@@ -68,6 +68,8 @@ mod fillet_build;
 pub mod fillet_corner;
 /// Editable numerical sweeps with guides, twist and helical paths.
 pub mod general_sweep;
+/// Shared exact plane definitions for source-sampled graded walls.
+pub mod graded_wall;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
 /// Explicit transactional STEP replacement and bounded multiple-solid admission.

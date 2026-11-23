@@ -1947,6 +1947,65 @@ fn evaluate_impl(
                         radius: &input.radius + &thickness.value().abs(),
                     }
                 }
+                Operation::ShellGraded {
+                    body,
+                    open,
+                    thickness,
+                } => {
+                    use crate::graded_wall::Thickness;
+                    let input = &bodies[body];
+                    let result = match Thickness::new(thickness)? {
+                        Thickness::Constant(thickness) => crate::distance_build::shell(
+                            model,
+                            input.body,
+                            open,
+                            &thickness.into(),
+                            &step.id,
+                            dec,
+                        )?,
+                        Thickness::Linear(grade) => crate::distance_build::graded_shell(
+                            model, input.body, open, &grade, &step.id, dec,
+                        )?,
+                    };
+                    BodyValue {
+                        body: crate::distance_build::inherit_marks(model, input.body, result),
+                        radius: input.radius.clone(),
+                    }
+                }
+                Operation::ThickenGraded {
+                    body,
+                    faces,
+                    thickness,
+                    side,
+                } => {
+                    use crate::graded_wall::Thickness;
+                    let input = &bodies[body];
+                    let (result, thickness) = match Thickness::new(thickness)? {
+                        Thickness::Constant(thickness) => (
+                            crate::distance_build::thicken(
+                                model,
+                                input.body,
+                                faces,
+                                &thickness.clone().into(),
+                                *side,
+                                &step.id,
+                                true,
+                                dec,
+                            )?,
+                            thickness,
+                        ),
+                        Thickness::Linear(grade) => (
+                            crate::distance_build::graded_thicken(
+                                model, input.body, faces, &grade, *side, &step.id, dec,
+                            )?,
+                            grade.maximum().clone(),
+                        ),
+                    };
+                    BodyValue {
+                        body: crate::distance_build::inherit_marks(model, input.body, result),
+                        radius: &input.radius + &thickness,
+                    }
+                }
                 _ => {
                     return Err(Refusal::new(
                         "features.unsupported-operation",

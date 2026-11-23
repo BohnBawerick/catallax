@@ -867,6 +867,22 @@ A two-sided thicken is two steps on the same face selection, one `front` and one
 
 Projection sectors preserve the existing normal sweep on smooth faces and straight rims while closing sharp-edge gaps. Extending offset supports until they meet would produce mitres with different thickness. Rounding the entire boundary of `F` would change the rim. Algebraic input faces give algebraic normal-sector and envelope equations, but general envelopes need certified derived carriers. A singular parameter chart alone is not evidence of impossible geometry.
 
+#### 4.9.1 Graded walls
+
+In `catallax-recipe/5`, `shell_graded` and `thicken_graded` use the same body and face references as `shell` and `thicken`. Their `thickness` is a grade. For example:
+
+```json
+{"linear":{"from":["0","0","0"],"to":["10","0","0"],"start":"1","end":"3"}}
+```
+
+Anchors are in part coordinates, in mm. A nonconstant grade varies along one part axis and clamps to the positive endpoint values outside the anchor planes. A `constant` grade or equal endpoint values use the scalar operation. Coincident anchors are a refusal.
+
+`thicken_graded` certifies the normal sweep of one convex planar face of an exact convex planar solid. At each source point the sweep length is the grade at that point. `side` selects the same front or back direction as scalar Thicken. The base preserves the source origins, the outer patches use `offset.of`, and edge walls use `rim.edge`. A clamp inside the face can split the outer boundary into several patches with the same origin.
+
+`shell_graded` certifies an axis-aligned rectangular solid with an open or closed cavity. For a point in the box, each kept wall tests the inward normal clearance against the grade at that point's perpendicular foot on the source wall. The cavity consists of the points beyond the wall in every kept direction. The inner patches use `inner.of`. Outer faces and the rim of an opening inherit their source origins. Opening every face gives an empty body.
+
+A nonconstant grade outside this geometry returns `distance.grade-source-unsupported` or `distance.grade-selection-unsupported`. A shell whose opposing walls can consume the cavity returns `distance.grade-clearance`. Oblique or distance grades return `distance.grade-function-unsupported`. Both evaluators use exact planar cuts at the clamp planes and the same work allowances as the scalar operations.
+
 ### 4.10 Draft
 
 | Parameter | Value |

@@ -6,7 +6,7 @@ use catallax_numbers::{
 };
 use catallax_shapes::{BSplineCurve, Curve, Line, RPoint3, RVector3, RationalPatch, Surface};
 
-use crate::{Face, ImportRefusal, OrientedEdge, StepSplineSurface};
+use crate::{Face, ImportRefusal, OrientedEdge, SourceFormat, StepSplineSurface};
 
 pub(crate) fn refused(entity: &str, kind: &str, step: &str, error: Refusal) -> ImportRefusal {
     if current_operation_work().exhausted {
@@ -45,6 +45,9 @@ fn rectangular_trim(
     dec: &mut Decider,
 ) -> Result<Option<[[Rational; 2]; 2]>, Refusal> {
     use crate::exact::{cross, dot, sub};
+    if source.source_format != SourceFormat::Step {
+        return Ok(None);
+    }
     let [ring] = face.loops.as_slice() else {
         return Ok(None);
     };

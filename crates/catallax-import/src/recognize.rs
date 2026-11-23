@@ -9,8 +9,8 @@ use std::collections::BTreeSet;
 use catallax_numbers::{Decider, Rational};
 use catallax_shapes::spline_tools::{RationalSplineCurve, RationalSplineSurface};
 
-use crate::ImportRefusal;
 use crate::part21::{Entity, Graph, Param, parse};
+use crate::{ImportRefusal, SourceFormat};
 
 #[path = "spline.rs"]
 mod spline;
@@ -32,6 +32,8 @@ pub struct StepSplineCurve {
 /// Source spline surface. Reading it does not certify an imported solid.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StepSplineSurface {
+    /// Exchange format that supplied the carrier.
+    pub source_format: SourceFormat,
     /// Exact u-major, v-minor data.
     pub geometry: RationalSplineSurface,
     /// Declared U and V closure, not certified periodic transitions.

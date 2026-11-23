@@ -342,6 +342,7 @@ impl Reader<'_> {
                 .map_err(source_error)?;
         let geometry = geometry.into_clamped(self.dec).map_err(source_error)?;
         Ok(Some(StepSplineSurface {
+            source_format: SourceFormat::Step,
             geometry,
             closed,
             self_intersect,

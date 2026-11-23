@@ -6,6 +6,7 @@ the same revision. Capture writes one JSONL file per worker count.
 """
 import argparse
 import collections
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -172,63 +173,68 @@ fn ellipse_rim_at_both_chords() {
 """
 
 
-def capture(root, args, output, threads):
+@contextmanager
+def probes(root):
     originals = {}
     try:
         for filename, names in PROBES.items():
             path = root / "crates" / filename
             originals[path] = path.read_text()
             path.write_text(instrument(originals[path], names))
-        with output.open("w") as out:
-            for package, names in SUITES.items():
-                selected = [
-                    name for name in names.split()
-                    if not args.suite or name in args.suite
-                ]
-                missing = [name for name in selected if not (root / "crates" / package / "tests" / f"{name}.rs").is_file()]
-                if missing:
-                    raise ValueError(f"missing {package} display test targets: {missing}")
-                if not selected:
-                    continue
-                cmd = ["cargo", "test", "--no-fail-fast", "--locked", "--release", "-p", package]
-                for name in selected:
-                    cmd += ["--test", name]
-                cmd += ["--", "--test-threads=1", "--nocapture"]
-                counts = collections.Counter()
-                suite = None
-                print(f"{package}: {' '.join(selected)}", file=sys.stderr, flush=True)
-                with tempfile.TemporaryFile(mode="w+t") as log:
-                    with subprocess.Popen(
-                        cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        text=True, env={**os.environ, "CATALLAX_THREADS": str(threads)},
-                    ) as run:
-                        for line in run.stdout:
-                            log.write(line)
-                            target = re.match(r"\s*Running tests/(\w+)\.rs ", line)
-                            if target:
-                                suite = target[1]
-                            if not line.startswith("meshdiff\t"):
-                                continue
-                            case, function, tags, options, work, digest = line.rstrip().split("\t")[1:]
-                            assert suite in selected, (suite, line)
-                            key = (package, suite, case, function, options)
-                            counts[key] += 1
-                            row = {"key": [*key, counts[key]], "carriers": tags,
-                                   "work": json.loads(work), "sha256": digest}
-                            print(json.dumps(row, sort_keys=True), file=out, flush=True)
-                        code = run.wait()
-                    if code:
-                        log.seek(0)
-                        for line in log:
-                            if not line.startswith("meshdiff\t"):
-                                sys.stderr.write(line)
-                    print(json.dumps({"package": package, "exit": code, "calls": sum(counts.values())}),
-                          file=sys.stderr, flush=True)
-                    if code:
-                        raise SystemExit(code)
+        yield
     finally:
         for path, source in originals.items():
             path.write_text(source)
+
+
+def capture(root, args, output, threads):
+    with output.open("w") as out:
+        for package, names in SUITES.items():
+            selected = [
+                name for name in names.split()
+                if not args.suite or name in args.suite
+            ]
+            missing = [name for name in selected if not (root / "crates" / package / "tests" / f"{name}.rs").is_file()]
+            if missing:
+                raise ValueError(f"missing {package} display test targets: {missing}")
+            if not selected:
+                continue
+            cmd = ["cargo", "test", "--no-fail-fast", "--locked", "--release", "-p", package]
+            for name in selected:
+                cmd += ["--test", name]
+            cmd += ["--", "--test-threads=1", "--nocapture"]
+            counts = collections.Counter()
+            suite = None
+            print(f"{package}: {' '.join(selected)}", file=sys.stderr, flush=True)
+            with tempfile.TemporaryFile(mode="w+t") as log:
+                with subprocess.Popen(
+                    cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, env={**os.environ, "CATALLAX_THREADS": str(threads)},
+                ) as run:
+                    for line in run.stdout:
+                        log.write(line)
+                        target = re.match(r"\s*Running tests/(\w+)\.rs ", line)
+                        if target:
+                            suite = target[1]
+                        if not line.startswith("meshdiff\t"):
+                            continue
+                        case, function, tags, options, work, digest = line.rstrip().split("\t")[1:]
+                        assert suite in selected, (suite, line)
+                        key = (package, suite, case, function, options)
+                        counts[key] += 1
+                        row = {"key": [*key, counts[key]], "carriers": tags,
+                               "work": json.loads(work), "sha256": digest}
+                        print(json.dumps(row, sort_keys=True), file=out, flush=True)
+                    code = run.wait()
+                if code:
+                    log.seek(0)
+                    for line in log:
+                        if not line.startswith("meshdiff\t"):
+                            sys.stderr.write(line)
+                print(json.dumps({"package": package, "exit": code, "calls": sum(counts.values())}),
+                      file=sys.stderr, flush=True)
+                if code:
+                    raise SystemExit(code)
 
 
 def load(path):
@@ -295,8 +301,9 @@ def main():
             with test.open("x") as source:
                 source.write(ELLIPSE_TEST)
             try:
-                for threads in THREAD_COUNTS:
-                    capture(root, args, args.output / f"{threads}.jsonl", threads)
+                with probes(root):
+                    for threads in THREAD_COUNTS:
+                        capture(root, args, args.output / f"{threads}.jsonl", threads)
             finally:
                 test.unlink()
         finally:

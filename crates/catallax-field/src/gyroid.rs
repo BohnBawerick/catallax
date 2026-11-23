@@ -93,6 +93,20 @@ fn level_limits() -> ([Rational; 2], Rational) {
     ([-&quarter, quarter], Rational::from_ratio(1, 10).unwrap())
 }
 
+pub(crate) fn check_distance_grade(
+    near: &Rational,
+    far: &Rational,
+    span: &Rational,
+) -> Result<(), Refusal> {
+    let ([low, high], slope) = level_limits();
+    crate::grade::check_distance(
+        [near, far, span],
+        [&low, &high],
+        &slope,
+        ["gyroid.impossible", "gyroid.grade-range-unsupported"],
+    )
+}
+
 impl Gyroid {
     /// Compiles the leaf. An impossible period or coincident grade anchors refuse
     /// with `gyroid.impossible`; deferred functions refuse with `gyroid.unsupported`.
@@ -111,15 +125,23 @@ impl Gyroid {
         })
     }
 
-    /// As [`Gyroid::new`], but a linear level outside the supported function names
-    /// its reason: `gyroid.grade-function-unsupported` for anchors that do not
-    /// differ along one part axis, `gyroid.grade-range-unsupported` for an endpoint
-    /// outside `[-1/4, 1/4]` or a slope above `1/10` per millimetre.
+    /// As [`Gyroid::new`], with `gyroid.grade-range-unsupported` for a graded
+    /// endpoint outside `[-1/4, 1/4]` or slope above `1/10` per millimetre.
     pub(crate) fn certified(
         period: &Rational,
         level: &Grade,
         kind: GyroidKind,
         frame: &Pose,
+    ) -> Result<Self, Refusal> {
+        Self::certified_resolved(period, level, kind, frame, None)
+    }
+
+    pub(crate) fn certified_resolved(
+        period: &Rational,
+        level: &Grade,
+        kind: GyroidKind,
+        frame: &Pose,
+        resolved: Option<GradeDef>,
     ) -> Result<Self, Refusal> {
         if period.sign() != Sign::Positive {
             return Err(Refusal::new(
@@ -133,19 +155,19 @@ impl Gyroid {
                 "sheet gyroids are not supported yet; this field builds the network",
             ));
         }
-        let Some(grade) = GradeDef::compile(level, "gyroid.impossible")? else {
-            return Err(Refusal::new(
-                "gyroid.unsupported",
-                "a distance-graded gyroid level is not supported yet; use a constant or linear level",
-            ));
+        let grade = match resolved {
+            Some(grade) => grade,
+            None => GradeDef::compile(level, "gyroid.impossible")?.ok_or_else(|| {
+                Refusal::new(
+                    "gyroid.unsupported",
+                    "a distance-graded gyroid level needs selected faces of a supported region",
+                )
+            })?,
         };
         let ([low, high], slope) = level_limits();
         check_certified(
             &grade,
-            [
-                "gyroid.grade-function-unsupported",
-                "gyroid.grade-range-unsupported",
-            ],
+            "gyroid.grade-range-unsupported",
             [&low, &high],
             &slope,
         )?;
@@ -287,7 +309,16 @@ impl Gyroid {
         self.grade.planes()
     }
 
-    /// Encloses `∇(g - c)` and the Hessian of `g` over a box on which the level is
+    pub(crate) fn supports_affine_clip(&self, bounds: &[[Rational; 2]; 3]) -> bool {
+        self.grade.has_affine_extension()
+            && self.level_piece(bounds).is_some_and(|piece| {
+                piece == Piece::Ramp
+                    || self.grade.constant().is_some()
+                    || self.grade.axis().is_some()
+            })
+    }
+
+    /// Encloses the gradient and Hessian of `g - c` over a box on which the level is
     /// the given piece. Values at the centre are widened by the next derivative's
     /// bound times the half-widths: second derivatives of `g` are at most `2k²` on
     /// the diagonal and `k²` off it, and third derivatives at most `2k³`.
@@ -309,7 +340,14 @@ impl Gyroid {
         let k = self.wave;
         let k2 = self.wave_squared;
         let k3 = (k2 * k).hi();
-        let slope = self.grade.piece_gradient(piece);
+        let curved = if piece == Piece::Curved {
+            Some(self.grade.curved_derivatives(world)?)
+        } else {
+            None
+        };
+        let slope = curved
+            .as_ref()
+            .map_or_else(|| self.grade.piece_gradient(piece), |(slope, _)| *slope);
         let r = radius.map(point);
         let reach = (r[0] + r[1] + r[2]).hi();
         let gradient = [
@@ -342,7 +380,11 @@ impl Gyroid {
             ],
         ];
         let spread = (point(2.0 * k3) * point(reach)).hi();
-        let hessian = hessian.map(|row| row.map(|v| v + Interval::new(-spread, spread).unwrap()));
+        let mut hessian =
+            hessian.map(|row| row.map(|v| v + Interval::new(-spread, spread).unwrap()));
+        if let Some((_, grade)) = curved {
+            hessian = std::array::from_fn(|i| std::array::from_fn(|j| hessian[i][j] - grade[i][j]));
+        }
         Some((gradient, hessian))
     }
 
@@ -419,15 +461,14 @@ impl Gyroid {
             return self.expansion(world, |_| self.interval_level, zero);
         }
         match self.grade.piece(world) {
+            Some(Piece::Curved) | None => {
+                Some(self.expansion(world, |_| point(0.0), zero)? - self.grade.interval(world))
+            }
             Some(piece) => self.expansion(
                 world,
-                |centre| match piece {
-                    Piece::Ramp => self.grade.affine(&centre),
-                    Piece::Start | Piece::End => self.grade.interval(&centre),
-                },
+                |centre| self.grade.piece_value(piece, &centre),
                 self.grade.piece_gradient(piece),
             ),
-            None => Some(self.expansion(world, |_| point(0.0), zero)? - self.grade.interval(world)),
         }
     }
 
@@ -486,7 +527,7 @@ impl Gyroid {
         let [sines, cosines] = self.exact_terms(p, dec)?;
         let value = &(&(&(&sines[0] * &cosines[1]) + &(&sines[1] * &cosines[2]))
             + &(&sines[2] * &cosines[0]))
-            - &Real::from(self.grade.value(p));
+            - &self.grade.real(p);
         Ok(match geometry::sign(&value, dec)? {
             Sign::Negative => Location::Inside,
             Sign::Zero => Location::Boundary,
@@ -520,9 +561,8 @@ impl Gyroid {
         let [sx, cx] = turn(&p.x);
         let [sy, cy] = turn(&p.y);
         let [sz, cz] = turn(&p.z);
-        let level = self.grade.value(&[p.x.clone(), p.y.clone(), p.z.clone()]);
-        let value = &(&(&(&sx * &cy) + &(&sy * &cz)) + &(&sz * &cx))
-            - &Ball::from_rational(&level, PRECISION);
+        let level = self.grade.ball(&[p.x.clone(), p.y.clone(), p.z.clone()]);
+        let value = &(&(&(&sx * &cy) + &(&sy * &cz)) + &(&sz * &cx)) - &level;
         value
             .checked_div(&Ball::from_rational(&self.lipschitz, PRECISION))
             .expect("positive Lipschitz bound")

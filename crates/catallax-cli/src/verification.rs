@@ -66,6 +66,69 @@ impl ExportedQuestion {
 
 /// A recipe whose STEP file must meet the seam contract.
 const SEAMED_STEP_FORMAT: &str = "catallax-step/1";
+const FITTED_SWEEP_FORMAT: &str = "catallax-fitted-compare/1";
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FittedSweep {
+    #[serde(rename = "format")]
+    _format: String,
+    recipe: Value,
+    tolerance_mm: String,
+}
+
+fn fitted_sweep(problem: &Value) -> Value {
+    let parsed = (|| {
+        let input: FittedSweep =
+            serde_json::from_value(problem.clone()).map_err(|e| e.to_string())?;
+        let recipe =
+            catallax_recipe::Recipe::parse(&input.recipe.to_string()).map_err(|e| e.to_string())?;
+        let tolerance_mm =
+            catallax_numbers::Rational::parse(&input.tolerance_mm).map_err(|e| e.to_string())?;
+        if tolerance_mm <= catallax_numbers::Rational::zero() {
+            return Err("the modelling tolerance must be positive".to_owned());
+        }
+        Ok((recipe, tolerance_mm))
+    })();
+    let (recipe, tolerance_mm) = match parsed {
+        Ok(parsed) => parsed,
+        Err(detail) => {
+            let mut manifest = refused("cli.fitted-sweep", detail);
+            manifest["status"] = json!("invalid-question");
+            return manifest;
+        }
+    };
+    let options = catallax_compare::Options::default();
+    let modelling = catallax_topology::numerical::NumericalOptions {
+        tolerance_mm,
+        ..Default::default()
+    };
+    match catallax_compare::check_fitted_sweep(
+        &recipe,
+        &modelling,
+        &options,
+        &mut Decider::default(),
+    ) {
+        Ok(report) => json!({
+            "format": "catallax-manifest/3",
+            "status": "answered",
+            "exact": false,
+            "comparison": {
+                "verdict": "agree",
+                "proof": "fitted-sweep-distance",
+                "faces": report.faces,
+                "display_vertices": report.display_vertices,
+                "modelling_tolerance_mm": modelling.tolerance_mm.to_string(),
+                "comparison_accuracy_mm": options.accuracy.to_string(),
+                "source_upper_mm": report.source_upper_mm.to_string(),
+                "display_upper_mm": report.display_upper_mm.to_string(),
+                "composed_upper_mm": report.composed_upper_mm.to_string()
+            },
+            "marks": [], "refusal": null, "step": null
+        }),
+        Err(error) => refused(error.code, error.detail),
+    }
+}
 
 fn refused(code: &str, detail: impl ToString) -> Value {
     json!({"format":"catallax-manifest/3", "status":"refused", "exact":false,
@@ -264,6 +327,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         }
         "recipe" if crate::certified_recipe::is_problem(&request.problem) => {
             crate::certified_recipe::evaluate(&request.problem, &request.out)
+        }
+        "compare" if request.problem["format"] == FITTED_SWEEP_FORMAT => {
+            Ok(fitted_sweep(&request.problem))
         }
         "recipe" | "compare" | "field" => {
             let display_started = Instant::now();

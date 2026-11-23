@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "seamed_step":"catallax-step/1",
                 "numerical_step":"catallax-numerical-step/1",
                 "numerical_manifest":"catallax-numerical-manifest/1",
+                "fitted_compare":"catallax-fitted-compare/1",
                 "sources":["question","recipe","field","print","iges","compare","name-edit"],"default_work":catallax_cli::verification::DEFAULT_WORK,
                 "kernel":catallax_cli::about()})
             );

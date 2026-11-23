@@ -9,7 +9,6 @@ use catallax_shapes::{RPoint3, SplineSupport, Surface};
 
 mod import_support;
 use import_support::trimmed_loft;
-
 const WORK: u64 = 20_000_000;
 // The STEP header's UNCERTAINTY_MEASURE_WITH_UNIT in millimetres.
 const TOLERANCE_MM: f64 = 1e-7;

@@ -13,7 +13,7 @@
 //! the lattice boundary, which is what the plan's residual bounds require. For
 //! a constant radius `L = 1` and the value is the exact distance outside.
 
-use crate::grade::GradeDef;
+use crate::grade::{self, GradeDef, Piece};
 use crate::metric::{Arithmetic, PRECISION, Scalar};
 use crate::{Location, geometry};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
@@ -57,6 +57,7 @@ pub(crate) struct LinePiece {
     line: [Interval; 3],
     /// The grade's gradient on the box.
     slope: [Interval; 3],
+    grade: Piece,
 }
 
 /// A compiled lattice leaf.
@@ -163,6 +164,7 @@ impl Lattice {
         size: &Rational,
         frame: &catallax_recipe::Pose,
         grade: &Grade,
+        resolved: Option<GradeDef>,
     ) -> Result<Self, Refusal> {
         let template = catallax_features::lattice::validate(cell, size, grade)?;
         let radius_range = catallax_features::lattice::radius_range(grade)?;
@@ -225,8 +227,18 @@ impl Lattice {
                     )
                 })?
         };
-        let grade = GradeDef::compile(grade, "lattice.impossible")?
-            .expect("validate refuses distance grades");
+        let grade = match resolved {
+            Some(grade) => grade,
+            None => GradeDef::compile(grade, "lattice.impossible")?.ok_or_else(|| {
+                Refusal::new(
+                    "lattice.unsupported-grade",
+                    "a distance grade needs a region",
+                )
+            })?,
+        };
+        if matches!(grade, GradeDef::Radius(_)) {
+            check_certified_radius(size, &grade)?;
+        }
         let lipschitz = &q(1) + &grade.slope_bound();
         Ok(Self {
             cubic: matches!(cell, LatticeCell::Cubic),
@@ -281,9 +293,16 @@ impl Lattice {
         self.axis_cubic().then_some(&self.radius_range[0])
     }
 
-    /// Whether the radius is a linear grade whose anchors differ along one part axis.
-    pub(crate) fn axis_graded(&self) -> bool {
-        self.grade.axis().is_some()
+    /// Whether the radius uses a nonconstant grade with terminal certification.
+    pub(crate) fn certified_grade(&self) -> bool {
+        match &self.grade {
+            GradeDef::Constant(_) => false,
+            GradeDef::Linear(_) => {
+                self.grade.axis().is_some()
+                    || check_certified_radius(&self.size, &self.grade).is_ok()
+            }
+            GradeDef::Faces(_) | GradeDef::Radius(_) => true,
+        }
     }
 
     /// The axis and positions of an axis grade's anchor planes.
@@ -336,6 +355,7 @@ impl Lattice {
             axis,
             line: line.each_ref().map(Interval::from_rational),
             slope: self.grade.piece_gradient(piece),
+            grade: piece,
         })
     }
 
@@ -347,8 +367,7 @@ impl Lattice {
         Some(beta - self.grade.interval(world))
     }
 
-    /// `∇(β - ρ)` and its Hessian over a box inside a line piece's box. The radius is
-    /// affine there, so the Hessian is that of `β`.
+    /// Encloses the gradient and Hessian of `β - ρ` over a smooth line piece.
     pub(crate) fn line_derivatives(
         &self,
         piece: &LinePiece,
@@ -363,7 +382,13 @@ impl Lattice {
         }
         let cube = beta * beta * beta;
         let zero = Interval::point(0.0).unwrap();
-        let mut gradient = piece.slope.map(|v| zero - v);
+        let curved = if piece.grade == Piece::Curved {
+            Some(self.grade.curved_derivatives(world)?)
+        } else {
+            None
+        };
+        let slope = curved.as_ref().map_or(piece.slope, |(slope, _)| *slope);
+        let mut gradient = slope.map(|v| zero - v);
         gradient[j] = gradient[j] + xj / beta;
         gradient[k] = gradient[k] + xk / beta;
         let mut hessian = [[zero; 3]; 3];
@@ -371,6 +396,9 @@ impl Lattice {
         hessian[k][k] = xj.square() / cube;
         hessian[j][k] = zero - xj * xk / cube;
         hessian[k][j] = hessian[j][k];
+        if let Some((_, grade)) = curved {
+            hessian = std::array::from_fn(|i| std::array::from_fn(|j| hessian[i][j] - grade[i][j]));
+        }
         Some((gradient, hessian))
     }
 
@@ -381,9 +409,6 @@ impl Lattice {
     fn fast_local(&self, p: [f64; 3]) -> [f64; 3] {
         let shifted = std::array::from_fn(|i| p[i] - self.fast_translation[i]);
         apply_fast(&self.fast_inverse, &shifted)
-    }
-    fn radius(&self, p: &[Rational; 3]) -> Rational {
-        self.grade.value(p)
     }
     fn fast_radius(&self, p: [f64; 3]) -> f64 {
         self.grade.fast(p)
@@ -454,17 +479,28 @@ impl Lattice {
     }
 
     /// Exact classification of a rational world point.
-    pub(crate) fn location(&self, p: &[Rational; 3]) -> Location {
+    pub(crate) fn location(
+        &self,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
         let Some((distance_sq, _)) = self.nearest(&self.local(p), false) else {
-            return Location::Outside;
+            return Ok(Location::Outside);
         };
-        let radius = self.radius(p);
-        let radius_sq = &radius * &radius;
-        match distance_sq.cmp(&radius_sq) {
-            std::cmp::Ordering::Less => Location::Inside,
-            std::cmp::Ordering::Equal => Location::Boundary,
-            std::cmp::Ordering::Greater => Location::Outside,
+        if let Some(radius) = self.grade.rational_value(p) {
+            let radius_sq = &radius * &radius;
+            return Ok(match distance_sq.cmp(&radius_sq) {
+                std::cmp::Ordering::Less => Location::Inside,
+                std::cmp::Ordering::Equal => Location::Boundary,
+                std::cmp::Ordering::Greater => Location::Outside,
+            });
         }
+        let residual = &Real::from(distance_sq) - &self.grade.real(p).square();
+        Ok(match crate::geometry::sign(&residual, dec)? {
+            Sign::Negative => Location::Inside,
+            Sign::Zero => Location::Boundary,
+            Sign::Positive => Location::Outside,
+        })
     }
 
     /// Enclosure of `(β - ρ) / L`, negative inside.
@@ -479,7 +515,7 @@ impl Lattice {
         let beta = Ball::from_rational(&distance_sq, PRECISION)
             .sqrt()
             .expect("non-negative squared distance");
-        let value = &beta - &Ball::from_rational(&self.radius(&coordinates), PRECISION);
+        let value = &beta - &self.grade.ball(&coordinates);
         value
             .checked_div(&Ball::from_rational(&self.lipschitz, PRECISION))
             .expect("positive Lipschitz bound")
@@ -546,7 +582,7 @@ impl Lattice {
         d: &Vector3,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
-        let location = self.location(p);
+        let location = self.location(p, dec)?;
         if location != Location::Boundary {
             return Ok(location);
         }
@@ -579,7 +615,7 @@ impl Lattice {
         }
         let mut rate = rate.expect("at least one nearest beam");
         if let Some(change) = self.grade.rate(p, d, dec)? {
-            rate = &rate - &(&change * &Real::from(self.radius(p)));
+            rate = &rate - &(&change * &self.grade.real(p));
         }
         Ok(match geometry::sign(&rate, dec)? {
             Sign::Negative => Location::Inside,
@@ -718,4 +754,16 @@ impl Lattice {
             BoxState::Unknown
         })
     }
+}
+
+pub(crate) fn check_certified_radius(size: &Rational, grade: &GradeDef) -> Result<(), Refusal> {
+    grade::check_certified(
+        grade,
+        "lattice.grade-range-unsupported",
+        [
+            &Rational::zero(),
+            &(size * &Rational::from_ratio(1, 4).unwrap()),
+        ],
+        &Rational::from_ratio(1, 2).unwrap(),
+    )
 }

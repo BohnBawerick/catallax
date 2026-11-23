@@ -1185,8 +1185,8 @@ pub fn mesh_plan_connected(
 }
 
 /// Builds a watertight output from the field alone. No B-rep builder is called.
-/// A gyroid at an accuracy of one hundredth of its period or finer, and every axis
-/// graded lattice or gyroid, use the adaptive certificate, because the uniform grid
+/// A gyroid at an accuracy of one hundredth of its period or finer, and a lattice
+/// or gyroid with a certified grade, use the adaptive certificate, because the uniform grid
 /// would need an edge of a quarter of the accuracy over the whole surface.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
     let fine_gyroid = plan.leaves.iter().any(|leaf| {
@@ -1199,10 +1199,10 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
     mesh_plan_floor(plan, options, None, dec)
 }
 
-/// Whether the plan holds an axis graded lattice or gyroid. Such fields have no
+/// Whether the plan holds a lattice or gyroid with a certified grade. These fields have no
 /// uniform-grid print route.
 pub(crate) fn graded(plan: &Plan) -> bool {
-    plan.leaves.iter().any(geometry::Leaf::axis_graded)
+    plan.leaves.iter().any(geometry::Leaf::certified_grade)
 }
 
 pub(crate) fn has_imported_boundary(plan: &Plan) -> bool {

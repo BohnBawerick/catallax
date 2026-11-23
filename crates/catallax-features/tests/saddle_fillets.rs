@@ -1354,7 +1354,7 @@ fn assert_witnesses(built: &mut Built, ball: Ball, flip: f64) {
 
 // Rounding a closed solid moves its surface by a little, so a trim that kept the
 // wrong side of a loop would change the size by far more than this.
-fn assert_close_to(built: &Built, plain: &Recipe) {
+fn assert_close_to(built: &Built, plain: &Recipe, display_allowance: u64) {
     let size = |mesh: &Mesh| -> f64 {
         mesh.triangles
             .iter()
@@ -1366,8 +1366,8 @@ fn assert_close_to(built: &Built, plain: &Recipe) {
             })
             .sum()
     };
-    let (mesh, work) = with_operation_budget(100_000_000, || fine(built));
-    assert!(!work.exhausted);
+    let (mesh, work) = with_operation_budget(display_allowance, || fine(built));
+    assert!(!work.exhausted, "{work:?}");
     let saddle_faces = bands(built);
     let chord = q("1/4");
     for face in saddle_faces {
@@ -1394,7 +1394,11 @@ fn a_loop_rounds_each_way_two_cylinders_can_meet() {
         let mut built = build(&over(kind, order, radius));
         assert_eq!(built.model.faces_of_body(built.result).len(), faces);
         assert_eq!(bands(&built).len(), 1, "{kind}");
-        assert_close_to(&built, &recipe([wide(), past("8")], kind, order, None));
+        assert_close_to(
+            &built,
+            &recipe([wide(), past("8")], kind, order, None),
+            100_000_000,
+        );
         let ball = Ball {
             radius: q(radius).to_f64_nearest(),
             sides,
@@ -1427,17 +1431,21 @@ fn a_larger_ball_and_either_face_order_round_the_same_loop() {
 fn a_loop_meshes_closed_wherever_it_sits() {
     let lean = cylinder("wall", "4", "60", LEAN, ["8", "-18", "-24"]);
     let equal = cylinder("wall", "10", "60", LEVEL, ["1", "0", "-30"]);
-    for (narrow, kind) in [
-        (past("-8"), "union"),
-        (lean.clone(), "union"),
-        (lean, "subtract"),
-        (equal, "union"),
-        (past("27/2"), "union"),
+    for (narrow, kind, display_allowance) in [
+        (past("-8"), "union", 100_000_000),
+        (lean.clone(), "union", 100_000_000),
+        (lean, "subtract", 100_000_000),
+        (equal, "union", 20_000_000),
+        (past("27/2"), "union", 100_000_000),
     ] {
         let parts = [wide(), narrow];
         let built = build(&recipe(parts.clone(), kind, ["wide", "wall"], Some("1")));
         assert_eq!(bands(&built).len(), 1);
-        assert_close_to(&built, &recipe(parts, kind, ["wide", "wall"], None));
+        assert_close_to(
+            &built,
+            &recipe(parts, kind, ["wide", "wall"], None),
+            display_allowance,
+        );
     }
 }
 

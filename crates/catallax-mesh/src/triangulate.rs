@@ -9,8 +9,8 @@ use catallax_shapes::{
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use spade::{
-    ConstrainedDelaunayTriangulation, FloatTriangulation, HasPosition, HierarchyHintGenerator,
-    Point2, PositionInTriangulation, Triangulation,
+    ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
+    PositionInTriangulation, Triangulation, handles::FixedVertexHandle,
 };
 
 use crate::{
@@ -19,6 +19,9 @@ use crate::{
     edges::{self, Boundaries},
     failure,
 };
+
+mod band_index;
+use band_index::{Index, Points, Segment as PlacedSegment};
 
 #[derive(Clone, Copy)]
 struct Node {
@@ -124,8 +127,7 @@ struct FaceBuilder<'a> {
     filtered_errors: Vec<Interval>,
     interior_left: BTreeSet<(usize, usize)>,
     collar_edges: BTreeSet<[usize; 2]>,
-    protected_trim: Vec<[Point2<f64>; 2]>,
-    separation: f64,
+    protected_band: Option<ProtectedBand>,
     prior_chords: &'a BTreeSet<(usize, usize)>,
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
@@ -133,92 +135,56 @@ struct FaceBuilder<'a> {
     dec: &'a mut Decider,
 }
 
-// A band refinement point may enter only if every fixed segment's disk
-// excludes it. The interval comparison is allowed to decline a tangent point.
-fn clears_constraints(
-    at: Point2<f64>,
-    segments: &[[Point2<f64>; 2]],
-    dec: &mut Decider,
-) -> Result<bool, Refusal> {
-    let point = |x| Interval::point(x).unwrap();
-    let x = point(at.x);
-    let y = point(at.y);
-    for [a, b] in segments {
-        dec.charge_work(1)?;
-        if (at.x <= a.x.min(b.x) || at.x >= a.x.max(b.x))
-            && (at.y <= a.y.min(b.y) || at.y >= a.y.max(b.y))
-        {
-            continue;
-        }
-        let dot = (x - point(a.x)) * (x - point(b.x)) + (y - point(a.y)) * (y - point(b.y));
-        if dot.lo() >= 0.0 {
-            continue;
-        }
-        return Ok(false);
-    }
-    Ok(true)
-}
+type ChartRows = BTreeMap<u64, BTreeMap<u64, FixedVertexHandle>>;
 
-#[cfg(test)]
-mod traversal_tests {
-    use super::*;
-
-    #[test]
-    fn fixed_trim_checks_charge_every_visited_segment() {
-        let at = Point2::new(0.0, 0.0);
-        let segment = [Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
-        let segments = [segment; 17];
-        let mut dec = Decider::default();
-        let (clear, work) = catallax_numbers::with_operation_budget(34, || {
-            clears_constraints(at, &segments, &mut dec)
-        });
-        assert!(clear.unwrap());
-        assert_eq!(dec.stats().work, 17);
-        assert_eq!(work.used, 34);
-        assert!(!work.exhausted);
-        let (refused, work) = catallax_numbers::with_operation_budget(33, || {
-            clears_constraints(at, &segments, &mut dec)
-        });
-        assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
-        assert!(work.exhausted);
-    }
-}
-
-fn separated(cdt: &Cdt, at: Point2<f64>, rho: f64, dec: &mut Decider) -> Result<bool, Refusal> {
-    dec.charge_work(1)?;
-    let lower = Point2::new((at.x - rho).next_down(), (at.y - rho).next_down());
-    let upper = Point2::new((at.x + rho).next_up(), (at.y + rho).next_up());
-    Ok(cdt.get_vertices_in_rectangle(lower, upper).next().is_none())
-}
-
-struct FixedTrim<'a> {
-    cdt: &'a Cdt,
-    segments: &'a [[Point2<f64>; 2]],
+struct ProtectedBand {
+    segments: Index<PlacedSegment>,
+    points: Points,
     separation: f64,
+    rows: Option<ChartRows>,
 }
 
-impl FixedTrim<'_> {
-    fn admits(&self, at: Point2<f64>, labels: &[bool], dec: &mut Decider) -> Result<bool, Refusal> {
-        dec.charge_work(1)?;
-        let inside = match self.cdt.locate(at) {
+fn insert_row(
+    rows: &mut ChartRows,
+    uv: Point2<f64>,
+    vertex: FixedVertexHandle,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    dec.charge_traversal(1)?;
+    let [u, v] = key([uv.x, uv.y]);
+    rows.entry(v).or_default().insert(u, vertex);
+    Ok(())
+}
+
+impl ProtectedBand {
+    fn separated(&self, at: Point2<f64>, dec: &mut Decider) -> Result<bool, Refusal> {
+        self.points.separated(at, self.separation, dec)
+    }
+
+    fn admits(
+        &self,
+        cdt: &Cdt,
+        at: Point2<f64>,
+        labels: &[bool],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        dec.charge_traversal(1)?;
+        let inside = match cdt.locate(at) {
             PositionInTriangulation::OnFace(face) => {
                 labels[face.index()]
-                    && self
-                        .cdt
+                    && cdt
                         .face(face)
                         .adjacent_edges()
                         .iter()
                         .any(|edge| !edge.is_constraint_edge())
             }
             PositionInTriangulation::OnEdge(edge) => {
-                !self.cdt.is_constraint_edge(edge.as_undirected())
-                    && labels[self.cdt.directed_edge(edge).face().index()]
+                !cdt.is_constraint_edge(edge.as_undirected())
+                    && labels[cdt.directed_edge(edge).face().index()]
             }
             _ => false,
         };
-        Ok(inside
-            && clears_constraints(at, self.segments, dec)?
-            && separated(self.cdt, at, self.separation, dec)?)
+        Ok(inside && self.segments.clears(at, dec)? && self.separated(at, dec)?)
     }
 }
 
@@ -342,9 +308,17 @@ impl FaceBuilder<'_> {
             return Err(failure("face triangulation reached max_vertices"));
         }
         let node = self.node(uv, boundary)?;
-        self.cdt
+        let vertex = self
+            .cdt
             .insert(node)
-            .map_err(|e| failure(format!("chart vertex insertion: {e}")))
+            .map_err(|e| failure(format!("chart vertex insertion: {e}")))?;
+        if let Some(band) = &mut self.protected_band {
+            band.points.insert(node.at, self.dec)?;
+            if let Some(rows) = &mut band.rows {
+                insert_row(rows, node.uv, vertex, self.dec)?;
+            }
+        }
+        Ok(vertex)
     }
 
     fn queue(
@@ -371,6 +345,9 @@ impl FaceBuilder<'_> {
         let index = nodes.len();
         nodes.push(node);
         indices.insert(placed_key, index);
+        if let Some(band) = &mut self.protected_band {
+            band.points.insert(node.at, self.dec)?;
+        }
         Ok(index)
     }
 
@@ -411,6 +388,16 @@ impl FaceBuilder<'_> {
                 }
             }
         }
+        if let Some(rows) = self
+            .protected_band
+            .as_mut()
+            .and_then(|band| band.rows.as_mut())
+        {
+            rows.clear();
+            for vertex in cdt.vertices() {
+                insert_row(rows, vertex.data().uv, vertex.fix(), self.dec)?;
+            }
+        }
         self.cdt = cdt;
         self.interior_left = interior_left;
         self.collar_edges = collar_edges;
@@ -441,7 +428,7 @@ impl FaceBuilder<'_> {
         let protect_band = self.protects_band();
         for &(mut a, mut b, first, last) in segments {
             if protect_band {
-                self.dec.charge_work(1)?;
+                self.dec.charge_traversal(1)?;
             }
             for i in 0..2 {
                 if self.tiled()[i] {
@@ -471,7 +458,7 @@ impl FaceBuilder<'_> {
             }
         }
         let anchors = if protect_band {
-            self.dec.charge_work(segments.len() as u64)?;
+            self.dec.charge_traversal(segments.len() as u64)?;
             segments
                 .iter()
                 .map(|&(a, b, _, _)| {
@@ -496,21 +483,35 @@ impl FaceBuilder<'_> {
             None
         };
         if protect_band {
-            self.dec.charge_work(2 * self.interior_left.len() as u64)?;
-            self.protected_trim = self
+            self.dec
+                .charge_traversal(2 * self.interior_left.len() as u64)?;
+            let segments_at: Vec<_> = self
                 .interior_left
                 .iter()
                 .map(|&(a, b)| [nodes[a].at, nodes[b].at])
                 .collect();
-            self.separation = self
-                .protected_trim
+            let separation = segments_at
                 .iter()
                 .map(|[a, b]| libm::hypot(b.x - a.x, b.y - a.y))
                 .fold(f64::INFINITY, f64::min)
                 / 64.0;
-            if !self.separation.is_finite() || self.separation <= 0.0 {
+            if !separation.is_finite() || separation <= 0.0 {
                 return Err(failure("periodic band has no positive trim separation"));
             }
+            let mut points = Points::default();
+            for node in &nodes {
+                points.insert(node.at, self.dec)?;
+            }
+            self.protected_band = Some(ProtectedBand {
+                segments: Index::segments(segments_at, self.dec)?,
+                points,
+                separation,
+                rows: self
+                    .options
+                    .angular_deviation
+                    .as_ref()
+                    .map(|_| BTreeMap::new()),
+            });
             self.collar(segments, anchors, &mut nodes, &mut indices, seam_collars)?;
         }
         self.bulk_load(nodes)
@@ -524,21 +525,20 @@ impl FaceBuilder<'_> {
     ) -> Result<[Uv; 2], Refusal> {
         let [lo, hi] = band.ends.map(|(uv, _)| uv[0]);
         let at = |v| lo + (hi - lo) * v;
+        let mut by_endpoint = BTreeMap::new();
+        for (&(a, b, _, _), &apex) in rails.iter().zip(anchors) {
+            dec.charge_traversal(2)?;
+            by_endpoint.entry(key(a)).or_insert(apex);
+            by_endpoint.entry(key(b)).or_insert(apex);
+        }
         let mut caps = [[0.0; 2]; 2];
         for (row, (start, _)) in band.ends.into_iter().enumerate() {
-            let mut find_anchor = |end| {
-                let end = key(end);
-                for (&(a, b, _, _), &apex) in rails.iter().zip(anchors) {
-                    dec.charge_work(1)?;
-                    if key(a) == end || key(b) == end {
-                        return Ok(Some(apex));
-                    }
-                }
-                Ok::<_, Refusal>(None)
-            };
-            let right = find_anchor(start)?
+            dec.charge_traversal(2)?;
+            let right = *by_endpoint
+                .get(&key(start))
                 .ok_or_else(|| failure("seam collar has no first rail segment"))?;
-            let mut left = find_anchor([start[0] + 1.0, start[1]])?
+            let mut left = *by_endpoint
+                .get(&key([start[0] + 1.0, start[1]]))
                 .ok_or_else(|| failure("seam collar has no last rail segment"))?;
             left[0] -= 1.0;
             let x = at(left[1]) - left[0];
@@ -569,23 +569,16 @@ impl FaceBuilder<'_> {
         }
         let mut neighbors = BTreeMap::<usize, [Option<Neighbor>; 2]>::new();
         for (&(a, b, _, _), inward) in rails.iter().zip(anchors) {
-            self.dec.charge_work(1)?;
+            self.dec.charge_traversal(1)?;
             let at = self.place(inward);
-            let rho = self.separation;
-            let x = (at.x - rho).next_down()..=(at.x + rho).next_up();
-            let y = (at.y - rho).next_down()..=(at.y + rho).next_up();
+            let protected = self.protected_band.as_ref().expect("protected saddle band");
             if !chart::positive_turn([hi, 1.0], [lo, 0.0], inward)
                 || !chart::positive_turn([lo + 1.0, 0.0], [hi + 1.0, 1.0], inward)
-                || !clears_constraints(at, &self.protected_trim, self.dec)?
+                || !protected.segments.clears(at, self.dec)?
                 || !(a[0].min(b[0]) < inward[0] && inward[0] < a[0].max(b[0]))
+                || !protected.separated(at, self.dec)?
             {
                 return Err(failure("periodic band collar encroaches on its trim"));
-            }
-            for node in &*nodes {
-                self.dec.charge_work(1)?;
-                if x.contains(&node.at.x) && y.contains(&node.at.y) {
-                    return Err(failure("periodic band collar encroaches on its trim"));
-                }
             }
             let ends = [a, b].map(|uv| {
                 let at = self.place(uv);
@@ -619,15 +612,13 @@ impl FaceBuilder<'_> {
         let uv = |i: usize| [nodes[i].uv.x, nodes[i].uv.y];
         if let Some((caps, seam)) = seam_collars {
             for (row, cap) in caps.into_iter().enumerate() {
-                let mut tip = None;
-                for (index, pair) in seam.iter().enumerate() {
-                    self.dec.charge_work(1)?;
-                    if nodes[pair[0]].uv.y == cap[1] {
-                        tip = Some(index);
-                        break;
-                    }
-                }
-                let tip = tip.ok_or_else(|| failure("seam collar has no planned tip"))?;
+                let mut comparisons = 0;
+                let tip = seam.binary_search_by(|pair| {
+                    comparisons += 1;
+                    nodes[pair[0]].uv.y.total_cmp(&cap[1])
+                });
+                self.dec.charge_traversal(comparisons)?;
+                let tip = tip.map_err(|_| failure("seam collar has no planned tip"))?;
                 let end = if row == 0 { 0 } else { seam.len() - 1 };
                 for side in 0..2 {
                     let apex = neighbors[&seam[end][side]]
@@ -637,7 +628,7 @@ impl FaceBuilder<'_> {
                         .expect("one collar apex at each seam end")
                         .apex;
                     for pair in seam[end.min(tip)..=end.max(tip)].windows(2) {
-                        self.dec.charge_work(1)?;
+                        self.dec.charge_traversal(1)?;
                         let mut triangle = [pair[0][side], pair[1][side], apex];
                         let [a, b, c] = triangle.map(uv);
                         if !chart::positive_turn(a, b, c) {
@@ -670,7 +661,7 @@ impl FaceBuilder<'_> {
             }
         }
         for (rail, [left, right]) in neighbors {
-            self.dec.charge_work(1)?;
+            self.dec.charge_traversal(1)?;
             let (Some(left), Some(right)) = (left, right) else {
                 continue;
             };
@@ -720,8 +711,9 @@ impl FaceBuilder<'_> {
             })
             .transpose()?;
         let [(lo, lo_index), (hi, hi_index)] = band.ends;
-        self.dec.charge_work(anchors.len() as u64)?;
+        self.dec.charge_traversal(anchors.len() as u64)?;
         let anchor_positions: Vec<_> = anchors.iter().map(|&uv| self.place(uv)).collect();
+        let anchors = Index::anchors(anchor_positions, self.dec)?;
         let mut points = vec![lo];
         let mut pending = if let Some([a, b]) = caps {
             vec![(b, hi, 2), (a, b, 2), (lo, a, 2)]
@@ -754,15 +746,8 @@ impl FaceBuilder<'_> {
             ];
             // Both seam copies use the stricter subdivision. Resolve their
             // encroachment before either one becomes a fixed constraint.
-            let mut clear = true;
-            for &at in &anchor_positions {
-                self.dec.charge_work(1)?;
-                if !clears_constraints(at, &cuts, self.dec)? {
-                    clear = false;
-                    break;
-                }
-            }
-            if clear
+            if anchors.clears(cuts[0], self.dec)?
+                && anchors.clears(cuts[1], self.dec)?
                 && within_length
                 && spline.seam_within([a, middle, b], chord, cosine, self.dec)?
             {
@@ -1061,14 +1046,10 @@ impl FaceBuilder<'_> {
             let labels = self.labels()?;
             let protect_band = self.protects_band();
             if protect_band {
-                let trim = FixedTrim {
-                    cdt: &self.cdt,
-                    segments: &self.protected_trim,
-                    separation: self.separation,
-                };
+                let trim = self.protected_band.as_ref().expect("protected saddle band");
                 let mut accepted = Vec::with_capacity(grid.len());
                 for uv in grid {
-                    if trim.admits(self.place(uv), &labels, self.dec)? {
+                    if trim.admits(&self.cdt, self.place(uv), &labels, self.dec)? {
                         accepted.push(uv);
                     }
                 }
@@ -1092,28 +1073,31 @@ impl FaceBuilder<'_> {
             };
             grid.sort_by(|a, b| at_x(*a).total_cmp(&at_x(*b)).then(a[1].total_cmp(&b[1])));
             let mut protected = BTreeSet::new();
-            for edge in self
-                .cdt
-                .undirected_edges()
-                .filter(|edge| !protect_band && edge.is_constraint_edge())
-            {
-                self.dec.check_deadline()?;
-                let [a, b] = edge.positions();
-                let radius = libm::hypot(a.x - b.x, a.y - b.y) * 0.5;
-                let middle = (a.x + b.x) * 0.5;
-                let first = grid.partition_point(|uv| at_x(*uv) < middle - radius);
-                for &uv in grid[first..]
-                    .iter()
-                    .take_while(|uv| at_x(**uv) <= middle + radius)
+            if !protect_band {
+                for edge in self
+                    .cdt
+                    .undirected_edges()
+                    .filter(|edge| edge.is_constraint_edge())
                 {
-                    let at = self.place(uv);
-                    if (at.x - a.x) * (at.x - b.x) + (at.y - a.y) * (at.y - b.y) < 0.0 {
-                        protected.insert(key(uv));
+                    self.dec.check_deadline()?;
+                    let [a, b] = edge.positions();
+                    let radius = libm::hypot(a.x - b.x, a.y - b.y) * 0.5;
+                    let middle = (a.x + b.x) * 0.5;
+                    let first = grid.partition_point(|uv| at_x(*uv) < middle - radius);
+                    for &uv in grid[first..]
+                        .iter()
+                        .take_while(|uv| at_x(**uv) <= middle + radius)
+                    {
+                        let at = self.place(uv);
+                        if (at.x - a.x) * (at.x - b.x) + (at.y - a.y) * (at.y - b.y) < 0.0 {
+                            protected.insert(key(uv));
+                        }
                     }
                 }
             }
             for uv in grid {
-                if protect_band && !separated(&self.cdt, self.place(uv), self.separation, self.dec)?
+                if let Some(trim) = &self.protected_band
+                    && !trim.separated(self.place(uv), self.dec)?
                 {
                     continue;
                 }
@@ -1659,11 +1643,7 @@ impl FaceBuilder<'_> {
         for _ in 0..48 {
             self.dec.check_deadline()?;
             let labels = self.labels()?;
-            let trim = FixedTrim {
-                cdt: &self.cdt,
-                segments: &self.protected_trim,
-                separation: self.separation,
-            };
+            let trim = self.protected_band.as_ref();
             let mut pending = BTreeMap::new();
             let mut angular_rows = BTreeSet::new();
             let mut triangles = Vec::new();
@@ -1671,7 +1651,7 @@ impl FaceBuilder<'_> {
             let mut aspect = Rational::zero();
             for f in self.cdt.inner_faces() {
                 if protect_band {
-                    self.dec.charge_work(1)?;
+                    self.dec.charge_traversal(1)?;
                 }
                 if !labels[f.index()] {
                     continue;
@@ -1826,17 +1806,19 @@ impl FaceBuilder<'_> {
                                 // The midpoint can encroach while a point farther
                                 // along this same edge clears the trim.
                                 for weight in [0.5, 0.25, 0.75, 0.125, 0.875, 0.0625, 0.9375] {
-                                    dec.charge_work(1)?;
+                                    dec.charge_traversal(1)?;
                                     let point = round([
                                         a.uv.x + weight * (b.uv.x - a.uv.x),
                                         a.uv.y + weight * (b.uv.y - a.uv.y),
                                     ]);
                                     let at = place_band(point);
                                     if matches!(
-                                        trim.cdt.locate(at),
+                                    self.cdt.locate(at),
                                         PositionInTriangulation::OnEdge(found)
                                             if found.as_undirected() == edge.fix().as_undirected()
-                                    ) && trim.admits(at, &labels, dec)?
+                                    ) && trim
+                                        .expect("protected saddle band")
+                                        .admits(&self.cdt, at, &labels, dec)?
                                     {
                                         if best.is_none_or(|(previous, _)| span >= previous) {
                                             best = Some((span, point));
@@ -1872,7 +1854,12 @@ impl FaceBuilder<'_> {
                         for uv in [circumcenter, point, center].map(round) {
                             if uv[0].is_finite()
                                 && uv[1].is_finite()
-                                && trim.admits(place_band(uv), &labels, dec)?
+                                && trim.expect("protected saddle band").admits(
+                                    &self.cdt,
+                                    place_band(uv),
+                                    &labels,
+                                    dec,
+                                )?
                             {
                                 return Ok(uv);
                             }
@@ -2000,30 +1987,46 @@ impl FaceBuilder<'_> {
                 // the next column of an aligned grid. Split the matching
                 // free edges in the strip and the matching column immediately
                 // beyond each end, while their endpoints still exist.
-                self.dec.charge_work(angular_rows.len() as u64)?;
+                self.dec.charge_traversal(angular_rows.len() as u64)?;
                 let active_ranges: BTreeSet<_> =
                     angular_rows.iter().map(|&(_, range)| range).collect();
-                let mut columns = BTreeMap::<_, Vec<_>>::new();
-                for edge in self.cdt.undirected_edges() {
-                    self.dec.charge_work(1)?;
-                    if edge.is_constraint_edge() {
+                let trim = trim.expect("protected saddle band");
+                let rows = trim.rows.as_ref().expect("angular saddle rows");
+                for range in active_ranges {
+                    self.dec.charge_traversal(2)?;
+                    let [Some(a), Some(b)] = range.map(|station| rows.get(&station)) else {
                         continue;
+                    };
+                    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+                    let mut columns = Vec::new();
+                    for (u, &from) in short {
+                        self.dec.charge_traversal(1)?;
+                        let Some(&to) = long.get(u) else {
+                            continue;
+                        };
+                        for edge in self.cdt.vertex(from).out_edges() {
+                            self.dec.charge_traversal(1)?;
+                            if edge.to().fix() != to {
+                                continue;
+                            }
+                            let edge = edge.as_undirected();
+                            if !edge.is_constraint_edge() {
+                                let [a, b] = edge.vertices().map(|v| v.data().uv);
+                                let active =
+                                    angular_rows.contains(&(spline.longitudinal_span(a.x), range));
+                                columns.push(([a.x, a.y.midpoint(b.y)], edge.fix(), active));
+                            }
+                            break;
+                        }
                     }
-                    let [a, b] = edge.vertices().map(|v| v.data().uv);
-                    let range = key([a.y.min(b.y), a.y.max(b.y)]);
-                    if (a.x - b.x) == 0.0 && active_ranges.contains(&range) {
-                        let active = angular_rows.contains(&(spline.longitudinal_span(a.x), range));
-                        columns.entry(range).or_default().push((
-                            [a.x, a.y.midpoint(b.y)],
-                            edge.fix(),
-                            active,
-                        ));
-                    }
-                }
-                for columns in columns.values_mut() {
-                    columns.sort_unstable_by(|a, b| a.0[0].total_cmp(&b.0[0]));
+                    let mut comparisons = 0;
+                    columns.sort_unstable_by(|a, b| {
+                        comparisons += 1;
+                        a.0[0].total_cmp(&b.0[0])
+                    });
+                    self.dec.charge_traversal(comparisons)?;
                     for (i, &(point, target, active)) in columns.iter().enumerate() {
-                        self.dec.charge_work(1)?;
+                        self.dec.charge_traversal(1)?;
                         let neighbor = i.checked_sub(1).is_some_and(|j| columns[j].2)
                             || columns.get(i + 1).is_some_and(|column| column.2);
                         if !active && !neighbor {
@@ -2032,7 +2035,7 @@ impl FaceBuilder<'_> {
                         if matches!(
                             self.cdt.locate(self.place(point)),
                             PositionInTriangulation::OnEdge(found) if found.as_undirected() == target
-                        ) && trim.admits(place_band(point), &labels, self.dec)?
+                        ) && trim.admits(&self.cdt, place_band(point), &labels, self.dec)?
                         {
                             pending.insert(key(point), point);
                         }
@@ -2048,10 +2051,10 @@ impl FaceBuilder<'_> {
                     self.options.angular_deviation.clone(),
                 ));
             }
-            if protect_band {
+            if let Some(trim) = trim {
                 let mut accepted = BTreeMap::new();
                 for (key, point) in pending {
-                    if trim.admits(place_band(point), &labels, self.dec)? {
+                    if trim.admits(&self.cdt, place_band(point), &labels, self.dec)? {
                         accepted.insert(key, point);
                     }
                 }
@@ -2064,8 +2067,8 @@ impl FaceBuilder<'_> {
             }
             let mut added = false;
             for center in pending.into_values() {
-                if protect_band
-                    && !separated(&self.cdt, place_band(center), self.separation, self.dec)?
+                if let Some(trim) = &self.protected_band
+                    && !trim.separated(place_band(center), self.dec)?
                 {
                     continue;
                 }
@@ -2244,8 +2247,7 @@ fn face_mesh(
         filtered_errors: Vec::new(),
         interior_left: BTreeSet::new(),
         collar_edges: BTreeSet::new(),
-        protected_trim: Vec::new(),
-        separation: 0.0,
+        protected_band: None,
         prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
@@ -3202,8 +3204,7 @@ pub(crate) fn build_preview(
             filtered_errors: Vec::new(),
             interior_left: BTreeSet::new(),
             collar_edges: BTreeSet::new(),
-            protected_trim: Vec::new(),
-            separation: 0.0,
+            protected_band: None,
             prior_chords: &prior_chords,
             bounds,
             filtered_hessian: hessian.each_ref().map(Interval::from_rational),

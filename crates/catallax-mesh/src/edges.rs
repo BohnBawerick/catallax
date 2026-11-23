@@ -424,7 +424,7 @@ impl Sampler<'_> {
 }
 
 fn plan_collar_rail(
-    mut leaves: Vec<RailLeaf>,
+    leaves: Vec<RailLeaf>,
     charts: &[IncidentChart<'_>],
     edge_cosine: Option<Interval>,
     options: &MeshOptions,
@@ -433,55 +433,63 @@ fn plan_collar_rail(
 ) -> Result<(Vec<usize>, Rational), Refusal> {
     let angle = options.angular_deviation.as_ref().expect("angular rail");
     let cosine = crate::controls::cosine_enclosure(angle, dec)?;
-    let mut checked = BTreeSet::new();
-    loop {
-        let mut split = None;
-        for i in 0..leaves.len() {
-            dec.charge_work(1)?;
-            let j = (i + leaves.len() - 1) % leaves.len();
-            let [a, b] = leaves[j].indices;
-            let [start, c] = leaves[i].indices;
-            debug_assert_eq!(b, start);
-            let key = [a, b, c];
-            if checked.contains(&key) {
-                continue;
+    let mut pending = BTreeSet::new();
+    let mut ordered = BTreeMap::new();
+    for (ordinal, leaf) in leaves.into_iter().enumerate() {
+        dec.charge_traversal(1)?;
+        let key = (ordinal, leaf.range[0].clone());
+        pending.insert(key.clone());
+        ordered.insert(key, leaf);
+    }
+    while let Some(right_key) = pending.pop_first() {
+        dec.charge_traversal(2)?;
+        let (left_key, left) = ordered
+            .range(..right_key.clone())
+            .next_back()
+            .or_else(|| ordered.last_key_value())
+            .expect("nonempty rail");
+        let right = &ordered[&right_key];
+        let [a, b] = left.indices;
+        let [start, c] = right.indices;
+        debug_assert_eq!(b, start);
+        let samples = [a, b, c].map(|index| positions[index]);
+        let mut fits = true;
+        for incident in charts {
+            dec.charge_traversal(1)?;
+            if let Some(row) = incident.fixed_v
+                && matches!(
+                    incident.chart.surface,
+                    Surface::BSpline(SplineSupport::RollingSaddle(_))
+                )
+            {
+                let chart = incident.chart.spline().expect("saddle band chart");
+                fits &= chart.rail_pair_fits(samples, row, options, cosine, edge_cosine, dec)?;
             }
-            let samples = key.map(|index| positions[index]);
-            let mut fits = true;
-            for incident in charts {
-                dec.charge_work(1)?;
-                if let Some(row) = incident.fixed_v
-                    && matches!(
-                        incident.chart.surface,
-                        Surface::BSpline(SplineSupport::RollingSaddle(_))
-                    )
-                {
-                    let chart = incident.chart.spline().expect("saddle band chart");
-                    fits &=
-                        chart.rail_pair_fits(samples, row, options, cosine, edge_cosine, dec)?;
-                }
-            }
-            if !fits {
-                // Splitting a leaf reruns the ordinary edge checks for both
-                // incident charts. The rest of the shared polyline stays fixed.
-                let left = crate::controls::length_squared(samples[0], samples[1]);
-                let right = crate::controls::length_squared(samples[1], samples[2]);
-                split = Some(if left >= right { j } else { i });
-                break;
-            }
-            checked.insert(key);
         }
-        let Some(i) = split else {
-            dec.charge_work(leaves.len() as u64)?;
-            let mut indices = vec![leaves[0].indices[0]];
-            let mut error = Rational::zero();
-            for leaf in leaves {
-                indices.push(leaf.indices[1]);
-                error = error.max(leaf.bound);
-            }
-            return Ok((indices, error));
+        if fits {
+            continue;
+        }
+        let left_length = crate::controls::length_squared(samples[0], samples[1]);
+        let right_length = crate::controls::length_squared(samples[1], samples[2]);
+        let split = if left_length >= right_length {
+            left_key.clone()
+        } else {
+            right_key
         };
-        let leaf = &leaves[i];
+        // Only the new leaves and the following pair change. Process them
+        // in the same cyclic order as the original scan.
+        dec.charge_traversal(1)?;
+        let successor = ordered
+            .range((
+                std::ops::Bound::Excluded(&split),
+                std::ops::Bound::Unbounded,
+            ))
+            .next()
+            .or_else(|| ordered.first_key_value())
+            .expect("nonempty rail")
+            .0;
+        pending.insert(successor.clone());
+        let leaf = ordered.remove(&split).expect("pending leaf");
         let mut children = Vec::new();
         let mut unused_indices = Vec::new();
         let mut error = Rational::zero();
@@ -509,9 +517,21 @@ fn plan_collar_rail(
             None,
             leaf.endpoints.each_ref(),
         )?;
-        dec.charge_work((leaves.len() - i - 1) as u64)?;
-        leaves.splice(i..=i, children);
+        for child in children {
+            dec.charge_traversal(1)?;
+            let key = (split.0, child.range[0].clone());
+            pending.insert(key.clone());
+            ordered.insert(key, child);
+        }
     }
+    let mut indices = vec![ordered.first_key_value().expect("nonempty rail").1.indices[0]];
+    let mut error = Rational::zero();
+    for leaf in ordered.into_values() {
+        dec.charge_traversal(1)?;
+        indices.push(leaf.indices[1]);
+        error = error.max(leaf.bound);
+    }
+    Ok((indices, error))
 }
 
 // One envelope row, kept on the envelope grid so both its faces share it.

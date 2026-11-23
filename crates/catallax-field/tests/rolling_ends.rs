@@ -799,7 +799,8 @@ fn turned_rim_mesh_bytes_are_independent_of_worker_count() {
         )
         .unwrap()
         .value;
-        println!("{PREFIX}{mesh:?}");
+        // Serial libtest can leave its in-progress status line open.
+        println!("\n{PREFIX}{mesh:?}");
         return;
     }
 

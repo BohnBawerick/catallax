@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Compare public display results on two revisions.
 
-Run capture inside each disposable checkout with the tool and its fixture from
-the same revision. Capture writes one JSONL file per worker count.
+Run capture inside each disposable checkout with the same copy of this tool and
+its fixtures. Capture writes one JSONL file per worker count.
 """
 import argparse
 import collections
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,41 +27,57 @@ SUITES = {
     "catallax-mesh": "native_boundaries preview_boundary",
     "catallax-app": (
         "coaxial_fillet_display coil_display ellipse_profiles fillet_display fillet_over_fillet_display "
-        "fine_mesh generator_fillet_display p5_display preview_mesh "
+        "application fine_mesh generator_fillet_display handover open_spherical_cap "
+        "p2_display p5_display preview_mesh rebuild_work "
         "rational_lofts rational_patches rolling_fillets spherical_corner_mesh "
         "spline_display spline_sweeps straight_sweep_display"
     ),
     "catallax-features": (
         "algebraic_extrusions algebraic_revolutions bezier_profiles certified_prism "
-        "coaxial_fillets display_diff_ellipse draft_annular draft_oblique draft_preserved_bore "
+        "coaxial_fillets display_diff_ellipse draft_annular draft_annular_clearance "
+        "draft_oblique draft_preserved_bore "
         "draft_preserved_boss equal_crossing_fillets fillet_over_fillet "
         "fillet_sphere_ring g2_fillets m11_spline_fillet oblique_cone_fillets "
         "oblique_fillets ruled_edge_rows saddle_fillets slot_fillets strip_ends "
-        "variable_fillets"
+        "variable_fillets bored_shell boolean_face_thicken circular_sphere_end_conditions "
+        "concave_draft cone_distance disjoint_bezier drawing_basic_shapes nonconvex_shell "
+        "nonconvex_thicken polygon_end_conditions torus_sections trihedral_corner"
     ),
     "catallax-field": (
-        "patch_shell rolling_conics rolling_ends rolling_over rolling_quadrics "
+        "algebraic_extrusions chamfer_display curved_end_conditions display display_preview "
+        "lattice lattice_stage m18_native nearest_face parallel patch_shell "
+        "rolling_conics rolling_ends rolling_over rolling_quadrics "
         "rolling_tori spline_spine unproved_preview"
     ),
+}
+SHARED_CASES = {
+    "catallax-app/tests/spline_sweeps.rs": "spline_sweeps.rs",
+    "catallax-features/tests/certified_prism.rs": "certified_prism.rs",
+    "catallax-features/tests/equal_crossing_fillets.rs": "equal_crossing_fillets.rs",
+    "catallax-features/tests/variable_fillets.rs": "variable_fillets.rs",
+    "catallax-field/tests/patch_shell.rs": "patch_shell.rs",
 }
 
 RUST_PROBE = r'''
 fn differential_record(
     function: &str,
-    before: catallax_numbers::OperationWork,
+    before: Option<catallax_numbers::OperationWork>,
     tags: &str,
     options: &impl std::fmt::Debug,
     result: &impl std::fmt::Debug,
 ) {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    let after = catallax_numbers::current_operation_work();
-    let work = [
-        after.used.wrapping_sub(before.used),
-        after.refunded.wrapping_sub(before.refunded),
-        after.uncharged.wrapping_sub(before.uncharged),
-        u64::from(after.exhausted),
-    ];
+    let work = before.map_or_else(|| "null".to_owned(), |before| {
+        let after = catallax_numbers::current_operation_work();
+        let counters = [
+            after.used.wrapping_sub(before.used),
+            after.refunded.wrapping_sub(before.refunded),
+            after.uncharged.wrapping_sub(before.uncharged),
+            u64::from(after.exhausted),
+        ];
+        format!("{counters:?}")
+    });
     let mut child = Command::new("sha256sum")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -80,7 +97,7 @@ fn differential_record(
         .unwrap();
     let thread = std::thread::current();
     eprintln!(
-        "\nmeshdiff\t{}\t{function}\t{tags}\t{options:?}\t{work:?}\t{digest}",
+        "\nmeshdiff\t{}\t{function}\t{tags}\t{options:?}\t{work}\t{digest}",
         thread.name().unwrap_or("unnamed"),
     );
 }
@@ -129,7 +146,8 @@ def instrument(source, names):
         wrapper = (
             prefix
             + tags
-            + "    let before = catallax_numbers::current_operation_work();\n"
+            + "    let before = catallax_numbers::operation_budget_active()\n"
+            + "        .then(catallax_numbers::current_operation_work);\n"
             + "    let result = (|| {\n"
             + old
             + "    })();\n"
@@ -181,6 +199,11 @@ def probes(root):
             path = root / "crates" / filename
             originals[path] = path.read_text()
             path.write_text(instrument(originals[path], names))
+        for filename, fixture in SHARED_CASES.items():
+            path = root / "crates" / filename
+            originals[path] = path.read_text()
+            cases = Path(__file__).with_name("cases") / fixture
+            path.write_text(originals[path] + "\n" + cases.read_text())
         yield
     finally:
         for path, source in originals.items():
@@ -239,42 +262,67 @@ def capture(root, args, output, threads):
 
 def load(path):
     result = {}
-    for line in path.read_text().splitlines():
+    for number, line in enumerate(path.read_text().splitlines(), 1):
         row = json.loads(line)
+        if "work" not in row:
+            raise ValueError(f"{path}:{number}: missing work field, use null for unmeasured work")
         key = tuple(row["key"])
-        assert key not in result, key
+        if key in result:
+            raise ValueError(f"{path}:{number}: duplicate case: {key}")
         result[key] = row
     if not result:
         raise ValueError(f"empty capture: {path}")
     return result
 
 
+def result_hash(row):
+    # Pin both the result digest and its accounting and carrier metadata.
+    return hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()
+
+
+def load_exceptions(path):
+    exceptions = {}
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        row = json.loads(line)
+        fields = {"key", "reason", "main_sha256", "candidate_sha256"}
+        if (
+            not isinstance(row, dict) or row.keys() != fields
+            or not isinstance(row["key"], list) or len(row["key"]) != 6
+            or any(not isinstance(value, str) for value in row["key"][:-1])
+            or type(row["key"][-1]) is not int or row["key"][-1] < 1
+            or not isinstance(row["reason"], str) or not row["reason"].strip()
+            or any(not isinstance(row[key], str) or not re.fullmatch(r"[a-f0-9]{64}", row[key])
+                   for key in ("main_sha256", "candidate_sha256"))
+        ):
+            raise ValueError(f"{path}:{number}: invalid exception")
+        key = tuple(row["key"])
+        if key in exceptions:
+            raise ValueError(f"{path}:{number}: duplicate exception: {key}")
+        exceptions[key] = row
+    return exceptions
+
+
 def compare(baseline, candidate, exception_path=None):
     baseline, candidate = map(load, (baseline, candidate))
-    exceptions = {}
-    if exception_path:
-        for line in exception_path.read_text().splitlines():
-            row = json.loads(line)
-            key = tuple(row["key"])
-            assert key not in exceptions and row["reason"], row
-            exceptions[key] = row
-    differences = set()
-    unexpected = 0
+    exceptions = load_exceptions(exception_path) if exception_path else {}
+    exact = recorded = unexpected = 0
     for key in sorted(baseline.keys() | candidate.keys()):
-        if baseline.get(key) == candidate.get(key):
+        old, new = baseline.get(key), candidate.get(key)
+        if old == new:
+            exact += 1
             continue
-        differences.add(key)
-        row = {"key": key, "main": baseline.get(key), "candidate": candidate.get(key)}
         exception = exceptions.get(key)
-        if exception is None or any(exception[field] != row[field] for field in ("main", "candidate")):
+        if (exception is not None and exception["main_sha256"] == result_hash(old)
+                and exception["candidate_sha256"] == result_hash(new)):
+            del exceptions[key]
+            recorded += 1
+        else:
             unexpected += 1
-            print(json.dumps(row, sort_keys=True))
-    stale = exceptions.keys() - differences
-    for key in sorted(stale):
-        print(f"Unused exception: {key}")
-    print(f"{len(baseline.keys() | candidate.keys()) - len(differences)} exact matches, "
-          f"{len(differences) - unexpected} recorded changes, {unexpected} unexpected changes")
-    return bool(unexpected or stale)
+            print(json.dumps({"key": key, "main": old, "candidate": new}, sort_keys=True))
+    for key in sorted(exceptions):
+        print(f"Stale or unused exception: {key}")
+    print(f"{exact} exact matches, {recorded} recorded changes, {unexpected} unexpected changes")
+    return bool(unexpected or exceptions)
 
 
 def main():

@@ -781,6 +781,66 @@ vertex_tests! {
 }
 
 #[test]
+fn turned_rim_mesh_bytes_are_independent_of_worker_count() {
+    const CHILD: &str = "CATALLAX_TEST_TURNED_RIM_MESH";
+    const PREFIX: &str = "turned rim mesh: ";
+
+    if std::env::var_os(CHILD).is_some() {
+        let recipe = parse(&RZ.recipe(NO_MOVE, "2"));
+        let built = evaluate(&recipe, &mut decider()).unwrap();
+        let mesh = mesh_body(
+            &built.model,
+            built.result,
+            &MeshOptions {
+                chord_tolerance: q("1/20"),
+                ..MeshOptions::default()
+            },
+            &mut decider(),
+        )
+        .unwrap()
+        .value;
+        // Serial libtest can leave its in-progress status line open.
+        println!("\n{PREFIX}{mesh:?}");
+        return;
+    }
+
+    // Fresh processes vary the hash seed even at the same worker count.
+    let counts = [1, 2, 4, 24, 1];
+    let meshes = counts.map(|workers| {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "turned_rim_mesh_bytes_are_independent_of_worker_count",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("CATALLAX_THREADS", workers.to_string())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{workers} workers: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .find_map(|line| line.strip_prefix(PREFIX))
+            .expect("child did not print the mesh")
+            .as_bytes()
+            .to_vec()
+    });
+    for (workers, mesh) in counts[1..].iter().zip(&meshes[1..]) {
+        assert!(
+            mesh == &meshes[0],
+            "{workers} workers: {} vs {} with one worker",
+            catallax_import::sha256_hex(mesh),
+            catallax_import::sha256_hex(&meshes[0])
+        );
+    }
+}
+
+#[test]
 fn every_rolling_case_has_its_vertices_checked() {
     let listed: std::collections::BTreeSet<String> = VERTEX_GROUPS
         .iter()

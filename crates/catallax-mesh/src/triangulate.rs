@@ -174,16 +174,36 @@ impl FaceBuilder<'_> {
     }
 
     fn bulk_load(&mut self, nodes: Vec<Node>) -> Result<(), Refusal> {
-        let constraints = self.interior_left.iter().map(|&(a, b)| [a, b]).collect();
-        let mut conflict = false;
-        // Input UVs are unique. Spade's stable bulk loader therefore preserves
-        // the indices used by the oriented boundary constraints.
-        let cdt = Cdt::try_bulk_load_cdt(nodes, constraints, |_| conflict = true)
+        let position_key = |point: Point2<f64>| key([point.x, point.y]);
+        let constraints: Vec<_> = self
+            .interior_left
+            .iter()
+            .map(|&(a, b)| [a, b].map(|index| position_key(nodes[index].at)))
+            .collect();
+        // Spade's constrained bulk loader replays skipped vertices and edges
+        // in hash-set order, which can pick different Delaunay diagonals.
+        let mut cdt = Cdt::bulk_load(nodes)
             .map_err(|error| failure(format!("chart bulk insertion: {error}")))?;
-        if conflict {
-            return Err(failure("boundary polylines cross at this display accuracy"));
+        let mut interior_left = BTreeSet::new();
+        if !constraints.is_empty() {
+            // Bulk loading reorders handles. Index positions once to avoid
+            // walking the triangulation for each endpoint on long rails.
+            let handles: BTreeMap<_, _> = cdt
+                .vertices()
+                .map(|vertex| (position_key(vertex.position()), vertex.fix()))
+                .collect();
+            for [a, b] in constraints {
+                let (Some(&a), Some(&b)) = (handles.get(&a), handles.get(&b)) else {
+                    return Err(failure("boundary vertex missing from display chart"));
+                };
+                if cdt.try_add_constraint(a, b).is_empty() {
+                    return Err(failure("boundary polylines cross at this display accuracy"));
+                }
+                interior_left.insert((a.index(), b.index()));
+            }
         }
         self.cdt = cdt;
+        self.interior_left = interior_left;
         Ok(())
     }
 

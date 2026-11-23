@@ -7,12 +7,15 @@
 #[path = "../examples/scan_fit/sampler.rs"]
 mod sampler;
 
+mod scan_support;
+
 use catallax_field::reconstruction::scan::{
-    ScanFit, ScanFitOptions, Surface, SurfaceKind, SurfaceUse, fit_scan,
+    ScanFit, ScanFitOptions, Surface, SurfaceKind, SurfaceUse,
 };
 use catallax_import::scan::{FastSurface, ScanItem};
 use catallax_numbers::{Decider, DecisionStats, Rational};
 use catallax_recipe::{FileRef, Number, Operation, Pose, Recipe};
+use scan_support::fit_recorded;
 
 const COUNT: usize = 30_000;
 const SIGMA: f64 = 0.01;
@@ -43,7 +46,7 @@ fn fit_record(bytes: &[u8], workers: usize) -> (ScanFit, DecisionStats, u64) {
     let limit = dec.policy().max_work;
     let (result, work) = catallax_numbers::with_operation_budget(limit, || {
         catallax_field::workers::with_workers(workers, || {
-            fit_scan(&step, bytes, &options, &mut dec)
+            fit_recorded(&step, bytes, &options, &mut dec)
         })
         .expect("a positive field worker limit")
     });

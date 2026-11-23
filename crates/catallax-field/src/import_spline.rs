@@ -16,9 +16,9 @@
 //! intersection of the six supports after checking, exactly, that the imported
 //! faces are those supports and meet at those eight corners.
 //!
-//! Anything else (a degree above one, unequal weights, a patch whose controls
-//! are not rational, a curved patch in any other solid) stays a typed refusal
-//! that names the face and the reason.
+//! A proper rectangular STEP trim uses a patch shell. The importer extracts
+//! the smaller carrier before it checks the four physical rows. The field
+//! holds that finite definition together with the other admitted faces.
 
 use crate::Face;
 use crate::geometry::{self, Cell, Leaf};
@@ -544,6 +544,119 @@ pub(crate) fn saddle(
         }
     }
     Ok((Leaf::Cell(cell), faces))
+}
+
+/// The exact importer extracts a proper four-row trim before it checks the
+/// shell. Check the retained domain against the source carrier so existing
+/// whole-patch parts keep their original field answers.
+pub(crate) fn has_rectangular_trim(
+    source: &catallax_import::StepFile,
+    model: &Model,
+    body: BodyId,
+) -> bool {
+    use catallax_recipe::Role;
+    use catallax_shapes::SplineSupport;
+    model.faces_of_body(body).into_iter().any(|id| {
+        let Surface::BSpline(SplineSupport::RationalPatch(patch)) =
+            model.geom().surface(model.face(id).surface)
+        else {
+            return false;
+        };
+        model.face_origins(id).iter().any(|origin| {
+            let Role::Imported { key } = &origin.role else {
+                return false;
+            };
+            source
+                .solids
+                .iter()
+                .flat_map(|solid| &solid.faces)
+                .any(|face| {
+                    face.name == *key
+                        && matches!(&face.surface, catallax_import::Surface::BSpline(s) if {
+                            let source = s.geometry.domain();
+                            let retained = patch.domain().each_ref().map(|a| a.each_ref());
+                            retained != source && (0..2).all(|axis| {
+                                source[axis][0] <= retained[axis][0]
+                                    && retained[axis][1] <= source[axis][1]
+                            })
+                        })
+                })
+        })
+    })
+}
+
+/// Hold the checked trim domains as exact boundary faces. The admitted B-rep
+/// supplies sewing, orientation and nonintersection. Only the face definitions
+/// are retained by the field.
+pub(crate) fn rectangular_shell(
+    model: &Model,
+    body: BodyId,
+    dec: &mut Decider,
+) -> Result<Leaf, Refusal> {
+    use crate::patch_shell::{Face as ShellFace, PatchFace, Polygon, Shell};
+    use catallax_topology::RationalPatchFace;
+
+    let [lump] = model.body(body).lumps.as_slice() else {
+        return Err(spline("rectangular spline import needs one solid lump"));
+    };
+    let [shell] = model.lump(*lump).shells.as_slice() else {
+        return Err(spline("rectangular spline import needs one closed shell"));
+    };
+    let mut faces = Vec::new();
+    for &id in &model.shell(*shell).faces {
+        dec.charge_work(1)?;
+        if let Some(patch) = RationalPatchFace::of_face(model, id, dec)? {
+            let outward = model.face(id).sense == Sense::Same;
+            faces.push(ShellFace::Patch(Box::new(PatchFace::new(
+                patch.support(),
+                outward,
+                dec,
+            )?)));
+            continue;
+        }
+        let Surface::Plane(_) = model.geom().surface(model.face(id).surface) else {
+            return Err(spline(
+                "rectangular spline import needs planar companion faces",
+            ));
+        };
+        let [ring] = model.face(id).loops.as_slice() else {
+            return Err(spline("a companion face needs one polygonal boundary"));
+        };
+        let Loop::Coedges(edges) = model.loop_(*ring) else {
+            return Err(spline("a companion face needs physical polygon edges"));
+        };
+        let mut vertices = Vec::with_capacity(edges.len());
+        for &edge in edges {
+            dec.charge_work(1)?;
+            let coedge = model.coedge(edge);
+            let edge = model.edge(coedge.edge);
+            if !matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+                return Err(spline("a companion face has a curved boundary"));
+            }
+            let start = if coedge.sense == Sense::Same {
+                edge.start
+            } else {
+                edge.end
+            }
+            .ok_or_else(|| spline("a companion face edge has no endpoint"))?;
+            vertices.push(rpoint(&model.geom().position(model.vertex(start).point))?);
+        }
+        let origin = vertices
+            .first()
+            .ok_or_else(|| spline("a companion face has no vertices"))?;
+        let normal = vertices.windows(2).fold(
+            RVector3::new(Rational::zero(), Rational::zero(), Rational::zero()),
+            |normal, edge| normal.plus(&edge[0].minus(origin).cross(&edge[1].minus(origin))),
+        );
+        let plane = outward(model, id)?;
+        if geometry::sign(&normal.to_real().dot(&plane.normal), dec)? != Sign::Positive {
+            return Err(spline(
+                "a companion polygon disagrees with its outward plane",
+            ));
+        }
+        faces.push(ShellFace::Polygon(Box::new(Polygon::new(vertices)?)));
+    }
+    Ok(Leaf::Shell(Box::new(Shell::new(faces)?)))
 }
 
 /// Points of a curved bilinear patch at the centres of a regular grid of its

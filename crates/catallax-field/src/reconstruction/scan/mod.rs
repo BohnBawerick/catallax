@@ -15,6 +15,8 @@ mod fit;
 mod knn;
 mod linalg;
 mod segment;
+/// Fit a scan of one spherical part.
+pub mod sphere;
 
 use catallax_import::scan::{FastSurface, ScanItem, ScanReference};
 use catallax_numbers::{

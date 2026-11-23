@@ -37,6 +37,61 @@ pub(crate) fn apart(a: &Face, b: &Face, dec: &mut Decider) -> Result<bool, NotVe
     let (Some(first), Some(second)) = (controls(a), controls(b)) else {
         return Ok(false);
     };
+    apart_controls(a, b, &first, &second, dec)
+}
+
+/// Runs the same separator on the admitted controls when an exact trim
+/// shortened at least one carrier. Both finite boundary loops have already
+/// passed the patch-row check in the scratch model.
+pub(crate) fn apart_on_trimmed_carriers(
+    a: &Face,
+    b: &Face,
+    model: &catallax_topology::Model,
+    ids: [catallax_topology::FaceId; 2],
+    dec: &mut Decider,
+) -> Result<bool, NotVerified> {
+    use catallax_shapes::{SplineSupport, Surface as GeomSurface};
+    let trimmed = |face: &Face, id| {
+        let Surface::BSpline(source) = &face.surface else {
+            return None;
+        };
+        let GeomSurface::BSpline(SplineSupport::RationalPatch(kept)) =
+            model.geom().surface(model.face(id).surface)
+        else {
+            return None;
+        };
+        if source.self_intersect == Some(true)
+            || kept.domain().each_ref().map(|axis| axis.each_ref()) == source.geometry.domain()
+        {
+            return None;
+        }
+        kept.carrier()
+            .controls()
+            .iter()
+            .map(|p| p.as_rational().map(|p| [p.x, p.y, p.z]))
+            .collect::<Option<Vec<_>>>()
+    };
+    let first = trimmed(a, ids[0]);
+    let second = trimmed(b, ids[1]);
+    if first.is_none() && second.is_none() {
+        return Ok(false);
+    }
+    let (Some(first), Some(second)) = (
+        first.or_else(|| controls(a)),
+        second.or_else(|| controls(b)),
+    ) else {
+        return Ok(false);
+    };
+    apart_controls(a, b, &first, &second, dec)
+}
+
+fn apart_controls(
+    a: &Face,
+    b: &Face,
+    first: &[Vec3],
+    second: &[Vec3],
+    dec: &mut Decider,
+) -> Result<bool, NotVerified> {
     let mut shared: Vec<&Vec3> = Vec::new();
     for p in vertices(a) {
         for q in vertices(b) {
@@ -46,8 +101,8 @@ pub(crate) fn apart(a: &Face, b: &Face, dec: &mut Decider) -> Result<bool, NotVe
         }
     }
     match shared[..] {
-        [] => separated(&first, &second, dec),
-        [p, q] if shares_edge(a, b, p, q, dec)? => hinged(&first, &second, p, q, dec),
+        [] => separated(first, second, dec),
+        [p, q] if shares_edge(a, b, p, q, dec)? => hinged(first, second, p, q, dec),
         _ => Ok(false),
     }
 }

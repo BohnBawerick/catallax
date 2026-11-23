@@ -9,7 +9,7 @@ use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
     EdgeMesh, Mesh, MeshOptions,
-    chart::{self, BITS, Chart, Uv, align},
+    chart::{self, BITS, Chart, Trim, Uv, align},
     failure,
 };
 
@@ -135,6 +135,7 @@ struct Cap<'a> {
 struct EdgePoint {
     xyz: [Ball; 3],
     cap_hint: Option<Uv>,
+    edge_end: Option<usize>,
 }
 
 struct Sampler<'a> {
@@ -154,6 +155,7 @@ struct Sampler<'a> {
 struct IncidentChart<'a> {
     chart: &'a Chart,
     fixed_v: Option<f64>,
+    trim: Option<Trim>,
 }
 
 impl Sampler<'_> {
@@ -249,6 +251,7 @@ impl Sampler<'_> {
                             .hull(&Ball::from_rational(&chart::q(x.hi()), BITS))
                     }),
                     cap_hint,
+                    edge_end: None,
                 });
             }
         }
@@ -257,6 +260,7 @@ impl Sampler<'_> {
                 .piece
                 .evaluate(&Ball::from_rational(t, BITS), self.dec)?,
             cap_hint,
+            edge_end: None,
         })
     }
 
@@ -298,7 +302,9 @@ impl Sampler<'_> {
             let chart = incident.chart;
             if let (Some(spline), Surface::BSpline(support)) = (chart.spline(), &chart.surface) {
                 if small {
-                    let hints = if let (Some(cap), SplineSupport::SplineFillet(fillet)) =
+                    let hints = if let Some(trim) = incident.trim {
+                        [a, &middle_point, b].map(|point| point.edge_end.map(|i| trim.ends[i]))
+                    } else if let (Some(cap), SplineSupport::SplineFillet(fillet)) =
                         (&self.cap, support)
                         && cap.trace.fillet().shares_definition_nodes(fillet)
                     {
@@ -317,7 +323,10 @@ impl Sampler<'_> {
                     small = spline.edge_within(
                         [self.positions[first], middle, self.positions[last]],
                         hints,
-                        incident.fixed_v,
+                        incident
+                            .trim
+                            .map(|trim| trim.fixed)
+                            .or_else(|| incident.fixed_v.map(|v| (1, v))),
                         Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3)),
                         self.spline_cosine,
                         self.dec,
@@ -519,6 +528,13 @@ pub(crate) fn sample_selected(
             Surface::BSpline(SplineSupport::EllipticOffset(_)) => {
                 Some(catallax_topology::SplinePrism::check(model, body, dec)?.rings())
             }
+            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_)) => {
+                Some(
+                    catallax_topology::saddle_rows(model, face)
+                        .ok_or_else(|| failure("periodic rolling band has no checked rails"))?
+                        .map(|(edge, _)| edge),
+                )
+            }
             Surface::BSpline(SplineSupport::ObliqueDraft(_)) => {
                 let cell = catallax_topology::DraftedCylinder::check(model, body, dec)?;
                 if face == cell.faces()[2] {
@@ -539,10 +555,17 @@ pub(crate) fn sample_selected(
                                 .position(|&rail| rail == edge)
                                 .map(|row| row as f64)
                         });
-                        adjacent
-                            .entry(edge)
-                            .or_default()
-                            .push(IncidentChart { chart, fixed_v });
+                        let trim = chart.trim(edge).map(|mut trim| {
+                            if model.edge(edge).sense == Sense::Reversed {
+                                trim.ends.reverse();
+                            }
+                            trim
+                        });
+                        adjacent.entry(edge).or_default().push(IncidentChart {
+                            chart,
+                            fixed_v,
+                            trim,
+                        });
                     }
                 }
                 Loop::Vertex(v) => {
@@ -656,15 +679,16 @@ pub(crate) fn sample_selected(
                     })
                 })
                 .transpose()?;
-            let endpoint = |i: usize, xyz| EdgePoint {
+            let endpoint = |i: usize, xyz, whole_edge: bool| EdgePoint {
                 xyz,
                 cap_hint: cap.as_ref().map(|cap| {
                     let side = if cap.forward { i } else { 1 - i };
                     [cap.trace.cut().ends[side].to_f64_nearest(), side as f64]
                 }),
+                edge_end: whole_edge.then_some(i),
             };
-            let first_point = endpoint(0, first_values.clone());
-            let last_point = endpoint(1, last_values);
+            let first_point = endpoint(0, first_values.clone(), i == 0);
+            let last_point = endpoint(1, last_values, i + 1 == pieces.len());
             let spline = if adjacent[&edge_id]
                 .iter()
                 .any(|incident| incident.chart.spline().is_some())

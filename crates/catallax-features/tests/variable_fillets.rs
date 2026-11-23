@@ -284,6 +284,21 @@ fn either_zero_end_has_one_shared_apex_and_a_closed_bounded_display() {
             }
         }
         assert_eq!(apex_indices.len(), 1, "split zero-radius apex");
+        let angular = MeshOptions {
+            angular_deviation: Some(q("1/12")),
+            ..options
+        };
+        let (controlled, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            mesh_body(&built.model, built.result, &angular, &mut decider())
+        });
+        let controlled = controlled.unwrap().value;
+        assert!(!work.exhausted, "{work:?}");
+        let controlled_band = controlled.faces.iter().find(|f| f.face == face).unwrap();
+        assert!(controlled_band.max_chord_error <= angular.chord_tolerance);
+        assert_eq!(
+            controlled_band.max_angular_deviation,
+            angular.angular_deviation
+        );
         let mut bytes = Vec::new();
         let report = catallax_step::write_step(
             &built.model,

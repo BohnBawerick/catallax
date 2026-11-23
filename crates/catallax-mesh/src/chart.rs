@@ -7,7 +7,8 @@ use std::{
 };
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
-use catallax_shapes::{SplineSupport, Surface, Vector3};
+use catallax_shapes::{BoundaryRow, SplineSupport, Surface, Vector3};
+use catallax_topology::{EdgeId, FaceId, LinearFilletBand, Model};
 
 use crate::failure;
 
@@ -16,6 +17,12 @@ pub(crate) use spline::SplineChart;
 
 pub(crate) const BITS: u32 = 128;
 pub(crate) type Uv = [f64; 2];
+
+#[derive(Clone, Copy)]
+pub(crate) struct Trim {
+    pub(crate) ends: [Uv; 2],
+    pub(crate) fixed: (usize, f64),
+}
 
 pub(crate) fn q(x: f64) -> Rational {
     Rational::from_f64_exact(x).expect("finite mesh coordinate")
@@ -72,6 +79,7 @@ pub(crate) struct Chart {
     /// corner. These select grid seeds only; every proof still applies.
     pub(crate) corner_planes: Option<[[Interval; 3]; 3]>,
     sampling: Sampling,
+    trims: BTreeMap<EdgeId, Trim>,
     centers: [Option<f64>; 2],
     hessian: OnceCell<[Rational; 3]>,
     filtered_hessian: OnceCell<[Interval; 3]>,
@@ -156,6 +164,7 @@ impl Chart {
             normal_scale,
             great_circle_sector: false,
             corner_planes: None,
+            trims: BTreeMap::new(),
             sampling: Sampling::Analytic(Box::new(Analytic {
                 ellipse_radii: axes,
                 origin,
@@ -170,25 +179,80 @@ impl Chart {
         })
     }
 
-    pub(crate) fn from_spline(support: &SplineSupport, dec: &mut Decider) -> Result<Self, Refusal> {
-        if matches!(support, SplineSupport::EllipticOffset(_)) {
-            // The prism chart and both rails enclose the same algebraic controls.
+    pub(crate) fn from_spline(
+        model: &Model,
+        face: FaceId,
+        support: &SplineSupport,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if matches!(
+            support,
+            SplineSupport::EllipticOffset(_)
+                | SplineSupport::RollingSaddle(_)
+                | SplineSupport::RollingSphere(_)
+        ) {
+            // The band chart and both rails enclose the same algebraic controls.
             catallax_numbers::reuse_operation_enclosures();
         }
         let periodic = support
             .param_kinds()
             .map(|kind| kind == catallax_shapes::ParamKind::PeriodicFinite);
-        let join_scale = if matches!(
+        let mut trims = BTreeMap::new();
+        let mut normal_station = None;
+        if let SplineSupport::LinearFillet(fillet) = support {
+            // The arc tangent vanishes by a single station factor. The
+            // one-sided normal has the direction at the opposite station.
+            normal_station = (0..2)
+                .find(|&end| fillet.zero_end(end))
+                .map(|end| (1 - end) as f64);
+            let band = LinearFilletBand::of_face(model, face, dec)?
+                .ok_or_else(|| failure("linear band has no checked trim"))?;
+            for (edge, row, _, forward) in band.rows() {
+                let fixed = match row {
+                    BoundaryRow::Rail => (0, 0.0),
+                    BoundaryRow::Mouth => (0, 1.0),
+                    BoundaryRow::Negative => (1, 0.0),
+                    BoundaryRow::Positive => (1, 1.0),
+                };
+                let mut ends: [Uv; 2] = [[0.0; 2], [1.0; 2]];
+                ends.iter_mut().for_each(|uv| uv[fixed.0] = fixed.1);
+                if !forward {
+                    ends.reverse();
+                }
+                trims.insert(edge, Trim { ends, fixed });
+            }
+        }
+        let split_spans = matches!(
             support,
             SplineSupport::RollingPipe(_) | SplineSupport::ObliqueDraft(_)
-        ) {
+        );
+        let join_scale = if split_spans {
             // Its exact four-quarter construction doubles each denominator
             // factor per quarter. Each factor contributes degree two in u.
             let degree = Self::carrier(support).degrees()[0] as i32;
             [Interval::point(libm::ldexp(1.0, 2 * degree)), None]
+        } else if matches!(
+            support,
+            SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_)
+        ) {
+            [
+                Some(spline::checked_join_scale(Self::carrier(support), dec)?),
+                None,
+            ]
         } else {
             [None; 2]
         };
+        let mut spline = SplineChart::new(
+            Self::carrier(support),
+            periodic,
+            join_scale,
+            split_spans,
+            normal_station,
+            dec,
+        )?;
+        if matches!(support, SplineSupport::RollingSaddle(_)) {
+            spline.refine_normal_enclosures();
+        }
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
             periodic,
@@ -199,14 +263,22 @@ impl Chart {
             normal_scale: Rational::one(),
             great_circle_sector: false,
             corner_planes: None,
-            sampling: Sampling::Spline(SplineChart::new(
-                Self::carrier(support),
-                periodic,
-                join_scale,
-                join_scale[0].is_some(),
-                dec,
-            )?),
+            trims,
+            sampling: Sampling::Spline(spline),
         })
+    }
+
+    pub(crate) fn trim(&self, edge: EdgeId) -> Option<Trim> {
+        self.trims.get(&edge).copied()
+    }
+
+    pub(crate) fn collapsed_station(&self) -> Option<f64> {
+        let Surface::BSpline(SplineSupport::LinearFillet(fillet)) = &self.surface else {
+            return None;
+        };
+        (0..2)
+            .find(|&end| fillet.zero_end(end))
+            .map(|end| end as f64)
     }
 
     pub(crate) fn carrier(support: &SplineSupport) -> &catallax_shapes::BSplineSurface {

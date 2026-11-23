@@ -444,6 +444,37 @@ fn the_field_builds_the_m11_loft_as_a_patch_shell() {
     assert!(agreed > 400);
 }
 
+#[test]
+fn the_m11_patch_shell_displays_all_named_faces_inside_the_chord() {
+    use catallax_field::{Plan, display};
+    use catallax_numbers::with_operation_budget;
+
+    let plan = Plan::compile(&recipe("b_0", false)).unwrap();
+    assert!(plan.result_patch_shell().is_some());
+    for chord in ["1/100", "1/200"] {
+        let options = display::Options {
+            tolerance: r(chord),
+            ..Default::default()
+        };
+        let (mesh, work) = with_operation_budget(20_000_000, || {
+            display::mesh_plan(&plan, &options, &mut decider())
+        });
+        let mesh = mesh.unwrap();
+        assert!(!work.exhausted);
+        assert!(mesh.max_deviation <= options.tolerance);
+        let faces: std::collections::BTreeSet<_> = mesh
+            .triangles
+            .iter()
+            .map(|triangle| {
+                let index = triangle.face.index();
+                assert_eq!(plan.result_face(index), Some(triangle.face));
+                plan.faces()[index].origin.clone()
+            })
+            .collect();
+        assert_eq!(faces.len(), 6);
+    }
+}
+
 /// A loft whose correspondence turns the top half a turn collapses its
 /// middle slice, so no slice proof holds and the old refusal stands.
 #[test]

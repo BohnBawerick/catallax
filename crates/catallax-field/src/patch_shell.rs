@@ -24,13 +24,15 @@ pub(crate) mod print_boundary;
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal, Sign};
 use catallax_recipe::{EdgeName, EdgeRef, Origin, Role, StepId};
-use catallax_shapes::{Isometry, RPoint3, RVector3, RationalPatch};
+use catallax_shapes::{Isometry, Plane, RPoint3, RVector3, RationalPatch, SplineSupport, Surface};
 
 use crate::Location;
 use crate::metric::PRECISION;
 use crate::patch_distance::PatchDistance;
 use crate::rolling_region::Range;
 use crate::spline_spine::sweep::{Cap, loft::Round};
+
+mod display;
 
 pub(crate) fn loft_edge(sides: &[Origin], reference: &EdgeRef) -> Option<[usize; 2]> {
     let [a, b] = &reference.between;
@@ -113,6 +115,18 @@ enum Planar {
 }
 
 impl Polygon {
+    fn plane(&self, dec: &mut Decider) -> Result<Plane, Refusal> {
+        let [x, y, z] = self.vertices[0].clone();
+        let [nx, ny, nz] = self.normal.clone();
+        let [dx, dy, dz] = sub(&self.vertices[1], &self.vertices[0]);
+        Plane::new(
+            RPoint3::new(x, y, z).into(),
+            RVector3::new(nx, ny, nz).into(),
+            RVector3::new(dx, dy, dz).into(),
+            dec,
+        )
+    }
+
     /// A polygon from its vertices, counterclockwise seen from outside. The
     /// vertices must span a plane and lie in it exactly.
     pub fn new(vertices: Vec<RPoint3>) -> Result<Self, Refusal> {
@@ -407,6 +421,45 @@ fn ball(interval: Interval) -> Result<Ball, Refusal> {
 }
 
 impl Shell {
+    pub(crate) fn face_count(&self) -> usize {
+        self.faces.len()
+    }
+
+    pub(crate) fn display_faces(
+        &self,
+        leaf: usize,
+        dec: &mut Decider,
+    ) -> Result<Vec<crate::Face>, Refusal> {
+        let Some(first) = self.loft_sides.first() else {
+            return Ok(Vec::new());
+        };
+        let cap = |role| Origin {
+            step: first.step.clone(),
+            role,
+        };
+        let origins = self
+            .loft_sides
+            .iter()
+            .cloned()
+            .chain([cap(Role::Start), cap(Role::End)]);
+        self.faces
+            .iter()
+            .zip(origins)
+            .map(|(face, origin)| {
+                let surface = match face {
+                    Face::Patch(patch) => {
+                        Surface::BSpline(SplineSupport::RationalPatch(patch.support.clone()))
+                    }
+                    Face::Polygon(polygon) => Surface::Plane(polygon.plane(dec)?),
+                };
+                let mut face = crate::geometry::face(surface, origin, dec)?;
+                face.leaf = leaf;
+                face.in_result = true;
+                Ok(face)
+            })
+            .collect()
+    }
+
     /// Unsigned boundary distance for a proximity test with a positive limit.
     /// Once a witness is within the limit, zero remains a valid lower bound.
     pub fn boundary_distance_within(

@@ -5,20 +5,15 @@
 
 use std::collections::BTreeMap;
 
-mod bezier;
 mod position;
 mod rational_patch;
 mod spline_fillet;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
-    BoundaryRow, Curve, EnvelopeGrid, LinearFillet, RollingMitre, RollingPipe, RollingSaddle,
-    SplineSupport, Surface,
+    BoundaryRow, Curve, EnvelopeGrid, RollingMitre, RollingSaddle, SplineSupport, Surface,
 };
-use catallax_topology::{
-    BodyId, EdgeId, FaceId, LinearFilletBand, Model, RollingMitreBand, Sense, envelope_rows,
-    pipe_rows, saddle_rows,
-};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, RollingMitreBand, Sense, saddle_rows};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
@@ -53,13 +48,12 @@ enum Ends {
     Meridians,
     Seam,
     Poles,
-    ZeroStart,
     ZeroEnd,
 }
 
 impl Ends {
     fn collapsed(self, column: usize, columns: usize) -> bool {
-        (column == 0 && matches!(self, Self::Poles | Self::ZeroStart))
+        (column == 0 && self == Self::Poles)
             || (column + 1 == columns && matches!(self, Self::Poles | Self::ZeroEnd))
     }
 }
@@ -79,25 +73,14 @@ fn row_points(grid: &EnvelopeGrid, row: BoundaryRow) -> Vec<[Ball; 3]> {
     }
 }
 
-/// Whether every spline face has a checked structured display route.
+/// Whether the model has a junction that still needs singular grid cells.
 pub(crate) fn present(model: &Model, body: BodyId) -> bool {
-    let mut found = false;
-    for face in model.faces_of_body(body) {
-        match model.geom().surface(model.face(face).surface) {
-            Surface::BSpline(
-                SplineSupport::RollingEnvelope(_)
-                | SplineSupport::BezierExtrusion(_)
-                | SplineSupport::RollingPipe(_)
-                | SplineSupport::RollingSaddle(_)
-                | SplineSupport::LinearFillet(_)
-                | SplineSupport::RollingMitre(_)
-                | SplineSupport::RationalPatch(_),
-            ) => found = true,
-            Surface::BSpline(_) => return false,
-            _ => {}
-        }
-    }
-    found
+    model.faces_of_body(body).iter().any(|&face| {
+        matches!(
+            model.geom().surface(model.face(face).surface),
+            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingMitre(_))
+        )
+    })
 }
 
 /// The display mesh at the preview's target, without its bounds.
@@ -224,155 +207,34 @@ pub(crate) fn spline_fillet_carrier(
     })
 }
 
-/// The grids of a body's envelope faces. `None` for a body without one, or with
-/// any other spline face, which keeps its own route.
+/// Prepares the remaining singular junction cells and their shared rails.
 pub(crate) fn prepare(
     model: &Model,
     faces: &[FaceId],
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Option<Junction>, Refusal> {
-    let mut found = Vec::new();
-    let mut bands = Vec::new();
-    let mut saddles = Vec::new();
-    let mut variable = Vec::new();
-    let mut mitres = Vec::new();
-    let mut beziers = Vec::new();
-    let mut rational = Vec::new();
-    for &face in faces {
-        match model.geom().surface(model.face(face).surface) {
-            Surface::BSpline(SplineSupport::RationalPatch(_)) => rational.push(face),
-            Surface::BSpline(SplineSupport::BezierExtrusion(_)) => beziers.push(face),
-            Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
-                found.push((face, envelope))
-            }
-            Surface::BSpline(SplineSupport::RollingPipe(pipe)) => bands.push((face, pipe)),
-            Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => saddles.push((face, saddle)),
-            Surface::BSpline(SplineSupport::LinearFillet(band)) => variable.push((face, band)),
-            Surface::BSpline(SplineSupport::RollingMitre(band)) => mitres.push((face, band)),
-            Surface::BSpline(_) => {
-                if !rational.is_empty()
-                    || faces.iter().any(|face| {
-                        matches!(
-                            model.geom().surface(model.face(*face).surface),
-                            Surface::BSpline(SplineSupport::RationalPatch(_))
-                        )
-                    })
-                {
-                    return Err(Refusal::new(
-                        "mesh.rational-patch-junction",
-                        "mixed generic and law-specific spline grids need a common boundary certificate",
-                    ));
-                }
-                return Ok(None);
-            }
-            _ => {}
-        }
-    }
-    if !rational.is_empty() {
-        if !found.is_empty()
-            || !bands.is_empty()
-            || !saddles.is_empty()
-            || !variable.is_empty()
-            || !mitres.is_empty()
-            || !beziers.is_empty()
-        {
-            return Err(Refusal::new(
-                "mesh.rational-patch-junction",
-                "mixed generic and law-specific spline grids need a common boundary certificate",
-            ));
-        }
-        return rational_patch::prepare(model, &rational, options, dec).map(Some);
-    }
-    if found.is_empty()
-        && bands.is_empty()
-        && saddles.is_empty()
-        && variable.is_empty()
-        && mitres.is_empty()
-        && beziers.is_empty()
-    {
-        return Ok(None);
-    }
     let tolerance = options.chord_tolerance.mul_pow2(-1);
     let mut envelopes = BTreeMap::new();
     let mut seeds = BTreeMap::new();
-    for face in beziers {
-        envelopes.insert(
-            face,
-            bezier::band(model, face, &tolerance, options, &mut seeds, dec)?,
-        );
-    }
-    for (face, pipe) in bands {
-        envelopes.insert(
-            face,
-            band(model, face, pipe, &tolerance, options, &mut seeds, dec)?,
-        );
-    }
-    for (face, saddle) in saddles {
-        envelopes.insert(
-            face,
-            saddle_band(model, face, saddle, &tolerance, options, &mut seeds, dec)?,
-        );
-    }
-    for (face, support) in variable {
-        envelopes.insert(
-            face,
-            linear_band(model, face, support, &tolerance, options, &mut seeds, dec)?,
-        );
-    }
-    for (face, support) in mitres {
-        envelopes.insert(
-            face,
-            mitre_band(model, face, support, &tolerance, options, &mut seeds, dec)?,
-        );
-    }
-    for (face, envelope) in found {
-        let grid = envelope.display_grid(&tolerance, options.max_vertices, dec)?;
-        let mut rows = Vec::with_capacity(4);
-        let mut along_u = None;
-        for (edge, row, sense) in envelope_rows(model, face, dec)? {
-            let points = row_points(&grid, row);
-            let definition = model.edge(edge);
-            let (Some(start), Some(end)) = (definition.start, definition.end) else {
-                return Err(failure("a rolling-envelope row has two ends"));
-            };
-            let [start, end] = [start, end].map(|v| model.geom().position(model.vertex(v).point));
-            let distance = |point: &catallax_shapes::Point3| -> Result<Rational, Refusal> {
-                let xyz = [&point.x, &point.y, &point.z].map(|x| dec.enclose_at(x, BITS));
-                let mut sum = Rational::zero();
-                for (i, value) in xyz.into_iter().enumerate() {
-                    sum = sum + (&value?.mid() - &points[0][i].mid()).abs();
-                }
-                Ok(sum)
-            };
-            let forward = distance(&start)? <= distance(&end)?;
-            if row == BoundaryRow::Rail {
-                along_u = Some((sense == Sense::Same) == forward);
+    for &face in faces {
+        let envelope = match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle))
+                if matches!(
+                    saddle.definition().law().ring,
+                    catallax_shapes::SaddleRing::Crossing { .. }
+                ) =>
+            {
+                saddle_band(model, face, saddle, &tolerance, options, &mut seeds, dec)?
             }
-            rows.push((edge, row, forward));
-            seeds.insert(
-                edge,
-                Seed {
-                    points,
-                    error: grid.chord.clone(),
-                    forward,
-                    exact: Vec::new(),
-                },
-            );
-        }
-        let along_u = along_u.ok_or_else(|| failure("a rolling-envelope face has no rail"))?;
-        envelopes.insert(
-            face,
-            Envelope {
-                grid,
-                rows,
-                along_u,
-                ends: Ends::Meridians,
-                rational: None,
-            },
-        );
+            Surface::BSpline(SplineSupport::RollingMitre(mitre)) => {
+                mitre_band(model, face, mitre, &tolerance, options, &mut seeds, dec)?
+            }
+            _ => continue,
+        };
+        envelopes.insert(face, envelope);
     }
-    Ok(Some(Junction { envelopes, seeds }))
+    Ok((!envelopes.is_empty()).then_some(Junction { envelopes, seeds }))
 }
 
 // A band over a mitre: its rails are the grid's first and last rows, its
@@ -428,117 +290,6 @@ fn mitre_band(
         ends: Ends::ZeroEnd,
         rational: None,
     })
-}
-
-fn linear_band(
-    model: &Model,
-    face: FaceId,
-    support: &LinearFillet,
-    tolerance: &Rational,
-    options: &MeshOptions,
-    seeds: &mut BTreeMap<EdgeId, Seed>,
-    dec: &mut Decider,
-) -> Result<Envelope, Refusal> {
-    let checked = LinearFilletBand::of_face(model, face, dec)?
-        .ok_or_else(|| failure("variable band has no proved complete domain"))?;
-    let grid = support.display_grid(tolerance, options.max_vertices, dec)?;
-    let mut rows = Vec::with_capacity(4);
-    let mut along_u = None;
-    for (edge, row, sense, forward) in checked.rows() {
-        let points = row_points(&grid, row);
-        let count = points.len();
-        let mut exact = Vec::with_capacity(count);
-        for index in 0..count {
-            let t = Rational::from_ratio(index as i64, count as i64 - 1).unwrap();
-            let (arc, station) = match row {
-                BoundaryRow::Rail => (Rational::zero(), t),
-                BoundaryRow::Mouth => (Rational::one(), t),
-                BoundaryRow::Negative => (t, Rational::zero()),
-                BoundaryRow::Positive => (t, Rational::one()),
-            };
-            let point = support.point(&arc, &station)?;
-            exact.push([point.x, point.y, point.z]);
-        }
-        if row == BoundaryRow::Rail {
-            along_u = Some((sense == Sense::Same) == forward);
-        }
-        rows.push((edge, row, forward));
-        seeds.insert(
-            edge,
-            Seed {
-                points,
-                error: grid.chord.clone(),
-                forward,
-                exact,
-            },
-        );
-    }
-    let ends = if support.zero_end(0) {
-        Ends::ZeroStart
-    } else if support.zero_end(1) {
-        Ends::ZeroEnd
-    } else {
-        Ends::Meridians
-    };
-    Ok(Envelope {
-        grid,
-        rows,
-        along_u: along_u.ok_or_else(|| failure("variable band has no first contact rail"))?,
-        ends,
-        rational: None,
-    })
-}
-
-// A closed band's grid and its two rings. A ring has no end vertices, so its
-// direction comes from the sense of its ellipse against the chart's turn.
-fn band(
-    model: &Model,
-    face: FaceId,
-    pipe: &RollingPipe,
-    tolerance: &Rational,
-    options: &MeshOptions,
-    seeds: &mut BTreeMap<EdgeId, Seed>,
-    dec: &mut Decider,
-) -> Result<Envelope, Refusal> {
-    let grid = pipe.display_grid(tolerance, options.max_vertices, dec)?;
-    let rows = pipe_rows(model, face, dec)?
-        .ok_or_else(|| failure("a pipe face has no complete band of two rails"))?;
-    let turn = pipe.chart_normal();
-    let last = Rational::from_i64(grid.columns as i64 - 1);
-    let mut rings = Vec::with_capacity(2);
-    for (index, (edge, sense)) in rows.into_iter().enumerate() {
-        let definition = model.edge(edge);
-        // A cone's wall rail is the carrier's last row and runs with the chart.
-        let same = match model.geom().curve(definition.curve) {
-            Curve::Ellipse(rail) => {
-                let turns = dec.enclose_at(&rail.normal.dot(&turn), BITS)?;
-                turns
-                    .sign()
-                    .ok_or_else(|| failure("a pipe rail's turn is not separated from zero"))?
-                    == catallax_numbers::StrictSign::Positive
-            }
-            Curve::BSpline(_) => true,
-            _ => return Err(failure("a pipe rail is not its ellipse or row")),
-        };
-        let forward = same == (definition.sense == Sense::Same);
-        // Each span's parameter is cut in equal halves, so a column is an exact
-        // fraction of the chart.
-        let line = Rational::from_i64(index as i64);
-        let exact = (0..grid.columns)
-            .map(|column| {
-                let u = Rational::from_i64(4 * column as i64) / last.clone();
-                let p = pipe.point(&u, &line);
-                [p.x, p.y, p.z]
-            })
-            .collect();
-        rings.push(Ring {
-            edge,
-            sense,
-            forward,
-            exact,
-        });
-    }
-    Ok(seed_band(grid, rings, seeds, Ends::Seam))
 }
 
 // A closed saddle's rings are the carrier's boundary rows, so each runs up the

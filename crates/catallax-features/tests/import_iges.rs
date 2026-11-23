@@ -136,6 +136,38 @@ fn the_field_compiles_an_iges_import() {
 }
 
 #[test]
+fn the_field_shells_an_import_with_other_files_available() {
+    let (stock, later) = (catallax_box(), occt_box());
+    let unrelated = b"unrelated import data";
+    let files = ImportFiles::from([
+        (sha256_hex(&stock), stock.as_slice()),
+        (sha256_hex(&later), later.as_slice()),
+        (sha256_hex(unrelated), unrelated.as_slice()),
+    ]);
+    let mut wall = shelled(&stock);
+    let mut next = recipe(&later, vec![], "source").steps.remove(0);
+    next.id = StepId::new("later").unwrap();
+    wall.steps.push(next);
+    let plan = catallax_field::Plan::compile_with_files(&wall, &files).unwrap();
+    let mut storage = catallax_field::Workspace::default();
+    let probe = |x: &str| {
+        catallax_shapes::RPoint3::new(
+            Rational::parse(x).unwrap(),
+            Rational::parse("-1/2").unwrap(),
+            r(6),
+        )
+    };
+    assert_eq!(
+        plan.proven(&probe("8"), &mut storage).location,
+        catallax_field::Location::Outside
+    );
+    assert_eq!(
+        plan.proven(&probe("29/4"), &mut storage).location,
+        catallax_field::Location::Inside
+    );
+}
+
+#[test]
 fn replacing_an_iges_file_rewrites_every_reference() {
     let (old, new) = (catallax_box(), occt_box());
     let recipe = shelled(&old);

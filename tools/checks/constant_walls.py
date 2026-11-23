@@ -13,6 +13,8 @@ and run the verifier driver on that same corpus with each binary:
 
 The corpus includes result recipes and each scalar wall prefix. It requests
 both B-rep and field outcomes, at the existing 100M request allowance.
+Capture keeps import files through the last scalar wall. Corpus exits with
+status 1 if any variant lacks a replayable import source.
 """
 import argparse
 import hashlib
@@ -22,10 +24,12 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from textwrap import indent
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = ROOT / ".claude/skills/verify-catallax/scripts/control-catallax.py"
 OPS = {"shell", "thicken"}
+IMPORT_OPS = {"import_step", "import_iges", "import_mesh"}
 FORMATS = {f"catallax-recipe/{version}" for version in range(3, 6)}
 
 # These probes are only compiled in the disposable offload test checkout.
@@ -43,19 +47,30 @@ RECIPE_PROBE = """
                 .expect("write captured wall recipe");
         }
 """
-FILES_PROBE = """
-    if let Some(out) = std::env::var_os("CATALLAX_CONSTANT_WALL_CAPTURE")
-        && recipe.steps.iter().any(|s| matches!(
-            s.op, Operation::Shell { .. } | Operation::Thicken { .. }
-        ))
-    {
-        use sha2::{Digest, Sha256};
-        for bytes in files.values() {
-            let name = format!("source-{:x}", Sha256::digest(bytes));
+FILES_PROBE = """\
+if let Some(out) = std::env::var_os("CATALLAX_CONSTANT_WALL_CAPTURE")
+    && let Some(last) = recipe.steps.iter().rposition(|s| matches!(
+        s.op, Operation::Shell { .. } | Operation::Thicken { .. }
+    ))
+{
+    let mut seen = std::collections::BTreeSet::new();
+    for step in &recipe.steps[..=last] {
+        let file = match &step.op {
+            Operation::ImportStep { file, .. }
+            | Operation::ImportIges { file, .. }
+            | Operation::ImportMesh { file, .. } => file,
+            _ => continue,
+        };
+        if seen.insert(&file.sha256)
+            && let Some(bytes) = files.get(&file.sha256)
+            && catallax_import::sha256_hex(bytes) == file.sha256
+        {
+            let name = format!("source-{}", file.sha256);
             std::fs::write(std::path::Path::new(&out).join(name), bytes)
                 .expect("write captured wall source");
         }
     }
+}
 """
 
 
@@ -66,7 +81,8 @@ def capture(out, command):
     out.mkdir(parents=True, exist_ok=True)
     probes = (
         ("crates/catallax-recipe/src/recipe.rs", "        crate::check::check(self)", RECIPE_PROBE),
-        ("crates/catallax-features/src/evaluate.rs", "    recipe.check().map_err(BuildError::Recipe)?;\n    catallax_numbers::reuse_operation_enclosures();", FILES_PROBE),
+        ("crates/catallax-features/src/evaluate.rs", "    recipe.check().map_err(BuildError::Recipe)?;\n    catallax_numbers::reuse_operation_enclosures();", indent(FILES_PROBE, "    ")),
+        ("crates/catallax-field/src/lib.rs", "        recipe.check().map_err(|e| {", indent(FILES_PROBE, "        ")),
     )
     saved = {}
     try:
@@ -107,7 +123,8 @@ def scalar_recipes(value, files=None):
 
 def corpus(captured, out):
     cases = {}
-    sources = {p.name.removeprefix("source-"): p.read_bytes().decode()
+    skipped = set()
+    sources = {p.name.removeprefix("source-"): p
                for p in captured.glob("source-*")}
     tracked = subprocess.check_output(["git", "-C", ROOT, "ls-files", "-z", "*.json", "*.jsonl"])
     captured_recipes = sorted(captured.glob("recipe-*.json"))
@@ -120,11 +137,6 @@ def corpus(captured, out):
         for value in values:
             for recipe, files, prefix in scalar_recipes(value):
                 steps = recipe["steps"]
-                source_files = files or {
-                    step["file"]["sha256"]: sources[step["file"]["sha256"]]
-                    for step in steps if step.get("op") in {"import_step", "import_iges", "import_mesh"}
-                    and step["file"]["sha256"] in sources
-                }
                 ids = {step["id"] for step in steps[:prefix]}
                 if recipe["result"] == steps[prefix - 1]["id"] and prefix == len(steps):
                     variants = [recipe]
@@ -134,10 +146,32 @@ def corpus(captured, out):
                         wall["materials"] = [m for m in recipe["materials"] if m["region"] in ids]
                     variants = [recipe, wall]
                 for variant in variants:
+                    required = {step["file"]["sha256"] for step in variant["steps"]
+                                if step.get("op") in IMPORT_OPS}
+                    source_files = {}
+                    missing = []
+                    for digest in sorted(required):
+                        text = (files or {}).get(digest)
+                        if text is None and digest in sources:
+                            try:
+                                text = sources[digest].read_bytes().decode()
+                            except UnicodeDecodeError:
+                                pass  # The verifier's import wrapper accepts text sources.
+                        if isinstance(text, str) and hashlib.sha256(text.encode()).hexdigest() == digest:
+                            source_files[digest] = text
+                        else:
+                            missing.append(digest)
+                    if missing:
+                        key = (path, variant["name"], variant["result"], tuple(missing))
+                        if key not in skipped:
+                            skipped.add(key)
+                            print(f"{path}: {variant['name']} result {variant['result']} missing "
+                                  f"replayable imports {', '.join(missing)}", file=sys.stderr)
+                        continue
                     case = ({"format": "catallax-import-recipe/1", "recipe": variant,
                              "files": source_files} if source_files else variant)
                     cases[encoded(case)] = case
-    if not cases:
+    if not cases and not skipped:
         raise ValueError("no scalar wall recipes found")
     out.mkdir(parents=True, exist_ok=False)
     for key, case in sorted(cases.items()):
@@ -147,6 +181,7 @@ def corpus(captured, out):
                         "problem": case, "max_work": 100_000_000}
             (out / f"{digest}-{route}.json").write_text(encoded(question) + "\n")
     print(f"{len(cases)} scalar recipe variants, {len(captured_recipes)} captured inputs, {len(sources)} captured import files")
+    return int(bool(skipped))
 
 
 def compare(baseline, candidate):

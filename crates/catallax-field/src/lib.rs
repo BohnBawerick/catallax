@@ -806,39 +806,17 @@ impl Plan {
                     } => {
                         let profile = &profiles[profile];
                         catallax_features::check_face_profile(&profile.pose, dec)?;
-                        let planes = if matches!(&face.role, Some(Role::Offset { .. }))
-                            && &face.step == body
-                            && matches!(
-                                &recipe.step(body).expect("checked input").op,
-                                Operation::ThickenGraded { thickness, .. }
-                                    if matches!(catallax_features::graded_wall::Thickness::new(thickness)?,
-                                        catallax_features::graded_wall::Thickness::Graded(_))
-                            ) {
-                            // Each named offset facet has positive area in its
-                            // grade band. The other bands can only touch its edge.
-                            step_faces[body]
-                                .iter()
-                                .filter_map(|&i| {
-                                    let candidate = &plan.faces[i];
-                                    if !face.matches(&candidate.origin) {
-                                        return None;
-                                    }
-                                    let Surface::Plane(plane) = &candidate.surface else {
-                                        unreachable!("a graded normal sweep uses planes")
-                                    };
-                                    Some(plane.clone())
-                                })
-                                .collect::<Vec<_>>()
-                        } else {
-                            planar_face::recovery::skin(&plan, steps[body], dec)?
-                                .patches
-                                .into_iter()
-                                .filter(|patch| {
-                                    patch.origins.iter().any(|origin| face.matches(origin))
-                                })
-                                .map(|patch| patch.plane)
-                                .collect::<Vec<_>>()
-                        };
+                        let planes = planar_face::recovery::skin(
+                            &plan,
+                            steps[body],
+                            Some((&step_faces[body], &step_domains[body])),
+                            dec,
+                        )?
+                        .patches
+                        .into_iter()
+                        .filter(|patch| patch.origins.iter().any(|origin| face.matches(origin)))
+                        .map(|patch| patch.plane)
+                        .collect::<Vec<_>>();
                         let [x, y, z] = x_direction.0.each_ref().map(|n| n.value().clone());
                         let [nx, ny, nz] = normal_direction.0.each_ref().map(|n| n.value().clone());
                         let map = catallax_features::face_placement(

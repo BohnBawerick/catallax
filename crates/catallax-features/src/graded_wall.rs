@@ -171,7 +171,7 @@ impl WallGrade {
     ) -> Result<Vec<ConvexCell>, Refusal> {
         let index = select_face(source, refs, dec)?;
         match &self.law {
-            Law::Axis(grade) => grade.thicken(source, index, side, step, dec),
+            Law::Axis(grade) => grade.spatial().thicken(source, index, side, step, dec),
             Law::Spatial(grade) => grade.thicken(source, index, side, step, dec),
         }
     }
@@ -303,44 +303,22 @@ impl Linear {
         Ok(result)
     }
 
-    /// A single convex planar face's swept solid, with the grade evaluated at
-    /// the perpendicular projection onto the source face.
-    fn thicken(
-        &self,
-        source: &ConvexCell,
-        index: usize,
-        side: ThickenSide,
-        step: &StepId,
-        dec: &mut Decider,
-    ) -> Result<Vec<ConvexCell>, Refusal> {
-        let base = &source.faces[index].plane;
-        let axis = basis(self.axis);
-        let outward = unit(&base.normal, dec)?;
-        let tangent = axis.minus(&outward.scaled(&axis.dot(&outward)));
-        let thickness = self.sample(axis_coordinate(&base.origin, self.axis), dec)?;
-        if sign(&tangent.norm_squared(), dec)? == Sign::Zero {
-            return Ok(vec![physical_faces(
-                source.face_sweep(index, &thickness, side, step, dec)?,
-            )]);
-        }
-        let rise = outward.scaled(&Real::from_i64(if side == ThickenSide::Front {
-            1
-        } else {
-            -1
-        }));
-        let faces = source.sweep_faces(index, &thickness, side, step, dec)?;
-        self.cells(
-            &base.origin,
-            &tangent,
-            &rise,
-            |band, _| {
-                let (value, slope) = self.law(band, axis_coordinate(&base.origin, self.axis));
-                let mut faces = faces.clone();
-                faces[1].plane = displaced(base, &rise, &value, &tangent.scaled(&slope));
-                Ok(faces)
-            },
-            dec,
-        )
+    fn spatial(&self) -> Spatial {
+        let anchor = |at: &Rational| {
+            std::array::from_fn(|i| {
+                if i == self.axis {
+                    at.clone()
+                } else {
+                    Rational::zero()
+                }
+            })
+        };
+        Spatial::Linear(grade::Linear::new(
+            anchor(&self.anchors[0]),
+            anchor(&self.anchors[1]),
+            self.values[0].clone(),
+            self.values[1].clone(),
+        ))
     }
 
     /// The box cavity. A kept wall tests the clearance along its inward normal
@@ -488,4 +466,90 @@ fn clearance() -> Refusal {
         "distance.grade-clearance",
         "graded shell needs positive cavity width between opposing walls throughout the cavity",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn axis_thicken_uses_only_spatial_band_cuts() {
+        let mut dec = Decider::default();
+        let faces = (0..3)
+            .flat_map(|axis| {
+                [-1, 1].map(move |sense| PlaneFace {
+                    plane: Plane {
+                        origin: Point3::origin().plus(
+                            &basis(axis).scaled(&Real::from_i64(if sense == 1 { 10 } else { 0 })),
+                        ),
+                        normal: basis(axis).scaled(&Real::from_i64(sense)),
+                        ref_dir: basis((axis + 1) % 3),
+                    },
+                    origins: vec![Origin {
+                        step: StepId::new(format!("face-{axis}-{}", sense + 1)).unwrap(),
+                        role: Role::End,
+                    }],
+                })
+            })
+            .collect();
+        let source = ConvexCell::new(faces, &mut dec).unwrap();
+        let wall = StepId::new("wall").unwrap();
+        let q = Rational::from_i64;
+        let (mut actual_planes, mut expected_planes) = (0, 0);
+        for axis in 0..3 {
+            let coordinates = |at| std::array::from_fn(|i| if i == axis { q(at) } else { q(0) });
+            for [lo, hi] in [[-2, 12], [0, 10], [2, 8]] {
+                for values in [[q(1), q(3)], [q(3), q(1)]] {
+                    let grade = WallGrade {
+                        law: Law::Axis(Box::new(Linear {
+                            axis,
+                            anchors: [q(lo), q(hi)],
+                            values: values.clone(),
+                        })),
+                    };
+                    let spatial = Spatial::Linear(grade::Linear::new(
+                        coordinates(lo),
+                        coordinates(hi),
+                        values[0].clone(),
+                        values[1].clone(),
+                    ));
+                    for selected in [2 * axis + 1, 2 * ((axis + 1) % 3) + 1] {
+                        let refs = [FaceRef {
+                            face: Some(catallax_recipe::OriginPattern {
+                                step: source.faces[selected].origins[0].step.clone(),
+                                role: Some(Role::End),
+                            }),
+                            touching: vec![],
+                            near: None,
+                        }];
+                        for side in [ThickenSide::Front, ThickenSide::Back] {
+                            let actual = grade
+                                .thicken(&source, &refs, side, &wall, &mut dec)
+                                .unwrap();
+                            let expected = spatial
+                                .thicken(&source, selected, side, &wall, &mut dec)
+                                .unwrap();
+                            assert_eq!(actual.len(), expected.len());
+                            for (a, b) in actual.iter().zip(&expected) {
+                                assert!(a.contains_vertices(b.vertices(), &mut dec).unwrap());
+                                assert!(b.contains_vertices(a.vertices(), &mut dec).unwrap());
+                                let names = |cell: &ConvexCell| {
+                                    cell.faces
+                                        .iter()
+                                        .flat_map(|face| face.origins.clone())
+                                        .collect::<std::collections::BTreeSet<_>>()
+                                };
+                                assert_eq!(names(a), names(b));
+                            }
+                            actual_planes +=
+                                actual.iter().map(|cell| cell.faces.len()).sum::<usize>();
+                            expected_planes +=
+                                expected.iter().map(|cell| cell.faces.len()).sum::<usize>();
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(actual_planes, expected_planes);
+    }
 }

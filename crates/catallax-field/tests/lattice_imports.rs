@@ -138,11 +138,110 @@ fn stage_print<S: TerminalField>(
     (stage, bytes)
 }
 
+type Triangle = [[f64; 3]; 3];
+
+fn stl_triangles(bytes: &[u8]) -> Vec<Triangle> {
+    let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
+    assert!(count > 0);
+    assert_eq!(bytes.len(), 84 + 50 * count);
+    bytes[84..]
+        .as_chunks::<50>()
+        .0
+        .iter()
+        .map(|record| {
+            std::array::from_fn(|vertex| {
+                std::array::from_fn(|axis| {
+                    let offset = 12 + 12 * vertex + 4 * axis;
+                    f64::from(f32::from_le_bytes(
+                        record[offset..offset + 4].try_into().unwrap(),
+                    ))
+                })
+            })
+        })
+        .collect()
+}
+
+fn obeys_step_clip(triangles: &[Triangle], accuracy: f64) -> bool {
+    // The placed trim controls reach y - x = 15/8 and z = 0 and 2.
+    // Divide by the oblique plane's normal length to get millimetres.
+    triangles.iter().flatten().all(|&[x, y, z]| {
+        x.is_finite()
+            && y.is_finite()
+            && (y - x - 15.0 / 8.0) / 2.0_f64.sqrt() <= accuracy
+            && (-accuracy..=2.0 + accuracy).contains(&z)
+    })
+}
+
+fn obeys_cube_clip(triangles: &[Triangle], accuracy: f64) -> bool {
+    triangles.iter().flatten().all(|&[x, y, z]| {
+        x.abs() <= 1.0 + accuracy && y.abs() <= 1.0 + accuracy && (z - 0.5).abs() <= 1.0 + accuracy
+    })
+}
+
+fn crossing_error(triangles: &[Triangle], p: [f64; 3], axis: usize) -> f64 {
+    let [u, v] = [(axis + 1) % 3, (axis + 2) % 3];
+    triangles
+        .iter()
+        .filter_map(|&[a, b, c]| {
+            let det = |x: [f64; 3], y: [f64; 3]| {
+                (x[u] - a[u]) * (y[v] - a[v]) - (x[v] - a[v]) * (y[u] - a[u])
+            };
+            let area = det(b, c);
+            if area == 0.0 {
+                return None;
+            }
+            let s = det(p, c) / area;
+            let t = det(b, p) / area;
+            (s >= 0.0 && t >= 0.0 && s + t <= 1.0).then(|| {
+                (a[axis] + s * (b[axis] - a[axis]) + t * (c[axis] - a[axis]) - p[axis]).abs()
+            })
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+fn cube_lattice_crossings(triangles: &[Triangle]) -> [f64; 3] {
+    // Along the vertical beam's axis, both crossings come from the cube.
+    // Across a horizontal beam, the cylinder radius supplies its own crossing.
+    [
+        crossing_error(triangles, [0.0, 0.0, -0.5], 2),
+        crossing_error(triangles, [0.0, 0.0, 1.5], 2),
+        crossing_error(triangles, [0.75, 0.35, 1.0], 1),
+    ]
+}
+
+fn matches_cube_lattice(errors: [f64; 3], accuracy: f64) -> bool {
+    // The cap windows end halfway to the corresponding unplaced cube plane.
+    let cap_window = accuracy.min(0.25);
+    let [bottom, top, beam] = errors;
+    bottom < cap_window && top < cap_window && beam < accuracy
+}
+
+fn cube_gyroid_crossings(triangles: &[Triangle], accuracy: f64) -> bool {
+    // Along the z axis the level-zero gyroid is sin(pi*z/4) <= 0.
+    // The translated cube clips that material to [-1/2, 0].
+    crossing_error(triangles, [0.0, 0.0, -0.5], 2) < accuracy.min(0.25)
+        && crossing_error(triangles, [0.0, 0.0, 0.0], 2) < accuracy.min(0.25)
+}
+
+fn translate_stl(bytes: &mut [u8], axis: usize, distance: f32) {
+    for record in bytes[84..].as_chunks_mut::<50>().0 {
+        for vertex in 0..3 {
+            let offset = 12 + 12 * vertex + 4 * axis;
+            let coordinate = &mut record[offset..offset + 4];
+            let moved = f32::from_le_bytes(coordinate.try_into().unwrap()) + distance;
+            coordinate.copy_from_slice(&moved.to_le_bytes());
+        }
+    }
+}
+
 #[test]
 fn rectangular_step_clips_lattice_to_a_certified_stl() {
     let step = import_support::trimmed_loft();
     let (body, files) = source(step.as_bytes(), true);
-    stage_print(&body, &files, lattice(), settings("1/2"));
+    let (_, mut bytes) = stage_print(&body, &files, lattice(), settings("1/2"));
+    assert!(obeys_step_clip(&stl_triangles(&bytes), 0.5));
+    translate_stl(&mut bytes, 1, 4.0);
+    assert!(!obeys_step_clip(&stl_triangles(&bytes), 0.5));
 }
 
 #[test]
@@ -156,6 +255,20 @@ fn closed_mesh_clips_lattice_and_restages_at_a_new_accuracy() {
     let (restaged, replacement) = stage_print(&returned, &files, spec, options);
     assert_eq!(*restaged.recipe(), recipe);
     assert_ne!(original, replacement);
+    for (mut bytes, accuracy) in [(original, 0.5), (replacement, 0.375)] {
+        let triangles = stl_triangles(&bytes);
+        assert!(obeys_cube_clip(&triangles, accuracy));
+        let errors = cube_lattice_crossings(&triangles);
+        assert!(
+            matches_cube_lattice(errors, accuracy),
+            "{errors:?} at {accuracy}"
+        );
+        translate_stl(&mut bytes, 2, -0.5);
+        assert!(!matches_cube_lattice(
+            cube_lattice_crossings(&stl_triangles(&bytes)),
+            accuracy,
+        ));
+    }
 }
 
 #[test]
@@ -176,13 +289,19 @@ fn rectangular_step_gyroid_preserves_the_disconnected_refusal() {
 fn rectangular_step_clips_a_connected_network_gyroid_to_a_certified_stl() {
     let step = import_support::trimmed_loft();
     let (body, files) = source(step.as_bytes(), true);
-    stage_print(&body, &files, gyroid("1/2"), settings("1/2"));
+    let (_, bytes) = stage_print(&body, &files, gyroid("1/2"), settings("1/2"));
+    assert!(obeys_step_clip(&stl_triangles(&bytes), 0.5));
 }
 
 #[test]
 fn closed_mesh_clips_a_network_gyroid_to_a_certified_stl() {
     let (body, files) = source(CUBE, false);
-    stage_print(&body, &files, gyroid("0"), settings("1/2"));
+    let (_, mut bytes) = stage_print(&body, &files, gyroid("0"), settings("1/2"));
+    let triangles = stl_triangles(&bytes);
+    assert!(obeys_cube_clip(&triangles, 0.5));
+    assert!(cube_gyroid_crossings(&triangles, 0.5));
+    translate_stl(&mut bytes, 2, -0.5);
+    assert!(!cube_gyroid_crossings(&stl_triangles(&bytes), 0.5));
 }
 
 #[test]

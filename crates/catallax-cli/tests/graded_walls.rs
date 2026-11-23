@@ -5,7 +5,9 @@ use catallax_boolean::{Containment, classify_point};
 use catallax_cli::verification::{ExportedQuestion, Request, answer};
 use catallax_features::{BuildError, Built};
 use catallax_field::{Location, Plan, Workspace};
-use catallax_numbers::{Decider, Outcome, Rational, with_operation_budget};
+use catallax_numbers::{
+    Decider, Outcome, Rational, TestDeadline, TestDeadlinePoint, with_operation_budget,
+};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::RPoint3;
 use catallax_topology::BodyKind;
@@ -18,6 +20,14 @@ fn pose(translation: [&str; 3]) -> Value {
 
 fn stock() -> Value {
     json!({"id":"stock","op":"block","size":["10","8","6"],"pose":pose(["0","0","0"])})
+}
+
+fn enclosing() -> Value {
+    json!({"id":"enclosing","op":"block","size":["14","12","12"],"pose":pose(["-2","-2","-2"])})
+}
+
+fn intersection(id: &str, target: &str, tool: &str) -> Value {
+    json!({"id":id,"op":"boolean","kind":"intersect","target":target,"tool":tool})
 }
 
 fn grade(from: &str, to: &str, end: &str) -> Value {
@@ -182,29 +192,197 @@ fn thicken_preserves_exact_end_thicknesses_and_editable_face_names() {
     );
 }
 
+fn face_mount(
+    mut steps: Vec<Value>,
+    body: &str,
+    role: Value,
+    normal: [&str; 3],
+    x: [&str; 3],
+) -> Recipe {
+    steps.extend([
+        json!({"id":"section","op":"sketch","plane":pose(["0","0","0"]),"loops":[[
+            {"kind":"line","id":"s0","to":["4","3"]},
+            {"kind":"line","id":"s1","to":["4","4"]},
+            {"kind":"line","id":"s2","to":["3","4"]},
+            {"kind":"line","id":"s3","to":["3","3"]}
+        ]]}),
+        json!({"id":"boss","op":"extrude_on_face","profile":"section","body":body,
+            "face":{"step":"wall","role":role},"normal_direction":normal,"x_direction":x,
+            "offset":"0","distance":"1"}),
+    ]);
+    let mounted = recipe(steps, "boss");
+    Recipe::parse(&mounted.to_text()).unwrap()
+}
+
+fn offset_role() -> Value {
+    json!({"offset":{"of":{"step":"stock","role":"end"}}})
+}
+
 #[test]
 fn a_later_extrude_can_attach_to_the_graded_offset_face() {
-    let supported = recipe(
+    for body in ["wall", "trimmed"] {
+        let supported = face_mount(
+            vec![
+                stock(),
+                thicken("front", grade("0", "10", "3")),
+                enclosing(),
+                intersection("trimmed", "wall", "enclosing"),
+            ],
+            body,
+            offset_role(),
+            ["-1", "0", "5"],
+            ["5", "0", "1"],
+        );
+        let built = build(&supported);
+        volume(&built, "1");
+        Plan::compile(&supported).unwrap();
+    }
+}
+
+#[test]
+fn a_later_extrude_can_attach_to_a_graded_rim_or_inner_wall() {
+    let rim = json!({"rim":{"edge":{"between":[
+        {"step":"stock","role":"end"},
+        {"step":"stock","role":{"side":{"segment":"x_min"}}}
+    ]}}});
+    let inner = json!({"inner":{"of":{"step":"stock","role":"start"}}});
+    for (wall, role, normal, x) in [
+        (
+            thicken("front", grade("2", "8", "3")),
+            rim,
+            ["-1", "0", "0"],
+            ["0", "1", "0"],
+        ),
+        (
+            shell(
+                json!([{"face":{"step":"stock","role":"end"}}]),
+                grade("0", "10", "3"),
+            ),
+            inner,
+            ["-1", "0", "5"],
+            ["5", "0", "1"],
+        ),
+    ] {
+        let mounted = face_mount(vec![stock(), wall], "wall", role, normal, x);
+        let built = build(&mounted);
+        volume(&built, "1");
+        Plan::compile(&mounted).unwrap();
+    }
+}
+
+#[test]
+fn a_coincident_replacement_does_not_restore_a_removed_graded_offset_name() {
+    let wall = thicken("front", grade("0", "10", "3"));
+    let mut replacement = wall.clone();
+    replacement["id"] = json!("replacement");
+    let mounted = face_mount(
         vec![
             stock(),
-            thicken("front", grade("0", "10", "3")),
-            json!({"id":"section","op":"sketch","plane":pose(["0","0","0"]),"loops":[[
-                {"kind":"line","id":"s0","to":["4","3"]},
-                {"kind":"line","id":"s1","to":["4","4"]},
-                {"kind":"line","id":"s2","to":["3","4"]},
-                {"kind":"line","id":"s3","to":["3","3"]}
-            ]]}),
-            json!({"id":"boss","op":"extrude_on_face","profile":"section","body":"wall",
-            "face":{"step":"wall","role":{"offset":{"of":{"step":"stock","role":"end"}}}},
-            "normal_direction":["-1","0","5"],"x_direction":["5","0","1"],
-            "offset":"0","distance":"1"}),
+            wall,
+            json!({"id":"low","op":"block","size":["14","12","17/2"],"pose":pose(["-2","-2","-2"])}),
+            intersection("trimmed", "wall", "low"),
+            replacement,
+            json!({"id":"joined","op":"boolean","kind":"union","target":"trimmed","tool":"replacement"}),
         ],
-        "boss",
+        "joined",
+        offset_role(),
+        ["-1", "0", "5"],
+        ["5", "0", "1"],
     );
-    let reopened = Recipe::parse(&supported.to_text()).unwrap();
-    let built = build(&reopened);
-    volume(&built, "1");
-    Plan::compile(&reopened).unwrap();
+    let error = catallax_features::evaluate(&mounted, &mut Decider::default()).unwrap_err();
+    assert!(
+        matches!(error, BuildError::Geometry { ref refusal, .. } if refusal.code == "reference.lost-face"),
+        "{error}",
+    );
+    assert_eq!(
+        Plan::compile(&mounted).unwrap_err().code,
+        "reference.lost-face"
+    );
+}
+
+#[test]
+fn enclosing_intersection_preserves_the_six_graded_shell_walls() {
+    let mut wall = shell(json!([]), grade("0", "10", "3"));
+    wall["body"] = json!("trimmed");
+    let tray = recipe(
+        vec![
+            stock(),
+            enclosing(),
+            intersection("trimmed", "stock", "enclosing"),
+            wall,
+        ],
+        "wall",
+    );
+    let mut built = build(&tray);
+    volume(&built, "10344/25");
+    probes(
+        &tray,
+        &mut built,
+        &[
+            (["6", "9/5", "3"], Location::Inside),
+            (["6", "5/2", "3"], Location::Outside),
+        ],
+    );
+}
+
+#[test]
+fn graded_walls_compile_a_shared_intersection_dag_within_linear_visit_budget() {
+    let mut second = stock();
+    second["id"] = json!("second");
+    second["size"] = json!(["11", "8", "6"]);
+    let mut steps = vec![stock(), second];
+    let (mut a, mut b) = ("stock".to_string(), "second".to_string());
+    for level in 0..18 {
+        let next_a = format!("a{level}");
+        let next_b = format!("b{level}");
+        steps.push(intersection(&next_a, &a, &b));
+        steps.push(intersection(&next_b, &b, &a));
+        (a, b) = (next_a, next_b);
+    }
+    for mut wall in [
+        shell(json!([]), grade("0", "10", "3")),
+        thicken("front", grade("0", "10", "3")),
+    ] {
+        wall["body"] = json!(a);
+        let mut steps = steps.clone();
+        steps.push(wall);
+        let recipe = recipe(steps, "wall");
+        let deadline = TestDeadline::after(TestDeadlinePoint::Enclosure, 100_000);
+        let mut dec = Decider::default();
+        dec.set_deadline(Some(deadline.instant()));
+        let (plan, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
+            Plan::compile_checked(&recipe, &mut dec)
+        });
+        assert!(!plan.unwrap().is_proven_empty());
+        assert!(
+            !work.exhausted && work.used <= TARGET_BUILD_WORK,
+            "{work:?}"
+        );
+    }
+}
+
+#[test]
+fn irrational_radial_wall_planes_keep_comparison_coverage_available() {
+    let grade = json!({"radial":{"origin":["0","0","6"],"direction":["1","1","0"],
+        "r0":"0","r1":"8","start":"1","end":"2"}});
+    let mut open = open_sides();
+    open.push(json!({"face":{"step":"stock","role":"start"}}));
+    for wall in [thicken("front", grade.clone()), shell(json!(open), grade)] {
+        let recipe = recipe(vec![stock(), wall], "wall");
+        let controller = catallax_compare::Controller::default();
+        assert_eq!(
+            controller.begin().check(&recipe, &Default::default()),
+            catallax_compare::Completion::Published
+        );
+        let report = controller.latest().unwrap();
+        assert!(report.refusal.is_none(), "{report:?}");
+        assert!(report.reverse_samples > 0, "{report:?}");
+        assert_ne!(
+            report.verdict,
+            catallax_compare::Verdict::Disagree,
+            "{report:?}"
+        );
+    }
 }
 
 #[test]

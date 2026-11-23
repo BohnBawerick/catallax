@@ -272,13 +272,14 @@ impl Span {
             if u < lo || u > hi {
                 return Ok(None);
             }
-            if u == lo || u == hi {
+            let [lower, upper] = [lo, hi].map(|bound| (u - bound) == 0.0);
+            if lower || upper {
                 // A knot can have a different normal on each side. The
                 // direction toward the centroid must enter this span.
                 let a = point(vertex[axis]);
                 let inward = (point(triangle[(i + 1) % 3][axis]) - a)
                     + (point(triangle[(i + 2) % 3][axis]) - a);
-                if (u == lo && inward.lo() <= 0.0) || (u == hi && inward.hi() >= 0.0) {
+                if (lower && inward.lo() <= 0.0) || (upper && inward.hi() >= 0.0) {
                     return Ok(None);
                 }
             }
@@ -326,7 +327,7 @@ impl Span {
         if let Some(&row) = self.normal_rows.borrow().get(&key(middle)) {
             return Ok(Some(row));
         }
-        if v == [0.0, 1.0] {
+        if lo == 0.0 && hi.to_bits() == 1.0_f64.to_bits() {
             let row = self.rational.quadratic_normal_row(u, dec)?;
             if let Some(row) = row {
                 self.normal_rows.borrow_mut().insert(key(middle), row);

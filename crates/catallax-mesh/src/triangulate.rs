@@ -509,7 +509,7 @@ impl FaceBuilder<'_> {
             for (row, cap) in caps.into_iter().enumerate() {
                 let tip = seam
                     .iter()
-                    .position(|pair| nodes[pair[0]].uv.y == cap[1])
+                    .position(|pair| (nodes[pair[0]].uv.y - cap[1]) == 0.0)
                     .ok_or_else(|| failure("seam collar has no planned tip"))?;
                 let end = if row == 0 { 0 } else { seam.len() - 1 };
                 for side in 0..2 {
@@ -1834,7 +1834,7 @@ impl FaceBuilder<'_> {
                         let edge = self.cdt.directed_edge(handle);
                         let a = edge.from().data().uv;
                         let b = edge.to().data().uv;
-                        if a.x == b.x && a.y != b.y {
+                        if (a.x - b.x) == 0.0 && (a.y - b.y) != 0.0 {
                             angular_rows.insert((
                                 spline.longitudinal_span(a.x),
                                 key([a.y.min(b.y), a.y.max(b.y)]),
@@ -1872,7 +1872,7 @@ impl FaceBuilder<'_> {
                     }
                     let [a, b] = edge.vertices().map(|v| v.data().uv);
                     let range = key([a.y.min(b.y), a.y.max(b.y)]);
-                    if a.x == b.x && active_ranges.contains(&range) {
+                    if (a.x - b.x) == 0.0 && active_ranges.contains(&range) {
                         let active = angular_rows.contains(&(spline.longitudinal_span(a.x), range));
                         columns.entry(range).or_default().push((
                             [a.x, a.y.midpoint(b.y)],

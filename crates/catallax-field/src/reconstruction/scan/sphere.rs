@@ -5,6 +5,7 @@ use catallax_numbers::{
     Decider, Rational, Refusal, operation_budget_active, with_operation_budget,
 };
 use catallax_recipe::{Number, Operation, Pose, Recipe, Step, StepId, Vector3};
+use catallax_shapes::RVector3;
 
 use super::linalg::{V3, add, dot, eigen, moments_checked, norm, scale, solve, sub};
 use super::{DeviationSide, MAX_SAMPLES, MIN_SAMPLES, stats};
@@ -30,7 +31,8 @@ fn domain(detail: &'static str) -> Refusal {
 
 /// Fits a single isolated spherical part, including its unobserved surface.
 /// All supplied vertices must fit within `max_deviation_mm` of the written
-/// sphere. The reverse deviation includes unsampled or occluded regions.
+/// sphere, using exact coordinates. The reverse deviation includes unsampled
+/// or occluded regions.
 /// Both reported deviations are sampled measurements.
 pub fn fit_sphere_scan(
     step: &Operation,
@@ -111,6 +113,49 @@ fn fit(
             .ok_or_else(|| domain("the fit is outside the finite numerical range"))
     };
     let [x, y, z] = center;
+    let written_radius = number(radius)?;
+    let translation = Vector3([number(x)?, number(y)?, number(z)?]);
+    let exact_center = translation.0.each_ref().map(Number::value);
+    let exact_radius = written_radius.value();
+    let tolerance = Rational::from_f64_exact(max_deviation).expect("validated finite deviation");
+    let minimum = (exact_radius - &tolerance).max(Rational::zero());
+    let maximum = exact_radius + &tolerance;
+    let minimum_squared = &minimum * &minimum;
+    let maximum_squared = &maximum * &maximum;
+    let radius_squared = exact_radius * exact_radius;
+    let bound_limbs = minimum_squared
+        .limbs()
+        .saturating_add(maximum_squared.limbs());
+
+    let mut distances = Vec::with_capacity(samples.len());
+    let mut outside = false;
+    for sample in scan.points() {
+        dec.charge_work(1)?;
+        let [dx, dy, dz] = std::array::from_fn(|axis| &sample[axis] - exact_center[axis]);
+        let squared = RVector3::new(dx, dy, dz).norm_squared();
+        // Rational ordering can cross-multiply without charging the meter.
+        dec.charge_work(squared.limbs().saturating_mul(bound_limbs))?;
+        outside |= squared < minimum_squared || squared > maximum_squared;
+
+        // Rationalize the subtraction so a small deviation survives conversion.
+        let distance = (&squared - &radius_squared).abs().to_f64_nearest()
+            / (squared.to_f64_nearest().sqrt() + radius);
+        if !distance.is_finite() {
+            return Err(domain("a measured point has nonfinite deviation"));
+        }
+        distances.push(distance);
+    }
+    let scan_to_part = stats(distances, dec)?;
+    if outside {
+        return Err(Refusal::new(
+            "reconstruction.sphere-deviation",
+            format!(
+                "a measured point exceeds {max_deviation} mm radial deviation (sampled maximum {} mm)",
+                scan_to_part.max_mm
+            ),
+        ));
+    }
+
     let scan_id = StepId::new("scan").expect("static step id");
     let sphere_id = StepId::new("sphere").expect("static step id");
     let mut recipe = Recipe::new(
@@ -123,9 +168,9 @@ fn fit(
             Step {
                 id: sphere_id.clone(),
                 op: Operation::Sphere {
-                    radius: number(radius)?,
+                    radius: written_radius,
                     pose: Pose {
-                        translation: Vector3([number(x)?, number(y)?, number(z)?]),
+                        translation,
                         ..Pose::identity()
                     },
                 },
@@ -134,26 +179,6 @@ fn fit(
         sphere_id,
     );
     recipe.format = catallax_recipe::FORMAT_V4.into();
-
-    let mut distances = Vec::with_capacity(samples.len());
-    for &sample in samples {
-        dec.charge_work(1)?;
-        let distance = (norm(sub(sample, center)) - radius).abs();
-        if !distance.is_finite() {
-            return Err(domain("a measured point has nonfinite deviation"));
-        }
-        distances.push(distance);
-    }
-    let scan_to_part = stats(distances, dec)?;
-    if scan_to_part.max_mm > max_deviation {
-        return Err(Refusal::new(
-            "reconstruction.sphere-deviation",
-            format!(
-                "maximum measured radial deviation {} mm exceeds {max_deviation} mm",
-                scan_to_part.max_mm
-            ),
-        ));
-    }
 
     let mut reverse = Vec::with_capacity(512);
     let angle = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());

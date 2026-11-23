@@ -93,3 +93,50 @@ fn measured_sphere_refuses_when_the_points_exceed_the_requested_deviation() {
     assert!(!work.exhausted);
     assert_eq!(fit.err().unwrap().code, "reconstruction.sphere-deviation");
 }
+
+#[test]
+fn translated_sphere_refuses_a_point_hidden_by_binary64_rounding() {
+    use std::collections::BTreeSet;
+    use std::fmt::Write;
+
+    let mut points = BTreeSet::new();
+    for [a, b, c] in [[0, 0, 9], [1, 4, 8], [3, 6, 6], [4, 4, 7]] {
+        for [x, y, z] in [
+            [a, b, c],
+            [a, c, b],
+            [b, a, c],
+            [b, c, a],
+            [c, a, b],
+            [c, b, a],
+        ] {
+            for sx in [-1, 1] {
+                for sy in [-1, 1] {
+                    for sz in [-1, 1] {
+                        points.insert([sx * x, sy * y, sz * z]);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut cloud = String::new();
+    for [x, y, z] in points {
+        let suffix = if [x, y, z] == [9, 0, 0] { ".003" } else { "" };
+        writeln!(cloud, "v {}{suffix} {y} {z}", (1_i64 << 45) + x).unwrap();
+    }
+    let bytes = cloud.as_bytes();
+    let scan = Operation::ScanImport {
+        file: FileRef {
+            name: "translated-sphere.obj".into(),
+            sha256: catallax_import::sha256_hex(bytes),
+        },
+        pose: Pose::identity(),
+        scale: 1.into(),
+    };
+    let (fit, work) = with_operation_budget(WORK, || {
+        fit_sphere_scan(&scan, bytes, 0.001, &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    let error = fit.err().expect("the 0.003 mm outlier must be refused");
+    assert_eq!(error.code, "reconstruction.sphere-deviation", "{error:?}");
+}

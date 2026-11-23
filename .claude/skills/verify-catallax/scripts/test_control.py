@@ -181,6 +181,31 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(self.run_case('second')['cache_hits'], 0)
         self.command('compare', self.out / 'first/run.json', self.out / 'second/run.json')
 
+    def test_malformed_fitted_wrapper_keeps_the_batch_report(self):
+        inputs = self.out / 'malformed.jsonl'
+        wrapper = {'format': 'catallax-fitted-compare/1'}
+        inputs.write_text('\n'.join(json.dumps(problem) for problem in (
+            wrapper, {**wrapper, 'recipe': None}, {**wrapper, 'recipe': {'steps': None}},
+        )))
+        out = self.out / 'malformed'
+        summary = self.command('run', inputs, '--binary', BINARY, '--out', out)
+        self.assertEqual(summary['outcomes'], {'cli.fitted-sweep': 3})
+        run = json.loads((out / 'run.json').read_text())
+        self.assertEqual(len(run['cases']), 3)
+        for case in run['cases']:
+            self.assertEqual(case['class'], 'compare')
+            manifest = case['response']['manifest']
+            self.assertEqual(manifest['status'], 'invalid-question')
+            self.assertEqual(manifest['refusal']['code'], 'cli.fitted-sweep')
+
+    def test_fitted_comparison_without_findings_keeps_the_batch_report(self):
+        inputs = ROOT / 'crates/catallax-cli/tests/fixtures/fitted-quarter-helix.json'
+        out = self.out / 'fitted'
+        summary = self.command('run', inputs, '--binary', BINARY, '--out', out, '--max-work', 20_000_000)
+        self.assertEqual(summary['outcomes'], {'compare.agree': 1})
+        run = json.loads((out / 'run.json').read_text())
+        self.assertEqual(run['cases'][0]['response']['manifest']['status'], 'answered')
+
     def test_dry_run_does_not_create_artifacts(self):
         result = self.run_case('dry', '--fresh', '--dry-run')
         self.assertTrue(result['dry_run'])

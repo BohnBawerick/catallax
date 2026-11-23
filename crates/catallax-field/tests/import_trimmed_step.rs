@@ -59,6 +59,10 @@ fn a_trimmed_occt_step_solid_has_the_brep_sign_and_distance() {
     let catallax_import::Surface::BSpline(source_patch) = &source_face.surface else {
         panic!("the selected STEP face must carry a spline");
     };
+    assert_eq!(
+        source_patch.source_format,
+        catallax_import::SourceFormat::Step
+    );
     assert_eq!(*source_patch.geometry.domain()[1][0], q("-1"));
 
     let first = brep.model.faces_of_body(brep.result)[0];

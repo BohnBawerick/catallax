@@ -219,17 +219,29 @@ impl Fixture {
 /// A unit cube from planes and lines. `solid` receives the shell pointer and
 /// returns the 186 parameters, so a test can change the solid entity.
 fn cube(unit_flag: u32, unit_name: &str, solid: impl Fn(usize) -> String) -> Fixture {
-    let mut f = Fixture::new(unit_flag, unit_name);
-    let corners = [
-        [0, 0, 0],
-        [1, 0, 0],
-        [1, 1, 0],
-        [0, 1, 0],
-        [0, 0, 1],
-        [1, 0, 1],
-        [1, 1, 1],
-        [0, 1, 1],
-    ];
+    hexahedron(
+        Fixture::new(unit_flag, unit_name),
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ],
+        None,
+        solid,
+    )
+}
+
+fn hexahedron(
+    mut f: Fixture,
+    corners: [[i64; 3]; 8],
+    roof: Option<usize>,
+    solid: impl Fn(usize) -> String,
+) -> Fixture {
     let coordinates: Vec<String> = corners
         .iter()
         .map(|c| format!("{}.,{}.,{}.", c[0], c[1], c[2]))
@@ -266,15 +278,21 @@ fn cube(unit_flag: u32, unit_name: &str, solid: impl Fn(usize) -> String) -> Fix
     let edge_list = f.add(504, 1, 0, &format!("{},{}", edges.len(), rows.join(",")));
     let mut shell = Vec::new();
     for (cycle, normal) in &faces {
-        let corner = &coordinates[cycle[0]];
-        let point = f.add(116, 0, 0, corner);
-        let direction = f.add(
-            123,
-            0,
-            0,
-            &format!("{}.,{}.,{}.", normal[0], normal[1], normal[2]),
-        );
-        let plane = f.add(190, 0, 0, &format!("{point},{direction}"));
+        let support = if *normal == [0, 0, 1]
+            && let Some(roof) = roof
+        {
+            roof
+        } else {
+            let corner = &coordinates[cycle[0]];
+            let point = f.add(116, 0, 0, corner);
+            let direction = f.add(
+                123,
+                0,
+                0,
+                &format!("{}.,{}.,{}.", normal[0], normal[1], normal[2]),
+            );
+            f.add(190, 0, 0, &format!("{point},{direction}"))
+        };
         let mut uses = Vec::new();
         for i in 0..4 {
             let (a, b) = (cycle[i], cycle[(i + 1) % 4]);
@@ -285,7 +303,7 @@ fn cube(unit_flag: u32, unit_name: &str, solid: impl Fn(usize) -> String) -> Fix
             uses.push(format!("0,{edge_list},{},{forward},0", index + 1));
         }
         let lp = f.add(508, 1, 0, &format!("4,{}", uses.join(",")));
-        let face = f.add(510, 1, 0, &format!("{plane},1,1,{lp}"));
+        let face = f.add(510, 1, 0, &format!("{support},1,1,{lp}"));
         shell.push(format!("{face},1"));
     }
     let shell = f.add(514, 1, 0, &format!("6,{}", shell.join(",")));
@@ -296,6 +314,71 @@ fn cube(unit_flag: u32, unit_name: &str, solid: impl Fn(usize) -> String) -> Fix
 
 fn ordinary(shell: usize) -> String {
     format!("{shell},1,0")
+}
+
+#[test]
+fn iges_keeps_whole_bilinear_faces_and_refuses_rectangular_trims() {
+    let fixture = |u_min, controls| {
+        let mut f = Fixture::new(2, "MM");
+        let roof = f.add(
+            128,
+            0,
+            0,
+            &format!(
+                "1,1,1,1,0,0,1,0,0,{u_min},{u_min},1,1,0,0,1,1,1,1,1,1,{controls},{u_min},1,0,1"
+            ),
+        );
+        hexahedron(
+            f,
+            [
+                [0, 0, 0],
+                [2, 0, 0],
+                [2, 2, 0],
+                [0, 2, 0],
+                [0, 0, 1],
+                [2, 0, 1],
+                [2, 2, 2],
+                [0, 2, 1],
+            ],
+            Some(roof),
+            ordinary,
+        )
+        .bytes()
+    };
+    let import = |model: &mut Model, bytes: &[u8]| {
+        import_iges_bodies(
+            model,
+            bytes,
+            &sha256_hex(bytes),
+            &StepId::new("roof").unwrap(),
+        )
+    };
+
+    let mut model = Model::new();
+    let whole = fixture(0, "0,0,1,2,0,1,0,2,1,2,2,2");
+    let bodies = import(&mut model, &whole).unwrap();
+    assert_eq!(bodies.len(), 1);
+    assert!(model.check(bodies[0]).is_empty());
+
+    // The carrier extends to x = -2; the physical loop is still x = 0..2.
+    let trimmed = fixture(-1, "-2,0,1,2,0,1,-2,2,0,2,2,2");
+    let source = read_iges(&trimmed).unwrap();
+    let Surface::BSpline(spline) = &source.solids[0].faces[1].surface else {
+        panic!("the roof must carry the IGES spline");
+    };
+    assert_eq!(spline.source_format, catallax_import::SourceFormat::Iges);
+    assert_eq!(*spline.geometry.domain()[0][0], r(-1));
+    let direct = build_file(&mut Model::new(), &source, None);
+    assert!(
+        matches!(&direct, Err(ImportRefusal::Unsupported { type_name, .. }) if type_name.contains("boundary certification")),
+        "{direct:?}"
+    );
+    let refusal =
+        import(&mut Model::new(), &trimmed).expect_err("IGES keeps the whole-domain requirement");
+    assert!(
+        matches!(&refusal, ImportRefusal::SelfIntersectionNotVerified { reason, .. } if reason.contains("boundary certification")),
+        "{refusal:?}"
+    );
 }
 
 #[test]

@@ -1085,6 +1085,7 @@ impl Reader<'_> {
         .into_clamped(self.dec)
         .map_err(source_error)?;
         Ok(StepSplineSurface {
+            source_format: SourceFormat::Iges,
             geometry,
             closed,
             self_intersect: None,

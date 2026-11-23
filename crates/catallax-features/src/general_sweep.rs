@@ -21,7 +21,55 @@ mod recipe;
 #[cfg(test)]
 mod tests;
 pub(crate) use recipe::{Context, path_needs_numerical};
-pub use recipe::{RecipeCandidate, RecipeSwept, prepare_recipe, requires_numerical};
+pub use recipe::{
+    RecipeCandidate, RecipeSwept, authored_definition, prepare_recipe, requires_numerical,
+};
+
+/// Exact chart of one authored sketch segment, before numerical transport.
+pub struct SourceChart {
+    /// Segment that owns the entire curve domain.
+    pub segment: catallax_recipe::ElementId,
+    /// Exact homogeneous controls and the recipe's global section parameter.
+    pub curve: BSplineCurve,
+}
+
+/// Extracts the recipe's section charts without fitting or transporting them.
+pub fn source_charts(
+    definition: &SweepRecipe,
+    dec: &mut Decider,
+) -> Result<Vec<SourceChart>, Refusal> {
+    let profile = crate::Profile::new(
+        definition.plane.as_ref().unwrap_or(&RecipePose::identity()),
+        &definition.loops,
+        dec,
+    )?;
+    let mut result = Vec::new();
+    for lp in &definition.loops {
+        let start = lp.0.first().ok_or_else(|| bad("empty profile loop"))?.id();
+        let (charts, ids, _) = crate::loft::charts::build(&profile, lp, start, dec)?;
+        for chart in charts {
+            result.push(SourceChart {
+                segment: authored_segment(&chart.bounds, &ids).clone(),
+                curve: chart.curve,
+            });
+        }
+    }
+    Ok(result)
+}
+
+fn authored_segment<'a>(
+    bounds: &[Rational; 2],
+    ids: &'a [catallax_recipe::ElementId],
+) -> &'a catallax_recipe::ElementId {
+    let mid = (&bounds[0] + &bounds[1]).mul_pow2(-1);
+    ids.iter()
+        .enumerate()
+        .find(|(i, _)| {
+            mid < Rational::from_ratio((i + 1) as i64, ids.len() as i64).expect("segment count")
+        })
+        .expect("authored interval")
+        .1
+}
 /// Persisted generating definition. Reopening rebuilds and rechecks the geometry.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -799,17 +847,7 @@ fn definition(
                 profile_samples += 1;
             }
             sample_controls.extend(coordinates.iter().copied());
-            let mid = (&part.bounds[0] + &part.bounds[1]).mul_pow2(-1);
-            let segment = ids
-                .iter()
-                .enumerate()
-                .find(|(i, _)| {
-                    mid < Rational::from_ratio((i + 1) as i64, ids.len() as i64)
-                        .expect("segment count")
-                })
-                .expect("authored interval")
-                .1
-                .clone();
+            let segment = authored_segment(&part.bounds, &ids).clone();
             let fitted_chart = crate::loft::charts::Chart {
                 bounds: part.bounds,
                 curve: local,

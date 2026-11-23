@@ -631,7 +631,13 @@ impl Plan {
                     Surface::BSpline(_)
                 )
             }) {
-                // A curved spline face builds only in a saddle roof.
+                if format == catallax_import::SourceFormat::Step
+                    && import_spline::has_rectangular_trim(&source, model, body)
+                {
+                    let leaf = import_spline::rectangular_shell(model, body, dec)?;
+                    return self.leaf(leaf, Vec::new(), dec);
+                }
+                // Keep the existing saddle roof path for whole patches.
                 let (leaf, faces) = import_spline::saddle(model, body, dec).map_err(|error| {
                     if error.code == "field.import-domain" {
                         Refusal::new("field.import-spline", error.detail)

@@ -188,7 +188,10 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
     fn grade(g: &Grade) -> Vec<&OriginPattern> {
         match g {
             Grade::Distance { faces, .. } => faces.iter().flat_map(face).collect(),
-            Grade::Constant(_) | Grade::Linear { .. } => vec![],
+            Grade::Constant(_)
+            | Grade::Linear { .. }
+            | Grade::Point { .. }
+            | Grade::Radial { .. } => vec![],
         }
     }
     match op {

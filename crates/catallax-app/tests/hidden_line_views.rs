@@ -19,6 +19,7 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model, block, cone, cylinder, sp
 
 #[allow(dead_code)]
 mod rational_patch_cases;
+mod view_records;
 use rational_patch_cases::{Roof, solid};
 
 const TARGET: u64 = 20_000_000;
@@ -85,6 +86,7 @@ fn steady(model: &Model, body: BodyId, d: &RVector3) -> Answer<HiddenLineView> {
     set_threads(None);
     let (answer, _, work) = first.unwrap();
     eprintln!("{d:?}: {:?}, {work} work", counts(&answer.value));
+    view_records::emit(&answer, d);
     answer
 }
 

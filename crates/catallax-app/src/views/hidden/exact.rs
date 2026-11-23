@@ -19,44 +19,160 @@
 //! cut where it lies over B's ends and folds instead. Other pairs go to the
 //! binary64 search.
 
-use catallax_intersect::{
-    CurveSurface, intersect_curve_surface_framed, intersect_curve_surface_with_line_parameter,
-};
+use catallax_intersect::intersect_curve_plane_points;
 use catallax_numbers::{Decider, MarkLog, Real, Refusal};
-use catallax_shapes::{CurveId, Plane, Point3, PointDef, PointId, Surface, Vector3};
+use catallax_shapes::{Meet, MeetOf, Plane, Point3, PointDef, PointId, Position, Surface, Vector3};
 use catallax_topology::Model;
 
 use super::{Form, Stroke};
 use crate::queries::{perpendicular, sign};
 
-/// Points of `curve` in the plane through `origin` normal to `normal`;
-/// `None` when the curve lies in the plane.
-pub(super) fn in_plane(
+/// Intersections with the cutting plane. A finite exact line only needs
+/// interior cuts because its endpoints already split the view.
+fn in_plane(
     scratch: &mut Model,
-    curve: CurveId,
-    line: bool,
+    stroke: &Stroke,
     origin: Point3,
     normal: Vector3,
     marks: &mut MarkLog,
     dec: &mut Decider,
 ) -> Result<Option<Vec<PointId>>, Refusal> {
+    let exact_line = match (&stroke.form, stroke.ends) {
+        (
+            Form::Line {
+                origin: line_origin,
+                dir,
+            },
+            Some(ends),
+        ) if stroke.exact_line_trim
+            && (line_origin.as_rational().is_none()
+                || dir.as_rational().is_none()
+                || origin.as_rational().is_none()
+                || normal.as_rational().is_none()) =>
+        {
+            Some((dir, ends))
+        }
+        _ => None,
+    };
+    let (origin, normal) = if exact_line.is_some() {
+        let [nx, ny, nz] = reduced([&normal.x, &normal.y, &normal.z], dec)?;
+        (reduced_point(&origin, dec)?, Vector3::new(nx, ny, nz))
+    } else {
+        (origin, normal)
+    };
     let ref_dir = perpendicular(&normal, dec)?;
-    let plane = scratch.geom_mut().add_surface(Surface::Plane(Plane {
+    let plane = Plane {
         origin,
         normal,
         ref_dir,
-    }));
-    let hits = if line {
-        intersect_curve_surface_with_line_parameter(scratch.geom_mut(), curve, plane, dec)?
-    } else {
-        intersect_curve_surface_framed(scratch.geom_mut(), curve, plane, dec)?
     };
+    if let Some((dir, [from, to])) = exact_line {
+        let from = reduced_point(&scratch.geom().position(from), dec)?;
+        let to = reduced_point(&scratch.geom().position(to), dec)?;
+        let [a, b] = [&from, &to].map(|p| p.minus(&plane.origin).dot(&plane.normal));
+        let [a_side, b_side] = [sign(&a, dec)?, sign(&b, dec)?];
+        if a_side == 0 && b_side == 0 {
+            return Ok(None);
+        }
+        if a_side == b_side || a_side == 0 || b_side == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        let [dx, dy, dz] = reduced([&dir.x, &dir.y, &dir.z], dec)?;
+        let point = axial_cut(&from, &Vector3::new(dx, dy, dz), &plane)
+            .unwrap_or_else(|| from.plus(&to.minus(&from).scaled(&(-&a / (&b - &a)))));
+        let geom = scratch.geom_mut();
+        let surface = geom.add_surface(Surface::Plane(plane));
+        let cut = geom.add_point(PointDef::Meet(Meet {
+            of: MeetOf::CurveSurface(stroke.curve, surface),
+            position: Position::Closed(point),
+        }));
+        return Ok(Some(vec![cut]));
+    }
+    let hits = intersect_curve_plane_points(scratch.geom_mut(), stroke.curve, plane, dec)?;
     marks.extend(&hits.marks);
-    Ok(match hits.value {
-        CurveSurface::Disjoint => Some(Vec::new()),
-        CurveSurface::Contained => None,
-        CurveSurface::Meets(hits) => Some(hits.into_iter().map(|h| h.point).collect()),
-    })
+    Ok(hits.value)
+}
+
+fn reduced(values: [&Real; 3], dec: &mut Decider) -> Result<[Real; 3], Refusal> {
+    let mut result = values.map(Clone::clone);
+    for value in &mut result {
+        if value.rational_ref().is_none()
+            && let Some(rational) = dec.rational_value(value)?
+        {
+            *value = rational.into();
+        }
+    }
+    Ok(result)
+}
+
+fn reduced_point(p: &Point3, dec: &mut Decider) -> Result<Point3, Refusal> {
+    let [x, y, z] = reduced([&p.x, &p.y, &p.z], dec)?;
+    Ok(Point3::new(x, y, z))
+}
+
+/// Solve for the one free coordinate of an axial line. Its origin along
+/// that axis and the scale of its direction cannot affect the solution.
+fn axial_cut(from: &Point3, dir: &Vector3, plane: &Plane) -> Option<Point3> {
+    let direction = [&dir.x, &dir.y, &dir.z];
+    let axis = (0..3).find(|&axis| {
+        direction
+            .iter()
+            .enumerate()
+            .all(|(i, value)| i == axis || value.rational_ref().is_some_and(|q| q.is_zero()))
+    })?;
+    let origin = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
+    let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
+    let mut coords = [from.x.clone(), from.y.clone(), from.z.clone()];
+    let offset = (0..3).filter(|&i| i != axis).fold(Real::zero(), |sum, i| {
+        sum + &(origin[i] - &coords[i]) * normal[i]
+    });
+    coords[axis] = origin[axis] + &(&offset / normal[axis]);
+    let [x, y, z] = coords;
+    Some(Point3::new(x, y, z))
+}
+
+/// Factor out a line endpoint whose projection lies on the circle. Solving
+/// for it again hides its equality to the endpoint behind a square root.
+fn circle_at_line_end(
+    scratch: &mut Model,
+    line: &Stroke,
+    center: &Point3,
+    normal: &Vector3,
+    radius_sq: &Real,
+    view: &Vector3,
+    dec: &mut Decider,
+) -> Result<Option<Vec<PointId>>, Refusal> {
+    let Some([from, to]) = line.ends.filter(|_| line.exact_line_trim) else {
+        return Ok(None);
+    };
+    let from = reduced_point(&scratch.geom().position(from), dec)?;
+    let to = reduced_point(&scratch.geom().position(to), dec)?;
+    let rate = view.dot(normal);
+    let project = |p: &Point3| {
+        let offset = p.minus(center);
+        offset.minus(&view.scaled(&(offset.dot(normal) / rate.clone())))
+    };
+    let [a, b] = [&from, &to].map(project);
+    let ends = [
+        sign(&(&a.norm_squared() - radius_sq), dec)?,
+        sign(&(&b.norm_squared() - radius_sq), dec)?,
+    ];
+    let (start, end, at, other) = match ends {
+        [0, 0] => return Ok(Some(Vec::new())),
+        [0, _] => (from, to, a, b),
+        [_, 0] => (to, from, b, a),
+        _ => return Ok(None),
+    };
+    let step = other.minus(&at);
+    let quadratic = step.norm_squared();
+    let advance = -Real::from_i64(2) * at.dot(&step);
+    if sign(&advance, dec)? <= 0 || sign(&(&quadratic - &advance), dec)? <= 0 {
+        return Ok(Some(Vec::new()));
+    }
+    let point = start.plus(&end.minus(&start).scaled(&(&advance / &quadratic)));
+    Ok(Some(vec![
+        scratch.geom_mut().add_point(PointDef::Explicit(point)),
+    ]))
 }
 
 /// The points of `a` over the point `q` on the sheet, when `a` lies in a
@@ -70,7 +186,7 @@ fn over(
     marks: &mut MarkLog,
     dec: &mut Decider,
 ) -> Result<Vec<PointId>, Refusal> {
-    Ok(in_plane(scratch, a.curve, a.is_line(), q.clone(), m, marks, dec)?.unwrap_or_default())
+    Ok(in_plane(scratch, a, q.clone(), m, marks, dec)?.unwrap_or_default())
 }
 
 /// The fold points of a conic seen edge on, where its tangent runs along
@@ -90,16 +206,7 @@ pub(super) fn folds(
     else {
         return Ok(Vec::new());
     };
-    Ok(in_plane(
-        scratch,
-        a.curve,
-        false,
-        center.clone(),
-        d.clone(),
-        marks,
-        dec,
-    )?
-    .unwrap_or_default())
+    Ok(in_plane(scratch, a, center.clone(), d.clone(), marks, dec)?.unwrap_or_default())
 }
 
 /// Where `b`'s projection ends: its end points and, seen edge on, its folds.
@@ -139,15 +246,7 @@ pub(super) fn cuts(
     match &b.form {
         Form::Line { origin, dir } => {
             let normal = dir.cross(d);
-            match in_plane(
-                scratch,
-                a.curve,
-                a.is_line(),
-                origin.clone(),
-                normal.clone(),
-                marks,
-                dec,
-            )? {
+            match in_plane(scratch, a, origin.clone(), normal.clone(), marks, dec)? {
                 Some(points) => Ok(Some(points)),
                 None => {
                     let m = normal.cross(d);
@@ -164,15 +263,7 @@ pub(super) fn cuts(
             normal,
             edge_on: true,
             ..
-        } => match in_plane(
-            scratch,
-            a.curve,
-            a.is_line(),
-            center.clone(),
-            normal.clone(),
-            marks,
-            dec,
-        )? {
+        } => match in_plane(scratch, a, center.clone(), normal.clone(), marks, dec)? {
             Some(points) => Ok(Some(points)),
             None => {
                 let m = normal.cross(d);
@@ -190,15 +281,18 @@ pub(super) fn cuts(
             edge_on: false,
         } => match &a.form {
             Form::Line { .. } | Form::Conic { edge_on: true, .. } => {
+                if let Some(radius_sq) = rb
+                    && let Some(points) = circle_at_line_end(scratch, a, cb, nb, radius_sq, d, dec)?
+                {
+                    return Ok(Some(points));
+                }
                 // B against A's extrusion plane, then along the view onto A.
                 let (origin, normal) = match &a.form {
                     Form::Line { origin, dir } => (origin.clone(), dir.cross(d)),
                     Form::Conic { center, normal, .. } => (center.clone(), normal.clone()),
                     Form::Spline => unreachable!("a spline stroke returned above"),
                 };
-                let Some(on_b) =
-                    in_plane(scratch, b.curve, false, origin, normal.clone(), marks, dec)?
-                else {
+                let Some(on_b) = in_plane(scratch, b, origin, normal.clone(), marks, dec)? else {
                     return Ok(None);
                 };
                 let m = normal.cross(d);
@@ -247,7 +341,7 @@ pub(super) fn cuts(
                     / &(&Real::from_i64(2) * &w.norm_squared());
                 let origin = ca.plus(&w.scaled(&along));
                 Ok(Some(
-                    in_plane(scratch, a.curve, false, origin, w, marks, dec)?.unwrap_or_default(),
+                    in_plane(scratch, a, origin, w, marks, dec)?.unwrap_or_default(),
                 ))
             }
             _ => Ok(None),

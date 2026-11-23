@@ -153,46 +153,57 @@ impl Context {
         step: &Step,
         dec: &mut Decider,
     ) -> Result<(BodyId, Rational), Refusal> {
-        let Operation::Sweep {
-            profile,
-            path,
-            orientation,
-            guide,
-            twist,
-        } = &step.op
-        else {
-            return Err(bad("the numerical sweep context needs a sweep step"));
-        };
-        let sketch = recipe
-            .steps
-            .iter()
-            .find(|s| &s.id == profile)
-            .ok_or_else(|| bad("missing sweep profile"))?;
-        let Operation::Sketch { plane, loops } = &sketch.op else {
-            return Err(bad("sweep needs a sketch"));
-        };
-        let (id, motion) = recipe_path(recipe, path)?;
-        let guide = guide
-            .as_ref()
-            .map(|id| recipe_path(recipe, id).map(|(_, motion)| motion))
-            .transpose()?;
-        let definition = SweepRecipe {
-            name: step.id.to_string(),
-            loops: loops.clone(),
-            plane: Some(plane.clone()),
-            path: motion,
-            orientation: *orientation,
-            guide,
-            reference: [1, 0, 0].map(Into::into),
-            twist_degrees: twist.clone().unwrap_or_else(|| 0.into()),
-            end_scale: 1.into(),
-            tolerance_mm: self.tolerance.clone().into(),
-            max_sections: 4096,
-        };
+        let (id, definition) = authored_definition(recipe, step, &self.tolerance)?;
         let (body, radius, checks) = append(model, &definition, &step.id, Some(&id), dec)?;
         self.checks.insert(step.id.clone(), checks);
         Ok((body, radius))
     }
+}
+
+/// Reads the authored section law of an ordinary recipe sweep.
+/// This resolves recipe references without constructing any fitted geometry.
+pub fn authored_definition(
+    recipe: &Recipe,
+    step: &Step,
+    tolerance: &Rational,
+) -> Result<(ElementId, SweepRecipe), Refusal> {
+    let Operation::Sweep {
+        profile,
+        path,
+        orientation,
+        guide,
+        twist,
+    } = &step.op
+    else {
+        return Err(bad("the numerical sweep context needs a sweep step"));
+    };
+    let sketch = recipe
+        .steps
+        .iter()
+        .find(|s| &s.id == profile)
+        .ok_or_else(|| bad("missing sweep profile"))?;
+    let Operation::Sketch { plane, loops } = &sketch.op else {
+        return Err(bad("sweep needs a sketch"));
+    };
+    let (id, motion) = recipe_path(recipe, path)?;
+    let guide = guide
+        .as_ref()
+        .map(|id| recipe_path(recipe, id).map(|(_, motion)| motion))
+        .transpose()?;
+    let definition = SweepRecipe {
+        name: step.id.to_string(),
+        loops: loops.clone(),
+        plane: Some(plane.clone()),
+        path: motion,
+        orientation: *orientation,
+        guide,
+        reference: [1, 0, 0].map(Into::into),
+        twist_degrees: twist.clone().unwrap_or_else(|| 0.into()),
+        end_scale: 1.into(),
+        tolerance_mm: tolerance.clone().into(),
+        max_sections: 4096,
+    };
+    Ok((id, definition))
 }
 
 fn append(

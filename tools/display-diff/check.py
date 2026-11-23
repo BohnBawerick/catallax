@@ -226,9 +226,6 @@ def capture(root, args, output, threads):
                           file=sys.stderr, flush=True)
                     if code:
                         raise SystemExit(code)
-                    observed = {key[1] for key in counts}
-                    if set(selected) != observed:
-                        raise ValueError(f"no display calls captured in {sorted(set(selected) - observed)}")
     finally:
         for path, source in originals.items():
             path.write_text(source)

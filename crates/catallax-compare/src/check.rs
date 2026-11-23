@@ -207,7 +207,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
-            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}=>return None,
+            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}|Operation::ShellGraded{..}|Operation::ThickenGraded{..}=>return None,
             Operation::Path{..}|Operation::Sweep{..}|Operation::Loft{..}=>return None,
             Operation::Lattice{..}=>"B-rep lattice envelope is not an independent lattice construction",
             Operation::Gyroid{..}=>"B-rep gyroid envelope is not an independent gyroid construction",
@@ -1494,7 +1494,11 @@ pub(crate) fn run(
     let distance_sampling = if recipe.steps.iter().any(|step| {
         matches!(
             step.op,
-            Operation::Offset { .. } | Operation::Shell { .. } | Operation::Thicken { .. }
+            Operation::Offset { .. }
+                | Operation::Shell { .. }
+                | Operation::Thicken { .. }
+                | Operation::ShellGraded { .. }
+                | Operation::ThickenGraded { .. }
         )
     }) {
         field.visit_distance_candidates(options.divisions, |p, id| {
@@ -1507,7 +1511,22 @@ pub(crate) fn run(
     } else {
         Ok(true)
     };
-    if sampling.is_ok() && distance_sampling.is_ok() && !sampling_failed.get() {
+    let graded_wall = recipe.steps.iter().any(|step| {
+        matches!(
+            step.op,
+            Operation::ShellGraded { .. } | Operation::ThickenGraded { .. }
+        )
+    });
+    // A rational sampler can have no chart for an exact graded plane. Try
+    // the trimmed-face coverage pass and let its origin and direction checks
+    // decide whether the remaining samples suffice.
+    let sampling_error = |result: Result<bool, Refusal>| {
+        result
+            .err()
+            .filter(|error| !(graded_wall && error.code == "field.sample-algebraic-placement"))
+    };
+    let sampling_error = (sampling_error(sampling), sampling_error(distance_sampling));
+    if sampling_error.0.is_none() && sampling_error.1.is_none() && !sampling_failed.get() {
         for (face, patch) in mesh.faces.iter().enumerate() {
             for origin in &face_origins[face] {
                 let Some(sources) = registry.get(origin) else {
@@ -1539,7 +1558,7 @@ pub(crate) fn run(
         report.refusal = Some(refusal);
         return revision.publish(report);
     }
-    if let Err(error) = sampling {
+    if let Some(error) = sampling_error.0 {
         whole_failure(
             &mut report,
             format!("field boundary sampling {}: {}", error.code, error.detail),
@@ -1548,7 +1567,7 @@ pub(crate) fn run(
         report.refusal = Some(error);
         return revision.publish(report);
     }
-    if let Err(error) = distance_sampling {
+    if let Some(error) = sampling_error.1 {
         whole_failure(
             &mut report,
             format!(

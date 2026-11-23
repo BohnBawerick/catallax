@@ -6,6 +6,7 @@ use catallax_shapes::Surface;
 use catallax_topology::{Body, BodyId, BodyKind, Face, Loop, Lump, Model, Sense, Shell};
 
 use crate::{
+    graded_wall::{WallGrade, opens_all, unsupported_source},
     polyhedron::{ConvexCell, PlaneFace},
     profile::sign,
     radial::RadialBand,
@@ -669,6 +670,150 @@ pub(crate) fn thicken(
     Ok(cell
         .face_sweep(*index, thickness, side, step, dec)?
         .build(model))
+}
+
+fn graded_source(model: &Model, body: BodyId, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
+    let bad = || unsupported_source("graded walls need one exact convex planar solid");
+    let input = model.body(body);
+    let [lump] = input.lumps.as_slice() else {
+        return Err(bad());
+    };
+    if input.kind != BodyKind::Solid || model.lump(*lump).shells.len() != 1 {
+        return Err(bad());
+    }
+    let faces = model.faces_of_body(body);
+    let cell = convex(model, body, dec).map_err(|e| {
+        if e.code == "distance.unsupported-envelope" {
+            bad()
+        } else {
+            e
+        }
+    })?;
+    if cell.faces.len() != faces.len() {
+        return Err(bad());
+    }
+    // A halfspace arrangement certifies the source only when its full polygons
+    // agree with the physical trims. In particular, holes and split coplanar
+    // faces cannot silently become an untrimmed convex hull.
+    for (face, polygon) in faces.into_iter().zip(&cell.polygons) {
+        let face = model.face(face);
+        let [lp] = face.loops.as_slice() else {
+            return Err(bad());
+        };
+        let Loop::Coedges(coedges) = model.loop_(*lp) else {
+            return Err(bad());
+        };
+        if face.tolerance.is_some() || polygon.len() != coedges.len() || polygon.len() < 3 {
+            return Err(bad());
+        }
+        let mut points = Vec::with_capacity(coedges.len());
+        for coedge in coedges {
+            let coedge = model.coedge(*coedge);
+            let edge = model.edge(coedge.edge);
+            let endpoint = if coedge.sense == Sense::Same {
+                edge.start
+            } else {
+                edge.end
+            };
+            let vertex = model.vertex(endpoint.ok_or_else(bad)?);
+            if edge.tolerance.is_some() || vertex.tolerance.is_some() {
+                return Err(bad());
+            }
+            points.push(model.geom().position(vertex.point));
+        }
+        let at = |j: usize| &cell.vertices()[polygon[j % polygon.len()]];
+        let mut first = None;
+        for j in 0..polygon.len() {
+            if sign(&points[0].minus(at(j)).norm_squared(), dec)? == Sign::Zero {
+                first = Some(j);
+                break;
+            }
+        }
+        let first = first.ok_or_else(bad)?;
+        let forward = sign(&points[1].minus(at(first + 1)).norm_squared(), dec)? == Sign::Zero;
+        for (i, point) in points.iter().enumerate().skip(1) {
+            let j = if forward {
+                first + i
+            } else {
+                first + polygon.len() - i
+            };
+            if sign(&point.minus(at(j)).norm_squared(), dec)? != Sign::Zero {
+                return Err(bad());
+            }
+        }
+    }
+    Ok(cell)
+}
+
+fn join_graded_cells(
+    model: &mut Model,
+    cells: Vec<ConvexCell>,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
+    let mut cells = cells.into_iter();
+    let Some(first) = cells.next() else {
+        return Ok(catallax_topology::empty(model));
+    };
+    let mut body = first.build(model);
+    for cell in cells {
+        let next = cell.build(model);
+        body = catallax_boolean::boolean(model, body, next, catallax_boolean::BoolOp::Unite, dec)
+            .map_err(|e| e.refusal)?
+            .body;
+    }
+    Ok(body)
+}
+
+pub(crate) fn graded_shell(
+    model: &mut Model,
+    body: BodyId,
+    open: &[FaceRef],
+    grade: &WallGrade,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
+    if model.body(body).kind == BodyKind::Empty || opens_all(open) {
+        return shell(
+            model,
+            body,
+            open,
+            &grade.maximum().clone().into(),
+            step,
+            dec,
+        );
+    }
+    catallax_numbers::record_operation_path("distance.shell.graded-planar");
+    let source = graded_source(model, body, dec)?;
+    let selection = source.select(open, dec)?;
+    if selection.iter().all(|open| *open) {
+        return Ok(catallax_topology::empty(model));
+    }
+    let cavity = join_graded_cells(model, grade.cavity(&source, &selection, step, dec)?, dec)?;
+    Ok(
+        catallax_boolean::boolean(model, body, cavity, catallax_boolean::BoolOp::Subtract, dec)
+            .map_err(|e| e.refusal)?
+            .body,
+    )
+}
+
+pub(crate) fn graded_thicken(
+    model: &mut Model,
+    body: BodyId,
+    faces: &[FaceRef],
+    grade: &WallGrade,
+    side: ThickenSide,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
+    if faces.is_empty() || model.body(body).kind == BodyKind::Empty {
+        return Err(Refusal::new(
+            "reference.lost-face",
+            "thicken needs a surviving selected face",
+        ));
+    }
+    catallax_numbers::record_operation_path("distance.thicken.graded-planar");
+    let source = graded_source(model, body, dec)?;
+    join_graded_cells(model, grade.thicken(&source, faces, side, step, dec)?, dec)
 }
 
 pub(crate) fn inherit_marks(model: &mut Model, source: BodyId, result: BodyId) -> BodyId {

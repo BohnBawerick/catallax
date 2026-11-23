@@ -147,7 +147,7 @@ impl Plan {
         fallback: Refusal,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let skin = match recovery::skin(self, node, dec) {
+        let skin = match recovery::skin(self, node, None, dec) {
             Ok(skin) => skin,
             Err(e) if e.code.starts_with("draft.") => return Err(fallback),
             Err(e) => return Err(e),

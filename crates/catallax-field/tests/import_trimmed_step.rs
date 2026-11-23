@@ -7,27 +7,11 @@ use catallax_numbers::{Decider, Outcome, Rational, with_operation_budget};
 use catallax_recipe::{FileRef, Operation, Pose, Recipe, Step, StepId};
 use catallax_shapes::{RPoint3, SplineSupport, Surface};
 
-const LOFT: &str = include_str!("../../catallax-import/tests/fixtures/m27-loft-occt.step");
+mod import_support;
+use import_support::trimmed_loft;
 const WORK: u64 = 20_000_000;
 // The STEP header's UNCERTAINTY_MEASURE_WITH_UNIT in millimetres.
 const TOLERANCE_MM: f64 = 1e-7;
-
-fn trimmed_loft() -> String {
-    // Extend the first ruled support to v = -1. Its physical edges and its
-    // pcurves are left on the original [0, 1] rows. The solid is unchanged.
-    assert!(LOFT.contains("(0.,2.2360679775),(0.,1.)"));
-    assert!(LOFT.contains("#33 = CARTESIAN_POINT('',(1.,-1.,0.));"));
-    assert!(LOFT.contains("#35 = CARTESIAN_POINT('',(1.,1.,0.));"));
-    LOFT.replacen("(0.,2.2360679775),(0.,1.)", "(0.,2.2360679775),(-1.,1.)", 1)
-        .replace(
-            "#33 = CARTESIAN_POINT('',(1.,-1.,0.));",
-            "#33 = CARTESIAN_POINT('',(1.,-2.,-2.));",
-        )
-        .replace(
-            "#35 = CARTESIAN_POINT('',(1.,1.,0.));",
-            "#35 = CARTESIAN_POINT('',(2.,0.,-2.));",
-        )
-}
 
 fn q(value: &str) -> Rational {
     Rational::parse(value).unwrap()
@@ -75,6 +59,10 @@ fn a_trimmed_occt_step_solid_has_the_brep_sign_and_distance() {
     let catallax_import::Surface::BSpline(source_patch) = &source_face.surface else {
         panic!("the selected STEP face must carry a spline");
     };
+    assert_eq!(
+        source_patch.source_format,
+        catallax_import::SourceFormat::Step
+    );
     assert_eq!(*source_patch.geometry.domain()[1][0], q("-1"));
 
     let first = brep.model.faces_of_body(brep.result)[0];

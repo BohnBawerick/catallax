@@ -29,6 +29,9 @@ fn compares_a_fitted_quarter_helix_at_the_existing_accuracy() {
     let source = read("source_upper_mm");
     let display = read("display_upper_mm");
     let composed = read("composed_upper_mm");
+    // The mean of the four corresponding profile corners follows the
+    // circular XY path. Polynomial fitted rails cannot reproduce that path.
+    assert!(source > Rational::zero(), "missing authored-motion bound");
     assert!(source <= read("modelling_tolerance_mm"));
     assert!(display <= Rational::parse("0.005").unwrap());
     assert!(composed >= source && composed >= display);

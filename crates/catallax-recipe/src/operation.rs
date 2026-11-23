@@ -494,6 +494,27 @@ pub enum Operation {
         /// Millimetres per file unit.
         scale: Number,
     },
+    /// A shell whose inward thickness is sampled on the source faces.
+    ShellGraded {
+        /// The body.
+        body: StepId,
+        /// Faces left open.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        open: Vec<FaceRef>,
+        /// Positive wall thickness in part coordinates.
+        thickness: Grade,
+    },
+    /// A selected face swept normally by a grade sampled on that source face.
+    ThickenGraded {
+        /// The body whose faces are thickened.
+        body: StepId,
+        /// The face selection.
+        faces: Vec<FaceRef>,
+        /// Positive wall thickness in part coordinates.
+        thickness: Grade,
+        /// Which side of the face the solid lies on.
+        side: ThickenSide,
+    },
 }
 
 impl Operation {
@@ -523,6 +544,8 @@ impl Operation {
             Operation::Shell { .. } => "shell",
             Operation::Offset { .. } => "offset",
             Operation::Thicken { .. } => "thicken",
+            Operation::ShellGraded { .. } => "shell_graded",
+            Operation::ThickenGraded { .. } => "thicken_graded",
             Operation::Draft { .. } => "draft",
             Operation::Sweep { .. } => "sweep",
             Operation::Loft { .. } => "loft",
@@ -598,6 +621,8 @@ impl Operation {
             | Operation::Shell { body, .. }
             | Operation::Offset { body, .. }
             | Operation::Thicken { body, .. }
+            | Operation::ShellGraded { body, .. }
+            | Operation::ThickenGraded { body, .. }
             | Operation::Draft { body, .. }
             | Operation::Pattern { body, .. }
             | Operation::Mirror { body, .. }

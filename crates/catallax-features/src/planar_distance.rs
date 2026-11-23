@@ -137,7 +137,7 @@ impl ConvexCell {
         Self::new(faces, dec)
     }
 
-    fn sweep_faces(
+    pub(crate) fn sweep_faces(
         &self,
         selected: usize,
         thickness: &Real,

@@ -105,6 +105,7 @@ impl Plan {
             | Operation::Fillet { body, .. }
             | Operation::Chamfer { body, .. }
             | Operation::Shell { body, .. }
+            | Operation::ShellGraded { body, .. }
             | Operation::Mirror {
                 body,
                 keep_original: true,

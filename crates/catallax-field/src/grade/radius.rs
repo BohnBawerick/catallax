@@ -1,8 +1,9 @@
-use super::{Piece, clamp01, f, q, rational_dot};
+use super::{Piece, clamp01, f};
 use crate::{
     geometry,
     metric::{PRECISION, Scalar},
 };
+use catallax_features::grade::{RadiusRamp, distance_projection, rational_dot};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
 use catallax_shapes::Vector3;
 
@@ -14,25 +15,8 @@ pub(crate) struct Radius {
     projection: [[Rational; 3]; 3],
     interval_projection: [[Interval; 3]; 3],
     fast_projection: [[f64; 3]; 3],
-    radii: [Rational; 2],
-    squared: [Rational; 2],
     interval_radii: [Interval; 2],
-    pub(super) values: [Rational; 2],
-    pub(super) slope: Rational,
-    intercept: Rational,
-}
-
-fn projection(direction: Option<&[Rational; 3]>) -> [[Rational; 3]; 3] {
-    let mut matrix = std::array::from_fn(|i| std::array::from_fn(|j| q(i64::from(i == j))));
-    if let Some(axis) = direction {
-        let squared = rational_dot(axis, axis);
-        for i in 0..3 {
-            for j in 0..3 {
-                matrix[i][j] = &matrix[i][j] - &(&(&axis[i] * &axis[j]) / &squared);
-            }
-        }
-    }
-    matrix
+    pub(super) ramp: RadiusRamp,
 }
 
 impl Radius {
@@ -42,9 +26,7 @@ impl Radius {
         radii: [Rational; 2],
         values: [Rational; 2],
     ) -> Self {
-        let projection = projection(direction.as_ref());
-        let slope = &(&values[1] - &values[0]) / &(&radii[1] - &radii[0]);
-        let intercept = &values[0] - &(&radii[0] * &slope);
+        let projection = distance_projection(direction.as_ref());
         Self {
             origin,
             direction,
@@ -53,12 +35,8 @@ impl Radius {
                 .map(|row| row.each_ref().map(Interval::from_rational)),
             fast_projection: projection.each_ref().map(|row| row.each_ref().map(f)),
             projection,
-            squared: radii.each_ref().map(|r| r * r),
             interval_radii: radii.each_ref().map(Interval::from_rational),
-            radii,
-            values,
-            slope,
-            intercept,
+            ramp: RadiusRamp::new(radii, values),
         }
     }
 
@@ -74,35 +52,20 @@ impl Radius {
         rational_dot(&offset, &offset)
     }
 
-    fn clamp(&self, squared: &Rational) -> Option<&Rational> {
-        if squared <= &self.squared[0] {
-            Some(&self.values[0])
-        } else if squared >= &self.squared[1] {
-            Some(&self.values[1])
-        } else {
-            None
-        }
-    }
-
     pub(super) fn real(&self, p: &[Rational; 3]) -> Real {
-        let squared = self.squared_distance(p);
-        if let Some(value) = self.clamp(&squared) {
-            return Real::from(value.clone());
-        }
-        &Real::from(self.intercept.clone())
-            + &(&Real::from(squared).sqrt() * &Real::from(self.slope.clone()))
+        self.ramp.real(self.squared_distance(p))
     }
 
     pub(super) fn ball(&self, p: &[Rational; 3]) -> Ball {
         let squared = self.squared_distance(p);
-        if let Some(value) = self.clamp(&squared) {
+        if let Some(value) = self.ramp.clamp(&squared) {
             return Ball::from_rational(value, PRECISION);
         }
         let distance = Ball::from_rational(&squared, PRECISION)
             .sqrt()
             .expect("nonnegative squared distance");
-        &Ball::from_rational(&self.intercept, PRECISION)
-            + &(&distance * &Ball::from_rational(&self.slope, PRECISION))
+        &Ball::from_rational(&self.ramp.intercept, PRECISION)
+            + &(&distance * &Ball::from_rational(&self.ramp.slope, PRECISION))
     }
 
     pub(super) fn fast(&self, p: [f64; 3]) -> f64 {
@@ -116,14 +79,14 @@ impl Radius {
             })
             .sum::<f64>();
         let distance = Scalar::sqrt(&squared);
-        let [r0, r1] = self.radii.each_ref().map(f);
-        let [start, end] = self.values.each_ref().map(f);
+        let [r0, r1] = self.ramp.radii.each_ref().map(f);
+        let [start, end] = self.ramp.values.each_ref().map(f);
         if distance <= r0 {
             start
         } else if distance >= r1 {
             end
         } else {
-            f(&self.intercept) + distance * f(&self.slope)
+            f(&self.ramp.intercept) + distance * f(&self.ramp.slope)
         }
     }
 
@@ -147,10 +110,10 @@ impl Radius {
         let distance = Self::norm(self.interval_offset(p));
         let t = clamp01(
             (distance - self.interval_radii[0])
-                / Interval::from_rational(&(&self.radii[1] - &self.radii[0])),
+                / Interval::from_rational(&(&self.ramp.radii[1] - &self.ramp.radii[0])),
         );
-        Interval::from_rational(&self.values[0])
-            + t * Interval::from_rational(&(&self.values[1] - &self.values[0]))
+        Interval::from_rational(&self.ramp.values[0])
+            + t * Interval::from_rational(&(&self.ramp.values[1] - &self.ramp.values[0]))
     }
 
     pub(super) fn piece(&self, p: &[Interval; 3]) -> Option<Piece> {
@@ -176,7 +139,7 @@ impl Radius {
         if distance.lo() <= 0.0 || !distance.hi().is_finite() {
             return None;
         }
-        let slope = Interval::from_rational(&self.slope);
+        let slope = Interval::from_rational(&self.ramp.slope);
         let unit = offset.map(|v| v / distance);
         // For u = Q(p - origin) and r = |u|, Q = Q^T = Q².
         // The gradient is u/r and the Hessian is (Q - (u/r)(u/r)^T)/r.
@@ -196,7 +159,7 @@ impl Radius {
     ) -> Result<Option<Real>, Refusal> {
         let offset = self.offset(p);
         let squared = rational_dot(&offset, &offset);
-        if squared < self.squared[0] || squared > self.squared[1] {
+        if squared < self.ramp.squared[0] || squared > self.ramp.squared[1] {
             return Ok(None);
         }
         let direction = [&d.x, &d.y, &d.z];
@@ -212,14 +175,15 @@ impl Radius {
                 .sqrt()
         } else {
             let along = dot(&offset);
-            if (squared == self.squared[0] && geometry::sign(&along, dec)? != Sign::Positive)
-                || (squared == self.squared[1] && geometry::sign(&along, dec)? != Sign::Negative)
+            if (squared == self.ramp.squared[0] && geometry::sign(&along, dec)? != Sign::Positive)
+                || (squared == self.ramp.squared[1]
+                    && geometry::sign(&along, dec)? != Sign::Negative)
             {
                 return Ok(None);
             }
             &along / &Real::from(squared).sqrt()
         };
-        Ok(Some(&rate * &Real::from(self.slope.clone())))
+        Ok(Some(&rate * &Real::from(self.ramp.slope.clone())))
     }
 
     pub(super) fn transform(&mut self, matrix: &[[Rational; 3]; 3], translation: &[Rational; 3]) {
@@ -228,7 +192,7 @@ impl Radius {
         self.origin = std::array::from_fn(|i| &moved[i] + &translation[i]);
         if let Some(direction) = &mut self.direction {
             *direction = apply(direction);
-            self.projection = projection(Some(direction));
+            self.projection = distance_projection(Some(direction));
             self.interval_projection = self
                 .projection
                 .each_ref()

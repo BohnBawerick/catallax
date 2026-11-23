@@ -589,6 +589,7 @@ fn mesh_plan_inner(
         ));
     }
     if let Some(shell) = plan.result_patch_shell()
+        && let Some(face_count) = shell.loft_display_face_count()
         && let Instruction::Leaf(leaf) = plan.instructions[plan.root]
     {
         let faces: Vec<_> = plan
@@ -598,7 +599,7 @@ fn mesh_plan_inner(
             .filter(|(_, face)| face.leaf == leaf)
             .filter_map(|(index, _)| plan.result_face(index))
             .collect();
-        if faces.len() == shell.face_count() {
+        if faces.len() == face_count {
             return shell.mesh(&faces, options, dec);
         }
     }

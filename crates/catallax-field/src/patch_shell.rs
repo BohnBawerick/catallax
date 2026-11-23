@@ -421,8 +421,8 @@ fn ball(interval: Interval) -> Result<Ball, Refusal> {
 }
 
 impl Shell {
-    pub(crate) fn face_count(&self) -> usize {
-        self.faces.len()
+    pub(crate) fn loft_display_face_count(&self) -> Option<usize> {
+        (!self.loft_sides.is_empty()).then_some(self.faces.len())
     }
 
     pub(crate) fn display_faces(

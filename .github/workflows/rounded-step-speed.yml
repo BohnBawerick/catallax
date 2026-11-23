@@ -48,10 +48,14 @@ jobs:
           persist-credentials: false
           path: workflow
           sparse-checkout: |
+            .github/actions/rust-toolchain/
             crates/catallax-cli/examples/rounded_step.rs
             tools/checks/edit_speed.py
           sparse-checkout-cone-mode: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./workflow/.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - uses: Swatinem/rust-cache@v2
         with:
           key: rounded-step-probes
@@ -150,6 +154,7 @@ jobs:
           persist-credentials: false
           path: workflow
           sparse-checkout: |
+            .github/actions/rust-toolchain/
             crates/catallax-cli/examples/edit_answer.rs
             tools/checks/edit_speed.py
             tools/checks/test_edit_speed.py
@@ -159,7 +164,10 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Check exact-answer and non-increasing-work boundaries
         run: python3 -m unittest discover -s workflow/tools/checks -p test_edit_speed.py
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./workflow/.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+          step-name: Set up Rust toolchain
       - name: Locate the application cache relative to its workspace
         id: app-cache
         run: |

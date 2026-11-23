@@ -1,0 +1,30 @@
+name: Set up Rust toolchain
+description: Reuse an installed Rust toolchain or install it with bounded retries
+inputs:
+  toolchain:
+    description: Rust toolchain name
+    required: false
+    default: stable
+  components:
+    description: Comma-separated Rust components
+    required: false
+    default: ''
+  targets:
+    description: Comma-separated Rust targets
+    required: false
+    default: ''
+  step-name:
+    description: Workflow step name to include in installation errors
+    required: false
+    default: Set up Rust toolchain
+runs:
+  using: composite
+  steps:
+    - name: ${{ inputs.step-name }}
+      shell: bash
+      env:
+        RUST_TOOLCHAIN: ${{ inputs.toolchain }}
+        RUST_COMPONENTS: ${{ inputs.components }}
+        RUST_TARGETS: ${{ inputs.targets }}
+        RUST_STEP_NAME: ${{ inputs.step-name }}
+      run: python3 "$GITHUB_ACTION_PATH/setup.py"

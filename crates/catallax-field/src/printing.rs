@@ -336,6 +336,11 @@ enum Definition {
         bounds: [Interval; 3],
         triangles: Vec<[Interval; 3]>,
     },
+    ImportedMesh([Interval; 3]),
+    ImportedShell {
+        bounds: [Interval; 3],
+        boundary: Box<crate::patch_shell::print_boundary::Boundary>,
+    },
 }
 /// Which leaf definitions a classifier prepares. Mass keeps its original
 /// coverage and print adds convex profile extrusions and gyroids; both refuse
@@ -439,6 +444,12 @@ impl<'a> Prepared<'a> {
     fn new(plan: &'a Plan, dec: &mut Decider, coverage: Coverage) -> Result<Self, Refusal> {
         plan.require_analytic_boundary()?;
         let mut definitions = Vec::with_capacity(plan.leaves.len());
+        let imported = |index| {
+            plan.faces.iter().any(|face| {
+                face.leaf == index
+                    && matches!(face.origin.role, catallax_recipe::Role::Imported { .. })
+            })
+        };
         for (i, leaf) in plan.leaves.iter().enumerate() {
             // Compaction retains source leaves for face history. Keep their
             // indices, but prepare only definitions referenced by the live tape.
@@ -481,7 +492,7 @@ impl<'a> Prepared<'a> {
                 }
                 geometry::Leaf::Feature(feature) if coverage != Coverage::Mass => {
                     let Some(planes) = feature.convex_planes(dec)? else {
-                        if coverage == Coverage::Full {
+                        if coverage == Coverage::Full || imported(i) {
                             definitions.push(Some(carriers(leaf, dec)?));
                             continue;
                         }
@@ -509,6 +520,27 @@ impl<'a> Prepared<'a> {
                             Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
                         })),
                         triangles: mesh.triangle_boxes(),
+                    }));
+                }
+                geometry::Leaf::Draft(_) if coverage == Coverage::Print && imported(i) => {
+                    definitions.push(Some(carriers(leaf, dec)?));
+                }
+                geometry::Leaf::Mesh(mesh) if coverage == Coverage::Print => {
+                    definitions.push(Some(Definition::ImportedMesh(mesh.bounds().map(
+                        |[lo, hi]| Interval::from_rational(&lo).hull(&Interval::from_rational(&hi)),
+                    ))));
+                }
+                geometry::Leaf::Shell(shell) if coverage == Coverage::Print => {
+                    let boundary = crate::patch_shell::print_boundary::Boundary::new(shell, dec)?
+                        .ok_or_else(|| refusal(
+                            "field.print-coverage",
+                            "print interval coverage requires analytic solid cells or periodic beams",
+                        ))?;
+                    definitions.push(Some(Definition::ImportedShell {
+                        bounds: interval_box(&shell.bounds().map(|[lo, hi]| {
+                            Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
+                        })),
+                        boundary: Box::new(boundary),
                     }));
                 }
                 // A patch shell has no carrier polynomials; like a mesh, it
@@ -600,6 +632,13 @@ fn witness(
     xyz: &[Interval; 3],
     dec: &mut Decider,
 ) -> Result<BoxState, Refusal> {
+    box_witness(xyz, |point| plan.leaves[leaf].location(point, dec))
+}
+
+fn box_witness(
+    xyz: &[Interval; 3],
+    locate: impl FnOnce(&[Rational; 3]) -> Result<Location, Refusal>,
+) -> Result<BoxState, Refusal> {
     let mut point = [q(0), q(0), q(0)];
     for (p, x) in point.iter_mut().zip(xyz) {
         let Some(value) = Rational::from_f64_exact(x.lo()) else {
@@ -607,7 +646,7 @@ fn witness(
         };
         *p = value;
     }
-    Ok(match plan.leaves[leaf].location(&point, dec)? {
+    Ok(match locate(&point)? {
         Location::Inside => BoxState::Inside,
         Location::Outside => BoxState::Outside,
         Location::Boundary | Location::Indeterminate => BoxState::Unknown,
@@ -696,6 +735,32 @@ fn evaluate(
                                 Outside
                             } else if triangles.iter().all(|t| disjoint(t, xyz)) {
                                 witness(plan, i, xyz, dec)?
+                            } else {
+                                Unknown
+                            }
+                        }
+                        Definition::ImportedMesh(bounds) => {
+                            let geometry::Leaf::Mesh(mesh) = &plan.leaves[i] else {
+                                unreachable!("compiled imported mesh");
+                            };
+                            if disjoint(bounds, xyz) {
+                                Outside
+                            } else if mesh.boundary_disjoint(xyz, dec)? {
+                                witness(plan, i, xyz, dec)?
+                            } else {
+                                Unknown
+                            }
+                        }
+                        Definition::ImportedShell { bounds, boundary } => {
+                            let geometry::Leaf::Shell(shell) = &plan.leaves[i] else {
+                                unreachable!("compiled imported shell");
+                            };
+                            if disjoint(bounds, xyz) {
+                                Outside
+                            } else if boundary.disjoint(xyz, dec)? {
+                                box_witness(xyz, |point| {
+                                    boundary.location(shell, point, true, dec)
+                                })?
                             } else {
                                 Unknown
                             }
@@ -1138,6 +1203,20 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
 /// uniform-grid print route.
 pub(crate) fn graded(plan: &Plan) -> bool {
     plan.leaves.iter().any(geometry::Leaf::certified_grade)
+}
+
+pub(crate) fn has_imported_boundary(plan: &Plan) -> bool {
+    plan.leaves
+        .iter()
+        .zip(&plan.leaf_registers)
+        .any(|(leaf, live)| {
+            live.is_some()
+                && match leaf {
+                    geometry::Leaf::Mesh(_) => true,
+                    geometry::Leaf::Shell(shell) => shell.is_rectangular_import(),
+                    _ => false,
+                }
+        })
 }
 
 /// As [`mesh_plan`], but boundary-coverage refinement may not go below a grid edge of

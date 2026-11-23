@@ -62,6 +62,16 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "curvature-continuous fillets require catallax-recipe/5".into(),
             });
         }
+        if recipe.format != FORMAT_V5
+            && matches!(
+                &step.op,
+                Operation::ShellGraded { .. } | Operation::ThickenGraded { .. }
+            )
+        {
+            return Err(RecipeError::Parse {
+                message: "graded walls require catallax-recipe/5".into(),
+            });
+        }
         if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
             return Err(RecipeError::Parse {
                 message: "face references without `face` require catallax-recipe/5".into(),
@@ -166,8 +176,10 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
 fn face_refs(op: &Operation) -> &[FaceRef] {
     match op {
         Operation::ExtrudeTo { limit, .. } => std::slice::from_ref(limit),
-        Operation::Shell { open, .. } => open,
-        Operation::Thicken { faces, .. } | Operation::Draft { faces, .. } => faces,
+        Operation::Shell { open, .. } | Operation::ShellGraded { open, .. } => open,
+        Operation::Thicken { faces, .. }
+        | Operation::ThickenGraded { faces, .. }
+        | Operation::Draft { faces, .. } => faces,
         Operation::Lattice { radius, .. } | Operation::Gyroid { level: radius, .. } => match radius
         {
             Grade::Distance { faces, .. } => faces,
@@ -223,6 +235,18 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
         Operation::Shell { open: faces, .. }
         | Operation::Thicken { faces, .. }
         | Operation::Draft { faces, .. } => faces.iter().flat_map(face).collect(),
+        Operation::ShellGraded {
+            open: faces,
+            thickness,
+            ..
+        }
+        | Operation::ThickenGraded {
+            faces, thickness, ..
+        } => faces
+            .iter()
+            .flat_map(face)
+            .chain(grade(thickness))
+            .collect(),
         Operation::Lattice { radius: g, .. } | Operation::Gyroid { level: g, .. } => grade(g),
         _ => vec![],
     }
@@ -663,22 +687,30 @@ impl Ctx<'_> {
             | (O::FilletVariable { .. }, Role::Blend { edge })
             | (O::FilletG2 { .. }, Role::Blend { edge })
             | (O::Chamfer { .. }, Role::Bevel { edge })
-            | (O::Shell { .. } | O::Offset { .. }, Role::Round { edge })
-            | (O::Thicken { .. }, Role::Rim { edge }) => self.edge(edge, i),
-            (O::Thicken { .. }, Role::Round { edge }) if self.recipe.format != FORMAT => {
+            | (O::Shell { .. } | O::ShellGraded { .. } | O::Offset { .. }, Role::Round { edge })
+            | (O::Thicken { .. } | O::ThickenGraded { .. }, Role::Rim { edge }) => {
+                self.edge(edge, i)
+            }
+            (O::Thicken { .. } | O::ThickenGraded { .. }, Role::Round { edge })
+                if self.recipe.format != FORMAT =>
+            {
                 self.edge(edge, i)
             }
             (
                 O::Fillet { .. } | O::FilletVariable { .. } | O::Chamfer { .. },
                 Role::Corner { vertex },
             )
-            | (O::Shell { .. } | O::Offset { .. }, Role::RoundCorner { vertex }) => {
+            | (
+                O::Shell { .. } | O::ShellGraded { .. } | O::Offset { .. },
+                Role::RoundCorner { vertex },
+            ) => self.vertex(vertex, i),
+            (O::Thicken { .. } | O::ThickenGraded { .. }, Role::RoundCorner { vertex })
+                if self.recipe.format != FORMAT =>
+            {
                 self.vertex(vertex, i)
             }
-            (O::Thicken { .. }, Role::RoundCorner { vertex }) if self.recipe.format != FORMAT => {
-                self.vertex(vertex, i)
-            }
-            (O::Shell { .. }, Role::Inner { of }) | (O::Thicken { .. }, Role::Offset { of }) => {
+            (O::Shell { .. } | O::ShellGraded { .. }, Role::Inner { of })
+            | (O::Thicken { .. } | O::ThickenGraded { .. }, Role::Offset { of }) => {
                 self.origin(of, i)
             }
             (O::Pattern { layout, .. }, Role::Copy { instance, of }) => {

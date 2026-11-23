@@ -130,11 +130,19 @@ def classification(item):
         kind = 'field'
     if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1', 'catallax-iges/1',
                                'catallax-step/1', 'catallax-numerical-step/1', 'catallax-fitted-compare/1'):
-        problem = problem['recipe']
+        problem = problem.get('recipe')
+        if not isinstance(problem, dict):
+            problem = {}
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'
-    operations = sorted({s.get('op', '?') for s in problem.get('steps', [])})
-    shapes = sorted({o.get('shape', '?') for o in problem.get('operands', {}).values()})
+    def labels(items, key):
+        values = (item.get(key, '?') for item in items if isinstance(item, dict))
+        return sorted({value for value in values if isinstance(value, str)})
+
+    steps = problem.get('steps')
+    operands = problem.get('operands')
+    operations = labels(steps, 'op') if isinstance(steps, list) else []
+    shapes = labels(operands.values(), 'shape') if isinstance(operands, dict) else []
     return kind, '/'.join([kind, '+'.join(operations), '+'.join(shapes)])
 
 
@@ -349,7 +357,7 @@ def summarize(report):
         if comparison:
             cause = 'compare.' + comparison['verdict']
             disagreements += comparison['verdict'] == 'disagree'
-            for finding in comparison['findings']:
+            for finding in comparison.get('findings', ()):
                 issues.setdefault(finding['code'], []).append(case['key'])
         elif manifest.get('name_edit'):
             edit = manifest['name_edit']

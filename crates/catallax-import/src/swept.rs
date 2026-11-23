@@ -128,6 +128,7 @@ fn revolved(
     )
     .map_err(spline::source_error)?;
     Ok(StepSplineSurface {
+        source_format: SourceFormat::Step,
         geometry,
         closed: [Some(true), profile.closed],
         self_intersect: None,
@@ -243,6 +244,7 @@ impl Reader<'_> {
         )
         .map_err(spline::source_error)?;
         Ok(Surface::BSpline(StepSplineSurface {
+            source_format: SourceFormat::Step,
             geometry,
             closed: [closed, Some(false)],
             self_intersect: None,

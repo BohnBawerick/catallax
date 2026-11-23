@@ -90,14 +90,33 @@ pub(crate) fn mesh(
             }
         }
     }
-    for indices in indices.chunks(8192) {
-        let values = crate::workers::map_init(indices, Workspace::default, |workspace, &index| {
-            let point = builder.point(index).map(|v| v.to_f64_nearest());
-            plan.fast(point, workspace).map(|value| value.value < 0.0)
-        });
-        for (&index, inside) in indices.iter().zip(values) {
+    if builder
+        .classifier
+        .definitions
+        .iter()
+        .any(|leaf| matches!(leaf, Some(Definition::ImportedShell { .. })))
+    {
+        // A nearest face normal can give the wrong sign off a trimmed edge.
+        // Use checked membership for these corners before sampling the mesh.
+        for index in indices {
             charge(dec)?;
-            builder.corner_signs.insert(index, inside?);
+            let point = builder.point(index);
+            let inside = builder
+                .classifier
+                .inside(&point, &mut builder.workspace, dec)?;
+            builder.corner_signs.insert(index, inside);
+        }
+    } else {
+        for indices in indices.chunks(8192) {
+            let values =
+                crate::workers::map_init(indices, Workspace::default, |workspace, &index| {
+                    let point = builder.point(index).map(|v| v.to_f64_nearest());
+                    plan.fast(point, workspace).map(|value| value.value < 0.0)
+                });
+            for (&index, inside) in indices.iter().zip(values) {
+                charge(dec)?;
+                builder.corner_signs.insert(index, inside?);
+            }
         }
     }
     for x in 0..counts[0] {

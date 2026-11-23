@@ -3,11 +3,11 @@
 //! A [`Stage`] is built from the body's recipe, the parameters of one terminal
 //! field, a [`LatticeSpec`] or a [`GyroidSpec`], and the user's output settings. It
 //! adds one field step that reads the body's result and makes that step the result.
-//! The stage owns no cache: editing the body means calling [`Stage::new`] again with
-//! the edited recipe, so nothing computed from the earlier body can be reused.
+//! Rebuild a stage from its body recipe when the body or output settings change.
 
 use crate::grade::{GradeDef, check_distance};
 use crate::{Plan, display::PreviewOptions, printing};
+use catallax_features::ImportFiles;
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
     Grade, GyroidKind, LatticeCell, Number, Operation, Pose, Recipe, RecipeError, Step, StepId,
@@ -272,6 +272,21 @@ impl<S: TerminalField> Stage<S> {
         settings: Settings,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        Self::new_with_files(body, &ImportFiles::new(), spec, settings, dec)
+    }
+
+    /// Builds the stage with immutable source bytes indexed by the body's saved hashes.
+    /// The import operations are copied into the staged recipe with their placement,
+    /// source selection and repair decisions. Import refusals come from the field plan.
+    /// To change the output settings, recover the body with
+    /// [`Self::return_before_lattice`] and pass the same files with the new settings.
+    pub fn new_with_files(
+        body: &Recipe,
+        files: &ImportFiles<'_>,
+        spec: S,
+        settings: Settings,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         if body
             .steps
             .iter()
@@ -309,7 +324,7 @@ impl<S: TerminalField> Stage<S> {
             op: spec.operation(body.result.clone()),
         });
         recipe.result = lattice.clone();
-        let plan = Plan::compile_checked(&recipe, dec)?;
+        let plan = Plan::compile_with_files_checked(&recipe, files, dec)?;
         Ok(Self {
             body: body.clone(),
             spec,
@@ -355,7 +370,10 @@ impl<S: TerminalField> Stage<S> {
     pub fn export(&self, dec: &mut Decider) -> Result<Output, Refusal> {
         let floor = &self.settings.minimum_detail * &Rational::from_ratio(1, 4).unwrap();
         let options = self.settings.print_options();
-        let mesh = if options.tolerance < floor || printing::graded(&self.plan) {
+        let mesh = if options.tolerance < floor
+            || printing::graded(&self.plan)
+            || printing::has_imported_boundary(&self.plan)
+        {
             printing::certified::mesh(&self.plan, &options, &floor, dec)?
         } else {
             printing::mesh_plan_floor(&self.plan, &options, Some(&floor), dec)?

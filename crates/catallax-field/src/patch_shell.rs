@@ -14,11 +14,13 @@
 //! on a patch stays `Indeterminate`, since no exact zero test of a patch is
 //! made; a point on a polygon is on the boundary exactly.
 //!
-//! Trimmed faces are not held (the decisions put them in 4.4).
+//! Imported rectangular trims are held as extracted whole patches.
 //!
 //! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
 
 use crate::spline_spine::exact;
+
+pub(crate) mod print_boundary;
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal, Sign};
 use catallax_recipe::{EdgeName, EdgeRef, Origin, Role, StepId};
@@ -384,6 +386,7 @@ pub struct Shell {
     inverse_rotation: [[Rational; 3]; 3],
     loft_sides: Vec<Origin>,
     round: Option<Round>,
+    rectangular_import: bool,
 }
 
 fn apply(m: &[[Rational; 3]; 3], v: &V) -> V {
@@ -487,7 +490,17 @@ impl Shell {
             translation: std::array::from_fn(|_| Rational::zero()),
             loft_sides: Vec::new(),
             round: None,
+            rectangular_import: false,
         })
+    }
+
+    pub(crate) fn rectangular_import(mut self) -> Self {
+        self.rectangular_import = true;
+        self
+    }
+
+    pub(crate) fn is_rectangular_import(&self) -> bool {
+        self.rectangular_import
     }
 
     pub(crate) fn named_loft(mut self, sides: Vec<Origin>) -> Self {

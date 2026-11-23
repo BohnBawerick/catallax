@@ -1,6 +1,6 @@
 //! Corner membership reuses strict interval states without computing distances.
-use super::{BoxState, Classifier};
-use crate::{Instruction, Location, Workspace, combine, polynomial_sign};
+use super::{BoxState, Classifier, Definition};
+use crate::{Instruction, Location, Workspace, combine, geometry, polynomial_sign};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::BooleanKind;
 
@@ -20,7 +20,16 @@ impl Classifier<'_> {
                     // These states certify the same exact point, not a rounded sample.
                     Some(BoxState::Inside) => Location::Inside,
                     Some(BoxState::Outside) => Location::Outside,
-                    Some(BoxState::Unknown) | None => plan.leaves[i].location(point, dec)?,
+                    Some(BoxState::Unknown) | None => {
+                        let leaf = &plan.leaves[i];
+                        match (leaf, &self.definitions[i]) {
+                            (
+                                geometry::Leaf::Shell(shell),
+                                Some(Definition::ImportedShell { boundary, .. }),
+                            ) => boundary.location(shell, point, false, dec)?,
+                            _ => leaf.location(point, dec)?,
+                        }
+                    }
                 },
                 Instruction::Boolean { kind, a, b } => {
                     combine(kind, storage.locations[a], storage.locations[b])

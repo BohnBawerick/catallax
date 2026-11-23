@@ -148,6 +148,16 @@ fn outputs<S: TerminalField>(body: &Recipe, spec: S) -> Receipts {
     }
 }
 
+fn assert_gyroid_location(body: &Recipe, spec: &GyroidSpec, at: [&str; 3], expected: Location) {
+    let stage = Stage::new(body, spec.clone(), settings(), &mut Decider::default()).unwrap();
+    let [x, y, z] = at.map(q);
+    let location = stage
+        .plan()
+        .proven(&RPoint3::new(x, y, z), &mut Workspace::default())
+        .location;
+    assert_eq!(location, expected, "gyroid level at {at:?}");
+}
+
 #[test]
 #[cfg_attr(debug_assertions, ignore = "certification runs in release mode")]
 fn one_load_face_has_the_same_outputs_as_the_equivalent_linear_grade() {
@@ -294,14 +304,18 @@ fn point_and_radial_grades_export_and_measure_both_families() {
     );
 
     let body = block(["2", "2", "2"], ["-1", "-1", "-1"]);
-    outputs(
-        &body,
-        gyroid(radial(["1", "2", "3"], "1/2", "3/2", "-1/50", "1/50")),
-    );
-    outputs(
-        &body,
-        gyroid(point(["0", "0", "0"], "1/2", "3/2", "-1/50", "1/50")),
-    );
+    for level in [
+        radial(["1", "2", "3"], "1/2", "3/2", "-1/50", "1/50"),
+        point(["0", "0", "0"], "1/2", "3/2", "-1/50", "1/50"),
+    ] {
+        let spec = gyroid(level);
+        // All three sines vanish here and the grade is clamped to -1/50.
+        assert_gyroid_location(&body, &spec, ["0", "0", "0"], Location::Outside);
+        // At (1/10, -19/20, 3/4), the sine and cosine series give
+        // 0.004 < g < 0.005. Both distances exceed 1.2 mm, so level > 0.008.
+        assert_gyroid_location(&body, &spec, ["1/10", "-19/20", "3/4"], Location::Inside);
+        outputs(&body, spec);
+    }
 }
 
 #[test]
@@ -395,7 +409,11 @@ fn oblique_linear_grades_export_and_measure_both_families() {
         (["-4", "0", "-4"], ["4", "0", "4"]),
         (["-1/2", "0", "-1/2"], ["1/2", "0", "1/2"]),
     ] {
-        outputs(&body, gyroid(linear_between(from, to, "-1/50", "1/50")));
+        let spec = gyroid(linear_between(from, to, "-1/50", "1/50"));
+        // At this point g = sin(pi/40) * (1 - cos(pi/40)), between zero
+        // and (pi/40)^3 / 2. Both grades here are at least 1/3200.
+        assert_gyroid_location(&body, &spec, ["0", "-1/8", "1/8"], Location::Inside);
+        outputs(&body, spec);
     }
 }
 

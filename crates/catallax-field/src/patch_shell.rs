@@ -20,6 +20,8 @@
 
 use crate::spline_spine::exact;
 
+pub(crate) mod print_boundary;
+
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal, Sign};
 use catallax_recipe::{EdgeName, EdgeRef, Origin, Role, StepId};
 use catallax_shapes::{Isometry, RPoint3, RVector3, RationalPatch};
@@ -384,6 +386,7 @@ pub struct Shell {
     inverse_rotation: [[Rational; 3]; 3],
     loft_sides: Vec<Origin>,
     round: Option<Round>,
+    rectangular_import: bool,
 }
 
 fn apply(m: &[[Rational; 3]; 3], v: &V) -> V {
@@ -487,7 +490,13 @@ impl Shell {
             translation: std::array::from_fn(|_| Rational::zero()),
             loft_sides: Vec::new(),
             round: None,
+            rectangular_import: false,
         })
+    }
+
+    pub(crate) fn rectangular_import(mut self) -> Self {
+        self.rectangular_import = true;
+        self
     }
 
     pub(crate) fn named_loft(mut self, sides: Vec<Origin>) -> Self {

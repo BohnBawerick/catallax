@@ -9,6 +9,7 @@ pub(super) struct Grid {
 }
 impl Grid {
     /// `pitch` caps the coarse spacing below what the accuracy alone would choose.
+    /// Imported gyroids add inset lines only if their spacing meets the detail floor.
     pub(super) fn new(
         bounds: &[[Rational; 2]; 3],
         options: &Options,
@@ -16,6 +17,7 @@ impl Grid {
         clip_lines: bool,
         pitch: Option<&Rational>,
         avoid_contacts: bool,
+        imported_clip_floor: Option<&Rational>,
     ) -> Result<Self, Refusal> {
         let accuracy = &options.tolerance;
         let mut coarse = q(1);
@@ -28,6 +30,8 @@ impl Grid {
         while pitch.is_some_and(|pitch| coarse > *pitch) {
             coarse = coarse.mul_pow2(-1);
         }
+        let clip_lines =
+            clip_lines || imported_clip_floor.is_some_and(|floor| coarse.mul_pow2(-4) >= *floor);
         // Shift only the supported parametric route. Keep the general route's
         // candidate grid unchanged, including its exact clip-plane insertions.
         let shift = if avoid_contacts {

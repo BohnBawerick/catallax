@@ -198,9 +198,10 @@ fn bracket(
     classifier: &mut Classifier<'_>,
     box_: [Interval; 3],
     bound: Interval,
+    independent: bool,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    for direction in [
+    const DIRECTIONS: [[i32; 3]; 13] = [
         [1, 0, 0],
         [0, 1, 0],
         [0, 0, 1],
@@ -214,31 +215,58 @@ fn bracket(
         [1, 1, -1],
         [1, -1, 1],
         [1, -1, -1],
-    ] {
-        let nonzero = direction.iter().filter(|&&v| v != 0).count();
-        // Exact dyadic scales with k*scale^2 <= 1 keep every translation
-        // inside the Euclidean accuracy ball, including diagonal directions.
-        let scale = match nonzero {
-            1 => 1.0,
-            2 => 181.0 / 256.0,
-            3 => 591.0 / 1024.0,
-            _ => unreachable!(),
-        };
-        let step = bound * point(scale);
-        let shift: [Interval; 3] = direction.map(|v| step * point(v as f64));
-        let lo = std::array::from_fn(|i| box_[i] - shift[i]);
-        let hi = std::array::from_fn(|i| box_[i] + shift[i]);
-        let a = classifier.classify(&lo, dec)?;
-        let b = classifier.classify(&hi, dec)?;
-        if matches!(
-            (a, b),
-            (BoxState::Inside, BoxState::Outside) | (BoxState::Outside, BoxState::Inside)
-        ) {
-            return Ok(true);
+    ];
+    let mut inside = false;
+    let mut outside = false;
+    let reaches: &[f64] = if independent {
+        // A clip edge can require different shifts for the two witnesses.
+        // Their segment stays within the accuracy ball of each patch point.
+        let state = classifier.classify(&box_, dec)?;
+        inside = state == BoxState::Inside;
+        outside = state == BoxState::Outside;
+        &[1.0, 0.5, 0.25, 0.125]
+    } else {
+        &[1.0]
+    };
+    for &reach in reaches {
+        for direction in DIRECTIONS {
+            let nonzero = direction.iter().filter(|&&v| v != 0).count();
+            // Exact dyadic scales with k*scale^2 <= 1 keep each translation
+            // inside the accuracy ball.
+            let scale = match nonzero {
+                1 => 1.0,
+                2 => 181.0 / 256.0,
+                3 => 591.0 / 1024.0,
+                _ => unreachable!(),
+            };
+            let step = bound * point(scale * reach);
+            let shift = direction.map(|v| step * point(f64::from(v)));
+            let lo = std::array::from_fn(|i| box_[i] - shift[i]);
+            let hi = std::array::from_fn(|i| box_[i] + shift[i]);
+            let a = classifier.classify(&lo, dec)?;
+            let b = classifier.classify(&hi, dec)?;
+            if !independent {
+                inside = false;
+                outside = false;
+            }
+            inside |= a == BoxState::Inside || b == BoxState::Inside;
+            outside |= a == BoxState::Outside || b == BoxState::Outside;
+            if inside && outside {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
 }
+
+fn imported_gyroid(classifier: &Classifier<'_>) -> bool {
+    has_imported_boundary(classifier.plan)
+        && classifier
+            .definitions
+            .iter()
+            .any(|definition| matches!(definition, Some(Definition::Gyroid)))
+}
+
 fn cover_mesh(
     mesh: &mut Mesh,
     classifier: &mut Classifier<'_>,
@@ -250,6 +278,7 @@ fn cover_mesh(
 ) -> Result<BTreeSet<usize>, Refusal> {
     let mut patches = Vec::new();
     let mut failed = BTreeSet::new();
+    let independent = imported_gyroid(classifier);
     for id in 0..mesh.triangles.len() {
         let key = mesh.triangles[id].map(|v| mesh.positions[v].map(f32::to_bits));
         if cache.contains(&key) {
@@ -270,13 +299,14 @@ fn cover_mesh(
                 )
                 .unwrap()
             });
-            if bracket(classifier, box_, bound, dec)? {
+            if bracket(classifier, box_, bound, independent, dec)? {
                 continue;
             }
             let centre: [Interval; 3] = std::array::from_fn(|i| {
                 (point(patch[0][i]) + point(patch[1][i]) + point(patch[2][i])) / point(3.0)
             });
-            if depth == 12 || (depth >= 2 && !bracket(classifier, centre, bound, dec)?) {
+            if depth == 12 || (depth >= 2 && !bracket(classifier, centre, bound, independent, dec)?)
+            {
                 failed.insert(id);
                 patches.clear();
                 break;
@@ -408,6 +438,7 @@ pub(super) fn run(
         clip.is_some(),
         pitch.as_ref(),
         report.is_some(),
+        imported_gyroid(&classifier).then_some(floor),
     )?;
     let rounded = options.tolerance.to_f64_nearest();
     let bound = Rational::from_f64_exact(rounded.next_down()).ok_or_else(|| {

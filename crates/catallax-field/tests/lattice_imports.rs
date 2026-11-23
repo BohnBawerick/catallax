@@ -48,10 +48,10 @@ fn lattice() -> LatticeSpec {
     }
 }
 
-fn gyroid() -> GyroidSpec {
+fn gyroid(level: &str) -> GyroidSpec {
     GyroidSpec {
         period: Number::parse("8").unwrap(),
-        level: serde_json::from_str(r#"{"constant":"0"}"#).unwrap(),
+        level: serde_json::from_value(serde_json::json!({"constant": level})).unwrap(),
         kind: GyroidKind::Network,
         frame: Pose::identity(),
     }
@@ -101,6 +101,11 @@ fn stage_preview<S: TerminalField>(
         .unwrap();
     assert_eq!(preview.proof, Proof::Unproved);
     assert!(!preview.mesh.triangles.is_empty());
+    if matches!(body.steps[0].op, Operation::ImportStep { .. }) {
+        // All placed loft controls satisfy y - x <= 15/8. The preview's
+        // 1/16 mm pitch allows at most 1/8 beyond that line in a mixed cell.
+        assert!(preview.mesh.positions.iter().all(|p| p[1] - p[0] <= 2.0));
+    }
     assert!(current_operation_work().used <= TARGET);
     stage
 }
@@ -153,32 +158,31 @@ fn closed_mesh_clips_lattice_and_restages_at_a_new_accuracy() {
     assert_ne!(original, replacement);
 }
 
-fn check_gyroid_refusal(body: &Recipe, files: &ImportFiles<'_>) {
+#[test]
+fn rectangular_step_gyroid_preserves_the_disconnected_refusal() {
+    let step = import_support::trimmed_loft();
+    let (body, files) = source(step.as_bytes(), true);
     let (refusal, work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
-        let stage = stage_preview(body, files, gyroid(), settings("1/2"), &mut dec);
+        let stage = stage_preview(&body, &files, gyroid("0"), settings("1/2"), &mut dec);
         stage.export(&mut dec).unwrap_err()
     });
     assert!(!work.exhausted);
-    assert_eq!(refusal.code, "field.print-unresolved", "{refusal:?}");
-    assert!(
-        refusal.detail.contains("minimum detail allows"),
-        "{refusal:?}"
-    );
+    assert_eq!(refusal.code, "field.print-disconnected", "{refusal:?}");
     println!("{} work before refusal: {refusal:?}", work.used);
 }
 
 #[test]
-fn rectangular_step_gyroid_refuses_at_the_minimum_detail() {
+fn rectangular_step_clips_a_connected_network_gyroid_to_a_certified_stl() {
     let step = import_support::trimmed_loft();
     let (body, files) = source(step.as_bytes(), true);
-    check_gyroid_refusal(&body, &files);
+    stage_print(&body, &files, gyroid("1/2"), settings("1/2"));
 }
 
 #[test]
-fn closed_mesh_gyroid_refuses_at_the_minimum_detail() {
+fn closed_mesh_clips_a_network_gyroid_to_a_certified_stl() {
     let (body, files) = source(CUBE, false);
-    check_gyroid_refusal(&body, &files);
+    stage_print(&body, &files, gyroid("0"), settings("1/2"));
 }
 
 #[test]

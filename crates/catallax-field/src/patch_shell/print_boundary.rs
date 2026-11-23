@@ -67,6 +67,7 @@ enum FaceBound {
     Polygon {
         plane: Affine<Interval>,
         bounds: [Interval; 3],
+        sides: Vec<Affine<Interval>>,
     },
     Bilinear(Box<Coordinates>),
     Patch(Vec<[Interval; 3]>),
@@ -87,19 +88,7 @@ impl Boundary {
         for face in &shell.faces {
             dec.charge_work(1)?;
             faces.push(match face {
-                Face::Polygon(p) => FaceBound::Polygon {
-                    plane: affine(p.normal.clone(), &p.vertices[0])
-                        .each_ref()
-                        .map(Interval::from_rational),
-                    bounds: p.rings().flatten().fold(
-                        p.vertices[0].each_ref().map(Interval::from_rational),
-                        |bounds, point| {
-                            std::array::from_fn(|i| {
-                                bounds[i].hull(&Interval::from_rational(&point[i]))
-                            })
-                        },
-                    ),
-                },
+                Face::Polygon(p) => polygon_bound(p, dec)?,
                 Face::Patch(p) => match Coordinates::new(p) {
                     Some(uv) => FaceBound::Bilinear(Box::new(uv)),
                     None => FaceBound::Patch(p.distance.boxes()),
@@ -128,8 +117,14 @@ impl Boundary {
         for face in &self.faces {
             dec.charge_work(1)?;
             let misses = match face {
-                FaceBound::Polygon { plane, bounds } => {
-                    disjoint(bounds, &local) || strict(evaluate(plane, &local))
+                FaceBound::Polygon {
+                    plane,
+                    bounds,
+                    sides,
+                } => {
+                    disjoint(bounds, &local)
+                        || strict(evaluate(plane, &local))
+                        || sides.iter().any(|side| evaluate(side, &local).hi() < 0.0)
                 }
                 FaceBound::Bilinear(uv) => uv.misses(&local),
                 FaceBound::Patch(boxes) => boxes.iter().all(|b| disjoint(b, &local)),
@@ -184,6 +179,40 @@ impl Boundary {
         }
         Ok(Location::Indeterminate)
     }
+}
+
+fn polygon_bound(polygon: &Polygon, dec: &mut Decider) -> Result<FaceBound, Refusal> {
+    let vertices = &polygon.vertices;
+    let origin = &vertices[0];
+    let interval = |v: Affine<Rational>| v.each_ref().map(Interval::from_rational);
+    let mut sides = Vec::new();
+    for (a, b) in vertices.iter().zip(vertices.iter().cycle().skip(1)) {
+        let normal = cross(&polygon.normal, &sub(b, a));
+        let mut supported = true;
+        for vertex in vertices {
+            dec.charge_work(1)?;
+            if dot(&normal, &sub(vertex, a)).sign() == Sign::Negative {
+                supported = false;
+                break;
+            }
+        }
+        // An edge plane containing all vertices on one side also contains the
+        // polygon's convex hull. This does not require the polygon to be convex.
+        if supported {
+            sides.push(interval(affine(normal, a)));
+        }
+    }
+    let bounds = polygon.rings().flatten().fold(
+        origin.each_ref().map(Interval::from_rational),
+        |bounds, point| {
+            std::array::from_fn(|i| bounds[i].hull(&Interval::from_rational(&point[i])))
+        },
+    );
+    Ok(FaceBound::Polygon {
+        plane: interval(affine(polygon.normal.clone(), origin)),
+        bounds,
+        sides,
+    })
 }
 
 fn disjoint(a: &[Interval; 3], b: &[Interval; 3]) -> bool {

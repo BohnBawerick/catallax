@@ -627,7 +627,7 @@ impl SplineChart {
         if let Some(projection) = self.edge_projections.borrow().get(&key) {
             return Ok(projection.uv);
         }
-        let uv = self.project_uncached(position, seed, goal, dec)?;
+        let uv = self.project_uncached(position, seed, None, goal, dec)?;
         self.edge_projections
             .borrow_mut()
             .insert(key, EdgeProjection { uv, residual: None });
@@ -638,6 +638,7 @@ impl SplineChart {
         &self,
         position: [f64; 3],
         seed: Option<Uv>,
+        fixed: Option<(usize, f64)>,
         goal: f64,
         dec: &mut Decider,
     ) -> Result<Uv, Refusal> {
@@ -650,17 +651,33 @@ impl SplineChart {
                 }
             })
         });
-        let neighbours = seed.and_then(|seed| self.spans.iter().find(|span| span.contains(seed)));
-        if let Some(span) = neighbours {
+        let try_span = |span: &Span, dec: &mut Decider| {
             let result = span.rational.project(
                 position,
                 seed.map(|seed| span.local_seed(seed)),
                 goal,
                 dec,
             )?;
-            if result.residual.hi() <= goal {
-                return Ok(span.global(result.uv));
+            if result.residual.hi() > goal {
+                return Ok::<_, Refusal>(None);
             }
+            let mut uv = span.global(result.uv);
+            if let Some((axis, value)) = fixed {
+                uv[axis] = value;
+                // A span endpoint can satisfy the projection's Euclidean
+                // goal and still miss the rail certificate. Try the other
+                // spans before settling the shared point's parameter.
+                if self.residual(uv, position, dec)?.hi() > goal {
+                    return Ok(None);
+                }
+            }
+            Ok(Some(uv))
+        };
+        let neighbours = seed.and_then(|seed| self.spans.iter().find(|span| span.contains(seed)));
+        if let Some(span) = neighbours
+            && let Some(uv) = try_span(span, dec)?
+        {
+            return Ok(uv);
         }
         let mut ordered: Vec<_> = self
             .spans
@@ -671,19 +688,15 @@ impl SplineChart {
             .collect();
         ordered.sort_by(|a, b| a.0.total_cmp(&b.0));
         for (_, span) in ordered {
-            let result = span.rational.project(
-                position,
-                seed.map(|seed| span.local_seed(seed)),
-                goal,
-                dec,
-            )?;
-            if result.residual.hi() <= goal {
-                return Ok(span.global(result.uv));
+            if let Some(uv) = try_span(span, dec)? {
+                return Ok(uv);
             }
         }
-        Err(failure(
-            "projected boundary point exceeds the spline chart residual",
-        ))
+        Err(failure(if fixed.is_some() {
+            "projected rail point exceeds the spline chart residual"
+        } else {
+            "projected boundary point exceeds the spline chart residual"
+        }))
     }
 
     pub(crate) fn evaluate(&self, uv: Uv, dec: &mut Decider) -> Result<[Interval; 3], Refusal> {
@@ -1243,12 +1256,7 @@ impl SplineChart {
         if fixed.is_some() {
             // The pipe law puts each complete rail at a fixed v. Retain that
             // parameter line before the CDT classifies the periodic loops.
-            let uv = keep_on_rail(self.project_uncached(position, hint.or(seed), goal, dec)?);
-            if self.residual(uv, position, dec)?.hi() > goal {
-                return Err(failure(
-                    "projected rail point exceeds the spline chart residual",
-                ));
-            }
+            let uv = self.project_uncached(position, hint.or(seed), fixed, goal, dec)?;
             self.edge_projections
                 .borrow_mut()
                 .insert(key, EdgeProjection { uv, residual: None });

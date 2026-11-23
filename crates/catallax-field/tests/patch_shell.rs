@@ -462,6 +462,20 @@ fn the_m11_patch_shell_displays_all_named_faces_inside_the_chord() {
         let mesh = mesh.unwrap();
         assert!(!work.exhausted);
         assert!(mesh.max_deviation <= options.tolerance);
+        let mut incidence = std::collections::BTreeMap::<_, (usize, i32)>::new();
+        for triangle in &mesh.triangles {
+            let [a, b, c] = triangle.vertices;
+            for (a, b) in [(a, b), (b, c), (c, a)] {
+                let uses = incidence.entry((a.min(b), a.max(b))).or_default();
+                uses.0 += 1;
+                uses.1 += if a < b { 1 } else { -1 };
+            }
+        }
+        let open = incidence.values().filter(|&&uses| uses != (2, 0)).count();
+        assert_eq!(
+            open, 0,
+            "{open} unmatched or misoriented edges at chord {chord}"
+        );
         let faces: std::collections::BTreeSet<_> = mesh
             .triangles
             .iter()

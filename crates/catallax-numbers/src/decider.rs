@@ -1376,11 +1376,23 @@ impl Decider {
     /// `numbers.operation-budget` once the allowance is spent and with
     /// `numbers.deadline` once the deadline passes.
     pub fn charge_work(&mut self, units: u64) -> Result<(), Refusal> {
+        self.debit_work(units)?;
+        self.check_deadline()
+    }
+
+    /// Charges visited index cells or candidates. The allowance charge checks
+    /// cancellation itself. Read the clock only when a deadline was set.
+    pub fn charge_traversal(&mut self, visits: u64) -> Result<(), Refusal> {
+        self.debit_work(visits)?;
+        self.check_deadline_if_set()
+    }
+
+    fn debit_work(&mut self, units: u64) -> Result<(), Refusal> {
         if crate::operation::charge(units) {
             return Err(deadline());
         }
         self.stats.work = self.stats.work.saturating_add(units);
-        self.check_deadline()
+        Ok(())
     }
     /// Refuses work, including a decision in progress, once its deadline passes.
     #[cfg_attr(feature = "work-profile", track_caller)]

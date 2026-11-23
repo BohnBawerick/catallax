@@ -6,7 +6,7 @@ use catallax_measure::{Accuracy, Enclosure, VolumeAreaCentroid, volume_area_cent
 use catallax_mesh::MeshOptions;
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational};
 use catallax_recipe::Recipe;
-use catallax_shapes::RPoint3;
+use catallax_shapes::{RPoint3, SplineSupport, Surface};
 use serde_json::Value;
 
 fn input() -> Value {
@@ -96,6 +96,71 @@ fn both_rings_round_with_certified_bands() {
                 .iter()
                 .all(|face| face.max_chord_error <= options.chord_tolerance)
         );
+    });
+}
+
+#[test]
+fn sphere_ring_display_is_closed_and_follows_the_carriers() {
+    on_thread(|| {
+        let recipe = Recipe::parse(&input().to_string()).unwrap();
+        let built = evaluate(&recipe, &mut decider()).unwrap();
+        let options = MeshOptions::default();
+        let (result, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            catallax_mesh::mesh_body(&built.model, built.result, &options, &mut decider())
+        });
+        assert!(!work.exhausted, "{work:?}");
+        let mesh = result.unwrap().value;
+        let mut incidence = std::collections::BTreeMap::<_, (usize, i32)>::new();
+        for triangle in &mesh.triangles {
+            let [a, b, c] = triangle.vertices;
+            for (from, to) in [(a, b), (b, c), (c, a)] {
+                let entry = incidence.entry((from.min(to), from.max(to))).or_default();
+                entry.0 += 1;
+                entry.1 += if from < to { 1 } else { -1 };
+            }
+            let [a, b, c] = triangle.vertices.map(|i| mesh.positions[i]);
+            let u: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+            let v: [f64; 3] = std::array::from_fn(|i| c[i] - a[i]);
+            let normal: [f64; 3] = std::array::from_fn(|i| {
+                u[(i + 1) % 3] * v[(i + 2) % 3] - u[(i + 2) % 3] * v[(i + 1) % 3]
+            });
+            let p @ [x, y, z] = std::array::from_fn(|i| (a[i] + b[i] + c[i]) / 3.0);
+            let norm = |p: [f64; 3]| p.iter().map(|x| x * x).sum::<f64>().sqrt();
+            let surface = built
+                .model
+                .geom()
+                .surface(built.model.face(triangle.face).surface);
+            let (outward, error) = match surface {
+                Surface::Sphere(_) => (p, (norm(p) - 5.0).abs()),
+                Surface::Cylinder(_) => {
+                    let radial = [x - 1.0, y, 0.0];
+                    (radial, (norm(radial) - 2.0).abs())
+                }
+                Surface::Plane(_) => ([0.0, 0.0, z.signum()], (z.abs() - 10.0).abs()),
+                Surface::BSpline(SplineSupport::RollingSphere(_)) => {
+                    let rho = (x - 1.0).hypot(y);
+                    let cx = 1.0 + 2.5 * (x - 1.0) / rho;
+                    let cy = 2.5 * y / rho;
+                    let cz = (5.5_f64.powi(2) - cx * cx - cy * cy).sqrt().copysign(z);
+                    let radial = [cx - x, cy - y, cz - z];
+                    (radial, (norm(radial) - 0.5).abs())
+                }
+                other => panic!("unexpected sphere-ring carrier {other:?}"),
+            };
+            assert!(
+                normal
+                    .into_iter()
+                    .zip(outward)
+                    .map(|(a, b)| a * b)
+                    .sum::<f64>()
+                    > 0.0
+            );
+            assert!(
+                error <= options.chord_tolerance.to_f64_nearest(),
+                "chord error {error} at {p:?}"
+            );
+        }
+        assert!(incidence.values().all(|&uses| uses == (2, 0)));
     });
 }
 

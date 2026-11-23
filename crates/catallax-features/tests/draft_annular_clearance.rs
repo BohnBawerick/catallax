@@ -147,11 +147,20 @@ fn steep_narrow_annulus_bounds_cross_height_separation_before_xyz_rounding() {
 
         let mesh = catallax_mesh::mesh_body(&model, body, &Default::default(), &mut dec).unwrap();
         assert_eq!(mesh.value.faces.len(), 4);
+        let limit = bound.lo().mul_pow2(-3);
         assert!(
             mesh.value
                 .faces
                 .iter()
-                .all(|face| face.max_chord_error.mul_pow2(1) < bound.lo())
+                .all(|face| face.max_chord_error <= limit),
+            "annular face chord exceeds the one-eighth wall clearance limit {limit}"
+        );
+        assert!(
+            mesh.value
+                .edges
+                .iter()
+                .all(|edge| edge.max_chord_error <= limit),
+            "annular rail chord exceeds the one-eighth wall clearance limit {limit}"
         );
         let mut bytes = Vec::new();
         catallax_step::write_step(&model, &[body], &Default::default(), &mut dec, &mut bytes)

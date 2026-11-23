@@ -49,7 +49,6 @@ struct Envelope {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Ends {
     Meridians,
-    Seam,
     Poles,
     ZeroEnd,
 }
@@ -353,8 +352,7 @@ fn mitre_band(
     })
 }
 
-// A closed saddle's rings are the carrier's boundary rows, so each runs up the
-// chart in its edge's sense.
+// A crossing saddle's rails meet at both chart poles.
 fn saddle_band(
     model: &Model,
     face: FaceId,
@@ -391,15 +389,7 @@ fn saddle_band(
             exact,
         });
     }
-    let ends = if matches!(
-        saddle.definition().law().ring,
-        catallax_shapes::SaddleRing::Crossing { .. }
-    ) {
-        Ends::Poles
-    } else {
-        Ends::Seam
-    };
-    Ok(seed_band(grid, rings, seeds, ends))
+    Ok(seed_band(grid, rings, seeds, Ends::Poles))
 }
 
 // Whether a planar face uses the edge.
@@ -510,8 +500,7 @@ impl Junction {
                 }
             }
         }
-        let first_column = usize::from(envelope.ends != Ends::Seam);
-        for column in first_column..columns - 1 {
+        for column in 1..columns - 1 {
             for line in 1..rows - 1 {
                 if boundaries.mesh.positions.len() >= options.max_vertices {
                     return Err(Refusal::new(
@@ -526,11 +515,6 @@ impl Junction {
                 }
                 index[at(column, line)] = boundaries.mesh.positions.len();
                 boundaries.mesh.positions.push(position);
-            }
-        }
-        if envelope.ends == Ends::Seam {
-            for line in 0..rows {
-                index[at(columns - 1, line)] = index[at(0, line)];
             }
         }
         if let Some(proof) = &envelope.rational {

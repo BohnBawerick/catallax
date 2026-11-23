@@ -17,6 +17,8 @@ use pipe_normal::PipeNormal;
 
 pub(crate) enum SplineNormals<'a> {
     Carrier,
+    // Preserve the proof order and seeds of the existing rational face chart.
+    Patch,
     Saddle,
     Pipe(&'a RollingPipe),
 }
@@ -42,10 +44,16 @@ pub(crate) struct SplineChart {
     source_domain: [[f64; 2]; 2],
     normal_station: Option<f64>,
     subdivide_normals: bool,
+    patch_sampling: bool,
     stretch: f64,
     // A chart lives for one mesh request. The edge plan uses a projection
     // goal at least as strict as the face that consumes it.
-    edge_parameters: RefCell<BTreeMap<[u64; 3], Uv>>,
+    edge_projections: RefCell<BTreeMap<[u64; 3], EdgeProjection>>,
+}
+
+struct EdgeProjection {
+    uv: Uv,
+    residual: Option<Interval>,
 }
 
 type NormalRow = [[Interval; 3]; 5];
@@ -558,12 +566,13 @@ impl SplineChart {
             source_domain: source_domain.map(|bounds| bounds.map(Rational::to_f64_nearest)),
             normal_station,
             subdivide_normals: saddle,
+            patch_sampling: matches!(normals, SplineNormals::Patch),
             stretch: if stretch.is_finite() && stretch > 0.0 {
                 stretch
             } else {
                 1.0
             },
-            edge_parameters: RefCell::default(),
+            edge_projections: RefCell::default(),
         })
     }
 
@@ -608,11 +617,13 @@ impl SplineChart {
         dec: &mut Decider,
     ) -> Result<Uv, Refusal> {
         let key = position.map(f64::to_bits);
-        if let Some(&uv) = self.edge_parameters.borrow().get(&key) {
-            return Ok(uv);
+        if let Some(projection) = self.edge_projections.borrow().get(&key) {
+            return Ok(projection.uv);
         }
         let uv = self.project_uncached(position, seed, goal, dec)?;
-        self.edge_parameters.borrow_mut().insert(key, uv);
+        self.edge_projections
+            .borrow_mut()
+            .insert(key, EdgeProjection { uv, residual: None });
         Ok(uv)
     }
 
@@ -860,6 +871,24 @@ impl SplineChart {
     }
 
     pub(crate) fn chord(&self, uv: &[Uv; 3], dec: &mut Decider) -> Result<Interval, Refusal> {
+        self.chord_for(uv, None, dec)
+    }
+
+    pub(crate) fn chord_with_limit(
+        &self,
+        uv: &[Uv; 3],
+        limit: f64,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        self.chord_for(uv, self.patch_sampling.then_some(limit), dec)
+    }
+
+    fn chord_for(
+        &self,
+        uv: &[Uv; 3],
+        box_limit: Option<f64>,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
         let b = parameter_box(uv);
         let width = b.map(|[lo, hi]| point(hi) - point(lo));
         let edges: [[Interval; 2]; 3] = std::array::from_fn(|i| {
@@ -871,6 +900,12 @@ impl SplineChart {
             .ok_or_else(|| failure("triangle has no spline span"))?;
         let Some(second) = cover.next() else {
             let local = [width[0] / first.width[0], width[1] / first.width[1]];
+            if let Some(limit) = box_limit {
+                let bound = first.chord_bound(local, None, dec)?;
+                if bound.hi() <= limit {
+                    return Ok(bound);
+                }
+            }
             let edges = edges.map(|e| [e[0] / first.width[0], e[1] / first.width[1]]);
             return first.chord_bound(local, Some(edges), dec);
         };
@@ -1135,7 +1170,7 @@ impl SplineChart {
             // Keep the same local lift limit as the analytic chart sampler.
             return Ok(false);
         }
-        if self.chord(&uv, dec)?.hi() > chord.lo() {
+        if self.chord_with_limit(&uv, chord.lo(), dec)?.hi() > chord.lo() {
             return Ok(false);
         }
         let span = self
@@ -1178,17 +1213,25 @@ impl SplineChart {
             uv
         };
         if (self.normal_station.is_none() || hint.is_none())
-            && let Some(&uv) = self.edge_parameters.borrow().get(&key)
+            && let Some(projection) = self.edge_projections.borrow().get(&key)
         {
-            return Ok(keep_on_rail(uv));
+            return Ok(keep_on_rail(projection.uv));
         }
         let hint = hint.map(|uv| keep_on_rail(self.normalize_hint(uv)));
         if let Some(uv) = hint
             && self.spans.iter().any(|span| span.contains(uv))
-            && self.residual(uv, position, dec)?.hi() <= goal
         {
-            self.edge_parameters.borrow_mut().insert(key, uv);
-            return Ok(uv);
+            let residual = self.residual(uv, position, dec)?;
+            if residual.hi() <= goal {
+                self.edge_projections.borrow_mut().insert(
+                    key,
+                    EdgeProjection {
+                        uv,
+                        residual: Some(residual),
+                    },
+                );
+                return Ok(uv);
+            }
         }
         if fixed.is_some() {
             // The pipe law puts each complete rail at a fixed v. Retain that
@@ -1199,21 +1242,49 @@ impl SplineChart {
                     "projected rail point exceeds the spline chart residual",
                 ));
             }
-            self.edge_parameters.borrow_mut().insert(key, uv);
+            self.edge_projections
+                .borrow_mut()
+                .insert(key, EdgeProjection { uv, residual: None });
             return Ok(uv);
         }
         self.project(position, hint.or(seed), goal, dec)
     }
 
     fn residual(&self, uv: Uv, position: [f64; 3], dec: &mut Decider) -> Result<Interval, Refusal> {
-        let expected = self.evaluate(uv, dec)?;
-        Ok(position
-            .into_iter()
-            .zip(expected)
-            .fold(point(0.0), |sum, (x, y)| {
-                let delta = point(x) - y;
-                sum + point(delta.lo().abs().max(delta.hi().abs()))
-            }))
+        Ok(vertex_residual(position, self.evaluate(uv, dec)?))
+    }
+
+    pub(crate) fn patch_sampling(&self) -> bool {
+        self.patch_sampling
+    }
+
+    pub(crate) fn vertex(
+        &self,
+        uv: Uv,
+        replacement: Option<[f64; 3]>,
+        dec: &mut Decider,
+    ) -> Result<([f64; 3], Interval), Refusal> {
+        if self.patch_sampling
+            && let Some(position) = replacement
+            && let Some(projection) = self
+                .edge_projections
+                .borrow()
+                .get(&position.map(f64::to_bits))
+            && super::key(projection.uv) == super::key(uv)
+            && let Some(residual) = projection.residual
+        {
+            return Ok((position, residual));
+        }
+        let enclosed = self.evaluate(uv, dec)?;
+        Ok(Self::rounded_vertex(enclosed, replacement))
+    }
+
+    pub(crate) fn rounded_vertex(
+        enclosed: [Interval; 3],
+        replacement: Option<[f64; 3]>,
+    ) -> ([f64; 3], Interval) {
+        let position = replacement.unwrap_or_else(|| enclosed.map(|value| value.mid()));
+        (position, vertex_residual(position, enclosed))
     }
 
     pub(crate) fn seed_grid(
@@ -1225,7 +1296,13 @@ impl SplineChart {
         let limit = Interval::from_rational(limit).lo();
         let mut total = 0usize;
         let mut grids = Vec::with_capacity(self.spans.len());
-        for span in &self.spans {
+        'spans: for span in &self.spans {
+            let remaining = max_vertices - total;
+            if self.patch_sampling && remaining < 4 {
+                break;
+            }
+            let vertices =
+                |[u, v]: [usize; 2]| u.saturating_add(1).saturating_mul(v.saturating_add(1));
             let hessian = span
                 .local_affine_hessian
                 .unwrap_or_else(|| span.rational.chord_coefficients());
@@ -1250,7 +1327,12 @@ impl SplineChart {
                     usize::from(counts[1] < counts[0])
                 };
                 counts[axis] = counts[axis].saturating_mul(2);
-                if counts[0].saturating_mul(counts[1]) >= max_vertices {
+                if self.patch_sampling {
+                    if vertices(counts) > remaining.saturating_mul(4) {
+                        // Leave large seed grids to adaptive facet refinement.
+                        continue 'spans;
+                    }
+                } else if counts[0].saturating_mul(counts[1]) >= max_vertices {
                     return Err(failure(format!(
                         "spline grid needs more than {max_vertices} points"
                     )));
@@ -1261,9 +1343,10 @@ impl SplineChart {
             // display prototype. Each candidate column count needs only a
             // monotone search of the other axis.
             let short = usize::from(counts[1] < counts[0]);
-            let vertices =
-                |[u, v]: [usize; 2]| u.saturating_add(1).saturating_mul(v.saturating_add(1));
             let mut best = vertices(counts);
+            if self.patch_sampling {
+                best = best.min(remaining.saturating_add(1));
+            }
             let mut columns = 1;
             while columns + 1 < best.div_ceil(2) {
                 let mut candidate = [1; 2];
@@ -1291,7 +1374,10 @@ impl SplineChart {
                 }
                 columns += 1;
             }
-            total = total.saturating_add((counts[0] + 1).saturating_mul(counts[1] + 1));
+            if self.patch_sampling && vertices(counts) > remaining {
+                continue;
+            }
+            total = total.saturating_add(vertices(counts));
             if total > max_vertices {
                 return Err(failure(format!(
                     "spline grid needs at least {total} points, cap {max_vertices}"
@@ -1398,6 +1484,20 @@ impl SplineChart {
                 ]
             });
             let local = span.local_box(intersection);
+            if self.patch_sampling {
+                let coarse = local.map(|axis| {
+                    Interval::new(
+                        (axis.lo() * 4.0).floor() * 0.25,
+                        (axis.hi() * 4.0).ceil() * 0.25,
+                    )
+                    .unwrap()
+                });
+                if coarse != [Interval::new(0.0, 1.0).unwrap(); 2]
+                    && normals_agree(direction, span.normal_cell(coarse, dec)?, cosine, dec)?
+                {
+                    continue;
+                }
+            }
             if self.has_normal_cover() {
                 let unit = [Interval::new(0.0, 1.0).unwrap(); 2];
                 if triangle.is_some() {
@@ -1455,6 +1555,16 @@ impl SplineChart {
         }
         Ok(NormalProof::Proven)
     }
+}
+
+fn vertex_residual(position: [f64; 3], enclosed: [Interval; 3]) -> Interval {
+    position
+        .into_iter()
+        .zip(enclosed)
+        .fold(point(0.0), |sum, (x, y)| {
+            let delta = point(x) - y;
+            sum + point(delta.lo().abs().max(delta.hi().abs()))
+        })
 }
 
 fn normal_subcells(

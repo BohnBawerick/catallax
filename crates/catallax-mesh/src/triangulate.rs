@@ -199,26 +199,35 @@ impl FaceBuilder<'_> {
             (mesh, 0)
         } else {
             let replacement = boundary.map(|index| self.positions[index]);
-            let (p, residual) = if self.chart.spline().is_some() {
-                let enclosed = self.spline_position(canonical, at)?;
-                let p = replacement.unwrap_or_else(|| enclosed.map(|component| component.mid()));
-                let mut residual = Interval::point(0.0).unwrap();
-                for (actual, expected) in p.into_iter().zip(enclosed) {
-                    let delta = Interval::point(actual).unwrap() - expected;
-                    residual =
-                        residual + Interval::point(delta.lo().abs().max(delta.hi().abs())).unwrap();
+            let (p, residual, filtered) = match self.chart.spline() {
+                Some(spline) => {
+                    let (p, bound) = if self.collapsed_station.is_some() {
+                        let enclosed = self.spline_position(canonical, at)?;
+                        SplineChart::rounded_vertex(enclosed, replacement)
+                    } else {
+                        spline.vertex(canonical, replacement, self.dec)?
+                    };
+                    if !bound.is_finite() {
+                        return Err(failure("spline sample residual exceeds binary64"));
+                    }
+                    let residual = chart::q(bound.hi());
+                    let filtered = if spline.patch_sampling() {
+                        bound
+                    } else {
+                        Interval::from_rational(&residual)
+                    };
+                    (p, residual, filtered)
                 }
-                if !residual.is_finite() {
-                    return Err(failure("spline sample residual exceeds binary64"));
+                None => {
+                    let (p, residual) = self.chart.sample(
+                        canonical,
+                        replacement,
+                        &self.options.chord_tolerance,
+                        self.dec,
+                    )?;
+                    let filtered = Interval::from_rational(&residual);
+                    (p, residual, filtered)
                 }
-                (p, chart::q(residual.hi()))
-            } else {
-                self.chart.sample(
-                    canonical,
-                    replacement,
-                    &self.options.chord_tolerance,
-                    self.dec,
-                )?
             };
             let mesh = if let Some(index) = boundary {
                 index
@@ -228,8 +237,7 @@ impl FaceBuilder<'_> {
                 index
             };
             let error = self.errors.len();
-            self.filtered_errors
-                .push(Interval::from_rational(&residual));
+            self.filtered_errors.push(filtered);
             self.errors.push(residual);
             self.canonical.insert(key(canonical), (mesh, error));
             (mesh, error)
@@ -930,15 +938,20 @@ impl FaceBuilder<'_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
-            let remaining = self
-                .options
-                .max_vertices
-                .saturating_sub(self.positions.len());
-            let mut grid = spline.seed_grid(
-                &self.options.chord_tolerance.mul_pow2(-1),
-                remaining,
-                self.dec,
-            )?;
+            let (chord, remaining) = if spline.patch_sampling() {
+                (
+                    self.options.chord_tolerance.clone(),
+                    self.options.max_vertices,
+                )
+            } else {
+                (
+                    self.options.chord_tolerance.mul_pow2(-1),
+                    self.options
+                        .max_vertices
+                        .saturating_sub(self.positions.len()),
+                )
+            };
+            let mut grid = spline.seed_grid(&chord, remaining, self.dec)?;
             for uv in &mut grid {
                 *uv = self.chart.canonical(*uv);
                 if let Some(band) = self.band {
@@ -1623,14 +1636,19 @@ impl FaceBuilder<'_> {
                 let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
                 let mut normal_bounds = None;
                 let filtered = if let Some(spline) = spline {
+                    let replacement = Interval::point(filtered_residual).unwrap();
                     let chord = if collapsed_station {
                         let (chord, bounds) = spline.collapsed_facet(at, self.dec)?;
                         normal_bounds = Some(bounds);
                         chord
                     } else {
-                        spline.chord(&uvs, self.dec)?
+                        spline.chord_with_limit(
+                            &uvs,
+                            (filtered_tolerance - replacement).lo(),
+                            self.dec,
+                        )?
                     };
-                    chord + Interval::point(filtered_residual).unwrap()
+                    chord + replacement
                 } else if matches!(self.chart.surface, Surface::Cone(_)) {
                     let scale = Interval::point(vmax).unwrap()
                         / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))

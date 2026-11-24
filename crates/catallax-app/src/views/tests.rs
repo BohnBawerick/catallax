@@ -276,7 +276,11 @@ fn true_generator(d: [f64; 3], s: f64, u: f64) -> [f64; 3] {
 fn fitted_samples(c: &Contours, arc: &ContourArc, d: [f64; 3], count: usize) -> Vec<[f64; 3]> {
     let fit = arc.fit.as_ref().expect("a fitted arc");
     assert!(fit.deviation_mm <= fit.target_mm);
-    assert_eq!(fit.tolerance_mm, (1.1 * fit.deviation_mm).next_up());
+    assert_eq!(
+        fit.tolerance_mm
+            .partial_cmp(&(1.1 * fit.deviation_mm).next_up()),
+        Some(std::cmp::Ordering::Equal)
+    );
     let Curve::BSpline(curve) = c.model.geom().curve(arc.curve) else {
         panic!("a fitted arc is a B-spline");
     };
@@ -379,12 +383,18 @@ fn an_oblique_torus_gives_two_fitted_closed_branches_marked_approximate() {
         assert_eq!(arc.on_faces, vec![arc.face]);
         let fit = arc.fit.as_ref().unwrap();
         // Rule T2 for a 6 mm frame and a 1 mm tube: max(1e-6, 10 x 1e-7).
-        assert_eq!(fit.target_mm, 1e-6);
+        assert_eq!(
+            fit.target_mm.partial_cmp(&1e-6),
+            Some(std::cmp::Ordering::Equal)
+        );
         assert!(fit.spans > 1);
         worst = worst.max(fit.tolerance_mm);
         let samples = fitted_samples(&c, arc, [0.0, 1.0, 1.0], 48);
         // A whole branch closes on its own first point.
-        assert_eq!(samples[0], samples[48]);
+        assert_eq!(
+            samples[0].partial_cmp(&samples[48]),
+            Some(std::cmp::Ordering::Equal)
+        );
     }
     assert_eq!(marks[0].bound, Rational::from_f64_exact(worst).unwrap());
 }

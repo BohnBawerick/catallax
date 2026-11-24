@@ -219,7 +219,10 @@ fn p3_fillet_torus_generators_are_exact_along_and_across_its_axis_and_fitted_oth
                 // Binary64 and libm only: the same bits on every machine.
                 // Recorded on arm64 macOS; CI runs x86_64 Linux.
                 assert_eq!(fits[0].spans, 82);
-                assert_eq!(fits[0].deviation_mm, 9.276640353977601e-7);
+                assert_eq!(
+                    fits[0].deviation_mm.to_bits(),
+                    9.276640353977601e-7_f64.to_bits()
+                );
             }
             assert!(work.used < TARGET, "{name}: {} work units", work.used);
             let record = (counts, work.used, fits);

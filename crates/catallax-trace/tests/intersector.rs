@@ -607,11 +607,11 @@ fn grazing_natural_boundaries_keep_absent_uv_curves_explicit() {
     let domain = curves[0].curve.natural_interval();
     let start = curves[0].curve.evaluate_point(domain.min).unwrap();
     let end = curves[0].curve.evaluate_point(domain.max).unwrap();
-    assert_eq!(start.x, 1.0);
-    assert_eq!(end.x, 1.0);
-    assert_eq!(start.z, 0.0);
-    assert_eq!(end.z, 0.0);
-    assert_eq!((start.y - end.y).abs(), 1.0);
+    assert_eq!(start.x.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(end.x.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(start.z.abs().to_bits(), 0.0_f64.to_bits());
+    assert_eq!(end.z.abs().to_bits(), 0.0_f64.to_bits());
+    assert_eq!((start.y - end.y).abs().to_bits(), 1.0_f64.to_bits());
 }
 
 fn grazing_flat_patch(x0: f64, x1: f64, reverse_v: bool) -> BSplineSurface {
@@ -683,11 +683,14 @@ fn grazing_requested_domains_clip_the_shared_side() {
                 let interval = curve.natural_interval();
                 let start = curve.evaluate_point(interval.min).unwrap();
                 let end = curve.evaluate_point(interval.max).unwrap();
-                assert_eq!([start.y.min(end.y), start.y.max(end.y)], expected);
+                assert_eq!(
+                    [start.y.min(end.y), start.y.max(end.y)].partial_cmp(&expected),
+                    Some(std::cmp::Ordering::Equal)
+                );
                 for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     let point = curve.evaluate_point(interval.evaluate(t)).unwrap();
-                    assert_eq!(point.x, 1.0);
-                    assert_eq!(point.z, 0.0);
+                    assert_eq!(point.x.to_bits(), 1.0_f64.to_bits());
+                    assert_eq!(point.z.abs().to_bits(), 0.0_f64.to_bits());
                     assert!(point.y >= expected[0] && point.y <= expected[1]);
                 }
             }

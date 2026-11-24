@@ -480,8 +480,14 @@ fn a_collapsed_line_drops_to_a_finite_candidate() {
         false,
     );
     // The analytic parameter map has one value, not a NaN.
-    assert_eq!(degenerate.step_to_nurbs(0.0), 0.0);
-    assert_eq!(degenerate.step_to_nurbs(0.7), 0.0);
+    assert_eq!(
+        degenerate.step_to_nurbs(0.0).abs().to_bits(),
+        0.0_f64.to_bits()
+    );
+    assert_eq!(
+        degenerate.step_to_nurbs(0.7).abs().to_bits(),
+        0.0_f64.to_bits()
+    );
     let (parameter, distance) = degenerate
         .drop_point_fast(
             Extent1::new(0.0, 0.0),
@@ -490,8 +496,8 @@ fn a_collapsed_line_drops_to_a_finite_candidate() {
             1.0e-5,
         )
         .unwrap();
-    assert_eq!(parameter, 0.0);
-    assert_eq!(distance, 1.0);
+    assert_eq!(parameter.abs().to_bits(), 0.0_f64.to_bits());
+    assert_eq!(distance.to_bits(), 1.0_f64.to_bits());
     // A meeting farther than the tolerance still has no answer, and no NaN.
     assert_eq!(
         degenerate.drop_point_fast(

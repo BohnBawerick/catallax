@@ -513,8 +513,11 @@ mod tests {
                 b[y * WIDTH + x + 2] = true;
             }
         }
-        assert_eq!(outline_error(&a, &a).unwrap(), 0.0);
-        assert_eq!(outline_error(&a, &b).unwrap(), 2.0);
+        assert_eq!(
+            outline_error(&a, &a).unwrap().abs().to_bits(),
+            0.0_f64.to_bits()
+        );
+        assert_eq!(outline_error(&a, &b).unwrap().to_bits(), 2.0_f64.to_bits());
     }
 }
 

@@ -299,7 +299,10 @@ fn a_point_on_a_support_is_at_distance_zero() {
     let p = RPoint3::new(r("-1/8"), r("-7/8"), q(1));
     let (answer, _) = query(&field, &p);
     assert!(answer.enclosure.converged);
-    assert_eq!(answer.enclosure.distance.lo(), 0.0);
+    assert_eq!(
+        answer.enclosure.distance.lo().abs().to_bits(),
+        0.0_f64.to_bits()
+    );
     assert!(answer.enclosure.distance.hi() <= WIDTH);
 }
 

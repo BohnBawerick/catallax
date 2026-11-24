@@ -214,7 +214,10 @@ fn thirty_thousand_noisy_points_from_p3_come_back_as_its_planes_and_cylinders() 
     // junction misses the round by up to 2 (1 - 1/sqrt 2) = 0.586 mm.
     assert!(elsewhere <= 6.0 * SIGMA, "{elsewhere}");
     assert!((torus - 0.586).abs() <= 6.0 * SIGMA, "{torus}");
-    assert_eq!(d.scan_to_part.max_mm, torus);
+    assert_eq!(
+        d.scan_to_part.max_mm.partial_cmp(&torus),
+        Some(std::cmp::Ordering::Equal)
+    );
     assert!(
         d.part_to_scan.max_mm >= 0.8 && d.part_to_scan.max_mm <= 1.2,
         "{d:?}"

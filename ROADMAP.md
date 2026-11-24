@@ -84,7 +84,7 @@ The app has the Edit Suite frame, a full 2D sketcher, the part features above, 2
 
 These set the order of phase 1.
 
-1. **Most real STEP files do not open as verified solids.** The v0.4.0 checkpoint census of the same 3,000 files has 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040)). The 16 Nov tier capture it replaces had 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%), and 384 valid exports (12.80%); builder processing may heal internally. That capture also retained 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
+1. **Most real STEP files do not open as verified solids.** The v0.4.0 checkpoint census of the same 3,000 files has 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040-1)). The 16 Nov tier capture it replaces had 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%), and 384 valid exports (12.80%); builder processing may heal internally. That capture also retained 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
 2. **The loft top cuts build above the 20M target.** All 14 recorded spline Boolean requests now write checked approximate STEP. The three original top requests build at the 100M application allowance, using 26.78M, 27.29M and 25.95M work. Their files pass raw OpenCASCADE validity with healing off and a later cut. [Stage work and checks](docs/phase1/spline-boolean-top-cuts/REPORT.md) join the phase-5 list.
 3. **Fillets, shells and draft work on certified families only.** Edge and wall features are the weakest area at 39%, and no line in it is complete.
 
@@ -117,7 +117,7 @@ Twelve things neither reference kernel does are not in the count. They include e
 
 **1.2 Real-file import**
 - Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
-- Measured: the [full frozen 3,000-file rerun](docs/research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%). The v0.4.0 checkpoint census replaces these figures: 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040)).
+- Measured: the [full frozen 3,000-file rerun](docs/research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%). The v0.4.0 checkpoint census replaces these figures: 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040-1)).
 - Why here: it is the largest single gap, and it is the first thing a user meets: a bought-in part that will not open.
 - Unlocks: bought-in parts in every later feature, the ten real parts on the scoreboard, direct edits (2.5) and imports in the field (4.4).
 - Done when: the 3,000-file census is rerun and the share that imports is published beside the 6%. Replacing an imported file re-points every reference.
@@ -533,8 +533,8 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | 9 | Roadmap edit: move the 3.5 mesher lines to phase 5, set the STEP import parity target, and replace the import figure with the v0.5.0 census. The v0.4.0 figure replaced the stale 12.80% on 24 Nov. | task | release plan, G23 |
 | 10 | Write the owner's ten SolidDraft items, this order and G1 to G26 into this file. Done 24 Nov 2026: this section. | task | G24 |
 | | **3. Decide before building** (first week after the release) | | |
-| 11 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft: the routes (closed mesh to solid, scan fitting to editable faces, reading USD BRep), what users want to do with these parts, and which scene import work follows. Stage 6 waits on its answer. | discussion | G26 |
-| 12 | Count how many real USD files carry exact BrepArray solids. This feeds item 11 and decides item 33. | task | G25, first step |
+| 11 | Count how many real USD files carry exact BrepArray solids. This feeds item 12 and decides item 33. | task | G25, first step |
+| 12 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft: the routes (closed mesh to solid, scan fitting to editable faces, reading USD BRep), what users want to do with these parts, and which scene import work follows. It uses the item 11 count. Stage 6 waits on its answer. | discussion | G26 |
 | 13 | FEA (4.5): restart it or keep it parked. Parked by the owner on 13 Nov; it needs a yes or no, not work. | discussion | open exit 4.5 |
 | 14 | A Python API and command line for PMI and drawings. Worth it only if scripted or CI users are a target. | discussion | G10 |
 | | **4. Phase 5.1: speed and simplification** | | |
@@ -542,7 +542,7 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | 16 | Slow steps: loft 35 s, loft-edge fillet 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s. | task | 5.1 |
 | 17 | The P8 thread sweep over 20M. | task | 5.1 |
 | 18 | STEP import work exhaustion: 836 surface-fit and 609 curve-fit bodies, and 918 files whose request was already spent. The largest single import blocker is a speed problem. | task | G19 |
-| 19 | One display mesher: the 11 of 13 done-when lines not fully met. | task | open exit 3.5 |
+| 19 | One display mesher: meet the [3.5 done-when lines](#one-display-mesher) not yet fully met. The list has 11 lines; checkpoint 3 records which ones the release meets. | task | open exit 3.5 |
 | 20 | The GPU and every core carry what they can. | task | 5.1 |
 | 21 | Remove routes the measurements show are not needed. | task | 5.1 |
 | 22 | Windows packages and signed downloads. | task | 5.1 |
@@ -551,19 +551,19 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | 24 | Solids with voids, and bodies that are not solid. | task | G21, coverage 10 |
 | 25 | Repair broken source geometry and parse more files. | task | G22, coverage 10 |
 | 26 | STEP import parity: the census against the target set in item 9. This closes the 1.2 exit. | task | coverage 10, open exit 1.2 |
-| | **6. Scene parts in SolidDraft** (after the item 11 brainstorm) | | |
+| | **6. Scene parts in SolidDraft** (after the item 12 brainstorm) | | |
 | 27 | Closed scene meshes in as solids through Catallax mesh import. This gives most scene parts measure, mass, mates and drawings. | task | G18 |
 | 28 | Scan fitting follow-ons: automatic segmentation, tori, chamfers, pockets, freeform fitting. The route from triangle solids to editable faces. | task | 4.4 follow-on |
 | 29 | Compressed glTF: Draco, meshopt, quantised. | task | G13 |
 | 30 | Scene looks: per-face materials, textures, PBR, vertex colours. | task | G12 |
 | 31 | Name everything the scene import skips. Small; do it with the glTF work. | task | G17 |
 | 32 | Instancing: PointInstancer and glTF GPU instancing. | task | G11 |
-| 33 | Read USD BRep (BrepArray) solids as exact solids. Build only if item 12 finds real files. | discussion | G25 |
+| 33 | Read USD BRep (BrepArray) solids as exact solids. Build only if item 11 finds real files. | discussion | G25 |
 | 34 | Robots and physics: UsdPhysics, URDF collision and inertial data, xacro, COLLADA. Worth it if robot users are a target. | discussion | G14 |
 | 35 | Omniverse plumbing: Nucleus paths, live layers, variants, usdz. Worth it if Nucleus users are a target. | discussion | G15 |
 | 36 | More geometry kinds: subdivision, Cone, Capsule, curves, NURBS patches, skins. Low value until users ask. | discussion | G16 |
 | | **7. Drawings and manufacturing information** (beside stages 5 and 6) | | |
-| 37 | Close the PMI exits: OpenCASCADE reads 13 of 14 items (C1); run the bore edit in the browser (C2). | task | open exits C1, C2 |
+| 37 | Close the PMI exits. C1 needs OpenCASCADE to read all 14 items; it reads 13 today. It has no reader for the AP242 surface texture, so the bore finish is missing, and it keeps THRU on the hole diameter on the product only ([SolidDraft check](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/blob/f7bf033e7ed2a6b4e164173d6af0e910cef626d4/ci/fixtures/pmi/p1-bracket-pmi.json#L503-L506)). Run the bore edit in the browser (C2). | task | open exits C1, C2 |
 | 38 | Threads and knurls: depth in the file, thread views, knurl callouts. | task | G3 |
 | 39 | Wider feature recognition on bare imports. | task | G1 |
 | 40 | Inspection outputs: characteristic numbers, inspection CSV, AS9102 workbook. | task | G4 |

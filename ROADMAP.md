@@ -45,48 +45,30 @@ The edit-chain scoreboard is the measure `VISION.md` asks for. The target parts 
 
 ## Where we are
 
-Phase 1 ended at Checkpoint 1 on 16 Nov 2026. [The checkpoint report](docs/checkpoints/checkpoint-1.md) has every number below. Catallax 0.3.0 and SolidDraft 0.6.0 are cut from the measured commit.
+[Checkpoint 3](docs/checkpoints/checkpoint-3.md) and [Checkpoint 4](docs/checkpoints/checkpoint-4.md) share the Catallax v0.5.0 cut. SolidDraft v0.8.0 pins the same kernel. The reports record measured results and the remaining acceptance lines.
 
-| Measure at Checkpoint 1 | Catallax | OpenCASCADE | SMLib |
-|---|---:|---:|---:|
-| Edit chains done, P0 to P5 (13) | 10 | 12 | 8 |
-| Edit chains done, real census parts (10) | 6 | 7 | 6 |
-| STEP census files reaching a valid solid (3,000) | 374 | 2,701 | |
-
-Three of the ten census parts count for no kernel, because the test hole lands in an existing bore. The coverage count was not recounted at Checkpoint 1 and stands at 55% from 14 Nov.
+| Measure at v0.5.0 | Catallax | OpenCASCADE | SMLib |
+| --- | --- | --- | --- |
+| Edit chains, P0 to P5 (13) | 11 | 11 | 7 |
+| Edit chains, phase-2 targets (3) | 0 | 3 | 3 |
+| Edit chains, census parts (10) | 9 | 10 | 8 |
+| STEP census, complete-source valid solid exports (3,000) | 767 | 2,701 healed-valid reference | n/a |
 
 The kernel builds exact solids from a recipe. It has stock solids, extrude, revolve, pattern and mirror, Booleans on analytic solids, certified fillet families, chamfers, planar shells, planar and cylindrical draft, exact lofts, and sweeps along lines, arcs and one spline. It proves where spline faces meet, cuts lofts from the side, and reads and writes STEP and IGES. It imports closed meshes, turns a scan into a clean part, reports mass with proved bounds and answers clash or clearance. A second kernel, the distance field, previews the same recipe and owns lattices and gyroids.
 
-The app has the Edit Suite frame, a full 2D sketcher, the part features above, 20 mate types, drawings, proof lights, and STEP, IGES, STL, 3MF and OBJ export. It runs on Linux, on macOS and in the browser. Assemblies are desktop only.
+The app has the Edit Suite frame, a 2D sketcher, the part features above, assembly mates, drawings and STEP, IGES, STL, 3MF and OBJ export. It runs on Linux, on macOS and in the browser. SolidDraft also runs [assemblies in the browser](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/348).
 
 ### Coverage against OpenCASCADE and SMLib
 
-100% is everything the two reference kernels model, put together as 61 capability lines. A line we have in full counts 1. A line we have in part counts half. The count says what exists, not how fast it is or how many real parts it finishes.
-
-| | 10 Nov, previous release | 12 Nov | 14 Nov, this release |
-|---|---|---|---|
-| Combined scope | 48% | 52% | 55% |
-| Of OpenCASCADE's 58 lines | 50% | 55% | 58% |
-| Of SMLib's 52 lines | 48% | 54% | 57% |
-| Lines complete, in part, not started | 15, 28, 18 | 17, 30, 14 | 17, 33, 11 |
-
-| Area | Lines | Now | Not started | Closed by |
-|---|---|---|---|---|
-| Curves and surfaces | 12 | 54% | Surface fitting. Gordon, Coons and N-sided surfaces. Bend and twist. | 2.2, 3.4 |
-| Intersection | 6 | 58% | None. Tangent contact and some cone and torus pairs refuse. | 1.1, 1.3 |
-| Solids and topology | 7 | 64% | Surface, wire and non-manifold bodies. | 2.3, 3.2 |
-| Features that add or remove material | 11 | 55% | Extrude with taper. Sweeps with guides, twist or a helix. | 1.3, 2.4 |
-| Edge and wall features | 9 | 39% | Curvature-continuous blends. Remove a face, fillet or hole. | 1.4, 2.1, 2.5, 3.4 |
-| File exchange | 8 | 62% | Assemblies, colours, names and annotations in files. | 1.2, 3.2 |
-| Meshes and queries | 8 | 56% | Mesh Booleans and decimation. Hidden-line views. | 3.1, 3.3, 3.4 |
+The [Checkpoint 3 recount](docs/checkpoints/checkpoint-3-coverage.md) records 31 of 61 points (50.8%) under the adopted acceptance bars, with one full and 60 partial lines. The [coverage definitions](docs/COVERAGE.md) retain the historical 55% and 61% reviews and their different scoring. The recount measures capability scope. STEP file counts and deterministic work have separate measures.
 
 ### The three gaps that hurt most
 
 These set the order of phase 1.
 
-1. **Most real STEP files do not open as verified solids.** The v0.4.0 checkpoint census of the same 3,000 files has 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040-1)). The 16 Nov tier capture it replaces had 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%), and 384 valid exports (12.80%); builder processing may heal internally. That capture also retained 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
+1. **Most real STEP files do not open as verified solids.** The v0.5.0 checkpoint census of the same 3,000 files has 767 complete-source valid solid exports (25.57%) and 889 full solid admissions ([Checkpoint 4](docs/checkpoints/checkpoint-4.md#step-census)). Baseline acceptance failed on [one opening work exhaustion](docs/checkpoints/checkpoint-4.md#baseline-preservation). The 16 Nov tier capture had 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%), and 384 valid exports (12.80%); builder processing may heal internally. That capture also retained 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
 2. **The loft top cuts build above the 20M target.** All 14 recorded spline Boolean requests now write checked approximate STEP. The three original top requests build at the 100M application allowance, using 26.78M, 27.29M and 25.95M work. Their files pass raw OpenCASCADE validity with healing off and a later cut. [Stage work and checks](docs/phase1/spline-boolean-top-cuts/REPORT.md) join the phase-5 list.
-3. **Fillets, shells and draft work on certified families only.** Edge and wall features are the weakest area at 39%, and no line in it is complete.
+3. **Fillets, shells and draft work on certified families only.** Every edge and wall line remains partial in the v0.5.0 recount.
 
 A work unit counts exact arithmetic and is the same on every machine. The target per edit is 20 million units, about 2 to 4 seconds of proof work on one core. Until phase 5 the application allows 100 million.
 
@@ -117,7 +99,7 @@ Twelve things neither reference kernel does are not in the count. They include e
 
 **1.2 Real-file import**
 - Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
-- Measured: the [full frozen 3,000-file rerun](docs/research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%). The v0.4.0 checkpoint census replaces these figures: 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040-1)).
+- Measured: the [full frozen 3,000-file rerun](docs/research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%). The v0.5.0 checkpoint census replaces these figures with 767 complete-source valid solid exports (25.57%) and 889 full solid admissions ([Checkpoint 4](docs/checkpoints/checkpoint-4.md#step-census)).
 - Why here: it is the largest single gap, and it is the first thing a user meets: a bought-in part that will not open.
 - Unlocks: bought-in parts in every later feature, the ten real parts on the scoreboard, direct edits (2.5) and imports in the field (4.4).
 - Done when: the 3,000-file census is rerun and the share that imports is published beside the 6%. Replacing an imported file re-points every reference.
@@ -291,22 +273,20 @@ Done when, for one model: exact and tolerant entities coexist under the rules ab
 **3.5 done when**
 
 - Every body in the frozen corpus displays at 0.01 mm and 0.005 mm chord with no refusal, including the three M11 loft fillets.
-- At 0.005 mm each M11 loft body takes under 1M display work. Display work for each analytic body is at most its baseline.
 - Both faces at every shared edge use the same polyline. Every B-rep mesh passes the existing closed-mesh check and retains chord, angle and no-fold checks.
 - Independent dense sampling on every face finds no point farther from the mesh than the reported bound.
 - The point count predicted before meshing equals the point count produced.
 - Mesh bytes and work agree at 1, 2, 4 and 24 workers, and on two machines.
-- `catallax-mesh` has at least 2,000 fewer lines than at the baseline.
 - SolidDraft draws the M11 loft fillet with one later feature on top (R2).
 - Compare's whole-body forward pass runs on the M11 rows and the [P5 flanged housing](parts/P5-flanged-housing.json) inside 100M work.
-- SolidDraft's three-turn helical sweep (2 mm wire diameter, 34 mm coil diameter, 3 mm pitch) displays inside 100M work with its periodic seam represented in the display chart. Target under 20M display work for a few turns.
+- SolidDraft's three-turn helical sweep (2 mm wire diameter, 34 mm coil diameter, 3 mm pitch) displays with its periodic seam represented in the display chart.
 - Field chart display draws each 4.2a fillet row the field builds, including the filleted M11 loft, and the patch shells without `field.display-unsupported`. The same dense-sampling test checks their proven two-sided bounds.
 
-This sets the full bar for [coverage line Q1](docs/COVERAGE.md#meshes-and-queries-8). Keep the existing display entry points, the 20M work target and the 100M allowance.
+This sets the full bar for [coverage line Q1](docs/COVERAGE.md#meshes-and-queries-8). Keep the existing display entry points. The display work and size lines are in [phase 5.1](#display-mesher-work).
 
 **App, alongside:** assemblies in the browser, assembly drawings, BOM and balloons, Pack and Go, the remaining mates, drawing annotations, URDF and USD export with joints, the refusal assistant.
 
-**Checkpoint 3.** Coverage is judged against the new done-when lines in the [coverage follow-on](#coverage-follow-on-complete-the-61-lines) and [docs/COVERAGE.md](docs/COVERAGE.md), not merely "every line has something built". We publish what still refuses and why. A line with its bar still to be set cannot be claimed full. The owner decides what to resolve before moving on.
+**[Checkpoint 3](docs/checkpoints/checkpoint-3.md).** The scoreboard and [61-line recount](docs/checkpoints/checkpoint-3-coverage.md) record v0.5.0 against the acceptance bars in the [coverage follow-on](#coverage-follow-on-complete-the-61-lines) and [docs/COVERAGE.md](docs/COVERAGE.md). The owner decides which open lines to resolve first.
 
 ### Phase 4: field, lattices, printing and scans
 
@@ -383,7 +363,7 @@ Coverage: independent field parity is outside the 61 reference-kernel lines. No 
 
 <a id="phase-4-app"></a>**App, alongside:** field-driven thickness, more grades, fields on imported bodies, infill that is denser near the skin or the load.
 
-**Checkpoint 4.** Order of the speed work, from measurements.
+**[Checkpoint 4](docs/checkpoints/checkpoint-4.md).** The shared cut records the STEP census, field results and cases for the speed phase.
 
 ### Phase 5: speed and simplification *
 
@@ -396,8 +376,17 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 - Simplify. Routes that the measurements show are not needed are removed.
 - Slow steps recorded at the 0.5.0 cut: loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s.
 - Later: the 2.4 P8 thread sweep exceeds 20M; its [per-stage record](docs/RECIPE.md#work-recorded-for-phase-5) distinguishes the completed fit from the refused whole-part Boolean. The 100M application allowance is unchanged.
+- STEP opening work exhausts during surface and curve fitting and can leave later bodies unmeasured. [Census blockers](docs/checkpoints/checkpoint-4.md#first-blockers-and-observation-limits)
 - Windows packages and signed downloads.
 
+<a id="display-mesher-work"></a>**Display mesher work and size, from 3.5**
+
+- At 0.005 mm each M11 loft body takes under 1M display work.
+- Display work for each analytic body is at most its baseline.
+- The three-turn helical sweep specified in 3.5 displays inside 100M work. Target under 20M display work for a few turns.
+- `catallax-mesh` has at least 2,000 fewer lines than at the baseline.
+
+[Checkpoint 3](docs/checkpoints/checkpoint-3.md#one-display-mesher) records the evidence for these lines. The separate [3.5 correctness gates](#one-display-mesher) remain in phase 3.
 
 **5.2 The proof button**
 
@@ -439,7 +428,7 @@ Twelve changes: seven widen an existing done-when line and five add a new milest
 
 #### File exchange
 
-10. **New line: STEP import parity (X2, X4).** A census target set against OpenCASCADE's 90.03% healed-valid figure. *Most real STEP files a user is sent open as checked solids.* Measured at v0.4.0: 759 files (25.30%). The target is set after the v0.5.0 census ([order item 9](#order-after-the-release)).
+10. <a id="coverage-step-import-parity"></a>**New line: STEP import parity (X2, X4).** A census target set against OpenCASCADE's 90.03% healed-valid figure. *Most real STEP files a user is sent open as checked solids.* The [v0.5.0 census](docs/checkpoints/checkpoint-4.md#step-census) measures 767 complete-source valid solid exports (25.57%). The parity target and comparable protocol still need to be set.
 11. **Widen 3.2 (X8).** Done when colours, names and annotations round-trip, beside the assembly. *A user can send and receive a full product file with its structure, colours and annotations.*
 
 #### Meshes and queries
@@ -505,11 +494,11 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | G16 | More geometry kinds: subdivision surfaces, Cone, Capsule, Plane, curves and points, NURBS patches, skins and animation poses. | Subdivision surfaces show as a coarse cage. The rest are noted and dropped. | New: scene import line | low | 36 |
 | G17 | Name everything the scene import skips. | Lights, cameras and some glTF materials drop with no note. The import record should list every drop. | New: scene import line | low, cheap | 31 |
 | G18 | Bring closed scene meshes in as solids through Catallax mesh import. | Catallax already makes an exact solid from a closed STL or OBJ mesh, but SolidDraft's scene import keeps every body a reference mesh, so measure, mass, mates and drawings refuse it. Scan fitting (4.4) then rebuilds editable faces. | 4.4 follow-on and SolidDraft scene import | high | 27 |
-| G19 | Put STEP import opening work in phase 5. | Work exhaustion is the top first blocker at v0.4.0: 836 surface-fit bodies, 609 curve-fit bodies and 918 files whose request was already spent. 5.1 lists no import case. | [5.1](#speed-and-simplification) | high | 18 |
+| G19 | Put STEP import opening work in phase 5. | At v0.5.0, work exhaustion stops 841 surface-fit bodies and 604 curve-fit bodies. In 915 files the request was already spent before at least one body. [Census blockers](docs/checkpoints/checkpoint-4.md#first-blockers-and-observation-limits) | [5.1](#speed-and-simplification) | high | 18 |
 | G20 | Name the torus, offset and linear-extrusion surface families. | All 64 files measured one by one open only as retained surfaces (30 torus, 20 offset, 14 extrusion). | Coverage 10 | high | 23 |
 | G21 | Solids with voids, and bodies that are not solid. | Voids refused 40 files on 16 Nov. `not_solid` stops 74 bodies in 11 files at v0.4.0. | Coverage 10 | medium | 24 |
 | G22 | Repair broken source geometry and parse more files. | Broken source geometry stops 53 bodies, and 28 files fail to parse. OpenCASCADE heals these with ShapeFix. | Coverage 10 | medium | 25 |
-| G23 | Set the number for STEP import parity and keep the roadmap's import figure current. | Coverage 10 asks for a census target but gives none. This file quoted 12.80% after v0.4.0 measured 25.30%. | Roadmap edit after the tags | high | 9 |
+| G23 | Set the STEP import parity target and comparable protocol. | Coverage 10 gives a reference figure. [Checkpoint 4](docs/checkpoints/checkpoint-4.md#step-census) supplies the Catallax result. | Before the parity census | high | 9, 26 |
 | G24 | Put the owner's ten SolidDraft items into this file. | SolidDraft has no roadmap of its own, and they lived only in a notes file. | [The owner's ten items](#owner-soliddraft-items) | high | 10 |
 | G25 | Read USD BRep (BrepArray) solids as exact solids. | NVIDIA's usd-brep stores exact solids in USD. Catallax writes one solid in that form but cannot read it. How many real files carry it is not measured, so measure that first. | Phase 3 app, beside USD export | medium | 12, 33 |
 | G26 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft. | The owner asked for it on 24 Nov. Settle the routes (closed mesh to solid, scan fitting, USD BRep), what users do with these parts and which scene work follows, before building any of it. | Before the scene import work | high | 11 |
@@ -528,9 +517,9 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | 5 | Owner item 1: check the formulas against Excel syntax and the configuration tabs against the owner's screenshots. | task | owner item 1 |
 | 6 | Fields on imported bodies in the app, if the SolidDraft pin move did not land. | task | open exit, phase 4 app |
 | | **2. Measure and write the plan down** (right after the tags) | | |
-| 7 | Checkpoints 3 and 4: the scoreboard and the census at v0.5.0. Every order call below should use these numbers. | task | release plan |
-| 8 | Recount coverage line by line. It has stood at 55% since 14 Nov. | task | release plan |
-| 9 | Roadmap edit: move the 3.5 mesher lines to phase 5, set the STEP import parity target, and replace the import figure with the v0.5.0 census. The v0.4.0 figure replaced the stale 12.80% on 24 Nov. | task | release plan, G23 |
+| 7 | Done 25 Nov 2026. One v0.5.0 cut for the [Checkpoint 3 scoreboard](docs/checkpoints/checkpoint-3.md#edit-chain-scoreboard) and [Checkpoint 4 census](docs/checkpoints/checkpoint-4.md#step-census). | task | release plan |
+| 8 | Done 25 Nov 2026. [Coverage recounted line by line](docs/checkpoints/checkpoint-3-coverage.md). | task | release plan |
+| 9 | Done 25 Nov 2026. Moved the 3.5 work and size lines to [phase 5.1](#display-mesher-work) and updated the import figure from the [v0.5.0 census](docs/checkpoints/checkpoint-4.md#step-census). The parity target and protocol remain in item 26. | task | release plan, G23 |
 | 10 | Write the owner's ten SolidDraft items, this order and G1 to G26 into this file. Done 24 Nov 2026: this section. | task | G24 |
 | | **3. Decide before building** (first week after the release) | | |
 | 11 | Count how many real USD files carry exact BrepArray solids. This feeds item 12 and decides item 33. | task | G25, first step |
@@ -541,8 +530,8 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | 15 | Click targets in SolidDraft: 100 ms stock, 500 ms Boolean, 1,000 ms feature. | task | [5.1](#speed-and-simplification) |
 | 16 | Slow steps: loft 35 s, loft-edge fillet 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s. | task | 5.1 |
 | 17 | The P8 thread sweep over 20M. | task | 5.1 |
-| 18 | STEP import work exhaustion: 836 surface-fit and 609 curve-fit bodies, and 918 files whose request was already spent. The largest single import blocker is a speed problem. | task | G19 |
-| 19 | One display mesher: meet the [3.5 done-when lines](#one-display-mesher) not yet fully met. The list has 11 lines; checkpoint 3 records which ones the release meets. | task | open exit 3.5 |
+| 18 | STEP import work exhaustion in the [v0.5.0 census](docs/checkpoints/checkpoint-4.md#first-blockers-and-observation-limits), including the [ABC 00002204 baseline loss](docs/checkpoints/checkpoint-4.md#baseline-preservation). | task | G19 |
+| 19 | One display mesher: finish the [work and size lines](#display-mesher-work). [Checkpoint 3](docs/checkpoints/checkpoint-3.md#one-display-mesher) also records the open correctness lines in 3.5. | task | open exit 3.5 |
 | 20 | The GPU and every core carry what they can. | task | 5.1 |
 | 21 | Remove routes the measurements show are not needed. | task | 5.1 |
 | 22 | Windows packages and signed downloads. | task | 5.1 |
@@ -550,7 +539,7 @@ This section adds to phases 1 to 5 and the coverage follow-on; it does not reord
 | 23 | Torus, offset and linear-extrusion surfaces. 151 files do not open at all for these. | task | G20, coverage 10 |
 | 24 | Solids with voids, and bodies that are not solid. | task | G21, coverage 10 |
 | 25 | Repair broken source geometry and parse more files. | task | G22, coverage 10 |
-| 26 | STEP import parity: the census against the target set in item 9. This closes the 1.2 exit. | task | coverage 10, open exit 1.2 |
+| 26 | STEP import parity: set the target and comparable protocol, then run the census against them. This closes the 1.2 exit. | task | [coverage 10](#coverage-step-import-parity), G23, open exit 1.2 |
 | | **6. Scene parts in SolidDraft** (after the item 12 brainstorm) | | |
 | 27 | Closed scene meshes in as solids through Catallax mesh import. This gives most scene parts measure, mass, mates and drawings. | task | G18 |
 | 28 | Scan fitting follow-ons: automatic segmentation, tori, chamfers, pockets, freeform fitting. The route from triangle solids to editable faces. | task | 4.4 follow-on |

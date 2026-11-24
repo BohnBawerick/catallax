@@ -12,6 +12,8 @@ A full bar that the sources do not state is **bar to be set**, even for a line p
 
 Kernels: B = both OpenCASCADE and SMLib; O = OpenCASCADE only; S = SMLib only. "19 Nov" is the historical review score, not current acceptance. Each roadmap done-when must name its coverage IDs and level; the twelve coverage extensions target full, 1 point.
 
+The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records the v0.5.0 score and evidence for each line.
+
 ## Curves and surfaces (12)
 
 | ID | Capability | Kernels | 14 Nov | 19 Nov | Full bar |

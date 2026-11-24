@@ -23,6 +23,11 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
     }
     let mut index = BTreeMap::new();
     for (i, step) in recipe.steps.iter().enumerate() {
+        if recipe.format != FORMAT_V5 && matches!(&step.op, Operation::ExtrudeFrom { .. }) {
+            return Err(RecipeError::Parse {
+                message: "extrude_from requires catallax-recipe/5".into(),
+            });
+        }
         if recipe.format == FORMAT
             && matches!(
                 &step.op,
@@ -175,7 +180,9 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
 /// Every face reference, including references nested in field grading.
 fn face_refs(op: &Operation) -> &[FaceRef] {
     match op {
-        Operation::ExtrudeTo { limit, .. } => std::slice::from_ref(limit),
+        Operation::ExtrudeTo { limit, .. } | Operation::ExtrudeFrom { start: limit, .. } => {
+            std::slice::from_ref(limit)
+        }
         Operation::Shell { open, .. } | Operation::ShellGraded { open, .. } => open,
         Operation::Thicken { faces, .. }
         | Operation::ThickenGraded { faces, .. }
@@ -207,7 +214,9 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
         }
     }
     match op {
-        Operation::ExtrudeTo { limit, .. } => face(limit).collect(),
+        Operation::ExtrudeTo { limit, .. } | Operation::ExtrudeFrom { start: limit, .. } => {
+            face(limit).collect()
+        }
         Operation::ExtrudeOnFace { face, .. } => vec![face],
         Operation::Fillet {
             edges, overflow, ..
@@ -602,6 +611,7 @@ impl Ctx<'_> {
                 | O::ExtrudeTapered { .. }
                 | O::ExtrudeOnFace { .. }
                 | O::ExtrudeTo { .. }
+                | O::ExtrudeFrom { .. }
                 | O::ExtrudeNext { .. }
                 | O::Revolve { .. }
                 | O::Sweep { .. }
@@ -625,6 +635,7 @@ impl Ctx<'_> {
                 | O::ExtrudeOnFace { profile, .. }
                 | O::ExtrudeThrough { profile, .. }
                 | O::ExtrudeTo { profile, .. }
+                | O::ExtrudeFrom { profile, .. }
                 | O::ExtrudeNext { profile, .. }
                 | O::Revolve { profile, .. },
                 Role::Side {

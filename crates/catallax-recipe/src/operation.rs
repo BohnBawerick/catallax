@@ -192,6 +192,20 @@ pub enum Operation {
         /// The selected trimmed faces.
         limit: FaceRef,
     },
+    /// A blind extrusion starting at the first crossing of a selected trimmed face.
+    ExtrudeFrom {
+        /// Body supplying the start face.
+        target: StepId,
+        /// Sketch region to sweep.
+        profile: StepId,
+        /// Sweep direction; the sketch normal when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        /// Trimmed face supplying the start cap.
+        start: FaceRef,
+        /// Signed distance along the sweep direction.
+        distance: Number,
+    },
     /// A body-valued prism capped by the first positive material crossing.
     ExtrudeNext {
         /// Body supplying the limiting boundary.
@@ -533,6 +547,7 @@ impl Operation {
             Operation::ExtrudeOnFace { .. } => "extrude_on_face",
             Operation::ExtrudeThrough { .. } => "extrude_through",
             Operation::ExtrudeTo { .. } => "extrude_to",
+            Operation::ExtrudeFrom { .. } => "extrude_from",
             Operation::ExtrudeNext { .. } => "extrude_next",
             Operation::Revolve { .. } => "revolve",
             Operation::Hole { .. } => "hole",
@@ -603,6 +618,9 @@ impl Operation {
                 target, profile, ..
             }
             | Operation::ExtrudeTo {
+                target, profile, ..
+            }
+            | Operation::ExtrudeFrom {
                 target, profile, ..
             }
             | Operation::ExtrudeNext {

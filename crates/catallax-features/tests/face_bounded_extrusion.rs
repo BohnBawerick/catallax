@@ -117,3 +117,69 @@ fn blind_from_an_annular_torus_has_two_exact_curved_caps() {
     cap_names(&built);
     volume(&built, 12.0 * std::f64::consts::PI);
 }
+
+fn from(mut value: Value, distance: &str) -> Value {
+    value["format"] = json!("catallax-recipe/5");
+    let steps = value["steps"].as_array_mut().unwrap();
+    let cap = steps.last_mut().unwrap().as_object_mut().unwrap();
+    let limit = cap.remove("limit").unwrap();
+    cap.insert("op".into(), json!("extrude_from"));
+    cap.insert("start".into(), limit);
+    cap.insert("distance".into(), json!(distance));
+    value
+}
+
+#[test]
+fn blind_start_copies_quadric_caps_with_the_authored_signed_depth() {
+    for (label, input, area) in [
+        ("cylinder", circle_sweep(), 12.0),
+        (
+            "sphere",
+            serde_json::from_str(include_str!(
+                "fixtures/circular-sphere-limits/sphere-entry-to.json"
+            ))
+            .unwrap(),
+            9.0 * std::f64::consts::PI,
+        ),
+        (
+            "cone",
+            serde_json::from_str(include_str!("fixtures/curved-limits/cone-entry-to.json"))
+                .unwrap(),
+            1.0,
+        ),
+    ] {
+        for depth in ["2", "-2"] {
+            let mut value = from(input.clone(), depth);
+            value["name"] = json!(format!("{label} start {depth}"));
+            let built = run(&value);
+            cap_names(&built);
+            volume(&built, 2.0 * area);
+        }
+    }
+}
+
+fn spline_roof() -> Value {
+    json!({"format":"catallax-recipe/5","name":"Bezier roof limit","steps":[
+        {"id":"section","op":"sketch",
+         "plane":{"rotation":["1","1","0","0"],"translation":["0","0","0"]},
+         "loops":[[
+            {"kind":"bezier","id":"roof","controls":[["2","4"]],"to":["4","0"]},
+            {"kind":"line","id":"floor","to":["0","0"]}
+         ]]},
+        {"id":"target","op":"extrude","profile":"section","direction":["0","1","0"],"distance":"4"},
+        {"id":"profile","op":"sketch","plane":pose(["0","0","3"]),
+         "loops":rectangle(["1","3"],["1","3"])},
+        {"id":"cap","op":"extrude_to","target":"target","profile":"profile","direction":["0","0","-1"],"limit":wall("roof")}
+    ],"result":"cap"})
+}
+
+#[test]
+fn a_bezier_extrusion_wall_can_be_both_cap_types() {
+    let to = spline_roof();
+    let built = run(&to);
+    cap_names(&built);
+    volume(&built, 14.0 / 3.0);
+    let built = run(&from(to, "2"));
+    cap_names(&built);
+    volume(&built, 8.0);
+}

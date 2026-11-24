@@ -1,11 +1,15 @@
 """Public P3 block rounds and junction torus; raw translation bypasses caller-side processing."""
 import json
 from pathlib import Path
+import re
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from OCP.BRep import BRep_Tool
+from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
@@ -21,6 +25,10 @@ from OCP.gp import gp_Pnt
 
 from test_loopless_faces import BINARY, DRIVER, ROOT, raw_solid, unique
 from test_partial_periodic_trims import converged_volume
+
+SCOREBOARD = DRIVER.parent / 'head-to-head'
+sys.path.insert(0, str(SCOREBOARD))
+from check import check as check_scoreboard
 
 # Independent OpenCASCADE construction from the dimensions, recorded in
 # docs/milestones/2026-10-27-p3-material.md for both junction radii.
@@ -52,11 +60,57 @@ class P3RoundCharts(unittest.TestCase):
         self.assertEqual(manifest['step']['added_vertices'], 3)
         return Path(case['path']) / 'answer.step'
 
+    def test_scoreboard_rejects_swapped_junction_radii(self):
+        case = json.loads((SCOREBOARD / 'cases/P3-filleted-boss.json').read_text())
+        for radius, wrong_label, expected in [('2', 'edit', True), ('5/2', 'construction', False)]:
+            with self.subTest(radius=radius), \
+                    tempfile.TemporaryDirectory(prefix='catallax-p3-swap-') as temporary:
+                path = self.export(Path(temporary), radius)
+                result = check_scoreboard(case, wrong_label, path, 13)
+                self.assertEqual(result['step']['status'], 'passed', result)
+                self.assertEqual(result['membership']['status'], 'failed', result)
+                self.assertIn({'point': (28.4, 15, 11), 'expected': expected, 'actual': not expected},
+                              result['membership']['wrong'])
+
+    def test_scoreboard_rejects_invalid_raw_step(self):
+        case = json.loads((SCOREBOARD / 'cases/P3-filleted-boss.json').read_text())
+        with tempfile.TemporaryDirectory(prefix='catallax-p3-raw-') as temporary:
+            root = Path(temporary)
+            path = self.export(root, '2')
+            # Reverse a face bound that the standard reader reorients.
+            text, changed = re.subn(r"(=FACE_BOUND\('',#\d+,)\.T\.", r'\g<1>.F.',
+                                    path.read_text(), count=1)
+            self.assertEqual(changed, 1)
+            reversed_bound = root / 'reversed-bound.step'
+            reversed_bound.write_text(text)
+            self.assertFalse(BRepCheck_Analyzer(raw_solid(reversed_bound)).IsValid())
+
+            result = check_scoreboard(case, 'construction', reversed_bound, 13)
+            self.assertTrue(result['step']['valid'], result)
+            self.assertTrue(result['step']['closed_solid'], result)
+            self.assertTrue(result['step']['face_count_matches'], result)
+            self.assertEqual(result['step']['status'], 'failed', result)
+            self.assertEqual(result['step']['healing_off'], {'opened': True, 'valid': False})
+
+    def test_scoreboard_confirms_ray_misses_against_trimmed_faces(self):
+        case = json.loads((SCOREBOARD / 'cases/P3-filleted-boss.json').read_text())
+
+        def distant_box(_face, box, _triangulation):
+            box.Update(10_000., 10_000., 10_000.)
+
+        with tempfile.TemporaryDirectory(prefix='catallax-p3-rays-') as temporary:
+            path = self.export(Path(temporary), '2')
+            # Force the broad-phase check to miss even for points inside the solid.
+            with patch.object(BRepBndLib, 'Add_s', side_effect=distant_box):
+                result = check_scoreboard(case, 'construction', path, 13)
+            self.assertEqual(result['membership']['wrong'], [], result)
+
     def test_original_and_edited_junction_import_without_repair(self):
         # The edit moves the junction's outer radius at z=11 from 10-sqrt(3)
         # to 17/2, so this point changes from outside to inside.
         probes = [((20, 15, 21), TopAbs_IN, TopAbs_IN), ((20, 15, 23), TopAbs_OUT, TopAbs_OUT),
                   ((28.4, 15, 11), TopAbs_OUT, TopAbs_IN)]
+        case = json.loads((SCOREBOARD / 'cases/P3-filleted-boss.json').read_text())
         for edited, (radius, expected_volume) in enumerate(VOLUMES.items()):
             with self.subTest(radius=radius), \
                     tempfile.TemporaryDirectory(prefix='catallax-p3-charts-') as temporary:
@@ -95,6 +149,14 @@ class P3RoundCharts(unittest.TestCase):
                         for point, *states in probes:
                             classifier = BRepClass3d_SolidClassifier(shape, gp_Pnt(*point), 1e-7)
                             self.assertEqual(classifier.State(), states[edited], point)
+                label = 'edit' if edited else 'construction'
+                result = check_scoreboard(case, label, path, 13)
+                self.assertEqual(result['step']['status'], 'passed', result)
+                self.assertEqual(result['step']['healing_off'], {'opened': True, 'valid': True})
+                membership = result['membership']
+                self.assertEqual(membership['wrong'], [])
+                self.assertEqual(membership['checked'], 192)
+                self.assertEqual(membership['boundary_unresolved'], 28)
 
 
 if __name__ == '__main__':

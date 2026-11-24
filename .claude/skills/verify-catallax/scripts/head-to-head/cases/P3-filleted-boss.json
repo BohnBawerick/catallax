@@ -2,6 +2,13 @@
   "format": "catallax-head-to-head-case/1",
   "recipe": "P3-filleted-boss.json",
   "recipe_sha256": "57e4be2653f8fe2858a6dd95001e530aa1837e80e1d74e5404c0d7e708eae787",
+  "step_read": "healing-off-required",
+  "membership_probes_mm": [
+    [28.4, 15, 11],
+    [20, 23.4, 11],
+    [11.6, 15, 11],
+    [20, 6.6, 11]
+  ],
   "edit": {
     "step": "junction",
     "path": [

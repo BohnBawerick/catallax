@@ -247,3 +247,51 @@ fn a_round_profile_keeps_its_rim_on_a_transverse_cylinder() {
     cap_names(&built);
     volume(&built, 8.0 * std::f64::consts::PI);
 }
+
+#[test]
+fn a_planar_start_preserves_disconnected_profile_components() {
+    let mut value = circle_sweep();
+    value["name"] = json!("two disconnected loops from a planar cylinder cap");
+    value["steps"][2]["plane"] = json!({"rotation":["1","1","1","1"],"translation":["-8","0","8"]});
+    let mut a = rectangle(["-2", "-1"], ["-1/2", "1/2"]);
+    let mut b = rectangle(["1", "2"], ["-1/2", "1/2"]);
+    for edge in b[0].as_array_mut().unwrap() {
+        edge["id"] = json!(format!("other-{}", edge["id"].as_str().unwrap()));
+    }
+    a.as_array_mut().unwrap().push(b[0].clone());
+    value["steps"][2]["loops"] = a;
+    value["steps"][3]["limit"] = json!({"face":{"step":"target","role":"end"}});
+    let built = run(&from(value, "2"));
+    cap_names(&built);
+    assert_eq!(built.model.body(built.result).lumps.len(), 2);
+    volume(&built, 4.0);
+}
+
+#[test]
+fn a_ray_that_misses_the_planar_trim_has_a_named_refusal() {
+    let mut value = circle_sweep();
+    value["steps"][2]["plane"] = json!({"rotation":["1","1","1","1"],"translation":["-8","0","8"]});
+    value["steps"][2]["loops"] = rectangle(["6", "7"], ["-1", "1"]);
+    value["steps"][3]["limit"] = json!({"face":{"step":"target","role":"end"}});
+    for value in [value.clone(), from(value, "2")] {
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let catallax_features::BuildError::Geometry { refusal, .. } =
+            evaluate(&recipe, &mut Decider::default()).unwrap_err()
+        else {
+            panic!("expected a geometric refusal");
+        };
+        assert_eq!(refusal.code, "features.limit-missed");
+    }
+}
+
+#[test]
+fn the_next_crossing_of_an_axial_circle_sweep_is_its_near_cap() {
+    let mut value = circle_sweep();
+    value["steps"][2]["plane"] = json!({"rotation":["1","1","1","1"],"translation":["-8","0","8"]});
+    value["steps"][2]["loops"] = rectangle(["-1", "1"], ["-1", "1"]);
+    value["steps"][3] =
+        json!({"id":"cap","op":"extrude_next","target":"target","profile":"profile"});
+    let built = run(&value);
+    cap_names(&built);
+    volume(&built, 12.0);
+}

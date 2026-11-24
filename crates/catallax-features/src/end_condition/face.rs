@@ -171,6 +171,7 @@ fn sketch_chart(profile: &Profile, direction: &RVector3, point: &Point3) -> (P, 
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn planar(
     model: &mut Model,
     selected: FaceId,
@@ -181,7 +182,8 @@ fn planar(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
-    let orientation = match sign(&plane.normal.dot(&direction.to_real()), dec)? {
+    let denominator = plane.normal.dot(&direction.to_real());
+    let orientation = match sign(&denominator, dec)? {
         Sign::Positive => Sense::Same,
         Sign::Negative => Sense::Reversed,
         Sign::Zero => {
@@ -191,38 +193,6 @@ fn planar(
             ));
         }
     };
-    clip(
-        model,
-        selected,
-        profile,
-        direction,
-        extent,
-        step,
-        |point, dec| {
-            let side = sign(&point.minus(&plane.origin).dot(&plane.normal), dec)?;
-            Ok(match (side, orientation) {
-                (Sign::Positive, Sense::Same) | (Sign::Negative, Sense::Reversed) => Sign::Positive,
-                (Sign::Zero, _) => Sign::Zero,
-                _ => Sign::Negative,
-            })
-        },
-        orientation,
-        dec,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn clip(
-    model: &mut Model,
-    selected: FaceId,
-    profile: &Profile,
-    direction: &RVector3,
-    extent: &Rational,
-    step: &StepId,
-    mut side: impl FnMut(&Point3, &mut Decider) -> Result<Sign, Refusal>,
-    orientation: Sense,
-    dec: &mut Decider,
-) -> Result<BodyId, Refusal> {
     let tool = crate::extrude::extrude_vector(
         model,
         profile,
@@ -232,6 +202,25 @@ fn clip(
         None,
         dec,
     )?;
+    for face in model.faces_of_body(tool) {
+        if named(model, face, Role::Start) {
+            let point = catallax_boolean::face_point(model, face, dec)?.value;
+            let time = &plane.origin.minus(&point).dot(&plane.normal) / &denominator;
+            if sign(&time, dec)? != Sign::Positive
+                || !catallax_boolean::face_contains(
+                    model,
+                    selected,
+                    &point.plus(&direction.to_real().scaled(&time)),
+                    dec,
+                )?
+            {
+                return Err(bad(
+                    "features.limit-missed",
+                    "a profile line misses the selected planar trim",
+                ));
+            }
+        }
+    }
     let target = model.face(selected).clone();
     let flip = if target.sense == orientation {
         Sense::Same
@@ -254,10 +243,13 @@ fn clip(
                     PatchSelection::Discard
                 }
             } else {
-                match side(point, dec)? {
-                    Sign::Negative => PatchSelection::Keep(Sense::Same),
-                    Sign::Positive => PatchSelection::Discard,
-                    Sign::Zero => return Ok(None),
+                let side = sign(&point.minus(&plane.origin).dot(&plane.normal), dec)?;
+                match (side, orientation) {
+                    (Sign::Zero, _) => return Ok(None),
+                    (Sign::Positive, Sense::Same) | (Sign::Negative, Sense::Reversed) => {
+                        PatchSelection::Discard
+                    }
+                    _ => PatchSelection::Keep(Sense::Same),
                 }
             };
             // A partial start would create a curtain through the profile or a zero-depth ridge.
@@ -459,6 +451,39 @@ fn quadric(
     Ok((body, bound))
 }
 
+fn axial_cap(
+    model: &Model,
+    body: BodyId,
+    profile: &Profile,
+    direction: &RVector3,
+) -> Option<(FaceId, Plane)> {
+    let ray = direction.to_real();
+    let normal = normal(profile);
+    let sketch = profile.pose.apply_point(&Point3::origin());
+    model
+        .faces_of_body(body)
+        .into_iter()
+        .filter_map(|face| {
+            let Surface::Plane(plane) = model.geom().surface(model.face(face).surface) else {
+                return None;
+            };
+            let plane_normal = plane.normal.as_rational()?;
+            if !normal.cross(&plane_normal).is_zero() || !direction.cross(&plane_normal).is_zero() {
+                return None;
+            }
+            let offset = plane
+                .origin
+                .minus(&sketch)
+                .dot(&plane.normal)
+                .as_rational()?;
+            let speed = ray.dot(&plane.normal).as_rational()?;
+            let time = offset / speed;
+            (time.sign() == Sign::Positive).then(|| (time, face, plane.clone()))
+        })
+        .min_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, face, plane)| (face, plane))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn limit(
     model: &mut Model,
@@ -500,9 +525,21 @@ pub(crate) fn limit(
             ));
         }
     }
-    let cylinder = circle_cylinder(recipe, target_id, dec)?.ok_or_else(|| {
-        unsupported("the evaluated limiting target has no supported first-hit proof")
-    })?;
+    let cylinder = match recipe.step(target_id).map(|step| &step.op) {
+        Some(op @ Operation::Cylinder { .. }) => op.clone(),
+        _ => circle_cylinder(recipe, target_id, dec)?.ok_or_else(|| {
+            unsupported("the evaluated limiting target has no supported first-hit proof")
+        })?,
+    };
+    if reference.is_none()
+        && let Some((face, plane)) = axial_cap(model, target_body, profile, &direction)
+    {
+        let body = planar(model, face, &plane, profile, &direction, &reach, step, dec)?;
+        return Ok((
+            body,
+            bound.clone().max(crate::evaluate::profile_radius(profile)),
+        ));
+    }
     let mut target_step = recipe.step(target_id).expect("checked target").clone();
     target_step.op = cylinder;
     let definition = Recipe {
@@ -657,13 +694,21 @@ fn translated_cap_sweep(
             }
         }
     }
-    let mut faces = Vec::new();
+    let parts = &model.body(column).lumps;
+    let mut owners = BTreeMap::new();
+    for (index, lump) in parts.iter().enumerate() {
+        for shell in &model.lump(*lump).shells {
+            owners.extend(model.shell(*shell).faces.iter().map(|face| (*face, index)));
+        }
+    }
+    let mut shells = vec![Vec::new(); parts.len()];
     let mut connectors = BTreeMap::new();
     let reverse = crate::extrude::reverse;
     for (old, moved) in sources.into_iter().zip(copies) {
         if !named(model, old, Role::End) {
             continue;
         }
+        let faces = &mut shells[owners[&old]];
         let old_paths = paths(model, old);
         let moved_paths = paths(model, moved);
         for (a, b) in old_paths.iter().flatten().zip(moved_paths.iter().flatten()) {
@@ -733,19 +778,24 @@ fn translated_cap_sweep(
             ));
         }
     }
-    if faces.is_empty() {
+    if shells.is_empty() || shells.iter().any(Vec::is_empty) {
         return Err(bad(
             "features.limit-missed",
             "the selected start face does not cover the profile",
         ));
     }
-    let shell = model.add_shell(Shell { faces });
-    let lump = model.add_lump(Lump {
-        shells: vec![shell],
-    });
+    let lumps = shells
+        .into_iter()
+        .map(|faces| {
+            let shell = model.add_shell(Shell { faces });
+            model.add_lump(Lump {
+                shells: vec![shell],
+            })
+        })
+        .collect();
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
-        lumps: vec![lump],
+        lumps,
         wires: Vec::new(),
         marks: MarkLog::new(),
     });

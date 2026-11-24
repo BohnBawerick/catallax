@@ -210,7 +210,7 @@ fn each_m11_spine_is_proved_inside_its_tube() {
         // The spans cover the spine from end to end.
         let spans = spine.spans();
         assert!(spans[0].tau[0] <= first.point[4].lo());
-        assert_eq!(spans.last().unwrap().tau[1], 1.0);
+        assert_eq!(spans.last().unwrap().tau[1].to_bits(), 1.0_f64.to_bits());
     }
 }
 

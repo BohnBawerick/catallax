@@ -407,11 +407,16 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
     if request.format != FORMAT
         || !matches!(
             request.recipe["format"].as_str(),
-            Some("catallax-recipe/3" | "catallax-recipe/4" | "catallax-recipe/5")
+            Some(
+                catallax_recipe::FORMAT
+                    | catallax_recipe::FORMAT_V4
+                    | catallax_recipe::FORMAT_V5
+                    | catallax_recipe::FORMAT_V6
+            )
         )
     {
         return Ok(invalid(
-            "expected certified-recipe/1 containing unchanged recipe/3, recipe/4 or recipe/5",
+            "expected certified-recipe/1 containing unchanged recipe/3, recipe/4, recipe/5 or recipe/6",
         ));
     }
     if request.properties.as_ref().is_some_and(|p| {

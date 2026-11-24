@@ -1795,7 +1795,7 @@ mod tests {
             pair_rule(&positions, edges)
         };
         let nearer = &q("1/4") - &hair;
-        assert_eq!(nearer.to_f64_nearest(), 0.25);
+        assert_eq!(nearer.to_f64_nearest().to_bits(), 0.25_f64.to_bits());
         assert_eq!(
             pair_verdict(0.0625, 0.0625, nearer.to_f64_nearest(), 0.0),
             PairVerdict::Warn

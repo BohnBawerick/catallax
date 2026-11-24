@@ -186,12 +186,18 @@ fn a_stretched_arc_on_a_wider_cylinder_keeps_its_radial_gap() {
     let mut before = -1.0;
     for k in 0..=64 {
         let [u, v] = at(ratio(k, 64));
-        assert_eq!(v, 0.0);
+        assert_eq!(v.abs().to_bits(), 0.0_f64.to_bits());
         assert!(u > before, "{u} after {before}");
         before = u;
     }
-    assert_eq!(at(Rational::zero()), [0.0, 0.0]);
-    assert_eq!(at(Rational::one()), [1.0, 0.0]);
+    assert_eq!(
+        at(Rational::zero()).partial_cmp(&[0.0, 0.0]),
+        Some(std::cmp::Ordering::Equal)
+    );
+    assert_eq!(
+        at(Rational::one()).partial_cmp(&[1.0, 0.0]),
+        Some(std::cmp::Ordering::Equal)
+    );
 }
 
 /// A copy that is slid along its curve is not a copy at another speed: its
@@ -620,7 +626,10 @@ fn sampled_carriers_are_read_by_the_same_search_and_the_same_rule() {
         "{}",
         next.stored_mm
     );
-    assert_eq!(read.stored_mm(), next.stored_mm);
+    assert_eq!(
+        read.stored_mm().partial_cmp(&next.stored_mm),
+        Some(std::cmp::Ordering::Equal)
+    );
     // Every unit the use counts is charged to the operation, with one
     // deadline poll per charge on top.
     assert!(charged.used >= read.work, "{charged:?} under {}", read.work);

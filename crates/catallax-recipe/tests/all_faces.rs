@@ -1,6 +1,6 @@
 //! Version 5 broadens face selection without rewriting saved origin references.
 
-use catallax_recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError};
+use catallax_recipe::{FORMAT, FORMAT_V4, FORMAT_V5, FORMAT_V6, Recipe, RecipeError};
 use serde_json::{Value, json};
 
 fn source(format: &str, reference: Value) -> Value {
@@ -49,6 +49,17 @@ fn explicit_v4_to_v5_migration_preserves_operations_names_and_edit() {
     let edited = Recipe::parse(&saved.to_string()).unwrap();
     assert_eq!(Recipe::parse(&edited.to_text()).unwrap(), edited);
     assert_eq!(edited.steps[1], old.steps[1]);
+}
+
+#[test]
+fn upgrading_v5_to_v6_keeps_origin_filters_and_the_authored_graph() {
+    let old = Recipe::parse(&source(FORMAT_V5, json!({"near":["5","4","7"]})).to_string()).unwrap();
+    let upgraded = old.upgrade_to(FORMAT_V6).unwrap();
+    let mut expected = old.clone();
+    expected.format = FORMAT_V6.into();
+    assert_eq!(upgraded, expected);
+    assert_eq!(Recipe::parse(&upgraded.to_text()).unwrap(), expected);
+    assert_eq!(Recipe::parse(&old.to_text()).unwrap(), old);
 }
 
 #[test]

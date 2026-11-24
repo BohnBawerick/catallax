@@ -179,7 +179,7 @@ fn exact_box_uses_twelve_facets_with_lossless_settings_bound_to_file_bytes() {
                 .sum::<f64>()
         })
         .sum();
-    assert_eq!(volume6, 96.0);
+    assert_eq!(volume6.to_bits(), 96.0_f64.to_bits());
     fs::remove_dir_all(r.out).unwrap();
 }
 #[test]

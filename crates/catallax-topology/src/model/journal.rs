@@ -665,11 +665,20 @@ mod tests {
         };
         assert_eq!(named, moved);
         assert_eq!(
-            original.geom().approx_point(named),
-            [5.0, 0.0, 0.0],
+            original
+                .geom()
+                .approx_point(named)
+                .partial_cmp(&[5.0, 0.0, 0.0]),
+            Some(std::cmp::Ordering::Equal),
             "the error names the work's point, not the one that took its place"
         );
-        assert_eq!(original.geom().approx_point(other), [9.0, 0.0, 0.0]);
+        assert_eq!(
+            original
+                .geom()
+                .approx_point(other)
+                .partial_cmp(&[9.0, 0.0, 0.0]),
+            Some(std::cmp::Ordering::Equal)
+        );
         assert_eq!(also.relocate(&remap), Err((moved, Some(moved))));
     }
 

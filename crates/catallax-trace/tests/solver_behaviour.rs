@@ -136,7 +136,10 @@ fn a_solution_counts_at_most_five_objects_and_ten_parameters() {
     assert!(wild.is_equal(&NoObjects, &other));
     let (pair, _) = wild.compare_for_identity(&NoObjects, &other);
     assert_eq!(pair as i64, 0);
-    assert_eq!(wild.object_tolerance(&Mixed, 7), 0.0);
+    assert_eq!(
+        wild.object_tolerance(&Mixed, 7).abs().to_bits(),
+        0.0_f64.to_bits()
+    );
 }
 
 #[test]

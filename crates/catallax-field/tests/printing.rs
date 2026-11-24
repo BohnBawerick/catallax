@@ -275,7 +275,10 @@ fn fine_lattice_print_ignores_the_buried_face_of_abutting_blocks() {
     }
     let crossings = vertical_crossings(&mesh, 0.43, 0.57);
     assert_eq!(crossings.len(), 2, "{crossings:?}");
-    assert_eq!([crossings[0].0, crossings[1].0], [0.0, 2.0]);
+    assert_eq!(
+        [crossings[0].0, crossings[1].0].partial_cmp(&[0.0, 2.0]),
+        Some(std::cmp::Ordering::Equal)
+    );
 }
 
 #[test]

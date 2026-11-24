@@ -16,13 +16,15 @@ pub const FORMAT_V4: &str = "catallax-recipe/4";
 
 /// Version 5 adds unfiltered face references and explicit variable-radius fillet laws.
 pub const FORMAT_V5: &str = "catallax-recipe/5";
+/// The face-start and evaluated-face extrusion format.
+pub const FORMAT_V6: &str = "catallax-recipe/6";
 
 /// The versioned correspondence law for a loft's section boundaries.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LoftParameterization {
     /// Version 3 uses fraction of arc length.
     ArcLength,
-    /// Versions 4 and 5 use rational segment charts and exact common refinement.
+    /// Versions 4 through 6 use rational segment charts and exact common refinement.
     RationalCharts,
 }
 
@@ -30,7 +32,7 @@ pub enum LoftParameterization {
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    /// One of [`FORMAT`], [`FORMAT_V4`] or [`FORMAT_V5`].
+    /// One of [`FORMAT`], [`FORMAT_V4`], [`FORMAT_V5`] or [`FORMAT_V6`].
     pub format: String,
     /// The part's name, for people.
     pub name: String,
@@ -95,7 +97,10 @@ impl Recipe {
         let found = serde_json::from_str::<FormatOnly>(text)
             .map_err(parse)?
             .format;
-        if !matches!(found.as_deref(), Some(FORMAT | FORMAT_V4 | FORMAT_V5)) {
+        if !matches!(
+            found.as_deref(),
+            Some(FORMAT | FORMAT_V4 | FORMAT_V5 | FORMAT_V6)
+        ) {
             return Err(RecipeError::Format {
                 found: found.unwrap_or_default(),
             });
@@ -127,7 +132,7 @@ impl Recipe {
     pub fn loft_parameterization(&self) -> Result<LoftParameterization, RecipeError> {
         match self.format.as_str() {
             FORMAT => Ok(LoftParameterization::ArcLength),
-            FORMAT_V4 | FORMAT_V5 => Ok(LoftParameterization::RationalCharts),
+            FORMAT_V4 | FORMAT_V5 | FORMAT_V6 => Ok(LoftParameterization::RationalCharts),
             _ => Err(RecipeError::Format {
                 found: self.format.clone(),
             }),
@@ -139,13 +144,14 @@ impl Recipe {
     /// A version 3 loft, thicken, sweep, fillet, chamfer or draft requires explicit
     /// semantic review and returns `recipe.migration-review`. This method never
     /// certifies that changing its definition preserves the intended solid.
-    /// Downgrades are rejected. Version 4 to 5 preserves existing references.
+    /// Downgrades are rejected. Upgrading versions 4 and 5 preserves existing references.
     pub fn upgrade_to(&self, format: &str) -> Result<Self, RecipeError> {
         self.check()?;
         let rank = |format: &str| match format {
             FORMAT => Some(3),
             FORMAT_V4 => Some(4),
             FORMAT_V5 => Some(5),
+            FORMAT_V6 => Some(6),
             _ => None,
         };
         let Some(target) = rank(format) else {
@@ -402,7 +408,7 @@ impl fmt::Display for RecipeError {
             RecipeError::Parse { message } => write!(f, "{message}"),
             RecipeError::Format { found } => write!(
                 f,
-                "format is {found:?}, expected {FORMAT:?}, {FORMAT_V4:?} or {FORMAT_V5:?}"
+                "format is {found:?}, expected {FORMAT:?}, {FORMAT_V4:?}, {FORMAT_V5:?} or {FORMAT_V6:?}"
             ),
             RecipeError::DuplicateStep { step } => write!(f, "two steps have the id {step}"),
             RecipeError::UnknownInput { step, input } => {

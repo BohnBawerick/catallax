@@ -25,13 +25,13 @@ Sources:
 | Source | Problem format | Result |
 | --- | --- | --- |
 | `question` | `exact-brep-question/2`, `exact-brep-question/3` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. Version 3 holds the STEP file to the seam contract, as `catallax-step/1` does. |
-| `recipe` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. A result with fitted rolling-envelope faces instead answers with the certified manifest/4 record described under [Certified recipe bodies](#certified-recipe-bodies-opt-in), because manifest/3 promises exact geometry. |
+| `recipe` | `catallax-recipe/3` through `catallax-recipe/6` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. A result with fitted rolling-envelope faces instead answers with the certified manifest/4 record described under [Certified recipe bodies](#certified-recipe-bodies-opt-in), because manifest/3 promises exact geometry. |
 | `recipe` | `catallax-step/1` | The recipe source's ordinary evaluation of the wrapped problem, with its STEP file held to the seam contract. See [Seamed STEP output](#seamed-step-output). |
 | `recipe` | `catallax-numerical-step/1` | Explicit positive `tolerance_mm`, numerical admission and approximate STEP, with the source's checks and the tolerance the file records. See [Numerical STEP output](#numerical-step-output). |
 | `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
-| `compare` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
+| `compare` | `catallax-recipe/3` through `catallax-recipe/6` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `compare` | `catallax-fitted-compare/1` | Compare the fitted sweep and its certified display against the authored motion. See [Fitted sweep comparison](#fitted-sweep-comparison). |
-| `field` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
+| `field` | `catallax-recipe/3` through `catallax-recipe/6` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
 | `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Qualify a B-rep tessellation for ordinary parts or a field mesh for native-field definitions. Write binary `print.stl` and matching `display.obj`, with a two-sided file-to-definition bound and file-bound metadata. No STEP output or silent route fallback. |
 | `iges` | `catallax-iges/1` | Build the recipe through `catallax-features` only, then write `answer.igs` with the existing IGES writer. Report the writer's actual bounds, units, topology counts and artifact identity as `iges`. No STEP, display, mass or property request. |
 | `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
@@ -328,7 +328,7 @@ A budget refusal discards published geometry and marks as before. The log keeps 
 
 An existing `catallax-request/1` with `source:"recipe"` can carry a
 `catallax-certified-recipe/1` problem. The nested `recipe` is unchanged
-`catallax-recipe/3`, `catallax-recipe/4` or `catallax-recipe/5`, read under its own version's rules.
+`catallax-recipe/3` through `catallax-recipe/6`, read under its own version's rules.
 Ordinary recipe, question, comparison and face-check inputs retain manifest/3 and
 their existing semantics, except that an ordinary recipe whose result has fitted
 rolling-envelope faces answers with manifest/4. `about` advertises the additive

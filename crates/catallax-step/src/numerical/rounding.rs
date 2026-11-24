@@ -469,11 +469,11 @@ mod tests {
         let knots: Vec<Rational> = [0, 0, 0, 0, 1, 1, 1, 1].map(Rational::from_i64).to_vec();
         let controls = [0.0, 3.0, 6.0, 9.0].map(|x| [x, 0.0, 0.0]);
         let (speed, least) = spline_speed(3, &knots, &controls, 1, &[1.0; 4]);
-        assert_eq!(speed, 9.0);
-        assert_eq!(least, 1.0);
+        assert_eq!(speed.to_bits(), 9.0_f64.to_bits());
+        assert_eq!(least.to_bits(), 1.0_f64.to_bits());
         // Weights of 1 and 2 allow four times that.
         let (rational, least) = spline_speed(3, &knots, &controls, 1, &[1.0, 2.0, 2.0, 1.0]);
-        assert_eq!(rational, 36.0);
-        assert_eq!(least, 1.0);
+        assert_eq!(rational.to_bits(), 36.0_f64.to_bits());
+        assert_eq!(least.to_bits(), 1.0_f64.to_bits());
     }
 }

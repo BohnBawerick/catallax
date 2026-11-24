@@ -1218,139 +1218,134 @@ fn evaluate_impl(
                         radius: target.radius.clone(),
                     }
                 }
+                Operation::ExtrudeFrom {
+                    target,
+                    profile,
+                    direction,
+                    start,
+                    distance,
+                } => {
+                    profiles[profile].require_circular("extrude-from.ellipse-profile")?;
+                    let stock = &bodies[target];
+                    let (body, radius) = crate::end_condition::face::start(
+                        model,
+                        recipe,
+                        (target, stock.body, &stock.radius),
+                        (profile, &profiles[profile]),
+                        direction.as_ref(),
+                        start,
+                        distance.value(),
+                        &step.id,
+                        dec,
+                    )?;
+                    BodyValue { body, radius }
+                }
                 Operation::ExtrudeTo {
                     target,
                     profile,
                     direction,
-                    limit,
-                } => {
-                    profiles[profile].require_circular("extrude-to.ellipse-profile")?;
-                    if !profiles[profile].is_empty()
-                        && matches!(
-                            recipe.step(target).map(|s| &s.op),
-                            Some(Operation::Torus { .. })
-                        )
-                    {
-                        let cap = crate::end_condition::toroidal::AnnularCap::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            Some(limit),
-                            dec,
-                        )?;
-                        BodyValue {
-                            body: cap.build(
-                                model,
-                                bodies[target].body,
-                                &profiles[profile],
-                                &step.id,
-                                dec,
-                            )?,
-                            radius: cap.radius().clone(),
-                        }
-                    } else if !profiles[profile].is_empty()
-                        && matches!(
-                            recipe.step(target).map(|s| &s.op),
-                            Some(
-                                Operation::Sphere { .. }
-                                    | Operation::Cylinder { .. }
-                                    | Operation::Cone { .. }
-                            )
-                        )
-                    {
-                        let cap = crate::end_condition::curved::AuthoredCap::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            Some(limit),
-                            dec,
-                        )?;
-                        BodyValue {
-                            body: cap.build(model, &step.id, dec)?,
-                            radius: cap.radius().clone(),
-                        }
-                    } else {
-                        let cap = crate::end_condition::Capped::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            Some(limit),
-                            dec,
-                        )?;
-                        BodyValue {
-                            body: cap.build(model, &step.id, dec)?,
-                            radius: cap.radius,
-                        }
-                    }
+                    ..
                 }
-                Operation::ExtrudeNext {
+                | Operation::ExtrudeNext {
                     target,
                     profile,
                     direction,
                 } => {
-                    profiles[profile].require_circular("extrude-next.ellipse-profile")?;
-                    if !profiles[profile].is_empty()
-                        && matches!(
-                            recipe.step(target).map(|s| &s.op),
-                            Some(Operation::Torus { .. })
-                        )
-                    {
-                        let cap = crate::end_condition::toroidal::AnnularCap::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            None,
-                            dec,
-                        )?;
-                        BodyValue {
-                            body: cap.build(
-                                model,
-                                bodies[target].body,
-                                &profiles[profile],
-                                &step.id,
-                                dec,
-                            )?,
-                            radius: cap.radius().clone(),
-                        }
-                    } else if !profiles[profile].is_empty()
-                        && matches!(
-                            recipe.step(target).map(|s| &s.op),
+                    use crate::end_condition::{
+                        Capped, curved::AuthoredCap, face, toroidal::AnnularCap,
+                    };
+                    let limit = match &step.op {
+                        Operation::ExtrudeTo { limit, .. } => Some(limit),
+                        _ => None,
+                    };
+                    let profile_value = &profiles[profile];
+                    let stock = &bodies[target];
+                    profile_value.require_circular(if limit.is_some() {
+                        "extrude-to.ellipse-profile"
+                    } else {
+                        "extrude-next.ellipse-profile"
+                    })?;
+                    let result = (|| -> Result<BodyValue, Refusal> {
+                        match recipe
+                            .step(target)
+                            .map(|s| &s.op)
+                            .filter(|_| !profile_value.is_empty())
+                        {
+                            Some(Operation::Torus { .. }) => {
+                                let cap = AnnularCap::compile(
+                                    recipe,
+                                    target,
+                                    profile,
+                                    direction.as_ref(),
+                                    limit,
+                                    dec,
+                                )?;
+                                Ok(BodyValue {
+                                    body: cap.build(
+                                        model,
+                                        stock.body,
+                                        profile_value,
+                                        &step.id,
+                                        dec,
+                                    )?,
+                                    radius: cap.radius().clone(),
+                                })
+                            }
                             Some(
                                 Operation::Sphere { .. }
-                                    | Operation::Cylinder { .. }
-                                    | Operation::Cone { .. }
-                            )
-                        )
-                    {
-                        let cap = crate::end_condition::curved::AuthoredCap::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            None,
-                            dec,
-                        )?;
-                        BodyValue {
-                            body: cap.build(model, &step.id, dec)?,
-                            radius: cap.radius().clone(),
+                                | Operation::Cylinder { .. }
+                                | Operation::Cone { .. },
+                            ) => {
+                                let cap = AuthoredCap::compile(
+                                    recipe,
+                                    target,
+                                    profile,
+                                    direction.as_ref(),
+                                    limit,
+                                    dec,
+                                )?;
+                                Ok(BodyValue {
+                                    body: cap.build(model, &step.id, dec)?,
+                                    radius: cap.radius().clone(),
+                                })
+                            }
+                            _ => {
+                                let cap = Capped::compile(
+                                    recipe,
+                                    target,
+                                    profile,
+                                    direction.as_ref(),
+                                    limit,
+                                    dec,
+                                )?;
+                                Ok(BodyValue {
+                                    body: cap.build(model, &step.id, dec)?,
+                                    radius: cap.radius,
+                                })
+                            }
                         }
-                    } else {
-                        let cap = crate::end_condition::Capped::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            None,
-                            dec,
-                        )?;
-                        BodyValue {
-                            body: cap.build(model, &step.id, dec)?,
-                            radius: cap.radius,
+                    })();
+                    match result {
+                        Err(error)
+                            if recipe.format == catallax_recipe::FORMAT_V6
+                                && face::may_retry(&error) =>
+                        {
+                            let selected = limit
+                                .map(|reference| face::select(model, stock.body, reference, dec))
+                                .transpose()?;
+                            let (body, radius) = face::limit(
+                                model,
+                                recipe,
+                                (target, stock.body, &stock.radius),
+                                (profile, profile_value),
+                                direction.as_ref(),
+                                selected,
+                                &step.id,
+                                dec,
+                            )?;
+                            BodyValue { body, radius }
                         }
+                        result => result?,
                     }
                 }
                 Operation::Hole {

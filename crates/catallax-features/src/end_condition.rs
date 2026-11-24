@@ -1262,3 +1262,5 @@ pub mod curved;
 
 /// Exact coaxial annular caps on stock toroidal limits.
 pub mod toroidal;
+
+pub(crate) mod face;

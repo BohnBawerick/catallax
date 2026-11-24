@@ -444,6 +444,51 @@ fn the_field_builds_the_m11_loft_as_a_patch_shell() {
     assert!(agreed > 400);
 }
 
+#[test]
+fn the_m11_patch_shell_displays_all_named_faces_inside_the_chord() {
+    use catallax_field::{Plan, display};
+    use catallax_numbers::with_operation_budget;
+
+    let plan = Plan::compile(&recipe("b_0", false)).unwrap();
+    assert!(plan.result_patch_shell().is_some());
+    for chord in ["1/100", "1/200"] {
+        let options = display::Options {
+            tolerance: r(chord),
+            ..Default::default()
+        };
+        let (mesh, work) = with_operation_budget(20_000_000, || {
+            display::mesh_plan(&plan, &options, &mut decider())
+        });
+        let mesh = mesh.unwrap();
+        assert!(!work.exhausted);
+        assert!(mesh.max_deviation <= options.tolerance);
+        let mut incidence = std::collections::BTreeMap::<_, (usize, i32)>::new();
+        for triangle in &mesh.triangles {
+            let [a, b, c] = triangle.vertices;
+            for (a, b) in [(a, b), (b, c), (c, a)] {
+                let uses = incidence.entry((a.min(b), a.max(b))).or_default();
+                uses.0 += 1;
+                uses.1 += if a < b { 1 } else { -1 };
+            }
+        }
+        let open = incidence.values().filter(|&&uses| uses != (2, 0)).count();
+        assert_eq!(
+            open, 0,
+            "{open} unmatched or misoriented edges at chord {chord}"
+        );
+        let faces: std::collections::BTreeSet<_> = mesh
+            .triangles
+            .iter()
+            .map(|triangle| {
+                let index = triangle.face.index();
+                assert_eq!(plan.result_face(index), Some(triangle.face));
+                plan.faces()[index].origin.clone()
+            })
+            .collect();
+        assert_eq!(faces.len(), 6);
+    }
+}
+
 /// A loft whose correspondence turns the top half a turn collapses its
 /// middle slice, so no slice proof holds and the old refusal stands.
 #[test]

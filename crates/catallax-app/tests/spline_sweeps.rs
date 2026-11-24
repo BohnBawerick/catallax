@@ -206,26 +206,30 @@ fn self_crossing_and_tight_return_paths_need_a_typed_envelope_proof() {
     }
 }
 
+fn rational_sweep(reverse: bool) -> Value {
+    let mut value = definition(true);
+    let path = &mut value["steps"][1]["segments"][0];
+    path["degree"] = json!(2);
+    path["control_points"] = json!([
+        ["0", "0", "0"],
+        ["1", "0", "1"],
+        ["1", "1", "2"],
+        ["0", "1", "3"]
+    ]);
+    path["weights"] = json!(["1", "2", "2", "1"]);
+    path["knots"] = json!(["0", "0", "0", "1/2", "1", "1", "1"]);
+    if reverse {
+        for point in path["control_points"].as_array_mut().unwrap() {
+            point[2] = json!((-q(point[2].as_str().unwrap())).to_string());
+        }
+    }
+    value
+}
+
 #[test]
 fn positive_rational_weights_internal_knots_and_reverse_travel_are_supported() {
     for reverse in [false, true] {
-        let mut value = definition(true);
-        let path = &mut value["steps"][1]["segments"][0];
-        path["degree"] = json!(2);
-        path["control_points"] = json!([
-            ["0", "0", "0"],
-            ["1", "0", "1"],
-            ["1", "1", "2"],
-            ["0", "1", "3"]
-        ]);
-        path["weights"] = json!(["1", "2", "2", "1"]);
-        path["knots"] = json!(["0", "0", "0", "1/2", "1", "1", "1"]);
-        if reverse {
-            for point in path["control_points"].as_array_mut().unwrap() {
-                point[2] = json!((-q(point[2].as_str().unwrap())).to_string());
-            }
-        }
-        let app = build(&value);
+        let app = build(&rational_sweep(reverse));
         assert!(app.built.model.check(app.built.result).is_empty());
         assert_eq!(app.names.faces.len(), 6);
         let volume = catallax_measure::volume(
@@ -237,6 +241,127 @@ fn positive_rational_weights_internal_knots_and_reverse_travel_are_supported() {
         .unwrap();
         assert!(volume.value.contains(&q("24")));
     }
+}
+
+#[test]
+fn multichart_preview_is_closed_and_follows_the_carriers() {
+    for reverse in [false, true] {
+        let app = build(&rational_sweep(reverse));
+        let options = catallax_mesh::PreviewOptions::default();
+        let mut dec = Decider::default();
+        let (preview, work) =
+            catallax_numbers::with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+                catallax_mesh::preview_mesh_body(
+                    &app.built.model,
+                    app.built.result,
+                    &options,
+                    &mut dec,
+                )
+            });
+        assert!(!work.exhausted, "{work:?}");
+        let preview = preview.unwrap();
+        assert_eq!(
+            preview
+                .faces
+                .iter()
+                .map(|face| face.face)
+                .collect::<BTreeSet<_>>(),
+            app.names.faces.keys().copied().collect(),
+        );
+        assert_eq!(
+            preview
+                .edges
+                .iter()
+                .map(|edge| edge.edge)
+                .collect::<BTreeSet<_>>(),
+            app.names.edges.keys().copied().collect(),
+        );
+        let mut incidence = BTreeMap::<_, (usize, i32)>::new();
+        for triangle in &preview.triangles {
+            let [a, b, c] = triangle.vertices;
+            for (from, to) in [(a, b), (b, c), (c, a)] {
+                let uses = incidence.entry((from.min(to), from.max(to))).or_default();
+                uses.0 += 1;
+                uses.1 += if from < to { 1 } else { -1 };
+            }
+        }
+        assert!(incidence.values().all(|&uses| uses == (2, 0)));
+        check_preview_samples(&app, &preview, options.chord_tolerance.to_f64_nearest());
+    }
+}
+
+fn check_preview_samples(
+    app: &catallax_app::ApplicationBody,
+    preview: &catallax_mesh::PreviewMesh,
+    chord: f64,
+) {
+    use catallax_numbers::Ball;
+    use catallax_shapes::{SplineSupport, Surface};
+    use catallax_topology::Sense;
+
+    let sub = |a: [f64; 3], b: [f64; 3]| std::array::from_fn(|i| a[i] - b[i]);
+    let dot = |a: [f64; 3], b: [f64; 3]| a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        std::array::from_fn(|i| a[(i + 1) % 3] * b[(i + 2) % 3] - a[(i + 2) % 3] * b[(i + 1) % 3])
+    };
+    let round = |p: [Ball; 3]| p.map(|x| x.mid().to_f64_nearest());
+    let built = &app.built;
+    let model = &built.model;
+    let expansion = model.chart_expansion(built.result).unwrap();
+    assert!(expansion.needs_cells());
+    let dec = Decider::default();
+    let mut visited = 0;
+    for face in model.faces_of_body(expansion.body()) {
+        let item = model.face(face);
+        let Surface::BSpline(SplineSupport::RationalPatch(patch)) =
+            model.geom().surface(item.surface)
+        else {
+            continue;
+        };
+        let carrier = patch.carrier();
+        let logical = expansion.face(face);
+        let facets = preview
+            .faces
+            .iter()
+            .find(|face| face.face == logical)
+            .unwrap()
+            .triangles
+            .clone();
+        let [us, vs] = carrier.domain();
+        for fraction in ["1/8", "1/2", "7/8"] {
+            for across in ["1/8", "1/2", "7/8"] {
+                let at = |[lo, hi]: [&Rational; 2], fraction| {
+                    Ball::from_rational(&(lo + &((hi - lo) * q(fraction))), 128)
+                };
+                let [u, v] = [at(us, fraction), at(vs, across)];
+                let p = round(carrier.evaluate(&u, &v, &dec).unwrap());
+                let [du, dv] = carrier.derivatives(&u, &v, &dec).unwrap().map(round);
+                let outward = if item.sense == Sense::Same {
+                    cross(du, dv)
+                } else {
+                    cross(dv, du)
+                };
+                let covered = preview.triangles[facets.clone()].iter().any(|triangle| {
+                    let [a, b, c] = triangle.vertices.map(|i| preview.positions[i]);
+                    let [ab, ac, ap] = [sub(b, a), sub(c, a), sub(p, a)];
+                    let n = cross(ab, ac);
+                    let area = dot(n, n);
+                    if dot(n, outward) <= 0.0 || dot(ap, n).abs() > chord * area.sqrt() {
+                        return false;
+                    }
+                    let u = dot(cross(ap, ac), n) / area;
+                    let v = dot(cross(ab, ap), n) / area;
+                    u >= -1e-10 && v >= -1e-10 && u + v <= 1.0 + 1e-10
+                });
+                assert!(
+                    covered,
+                    "preview face {logical:?} has no outward facet within {chord} at {p:?}"
+                );
+                visited += 1;
+            }
+        }
+    }
+    assert!(visited > 9, "expected multiple tested rational charts");
 }
 
 #[test]

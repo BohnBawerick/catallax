@@ -7,15 +7,23 @@ use std::{
 };
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
-use catallax_shapes::{SplineSupport, Surface, Vector3};
+use catallax_shapes::{BoundaryRow, SplineSupport, Surface, Vector3};
+use catallax_topology::{EdgeId, FaceId, LinearFilletBand, Model};
 
 use crate::failure;
 
 mod spline;
-pub(crate) use spline::SplineChart;
+use spline::SplineNormals;
+pub(crate) use spline::{CollarBridge, NormalProof, SplineChart};
 
 pub(crate) const BITS: u32 = 128;
 pub(crate) type Uv = [f64; 2];
+
+#[derive(Clone, Copy)]
+pub(crate) struct Trim {
+    pub(crate) ends: [Uv; 2],
+    pub(crate) fixed: (usize, f64),
+}
 
 pub(crate) fn q(x: f64) -> Rational {
     Rational::from_f64_exact(x).expect("finite mesh coordinate")
@@ -71,7 +79,9 @@ pub(crate) struct Chart {
     /// Enclosed inward normals of the hemispheres that meet in a proved convex
     /// corner. These select grid seeds only; every proof still applies.
     pub(crate) corner_planes: Option<[[Interval; 3]; 3]>,
+    pub(crate) chord_goal: Option<Rational>,
     sampling: Sampling,
+    trims: BTreeMap<EdgeId, Trim>,
     centers: [Option<f64>; 2],
     hessian: OnceCell<[Rational; 3]>,
     filtered_hessian: OnceCell<[Interval; 3]>,
@@ -156,6 +166,8 @@ impl Chart {
             normal_scale,
             great_circle_sector: false,
             corner_planes: None,
+            chord_goal: None,
+            trims: BTreeMap::new(),
             sampling: Sampling::Analytic(Box::new(Analytic {
                 ellipse_radii: axes,
                 origin,
@@ -170,10 +182,89 @@ impl Chart {
         })
     }
 
-    pub(crate) fn from_spline(support: &SplineSupport, dec: &mut Decider) -> Result<Self, Refusal> {
+    pub(crate) fn from_spline(
+        model: &Model,
+        face: FaceId,
+        support: &SplineSupport,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if matches!(
+            support,
+            SplineSupport::EllipticOffset(_)
+                | SplineSupport::RollingSaddle(_)
+                | SplineSupport::RollingSphere(_)
+        ) {
+            // The band chart and both rails enclose the same algebraic controls.
+            catallax_numbers::reuse_operation_enclosures();
+        }
+        let periodic = support
+            .param_kinds()
+            .map(|kind| kind == catallax_shapes::ParamKind::PeriodicFinite);
+        let mut trims = BTreeMap::new();
+        let mut normal_station = None;
+        if let SplineSupport::LinearFillet(fillet) = support {
+            // The arc tangent vanishes by a single station factor. The
+            // one-sided normal has the direction at the opposite station.
+            normal_station = (0..2)
+                .find(|&end| fillet.zero_end(end))
+                .map(|end| (1 - end) as f64);
+            let band = LinearFilletBand::of_face(model, face, dec)?
+                .ok_or_else(|| failure("linear band has no checked trim"))?;
+            for (edge, row, _, forward) in band.rows() {
+                let fixed = match row {
+                    BoundaryRow::Rail => (0, 0.0),
+                    BoundaryRow::Mouth => (0, 1.0),
+                    BoundaryRow::Negative => (1, 0.0),
+                    BoundaryRow::Positive => (1, 1.0),
+                };
+                let mut ends: [Uv; 2] = [[0.0; 2], [1.0; 2]];
+                ends.iter_mut().for_each(|uv| uv[fixed.0] = fixed.1);
+                if !forward {
+                    ends.reverse();
+                }
+                trims.insert(edge, Trim { ends, fixed });
+            }
+        }
+        let split_spans = matches!(
+            support,
+            SplineSupport::RollingPipe(_) | SplineSupport::ObliqueDraft(_)
+        );
+        let join_scale = if split_spans {
+            // Its exact four-quarter construction doubles each denominator
+            // factor per quarter. Each factor contributes degree two in u.
+            let degree = Self::carrier(support).degrees()[0] as i32;
+            [Interval::point(libm::ldexp(1.0, 2 * degree)), None]
+        } else if matches!(
+            support,
+            SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_)
+        ) {
+            [
+                Some(spline::checked_join_scale(Self::carrier(support), dec)?),
+                None,
+            ]
+        } else {
+            [None; 2]
+        };
+        let spline = SplineChart::new(
+            Self::carrier(support),
+            periodic,
+            join_scale,
+            split_spans,
+            normal_station,
+            match support {
+                SplineSupport::BezierExtrusion(_)
+                | SplineSupport::RationalAtlas(_)
+                | SplineSupport::RationalPatch(_)
+                | SplineSupport::SplineFillet(_) => SplineNormals::Patch,
+                SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
+                SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
+                _ => SplineNormals::Carrier,
+            },
+            dec,
+        )?;
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
-            periodic: [false; 2],
+            periodic,
             centers: [None; 2],
             hessian: OnceCell::new(),
             filtered_hessian: OnceCell::new(),
@@ -181,8 +272,23 @@ impl Chart {
             normal_scale: Rational::one(),
             great_circle_sector: false,
             corner_planes: None,
-            sampling: Sampling::Spline(SplineChart::new(Self::carrier(support), dec)?),
+            chord_goal: None,
+            trims,
+            sampling: Sampling::Spline(spline),
         })
+    }
+
+    pub(crate) fn trim(&self, edge: EdgeId) -> Option<Trim> {
+        self.trims.get(&edge).copied()
+    }
+
+    pub(crate) fn collapsed_station(&self) -> Option<f64> {
+        let Surface::BSpline(SplineSupport::LinearFillet(fillet)) = &self.surface else {
+            return None;
+        };
+        (0..2)
+            .find(|&end| fillet.zero_end(end))
+            .map(|end| end as f64)
     }
 
     pub(crate) fn carrier(support: &SplineSupport) -> &catallax_shapes::BSplineSurface {
@@ -221,7 +327,7 @@ impl Chart {
         let angle = |y, x| {
             let t = libm::atan2(y, x) / std::f64::consts::TAU;
             // Leave enough mantissa bits for exact translations by -2..=2.
-            libm::round(t * 281_474_976_710_656.0) / 281_474_976_710_656.0
+            quantize_turn(t)
         };
         let u = if let Some([major, minor]) = analytic.ellipse_radii {
             angle(y / minor, x / major)
@@ -451,6 +557,11 @@ pub(crate) fn align(mut b: Uv, a: Uv, periodic: [bool; 2]) -> Uv {
         }
     }
     b
+}
+
+pub(crate) fn quantize_turn(turn: f64) -> f64 {
+    const SAMPLES_PER_TURN: f64 = (1_u64 << 48) as f64;
+    libm::round(turn * SAMPLES_PER_TURN) / SAMPLES_PER_TURN
 }
 
 pub(crate) fn filtered_chord_bound(uvs: &[Uv], hessian: &[Interval; 3]) -> Interval {

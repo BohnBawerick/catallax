@@ -387,6 +387,48 @@ impl RationalSpan {
         &self.domain
     }
 
+    /// Restricts this Bézier net to the two halves of an axis.
+    /// Outward-rounded de Casteljau retains the source surface in both nets.
+    pub fn bisect(&self, axis: usize, dec: &mut Decider) -> Result<[Self; 2], Refusal> {
+        let [u, v] = self.degree;
+        let (count, lines, stride, step) = if axis == 0 {
+            (u, v, v + 1, 1)
+        } else {
+            (v, u, 1, v + 1)
+        };
+        let mut children = [self.control.clone(), self.control.clone()];
+        let half = point(0.5);
+        dec.charge_work((4 * (lines + 1) * count * (count + 1) / 2) as u64)?;
+        let mut row = Vec::with_capacity(count + 1);
+        for line in 0..=lines {
+            let index = |i| line * step + i * stride;
+            row.clear();
+            row.extend((0..=count).map(|i| self.control[index(i)]));
+            for level in 1..=count {
+                let end = count - level;
+                for i in 0..=end {
+                    row[i] = std::array::from_fn(|j| (row[i][j] + row[i + 1][j]) * half);
+                }
+                children[0][index(level)] = row[0];
+                children[1][index(end)] = row[end];
+            }
+        }
+        let middle = (&self.domain[axis][0] + &self.domain[axis][1]).mul_pow2(-1);
+        let [left, right] = children;
+        let mut prepare = |side: usize, mut control: Net<Interval>| {
+            let mut domain = self.domain.clone();
+            domain[axis][1 - side] = middle.clone();
+            dec.charge_work(3 * control.len() as u64)?;
+            for h in &mut control {
+                for i in 0..3 {
+                    h[i] = h[i] + point(self.centre[i]) * h[3];
+                }
+            }
+            Self::prepare(domain, self.degree, control, dec)
+        };
+        Ok([prepare(0, left)?, prepare(1, right)?])
+    }
+
     /// Homogeneous derivative bounds for use with the chord formula.
     ///
     /// Zheng and Sederberg, Theorem 4. The positive denominator is bounded
@@ -413,17 +455,43 @@ impl RationalSpan {
         self.affine_hessian
     }
 
-    /// Bounds the jump in the transverse first derivative across a common knot.
+    /// Bounds the first derivative jump between two adjacent spans.
     ///
-    /// The two spans must share homogeneous boundary controls and the same
-    /// transverse parameter interval. Widths map unit-span derivatives into
-    /// the caller's coordinates. Bernstein differences bound the quotient
-    /// derivative on the entire common seam.
+    /// The spans must share homogeneous boundary controls. Widths map
+    /// unit-span derivatives into the caller's coordinates.
     pub fn first_jump(
         &self,
         next: &Self,
         axis: usize,
         widths: [Interval; 2],
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        self.first_jump_scaled(next, axis, widths, None, dec)
+    }
+
+    /// Bounds the first derivative jump across a checked periodic join.
+    ///
+    /// The two spans must share homogeneous boundary controls up to a common
+    /// positive scale and have the same transverse parameter interval.
+    /// `next_scale` expresses the next span in this span's homogeneous scale.
+    /// Widths map unit-span derivatives into the caller's coordinates.
+    pub fn periodic_first_jump(
+        &self,
+        next: &Self,
+        axis: usize,
+        widths: [Interval; 2],
+        next_scale: Interval,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        self.first_jump_scaled(next, axis, widths, Some(next_scale), dec)
+    }
+
+    fn first_jump_scaled(
+        &self,
+        next: &Self,
+        axis: usize,
+        widths: [Interval; 2],
+        next_scale: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<Interval, Refusal> {
         if axis > 1 {
@@ -432,7 +500,8 @@ impl RationalSpan {
         let secondary = 1 - axis;
         if self.degree != next.degree
             || self.domain[secondary] != next.domain[secondary]
-            || self.domain[axis][1] != next.domain[axis][0]
+            || (next_scale.is_none() && self.domain[axis][1] != next.domain[axis][0])
+            || next_scale.is_some_and(|scale| scale.lo() <= 0.0 || !scale.is_finite())
             || widths.iter().any(|width| width.lo() <= 0.0)
         {
             return Err(refuse(
@@ -449,7 +518,8 @@ impl RationalSpan {
         // Translate the next span's first derivative net to this span's origin.
         // Per sample there are three translation, three squared norm, and
         // one radius product.
-        dec.charge_work(7 * (degree[secondary] as u64 + 1))?;
+        let scale_products = if next_scale.is_some() { 4 } else { 0 };
+        dec.charge_work((7 + scale_products) * (degree[secondary] as u64 + 1))?;
         let mut bound = 0.0_f64;
         for i in 0..=degree[secondary] {
             let [end, start] = if axis == 0 {
@@ -458,7 +528,10 @@ impl RationalSpan {
                 [i * v_count + degree[1], i * v_count]
             };
             let before = self.first[axis][end].map(|value| value / widths[0]);
-            let after = next.first[axis][start].map(|value| value / widths[1]);
+            let after = next.first[axis][start].map(|value| {
+                let derivative = value / widths[1];
+                next_scale.map_or(derivative, |scale| scale * derivative)
+            });
             let xyz = std::array::from_fn(|k| after[k] + delta_centre[k] * after[3] - before[k]);
             let weight = magnitude(after[3] - before[3]);
             let jump = (vector_length(xyz) + self.radius * weight) / self.min_weight;
@@ -517,21 +590,27 @@ impl RationalSpan {
         let center = uv.map(|value| point(value.mid()));
         let delta = std::array::from_fn(|i| uv[i] - center[i]);
         let at = center.map(|axis| axis.mid());
-        let value = evaluate_row(&self.control, self.degree, at, &self.position_row, dec)?;
+        let nets = [&self.control, &self.first[0], &self.first[1]];
+        let degrees = [
+            self.degree,
+            lower_degree(self.degree, 0),
+            lower_degree(self.degree, 1),
+        ];
+        let previous = [
+            &self.position_row,
+            &self.derivative_rows[0],
+            &self.derivative_rows[1],
+        ];
+        let evaluate =
+            |i: usize, dec: &mut Decider| evaluate_row(nets[i], degrees[i], at, previous[i], dec);
+        let value = evaluate(0, dec)?;
         let homogeneous = expand_center(value, delta, self.control_hull, self.first_hulls, dec)?;
         let mut tangents = [[point(0.0); 3]; 2];
         for (axis, tangent) in tangents.iter_mut().enumerate() {
             if self.first[axis].is_empty() {
                 continue;
             }
-            let degree = lower_degree(self.degree, axis);
-            let value = evaluate_row(
-                &self.first[axis],
-                degree,
-                at,
-                &self.derivative_rows[axis],
-                dec,
-            )?;
+            let value = evaluate(axis + 1, dec)?;
             let first = expand_center(
                 value,
                 delta,
@@ -550,6 +629,84 @@ impl RationalSpan {
             u[2] * v[0] - u[0] * v[2],
             u[0] * v[1] - u[1] * v[0],
         ])
+    }
+
+    /// The quartic Bernstein normal in v, with each coefficient enclosed for
+    /// the whole u strip. The normal is scaled by the positive cube of the weight.
+    pub fn quadratic_normal_row(
+        &self,
+        u: Interval,
+        dec: &mut Decider,
+    ) -> Result<Option<[[Interval; 3]; 5]>, Refusal> {
+        let [degree, order] = self.degree;
+        if order != 2 || degree == 0 {
+            return Ok(None);
+        }
+        if u.lo() < 0.0 || u.hi() > 1.0 {
+            return Err(refuse("normal strip leaves its knot span"));
+        }
+        let hull = |net: &[[Interval; 4]], column: usize| {
+            net.iter()
+                .skip(column)
+                .step_by(3)
+                .copied()
+                .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
+                .unwrap_or([point(0.0); 4])
+        };
+        let delta = u - point(u.mid());
+        let bound_row = |net: &[[Interval; 4]],
+                         degree: usize,
+                         derivative: &[[Interval; 4]],
+                         dec: &mut Decider|
+         -> Result<[[Interval; 4]; 3], Refusal> {
+            let bounds = std::array::from_fn(|column| hull(net, column));
+            if u == Interval::new(0.0, 1.0).unwrap() {
+                return Ok(bounds);
+            }
+            let at = bernstein_row(net, [degree, 2], u.mid(), dec)?;
+            dec.charge_work(12)?;
+            Ok(std::array::from_fn(|column| {
+                let slopes = hull(derivative, column);
+                intersect_hull(
+                    std::array::from_fn(|i| at[column][i] + delta * slopes[i]),
+                    bounds[column],
+                )
+            }))
+        };
+        let second = difference(&self.first[0], [degree - 1, 2], 0);
+        dec.charge_work(4 * second.len() as u64)?;
+        let [a, b, c] = bound_row(&self.control, degree, &self.first[0], dec)?;
+        let slopes = bound_row(&self.first[0], degree - 1, &second, dec)?;
+        let xyz = |h: [Interval; 4]| [h[0], h[1], h[2]];
+        let cross = |a: [Interval; 3], b: [Interval; 3]| -> [Interval; 3] {
+            std::array::from_fn(|i| {
+                let j = (i + 1) % 3;
+                let k = (i + 2) % 3;
+                a[j] * b[k] - a[k] * b[j]
+            })
+        };
+        // The wedge of a quadratic and its derivative is itself quadratic.
+        // Its controls are 2 a∧b, a∧c, 2 b∧c.
+        dec.charge_work(3 * (12 + 6) + 9 * (6 + 3 + 3))?;
+        let wedges = [(a, b, 2.0), (a, c, 1.0), (b, c, 2.0)].map(|(a, b, scale)| {
+            let delta = std::array::from_fn(|i| point(scale) * (a[3] * b[i] - b[3] * a[i]));
+            let moment = cross(xyz(a), xyz(b)).map(|x| point(scale) * x);
+            (delta, moment)
+        });
+        let mut normal = [[point(0.0); 3]; 5];
+        let quadratic = [1.0, 2.0, 1.0];
+        let quartic = [1.0, 4.0, 6.0, 4.0, 1.0];
+        for (i, slope) in slopes.into_iter().enumerate() {
+            for (j, (delta, moment)) in wedges.into_iter().enumerate() {
+                let cross = cross(xyz(slope), delta);
+                let weight = point(quadratic[i] * quadratic[j]) / point(quartic[i + j]);
+                for component in 0..3 {
+                    let value = cross[component] - slope[3] * moment[component];
+                    normal[i + j][component] = normal[i + j][component] + weight * value;
+                }
+            }
+        }
+        Ok(Some(normal))
     }
 
     /// Projects from a neighbouring sample's local parameter, or the centre
@@ -801,16 +958,7 @@ fn evaluate_row(
         if v <= 0.0 || v >= 1.0 {
             return evaluate(net, degree, [u, v], point, |i| i, dec);
         }
-        let (weights, products) = basis(degree[0], u, &point);
-        dec.charge_work((products + 4 * net.len()) as u64)?;
-        let mut controls = vec![[point(0.0); 4]; degree[1] + 1];
-        for (values, weight) in net.chunks_exact(controls.len()).zip(weights) {
-            for (column, value) in controls.iter_mut().zip(values) {
-                for (out, component) in column.iter_mut().zip(value) {
-                    *out = *out + weight * *component;
-                }
-            }
-        }
+        let controls = bernstein_row(net, degree, u, dec)?;
         *row = Some(PositionRow { u: key, controls });
     }
     evaluate(
@@ -821,6 +969,28 @@ fn evaluate_row(
         |i| i,
         dec,
     )
+}
+
+fn bernstein_row(
+    net: &[[Interval; 4]],
+    degree: [usize; 2],
+    u: f64,
+    dec: &mut Decider,
+) -> Result<Net<Interval>, Refusal> {
+    if net.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (weights, products) = basis(degree[0], u, &point);
+    dec.charge_work((products + 4 * net.len()) as u64)?;
+    let mut controls = vec![[point(0.0); 4]; degree[1] + 1];
+    for (values, weight) in net.chunks_exact(controls.len()).zip(weights) {
+        for (column, value) in controls.iter_mut().zip(values) {
+            for (out, component) in column.iter_mut().zip(value) {
+                *out = *out + weight * *component;
+            }
+        }
+    }
+    Ok(controls)
 }
 
 fn expand_center(

@@ -808,6 +808,8 @@ impl<'a> Stepper<'a> {
         self.hit_bound(0, hits[0]);
         self.hit_bound(1, hits[1]);
         let out = hits != [0, 0];
+        // A NaN bounds scale must still reach the scaled-step evaluation.
+        #[allow(clippy::manual_range_contains)]
         if !out {
             self.set_uv(next);
         } else if bounds_scale > 1.0 - EFF_ZERO || bounds_scale < EFF_ZERO {

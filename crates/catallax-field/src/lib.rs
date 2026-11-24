@@ -1466,6 +1466,14 @@ impl Plan {
             plan.faces[id].in_result = true;
             plan.faces[id].domain = domain;
         }
+        // The shell's display names enter the completed plan after downstream
+        // features have resolved their operands against the modeling registry.
+        if let Instruction::Leaf(leaf) = plan.instructions[plan.root]
+            && let Some(shell) = plan.result_patch_shell()
+        {
+            let faces = shell.display_faces(leaf, dec)?;
+            plan.faces.extend(faces);
+        }
         plan.compact();
         Ok(plan)
     }

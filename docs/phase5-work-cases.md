@@ -514,3 +514,22 @@ Both 21-turn recipes and the 22-turn, 3 mm recipe returned
 `numbers.operation-budget` during build. Long-spring build cost remains a
 follow-on. Display and preview at three and 20 turns exhausted the allowance
 on the existing mesher. Their acceptance belongs to the 3.5 coil pin bump.
+
+## Work carried from the v0.5.0 cut
+
+[Checkpoint 4](checkpoints/checkpoint-4.md#scoreboard-work-above-20m) lists every
+measured scoreboard phase above 20M, with construction and edit kept separate.
+[Phase 5.1](../ROADMAP.md#display-mesher-work) carries the display work and
+size targets moved from 3.5. The recorded P6 print and spline fillet compares
+also belong to speed work.
+
+| Case | Charged work | Evidence |
+|---|---:|---|
+| P6 reference lattice STL at 0.01 mm | 80,742,140 | [Print, mesh and cavity checks](milestones/4.3-printing.md#p6-at-001-mm) |
+| M27 loft forward compare | 36,448,251 | [Field proof, B-rep fit and forward queries](M42A-FIELD-FILLETS.md#forward-display-comparison) |
+| Next M11 loft forward compare | 63,995,055 | [Field proof, B-rep fit and forward queries](M42A-FIELD-FILLETS.md#forward-display-comparison) |
+| M11 biquadratic carrier forward compare | 72,210,076 | [Field proof, B-rep fit and forward queries](M42A-FIELD-FILLETS.md#forward-display-comparison) |
+
+The three compare counts are historical and predate basis-table and cap-normal
+charging. They cover the recorded forward samples. The two loft whole-body
+displays still have open checks.

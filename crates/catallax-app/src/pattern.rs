@@ -159,6 +159,9 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
         | ExtrudeTo {
             profile, direction, ..
         }
+        | ExtrudeFrom {
+            profile, direction, ..
+        }
         | ExtrudeNext {
             profile, direction, ..
         } => {

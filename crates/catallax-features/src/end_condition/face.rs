@@ -566,10 +566,7 @@ pub(crate) fn start(
         .to_real()
         .scaled(&(&Real::from(distance.clone()) / &length));
     let body = translated_cap_sweep(model, column, displacement, distance.sign(), step, dec)?;
-    Ok((
-        body,
-        bound + distance.abs() + crate::evaluate::profile_radius(profile),
-    ))
+    Ok((body, bound + &distance.abs()))
 }
 
 fn connector(
@@ -583,7 +580,7 @@ fn connector(
         let origin = model.geom().position(model.vertex(start).point);
         let curve = model.geom_mut().add_curve(Curve::Line(Line {
             origin,
-            direction: vector.clone(),
+            dir: vector.clone(),
         }));
         model.add_edge(Edge {
             curve,

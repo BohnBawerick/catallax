@@ -4,7 +4,9 @@ use super::*;
 use catallax_boolean::{PatchSelection, arrange};
 use catallax_numbers::MarkLog;
 
-use catallax_shapes::{BezierExtrusion, Curve, Isometry, Line, SplineSupport, Vector3};
+use catallax_shapes::{Curve, Isometry, Line, SplineSupport, Vector3};
+
+mod bezier;
 use catallax_topology::{
     Body, BodyKind, Edge, EdgeId, FaceId, Loop, Lump, Sense, Shell, VertexId, transformed_body,
 };
@@ -198,78 +200,6 @@ fn planar(
         step,
         |point, dec| {
             let side = sign(&point.minus(&plane.origin).dot(&plane.normal), dec)?;
-            Ok(match (side, orientation) {
-                (Sign::Positive, Sense::Same) | (Sign::Negative, Sense::Reversed) => Sign::Positive,
-                (Sign::Zero, _) => Sign::Zero,
-                _ => Sign::Negative,
-            })
-        },
-        orientation,
-        dec,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn bezier(
-    model: &mut Model,
-    selected: FaceId,
-    surface: &BezierExtrusion,
-    profile: &Profile,
-    direction: &RVector3,
-    extent: &Rational,
-    step: &StepId,
-    dec: &mut Decider,
-) -> Result<BodyId, Refusal> {
-    let controls = surface.controls();
-    let base = &controls[0];
-    let chord = controls.last().unwrap().minus(base);
-    let axis = surface.direction();
-    let across = chord.cross(axis);
-    let direction_real = direction.to_real();
-    let skew = across.cross(&direction_real);
-    for component in [&skew.x, &skew.y, &skew.z] {
-        if sign(component, dec)? != Sign::Zero {
-            return Err(unsupported(
-                "the Bezier limit needs a proved graph along the sweep direction",
-            ));
-        }
-    }
-    // The existing Bezier carrier proves monotonicity in the chord chart.
-    // Its two chart coordinates are constant on each accepted sweep line.
-    for segment in profile.loops.iter().flat_map(|boundary| &boundary.segments) {
-        if segment.circle.is_some() {
-            return Err(unsupported(
-                "the Bezier limit needs a certified circular footprint",
-            ));
-        }
-        let p = profile.world(&segment.end, &RVector3::zero()).to_real();
-        let from_base = p.minus(base);
-        for vector in [&chord, axis] {
-            let station = from_base.dot(vector);
-            if sign(&station, dec)? == Sign::Negative
-                || sign(&(&station - &vector.norm_squared()), dec)? == Sign::Positive
-            {
-                return Err(bad(
-                    "features.limit-missed",
-                    "the profile extends beyond the finite Bezier chart",
-                ));
-            }
-        }
-    }
-    let orientation = if sign(&across.dot(&direction_real), dec)? == Sign::Positive {
-        Sense::Same
-    } else {
-        Sense::Reversed
-    };
-    clip(
-        model,
-        selected,
-        profile,
-        direction,
-        extent,
-        step,
-        |point, dec| {
-            let side = surface.side_at(point, dec)?;
             Ok(match (side, orientation) {
                 (Sign::Positive, Sense::Same) | (Sign::Negative, Sense::Reversed) => Sign::Positive,
                 (Sign::Zero, _) => Sign::Zero,
@@ -553,8 +483,8 @@ pub(crate) fn limit(
             Surface::Plane(plane) => Some(planar(
                 model, face, plane, profile, &direction, &reach, step, dec,
             )?),
-            Surface::BSpline(SplineSupport::BezierExtrusion(support)) => Some(bezier(
-                model, face, support, profile, &direction, &reach, step, dec,
+            Surface::BSpline(SplineSupport::BezierExtrusion(support)) => Some(bezier::build(
+                model, face, support, profile, &direction, step, dec,
             )?),
             Surface::Cylinder(_) => None,
             _ => {

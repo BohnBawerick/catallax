@@ -692,6 +692,8 @@ pub fn local_surface_intersect(
         uv = Vector2::new(x[0], x[1]);
         other_uv = Vector2::new(x[2], x[3]);
     }
+    // A NaN angle must fail the near-parallel test.
+    #[allow(clippy::manual_range_contains)]
     let near_parallel = |angle: f64| angle < 3.0 * PI / 180.0 || angle > PI - 3.0 * PI / 180.0;
     if found && steepest_descent {
         let n1 = evaluate_normal(surface, uv, [true, true]);

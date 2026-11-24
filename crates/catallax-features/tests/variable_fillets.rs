@@ -284,6 +284,34 @@ fn either_zero_end_has_one_shared_apex_and_a_closed_bounded_display() {
             }
         }
         assert_eq!(apex_indices.len(), 1, "split zero-radius apex");
+        let angular = MeshOptions {
+            angular_deviation: Some(q("1/12")),
+            ..options
+        };
+        let (controlled, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            mesh_body(&built.model, built.result, &angular, &mut decider())
+        });
+        let controlled = controlled.unwrap().value;
+        assert!(!work.exhausted, "{work:?}");
+        let controlled_band = controlled.faces.iter().find(|f| f.face == face).unwrap();
+        assert!(controlled_band.max_chord_error <= angular.chord_tolerance);
+        let limit = angular.angular_deviation.unwrap().to_f64_nearest();
+        let rate = if (end > start) == backwards {
+            -0.1
+        } else {
+            0.1
+        };
+        let facets = &controlled.triangles[controlled_band.triangles.clone()];
+        for triangle in facets {
+            let points = triangle.vertices.map(|i| controlled.positions[i]);
+            let error = zero_end_facet_angle(points, rate);
+            assert!(
+                error <= limit + 1e-8,
+                "facet deviation {error} at {points:?}"
+            );
+        }
+        let [a, b, c] = facets[0].vertices.map(|i| controlled.positions[i]);
+        assert!(zero_end_facet_angle([a, c, b], rate) > limit);
         let mut bytes = Vec::new();
         let report = catallax_step::write_step(
             &built.model,
@@ -295,6 +323,48 @@ fn either_zero_end_has_one_shared_apex_and_a_closed_bounded_display() {
         .unwrap();
         assert!(report.marks.is_empty(), "{:?}", report.marks);
     }
+}
+
+fn zero_end_facet_angle(points: [[f64; 3]; 3], rate: f64) -> f64 {
+    let [a, b, c] = points;
+    let u: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+    let v: [f64; 3] = std::array::from_fn(|i| c[i] - a[i]);
+    let facet: [f64; 3] =
+        std::array::from_fn(|i| u[(i + 1) % 3] * v[(i + 2) % 3] - u[(i + 2) % 3] * v[(i + 1) % 3]);
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for [x, y, z] in points {
+        let radius = if rate > 0.0 {
+            y * rate
+        } else {
+            (y - 20.0) * rate
+        };
+        if radius <= 1e-10 {
+            continue;
+        }
+        let ray = (z - (10.0 - radius)).atan2(x - (20.0 - radius));
+        lo = lo.min(ray);
+        hi = hi.max(ray);
+    }
+    assert!(lo.is_finite() && hi.is_finite());
+    // The limiting apex normals are the normals on the facet's sector of
+    // generators. Their direction is constant along each generator.
+    let norm = |a: [f64; 3]| a.iter().map(|x| x * x).sum::<f64>().sqrt();
+    [lo, lo.midpoint(hi), hi]
+        .into_iter()
+        .map(|ray| {
+            let (z, x) = ray.sin_cos();
+            let carrier = [x, rate * (x + z - 1.0), z];
+            let dot = facet
+                .into_iter()
+                .zip(carrier)
+                .map(|(a, b)| a * b)
+                .sum::<f64>();
+            (dot / (norm(facet) * norm(carrier)))
+                .clamp(-1.0, 1.0)
+                .acos()
+        })
+        .fold(0.0, f64::max)
 }
 
 #[test]

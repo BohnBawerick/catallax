@@ -1,0 +1,116 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "ellipse rim",
+  "steps": [
+    {
+      "id": "wall",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "16",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "cut-section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "24/25",
+          "0",
+          "7/25",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "8"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "0",
+            "to": [
+              "30",
+              "-30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "1",
+            "to": [
+              "30",
+              "30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "2",
+            "to": [
+              "-30",
+              "30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "3",
+            "to": [
+              "-30",
+              "-30"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "cut",
+      "op": "extrude",
+      "profile": "cut-section",
+      "distance": "30"
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "wall",
+      "tool": "cut"
+    },
+    {
+      "id": "round",
+      "op": "fillet",
+      "body": "joined",
+      "radius": "1",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "wall",
+              "role": {
+                "side": {
+                  "segment": "wall"
+                }
+              }
+            },
+            {
+              "step": "cut",
+              "role": "start"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "round"
+}

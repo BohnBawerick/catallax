@@ -147,6 +147,9 @@ fn display(options: &MeshOptions) {
     let (fresh, full_work) = with_operation_budget(20_000_000, || {
         catallax_mesh::mesh_body(&built.model, built.result, options, &mut Decider::default())
     });
+    let fresh = fresh.expect("standalone prism display must fit the application allowance");
+    assert!(!full_work.exhausted);
+    assert_eq!(fresh.value, *mesh);
     let (reused, reuse_work) = with_operation_budget(full_work.used, || {
         catallax_mesh::mesh_body_reusing(
             &built.model,
@@ -158,8 +161,7 @@ fn display(options: &MeshOptions) {
             &mut Decider::default(),
         )
     });
-    let fresh = fresh.unwrap();
-    let reused = reused.unwrap();
+    let reused = reused.expect("prism replay must fit the work charged by the fresh display");
     assert_eq!(reused.value, fresh.value);
     assert_eq!(reused.marks, fresh.marks);
     assert!(!reuse_work.exhausted);

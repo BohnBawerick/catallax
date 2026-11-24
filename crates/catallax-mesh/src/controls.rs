@@ -94,6 +94,14 @@ pub(crate) fn cosine_limit(angle: &Rational, dec: &Decider) -> Result<Rational, 
     }
 }
 
+pub(crate) fn cosine_enclosure(angle: &Rational, dec: &Decider) -> Result<Interval, Refusal> {
+    if *angle >= Ball::pi_checked(BITS, dec)?.hi() {
+        return Ok(Interval::point(-1.0).unwrap());
+    }
+    let cosine = Ball::from_rational(angle, BITS).cos();
+    Ok(Interval::from_rational(&cosine.lo()).hull(&Interval::from_rational(&cosine.hi())))
+}
+
 fn filtered_quality(
     chart: &Chart,
     uvs: &[Uv; 3],

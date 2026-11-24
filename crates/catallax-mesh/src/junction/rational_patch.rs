@@ -4,7 +4,6 @@ use std::{cmp::Ordering, collections::BTreeSet};
 
 use catallax_numbers::{Outcome, StrictSign, ZeroProof};
 use catallax_shapes::{BSplineCurve, RationalPatch, SplineBoundary};
-use catallax_topology::RationalPatchFace;
 
 use super::*;
 
@@ -225,25 +224,6 @@ fn reserve(count: &mut usize, extra: usize, maximum: usize) -> Result<(), Refusa
             )
         })?;
     Ok(())
-}
-
-pub(super) fn prepare(
-    model: &Model,
-    faces: &[FaceId],
-    options: &MeshOptions,
-    dec: &mut Decider,
-) -> Result<Junction, Refusal> {
-    let mut definitions = Vec::with_capacity(faces.len());
-    for &face in faces {
-        let checked = RationalPatchFace::of_face(model, face, dec)?
-            .ok_or_else(|| bad("a generic patch mesh requires its checked finite domain"))?;
-        definitions.push(Definition {
-            face,
-            support: Support::Patch(checked.support().clone()),
-            rows: checked.rows(),
-        });
-    }
-    prepare_definitions(model, definitions, options, false, dec)
 }
 
 pub(super) fn prepare_definitions(

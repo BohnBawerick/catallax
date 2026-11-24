@@ -218,6 +218,8 @@ impl Global<'_> {
                 return ii == 0 || ii >= nu - 1;
             }
             let cosine = v1.dot(v2) / (l1 * l2);
+            // A NaN cosine must pass this check.
+            #[allow(clippy::manual_range_contains)]
             if cosine < LIMIT1 || cosine > -LIMIT1 {
                 return false;
             }

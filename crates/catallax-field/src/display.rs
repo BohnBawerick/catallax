@@ -588,6 +588,21 @@ fn mesh_plan_inner(
             "positive tolerance and cell limit, and at least four vertices required",
         ));
     }
+    if let Some(shell) = plan.result_patch_shell()
+        && let Some(face_count) = shell.loft_display_face_count()
+        && let Instruction::Leaf(leaf) = plan.instructions[plan.root]
+    {
+        let faces: Vec<_> = plan
+            .faces
+            .iter()
+            .enumerate()
+            .filter(|(_, face)| face.leaf == leaf)
+            .filter_map(|(index, _)| plan.result_face(index))
+            .collect();
+        if faces.len() == face_count {
+            return shell.mesh(&faces, options, dec);
+        }
+    }
     if let Some(mesh) = oblique_draft::mesh(plan, options, dec)? {
         return Ok(mesh);
     }

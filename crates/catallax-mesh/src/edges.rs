@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
@@ -9,7 +12,7 @@ use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
     EdgeMesh, Mesh, MeshOptions,
-    chart::{self, BITS, Chart, Uv, align},
+    chart::{self, BITS, Chart, Trim, Uv, align},
     failure,
 };
 
@@ -125,38 +128,6 @@ fn reserve_position(count: usize, options: &MeshOptions) -> Result<(), Refusal> 
     Ok(())
 }
 
-pub(crate) struct ChordProof {
-    pub(crate) error: Rational,
-    pub(crate) replacement: Rational,
-    pub(crate) endpoints: [[Ball; 3]; 2],
-}
-
-/// Taylor's full-interval chord bound, including actual output-point replacement.
-pub(crate) fn trace_chord(
-    piece: &TracePiece,
-    interval: [&Rational; 2],
-    positions: [&[f64; 3]; 2],
-    dec: &Decider,
-) -> Result<ChordProof, Refusal> {
-    let [lo, hi] = interval;
-    let a = piece.evaluate(&Ball::from_rational(lo, BITS), dec)?;
-    let b = piece.evaluate(&Ball::from_rational(hi, BITS), dec)?;
-    let interval = Ball::from_rational(lo, BITS).hull(&Ball::from_rational(hi, BITS));
-    let second = piece.taylor(&interval, 2, dec)?.pop().unwrap();
-    let acceleration = second.iter().fold(Rational::zero(), |sum, x| {
-        sum + x.lo().abs().max(x.hi().abs())
-    });
-    let width = hi - lo;
-    let replacement = chart::residual(positions[0], &a).max(chart::residual(positions[1], &b));
-    let curvature = &(&acceleration * &width) * &width * Rational::from_ratio(1, 4).unwrap();
-    let error = &curvature + &replacement;
-    Ok(ChordProof {
-        error,
-        replacement,
-        endpoints: [a, b],
-    })
-}
-
 struct Cap<'a> {
     trace: &'a FilletCutTrace,
     chart: DisplayCut,
@@ -164,16 +135,27 @@ struct Cap<'a> {
     coefficient: Rational,
 }
 
+#[derive(Clone)]
 struct EdgePoint {
     xyz: [Ball; 3],
     cap_hint: Option<Uv>,
+    edge_end: Option<usize>,
+}
+
+struct RailLeaf {
+    piece: Arc<TracePiece>,
+    range: [Rational; 2],
+    indices: [usize; 2],
+    endpoints: [EdgePoint; 2],
+    depth: u32,
+    bound: Rational,
 }
 
 struct Sampler<'a> {
     piece: &'a Arc<TracePiece>,
     cap: Option<Cap<'a>>,
     spline: Option<RationalSpan>,
-    charts: &'a [&'a Chart],
+    charts: &'a [IncidentChart<'a>],
     spline_cosine: Option<Interval>,
     options: &'a MeshOptions,
     dec: &'a mut Decider,
@@ -181,6 +163,14 @@ struct Sampler<'a> {
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
     exact_positions: Option<&'a mut BTreeMap<usize, Position>>,
+    rail: Option<&'a mut Vec<RailLeaf>>,
+    split_leaf: bool,
+}
+
+struct IncidentChart<'a> {
+    chart: &'a Chart,
+    fixed_v: Option<f64>,
+    trim: Option<Trim>,
 }
 
 impl Sampler<'_> {
@@ -276,6 +266,7 @@ impl Sampler<'_> {
                             .hull(&Ball::from_rational(&chart::q(x.hi()), BITS))
                     }),
                     cap_hint,
+                    edge_end: None,
                 });
             }
         }
@@ -284,6 +275,7 @@ impl Sampler<'_> {
                 .piece
                 .evaluate(&Ball::from_rational(t, BITS), self.dec)?,
             cap_hint,
+            edge_end: None,
         })
     }
 
@@ -297,6 +289,7 @@ impl Sampler<'_> {
         endpoints: [&EdgePoint; 2],
     ) -> Result<(), Refusal> {
         self.dec.check_deadline()?;
+        let split_leaf = std::mem::take(&mut self.split_leaf);
         let [first, last] = indices;
         let [a, b] = endpoints;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
@@ -321,10 +314,13 @@ impl Sampler<'_> {
             small &= crate::controls::length_squared(self.positions[first], self.positions[last])
                 <= limit * limit;
         }
-        for chart in self.charts {
+        for incident in self.charts {
+            let chart = incident.chart;
             if let (Some(spline), Surface::BSpline(support)) = (chart.spline(), &chart.surface) {
                 if small {
-                    let hints = if let (Some(cap), SplineSupport::SplineFillet(fillet)) =
+                    let hints = if let Some(trim) = incident.trim {
+                        [a, &middle_point, b].map(|point| point.edge_end.map(|i| trim.ends[i]))
+                    } else if let (Some(cap), SplineSupport::SplineFillet(fillet)) =
                         (&self.cap, support)
                         && cap.trace.fillet().shares_definition_nodes(fillet)
                     {
@@ -343,7 +339,11 @@ impl Sampler<'_> {
                     small = spline.edge_within(
                         [self.positions[first], middle, self.positions[last]],
                         hints,
-                        Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3)),
+                        incident
+                            .trim
+                            .map(|trim| trim.fixed)
+                            .or_else(|| incident.fixed_v.map(|v| (1, v))),
+                        self.options,
                         self.spline_cosine,
                         self.dec,
                     )?;
@@ -383,7 +383,17 @@ impl Sampler<'_> {
                 self.dec,
             )?;
         }
-        if small {
+        if small && !split_leaf {
+            if let Some(rail) = &mut self.rail {
+                rail.push(RailLeaf {
+                    piece: Arc::clone(self.piece),
+                    range: [lo, hi],
+                    indices,
+                    endpoints: [a.clone(), b.clone()],
+                    depth,
+                    bound: bound.clone(),
+                });
+            }
             *self.error = self.error.clone().max(bound);
             self.indices.push(last);
             return Ok(());
@@ -411,6 +421,117 @@ impl Sampler<'_> {
             [&middle_point, b],
         )
     }
+}
+
+fn plan_collar_rail(
+    leaves: Vec<RailLeaf>,
+    charts: &[IncidentChart<'_>],
+    edge_cosine: Option<Interval>,
+    options: &MeshOptions,
+    positions: &mut Vec<[f64; 3]>,
+    dec: &mut Decider,
+) -> Result<(Vec<usize>, Rational), Refusal> {
+    let angle = options.angular_deviation.as_ref().expect("angular rail");
+    let cosine = crate::controls::cosine_enclosure(angle, dec)?;
+    let mut pending = BTreeSet::new();
+    let mut ordered = BTreeMap::new();
+    for (ordinal, leaf) in leaves.into_iter().enumerate() {
+        dec.charge_traversal(1)?;
+        let key = (ordinal, leaf.range[0].clone());
+        pending.insert(key.clone());
+        ordered.insert(key, leaf);
+    }
+    while let Some(right_key) = pending.pop_first() {
+        dec.charge_traversal(2)?;
+        let (left_key, left) = ordered
+            .range(..right_key.clone())
+            .next_back()
+            .or_else(|| ordered.last_key_value())
+            .expect("nonempty rail");
+        let right = &ordered[&right_key];
+        let [a, b] = left.indices;
+        let [start, c] = right.indices;
+        debug_assert_eq!(b, start);
+        let samples = [a, b, c].map(|index| positions[index]);
+        let mut fits = true;
+        for incident in charts {
+            dec.charge_traversal(1)?;
+            if let Some(row) = incident.fixed_v
+                && matches!(
+                    incident.chart.surface,
+                    Surface::BSpline(SplineSupport::RollingSaddle(_))
+                )
+            {
+                let chart = incident.chart.spline().expect("saddle band chart");
+                fits &= chart.rail_pair_fits(samples, row, options, cosine, edge_cosine, dec)?;
+            }
+        }
+        if fits {
+            continue;
+        }
+        let left_length = crate::controls::length_squared(samples[0], samples[1]);
+        let right_length = crate::controls::length_squared(samples[1], samples[2]);
+        let split = if left_length >= right_length {
+            left_key.clone()
+        } else {
+            right_key
+        };
+        // Only the new leaves and the following pair change. Process them
+        // in the same cyclic order as the original scan.
+        dec.charge_traversal(1)?;
+        let successor = ordered
+            .range((
+                std::ops::Bound::Excluded(&split),
+                std::ops::Bound::Unbounded,
+            ))
+            .next()
+            .or_else(|| ordered.first_key_value())
+            .expect("nonempty rail")
+            .0;
+        pending.insert(successor.clone());
+        let leaf = ordered.remove(&split).expect("pending leaf");
+        let mut children = Vec::new();
+        let mut unused_indices = Vec::new();
+        let mut error = Rational::zero();
+        let spline = leaf.piece.display_spline_span(dec)?;
+        Sampler {
+            piece: &leaf.piece,
+            cap: None,
+            spline,
+            charts,
+            spline_cosine: edge_cosine,
+            options,
+            dec,
+            positions,
+            indices: &mut unused_indices,
+            error: &mut error,
+            exact_positions: None,
+            rail: Some(&mut children),
+            split_leaf: true,
+        }
+        .segment(
+            leaf.range[0].clone(),
+            leaf.range[1].clone(),
+            leaf.indices,
+            leaf.depth,
+            None,
+            leaf.endpoints.each_ref(),
+        )?;
+        for child in children {
+            dec.charge_traversal(1)?;
+            let key = (split.0, child.range[0].clone());
+            pending.insert(key.clone());
+            ordered.insert(key, child);
+        }
+    }
+    let mut indices = vec![ordered.first_key_value().expect("nonempty rail").1.indices[0]];
+    let mut error = Rational::zero();
+    for leaf in ordered.into_values() {
+        dec.charge_traversal(1)?;
+        indices.push(leaf.indices[1]);
+        error = error.max(leaf.bound);
+    }
+    Ok((indices, error))
 }
 
 // One envelope row, kept on the envelope grid so both its faces share it.
@@ -531,14 +652,57 @@ pub(crate) fn sample_selected(
         rails: Rails::default(),
         marks: model.body(body).marks.clone(),
     };
-    let mut adjacent = BTreeMap::<EdgeId, Vec<&Chart>>::new();
+    let mut adjacent = BTreeMap::<EdgeId, Vec<IncidentChart>>::new();
     for (&face, chart) in charts {
+        let band_rails = match &chart.surface {
+            Surface::BSpline(SplineSupport::RollingPipe(_)) => {
+                let rows = match catallax_topology::pipe_rows(model, face, dec)? {
+                    Some(rows) => Some(rows),
+                    None => catallax_topology::partial_pipe_rows(model, face, dec)?,
+                };
+                rows.map(|rows| rows.map(|(edge, _)| edge))
+            }
+            Surface::BSpline(SplineSupport::EllipticOffset(_)) => {
+                Some(catallax_topology::SplinePrism::check(model, body, dec)?.rings())
+            }
+            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_)) => {
+                Some(
+                    catallax_topology::saddle_rows(model, face)
+                        .ok_or_else(|| failure("periodic rolling band has no checked rails"))?
+                        .map(|(edge, _)| edge),
+                )
+            }
+            Surface::BSpline(SplineSupport::ObliqueDraft(_)) => {
+                let cell = catallax_topology::DraftedCylinder::check(model, body, dec)?;
+                if face == cell.faces()[2] {
+                    Some(cell.rings())
+                } else {
+                    cell.hole().map(|(_, _, rings)| rings)
+                }
+            }
+            _ => None,
+        };
         for &l in &model.face(face).loops {
             match model.loop_(l) {
                 Loop::Coedges(cs) => {
                     for &c in cs {
-                        let incident = adjacent.entry(model.coedge(c).edge).or_default();
-                        incident.push(chart);
+                        let edge = model.coedge(c).edge;
+                        let fixed_v = band_rails.and_then(|rows| {
+                            rows.iter()
+                                .position(|&rail| rail == edge)
+                                .map(|row| row as f64)
+                        });
+                        let trim = chart.trim(edge).map(|mut trim| {
+                            if model.edge(edge).sense == Sense::Reversed {
+                                trim.ends.reverse();
+                            }
+                            trim
+                        });
+                        adjacent.entry(edge).or_default().push(IncidentChart {
+                            chart,
+                            fixed_v,
+                            trim,
+                        });
                     }
                 }
                 Loop::Vertex(v) => {
@@ -562,6 +726,33 @@ pub(crate) fn sample_selected(
         None
     };
     for edge_id in selected {
+        let local_options = adjacent.get(&edge_id).and_then(|charts| {
+            let chord = charts
+                .iter()
+                .filter_map(|incident| incident.chart.chord_goal.as_ref())
+                .min()?;
+            Some(MeshOptions {
+                chord_tolerance: chord.clone(),
+                ..options.clone()
+            })
+        });
+        let options = local_options.as_ref().unwrap_or(options);
+        let spline_cosine = if adjacent.get(&edge_id).is_some_and(|charts| {
+            charts.iter().any(|incident| {
+                matches!(
+                    incident.chart.surface,
+                    Surface::BSpline(SplineSupport::RollingSaddle(_))
+                )
+            })
+        }) {
+            options
+                .angular_deviation
+                .as_ref()
+                .map(|angle| crate::controls::cosine_enclosure(&angle.mul_pow2(-1), dec))
+                .transpose()?
+        } else {
+            spline_cosine
+        };
         if let Some(seed) = junction.and_then(|junction| junction.seed(edge_id)) {
             seeded(model, edge_id, seed, options, dec, &mut result)?;
             continue;
@@ -593,7 +784,7 @@ pub(crate) fn sample_selected(
             .transpose()?;
         let planar = adjacent[&edge_id]
             .iter()
-            .any(|chart| matches!(chart.surface, catallax_shapes::Surface::Plane(_)));
+            .any(|incident| matches!(incident.chart.surface, Surface::Plane(_)));
         let first = if let Some(v) = from {
             result.vertex(model, v, options, dec)?
         } else {
@@ -615,6 +806,17 @@ pub(crate) fn sample_selected(
         };
         let mut indices = vec![first];
         let mut error = Rational::zero();
+        let plan_collar = from == to
+            && !planar
+            && options.angular_deviation.is_some()
+            && adjacent[&edge_id].iter().any(|incident| {
+                incident.fixed_v.is_some()
+                    && matches!(
+                        incident.chart.surface,
+                        Surface::BSpline(SplineSupport::RollingSaddle(_))
+                    )
+            });
+        let mut rail = Vec::new();
         for (i, piece) in pieces.iter().enumerate() {
             let next_values;
             let first_values = if i == 0 {
@@ -652,18 +854,19 @@ pub(crate) fn sample_selected(
                     })
                 })
                 .transpose()?;
-            let endpoint = |i: usize, xyz| EdgePoint {
+            let endpoint = |i: usize, xyz, whole_edge: bool| EdgePoint {
                 xyz,
                 cap_hint: cap.as_ref().map(|cap| {
                     let side = if cap.forward { i } else { 1 - i };
                     [cap.trace.cut().ends[side].to_f64_nearest(), side as f64]
                 }),
+                edge_end: whole_edge.then_some(i),
             };
-            let first_point = endpoint(0, first_values.clone());
-            let last_point = endpoint(1, last_values);
+            let first_point = endpoint(0, first_values.clone(), i == 0);
+            let last_point = endpoint(1, last_values, i + 1 == pieces.len());
             let spline = if adjacent[&edge_id]
                 .iter()
-                .any(|chart| chart.spline().is_some())
+                .any(|incident| incident.chart.spline().is_some())
             {
                 piece.display_spline_span(dec)?
             } else {
@@ -681,6 +884,8 @@ pub(crate) fn sample_selected(
                 indices: &mut indices,
                 error: &mut error,
                 exact_positions: planar.then_some(&mut result.exact_positions),
+                rail: plan_collar.then_some(&mut rail),
+                split_leaf: false,
             }
             .segment(
                 Rational::zero(),
@@ -691,13 +896,24 @@ pub(crate) fn sample_selected(
                 [&first_point, &last_point],
             )?;
         }
+        if plan_collar {
+            (indices, error) = plan_collar_rail(
+                rail,
+                &adjacent[&edge_id],
+                spline_cosine,
+                options,
+                &mut result.mesh.positions,
+                dec,
+            )?;
+        }
         // Chart seams can add a trace sample closer to an endpoint than the
         // periodic display grid can distinguish. Remove only interior mesh
         // samples, retaining the exact edge and both topological endpoints.
         let mut i = 1;
         while i < indices.len() {
             let (a, b) = (indices[i - 1], indices[i]);
-            let collapses = adjacent[&edge_id].iter().any(|chart| {
+            let collapses = adjacent[&edge_id].iter().any(|incident| {
+                let chart = incident.chart;
                 chart.spline().is_none()
                     && chart::key(chart.canonical(chart.project(result.mesh.positions[a])))
                         == chart::key(chart.canonical(chart.project(result.mesh.positions[b])))

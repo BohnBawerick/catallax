@@ -673,6 +673,8 @@ impl SolverHooks for CurveCurveHooks<'_> {
                         line2.start,
                         line2.vector,
                     ) {
+                        // NaN line parameters must fail this test.
+                        #[allow(clippy::manual_range_contains)]
                         if (p1 < EFF_ZERO_SQRT || p1 > 1.0 - EFF_ZERO_SQRT)
                             && (p2 < EFF_ZERO_SQRT || p2 > 1.0 - EFF_ZERO_SQRT)
                         {
@@ -686,6 +688,8 @@ impl SolverHooks for CurveCurveHooks<'_> {
                         }
                     } else if direction1.dot(direction2) < EFF_ZERO {
                         let p1 = line_closest_point(line1.start, line1.vector, point2);
+                        // A NaN line parameter must fail this test.
+                        #[allow(clippy::manual_range_contains)]
                         if p1 < EFF_ZERO || p1 > 1.0 - EFF_ZERO {
                             solver.add_sorted_solution(
                                 &*self,
@@ -857,6 +861,8 @@ impl SolverHooks for CurveCurveHooks<'_> {
                     return Ok(false);
                 }
                 let parameter = line_closest_point(own_line.start, own_line.vector, target_point);
+                // A NaN line parameter must fail this test.
+                #[allow(clippy::manual_range_contains)]
                 if parameter < EFF_ZERO || parameter > 1.0 - EFF_ZERO {
                     solver.add_sorted_solution(
                         &*self,

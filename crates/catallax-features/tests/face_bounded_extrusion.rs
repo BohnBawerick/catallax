@@ -1,3 +1,4 @@
+//! Exact face starts and ends through the public recipe evaluator.
 use catallax_features::{Built, evaluate};
 use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::{Recipe, Role};
@@ -21,11 +22,11 @@ fn run(value: &Value) -> Built {
     let (built, work) =
         with_operation_budget(100_000_000, || evaluate(&recipe, &mut Decider::default()));
     let built = built.unwrap_or_else(|error| panic!("{}: {error} ({work:?})", recipe.name));
-    assert!(
-        built.model.check(built.result).is_empty(),
-        "{}",
-        recipe.name
-    );
+    let (faults, validation) = with_operation_budget(100_000_000, || {
+        catallax_boolean::check_body(&built.model, built.result, &mut Decider::default())
+    });
+    let faults = faults.unwrap_or_else(|error| panic!("{}: {error} ({validation:?})", recipe.name));
+    assert!(faults.is_empty(), "{}: {faults:?}", recipe.name);
     assert!(
         built.model.body(built.result).marks.is_empty(),
         "{}",
@@ -182,4 +183,67 @@ fn a_bezier_extrusion_wall_can_be_both_cap_types() {
     let built = run(&from(to, "2"));
     cap_names(&built);
     volume(&built, 8.0);
+}
+
+#[test]
+fn stock_sphere_cone_and_torus_ends_match_geometric_integrals() {
+    let mut torus: Value =
+        serde_json::from_str(include_str!("fixtures/curved-limits/torus-entry-next.json")).unwrap();
+    torus["steps"][2]["op"] = json!("extrude_to");
+    torus["steps"][2]["limit"] = wall("wall");
+    let pi = std::f64::consts::PI;
+    for (value, expected) in [
+        (
+            serde_json::from_str(include_str!(
+                "fixtures/circular-sphere-limits/sphere-entry-to.json"
+            ))
+            .unwrap(),
+            pi * (90.0 - (2.0 / 3.0) * (125.0 - 64.0)),
+        ),
+        // Integrate 5 - sqrt((4 - z/5)^2 - y^2) over |y| <= 1/2 and |z - 5| <= 1/2.
+        (
+            serde_json::from_str(include_str!("fixtures/curved-limits/cone-entry-to.json"))
+                .unwrap(),
+            2.013_952_620_81,
+        ),
+        (
+            torus,
+            30.0 * pi - 6.0 * pi * (0.5 * 0.75_f64.sqrt() + 0.5_f64.asin()),
+        ),
+    ] {
+        let built = run(&value);
+        cap_names(&built);
+        volume(&built, expected);
+    }
+}
+
+#[test]
+fn a_curved_start_can_merge_with_and_cut_another_solid() {
+    for (kind, expected) in [("union", 40.0), ("subtract", 20.0)] {
+        let mut value = from(circle_sweep(), "2");
+        value["name"] = json!(format!("curved start {kind}"));
+        let steps = value["steps"].as_array_mut().unwrap();
+        steps.push(
+            json!({"id":"block","op":"block","size":["1","2","10"],"pose":pose(["-1/2","-1","0"])}),
+        );
+        steps.push(json!({"id":"result","op":"boolean","kind":kind,"target":"cap","tool":"block"}));
+        value["result"] = json!("result");
+        let built = run(&value);
+        volume(&built, expected);
+    }
+}
+
+#[test]
+fn a_round_profile_keeps_its_rim_on_a_transverse_cylinder() {
+    let mut value = circle_sweep();
+    value["steps"][2]["loops"] = json!([[
+        {"kind":"circle","id":"rim","centre":["0","0"],"radius":"2"}
+    ]]);
+    let built = run(&value);
+    cap_names(&built);
+    // Integrate (8 - sqrt(25 - y²)) over the disk of radius 2.
+    volume(&built, 38.982_234_412_964);
+    let built = run(&from(value, "2"));
+    cap_names(&built);
+    volume(&built, 8.0 * std::f64::consts::PI);
 }

@@ -12,7 +12,9 @@ use catallax_topology::{
 pub(crate) fn may_retry(error: &Refusal) -> bool {
     matches!(
         error.code,
-        "features.unsupported-limit-surface" | "features.unsupported-curved-limit"
+        "features.unsupported-limit-surface"
+            | "features.unsupported-curved-limit"
+            | "features.bezier-profile"
     )
 }
 
@@ -361,11 +363,11 @@ fn clip(
 }
 
 // A normal extrusion of a single circle is exactly the stock-cylinder scene.
-fn cylinder_recipe(
+fn circle_cylinder(
     recipe: &Recipe,
     target: &StepId,
     dec: &mut Decider,
-) -> Result<Option<Recipe>, Refusal> {
+) -> Result<Option<Operation>, Refusal> {
     let Some(Operation::Extrude {
         profile,
         distance,
@@ -408,18 +410,123 @@ fn cylinder_recipe(
     let RPoint3 { x, y, z } = crate::profile::rational_point(&frame, &local);
     let mut pose = plane.clone();
     pose.translation = catallax_recipe::Vector3([x.into(), y.into(), z.into()]);
-    let mut recipe = recipe.clone();
-    let step = recipe
-        .steps
-        .iter_mut()
-        .find(|step| &step.id == target)
-        .expect("checked target");
-    step.op = Operation::Cylinder {
+    Ok(Some(Operation::Cylinder {
         radius: radius.clone(),
         height: distance.value().abs().into(),
         pose,
+    }))
+}
+
+fn footprint_bounds(profile: &Profile) -> [[Rational; 2]; 2] {
+    std::array::from_fn(|axis| {
+        let mut range: Option<[Rational; 2]> = None;
+        for segment in profile.loops.iter().flat_map(|boundary| &boundary.segments) {
+            let [lo, hi] = if let Some((centre, radius_sq, _)) = &segment.circle {
+                let radius = Ball::from_rational(radius_sq, 64)
+                    .sqrt()
+                    .expect("positive profile radius")
+                    .hi();
+                [&centre[axis] - &radius, &centre[axis] + &radius]
+            } else {
+                [
+                    segment.start[axis].clone().min(segment.end[axis].clone()),
+                    segment.start[axis].clone().max(segment.end[axis].clone()),
+                ]
+            };
+            range = Some(match range {
+                Some([a, b]) => [a.min(lo), b.max(hi)],
+                None => [lo, hi],
+            });
+        }
+        range.expect("nonempty profile")
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn quadric(
+    model: &mut Model,
+    recipe: &Recipe,
+    target: &StepId,
+    sketch: (&StepId, &Profile),
+    authored: Option<&catallax_recipe::Vector3>,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<(BodyId, Rational), Refusal> {
+    let (profile_id, profile) = sketch;
+    let cap_error =
+        match curved::AuthoredCap::compile(recipe, target, profile_id, authored, None, dec) {
+            Ok(cap) => return Ok((cap.build(model, step, dec)?, cap.radius().clone())),
+            Err(error)
+                if may_retry(&error)
+                    && profile.loops.iter().any(|boundary| {
+                        boundary
+                            .segments
+                            .iter()
+                            .any(|segment| segment.circle.is_some())
+                    }) =>
+            {
+                error
+            }
+            Err(error) => return Err(error),
+        };
+    let mut enclosing = recipe.clone();
+    let sketch = enclosing
+        .steps
+        .iter_mut()
+        .find(|step| &step.id == profile_id)
+        .expect("checked profile");
+    let Operation::Sketch { loops, .. } = &mut sketch.op else {
+        unreachable!("checked sketch")
     };
-    Ok(Some(recipe))
+    let [[u0, u1], [v0, v1]] = footprint_bounds(profile).map(|[lo, hi]| {
+        let margin = (&hi - &lo) / Rational::from_i64(128);
+        [&lo - &margin, &hi + &margin]
+    });
+    *loops = vec![catallax_recipe::Loop(
+        [
+            [u1.clone(), v0.clone()],
+            [u1, v1.clone()],
+            [u0.clone(), v1],
+            [u0, v0],
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, point)| catallax_recipe::Segment::Line {
+            id: catallax_recipe::ElementId::new(format!("enclosure-{i}")).expect("fixed side id"),
+            to: catallax_recipe::Point2(point.map(Into::into)),
+        })
+        .collect(),
+    )];
+    let cap = curved::AuthoredCap::compile(&enclosing, target, profile_id, authored, None, dec)?;
+    let bound = cap.radius().clone();
+    let envelope = cap.build(model, step, dec)?;
+    let direction = direction(profile, authored)?;
+    let reach = extent(profile, &bound, &direction);
+    let offset = direction.scaled(&reach);
+    // Both construction caps are outside the envelope. The result inherits
+    // the actual sketch rim, never the four walls of the enclosure.
+    let tool = crate::extrude::extrude_vector(
+        model,
+        &shifted(profile, &offset.scaled(&Rational::from_i64(-1))),
+        step,
+        &offset.scaled(&Rational::from_i64(2)),
+        [None, None],
+        None,
+        dec,
+    )?;
+    let body = catallax_boolean::boolean(
+        model,
+        envelope,
+        tool,
+        catallax_boolean::BoolOp::Intersect,
+        dec,
+    )
+    .map_err(|error| error.refusal)?
+    .body;
+    if model.body(body).kind != BodyKind::Solid || !model.check(body).is_empty() {
+        return Err(cap_error);
+    }
+    Ok((body, bound))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -463,28 +570,29 @@ pub(crate) fn limit(
             ));
         }
     }
-    let cylinder = cylinder_recipe(recipe, target_id, dec)?.ok_or_else(|| {
+    let cylinder = circle_cylinder(recipe, target_id, dec)?.ok_or_else(|| {
         unsupported("the evaluated limiting target has no supported first-hit proof")
     })?;
-    // The target's original role was resolved on the real body, and only its wall reaches here.
-    // The equivalent cylinder has no dependency on the circle's authored segment id.
-    let mut cylinder = cylinder;
-    cylinder.result = target_id.clone();
-    let last = cylinder
-        .steps
-        .iter()
-        .position(|step| &step.id == profile_id)
-        .expect("checked profile")
-        .max(
-            cylinder
-                .steps
-                .iter()
-                .position(|step| &step.id == target_id)
-                .expect("checked target"),
-        );
-    cylinder.steps.truncate(last + 1);
-    let cap = curved::AuthoredCap::compile(&cylinder, target_id, profile_id, authored, None, dec)?;
-    Ok((cap.build(model, step, dec)?, cap.radius().clone()))
+    let mut target_step = recipe.step(target_id).expect("checked target").clone();
+    target_step.op = cylinder;
+    let definition = Recipe {
+        result: target_id.clone(),
+        steps: vec![
+            recipe.step(profile_id).expect("checked profile").clone(),
+            target_step,
+        ],
+        materials: Vec::new(),
+        ..recipe.clone()
+    };
+    quadric(
+        model,
+        &definition,
+        target_id,
+        (profile_id, profile),
+        authored,
+        step,
+        dec,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -534,15 +642,16 @@ pub(crate) fn start(
                 Surface::Plane(_)
             ) =>
         {
-            let cap = curved::AuthoredCap::compile(
+            quadric(
+                model,
                 &behind,
                 target_id,
-                profile_id,
+                (profile_id, &shifted_profile),
                 authored,
-                Some(reference),
+                step,
                 dec,
-            )?;
-            cap.build(model, step, dec)?
+            )?
+            .0
         }
         _ => {
             limit(

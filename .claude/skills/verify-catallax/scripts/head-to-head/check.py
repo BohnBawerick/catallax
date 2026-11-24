@@ -35,12 +35,14 @@ def check(case, variant, step_path, expected_faces):
         return result
     try:
         import OCP
+        from OCP.Bnd import Bnd_Box
+        from OCP.BRepBndLib import BRepBndLib
         from OCP.BRepCheck import BRepCheck_Analyzer
         from OCP.BRepClass3d import BRepClass3d_SolidClassifier
         from OCP.gp import gp_Pnt
         from OCP.IFSelect import IFSelect_RetDone
         from OCP.STEPControl import STEPControl_Reader
-        from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_IN, TopAbs_ON
+        from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_IN, TopAbs_ON, TopAbs_OUT
         from OCP.TopExp import TopExp_Explorer
     except ImportError as error:
         result['step'] = {'status': 'not-run', 'reason': 'OpenCASCADE binding unavailable', 'detail': str(error)}
@@ -70,10 +72,11 @@ def check(case, variant, step_path, expected_faces):
     from OCP.BRep import BRep_Tool
     from OCP.TopAbs import TopAbs_SHELL
     solid_list = entries(actual, TopAbs_SOLID)
+    faces_by_solid = [entries(solid, TopAbs_FACE) for solid in solid_list]
     # Union of distinct faces owned by any solid; a face shared by two solids counts once.
     owned = []
-    for solid in solid_list:
-        owned += [face for face in entries(solid, TopAbs_FACE) if not any(face.IsSame(o) for o in owned)]
+    for solid_faces in faces_by_solid:
+        owned += [face for face in solid_faces if not any(face.IsSame(o) for o in owned)]
     closed = (bool(solid_list) and len(owned) == faces
               and all(BRep_Tool.IsClosed_s(shell) for solid in solid_list
                       for shell in entries(solid, TopAbs_SHELL)))
@@ -96,17 +99,34 @@ def check(case, variant, step_path, expected_faces):
         return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]
-    solids = [BRepClass3d_SolidClassifier(s) for s in entries(actual, TopAbs_SOLID)]
+    solids = []
+    for solid, solid_faces in zip(solid_list, faces_by_solid):
+        face_boxes = []
+        if valid and closed:
+            for face in solid_faces:
+                box = Bnd_Box()
+                BRepBndLib.Add_s(face, box, False)
+                face_boxes.append(box)
+        solids.append((BRepClass3d_SolidClassifier(solid), face_boxes))
     checked, boundary, wrong = 0, 0, []
     for x in axes[0]:
         for y in axes[1]:
             for z in axes[2]:
                 point = (x, y, z)
                 distance = implicit(point)
+                upward_ray = Bnd_Box()
+                upward_ray.Update(*point)
+                upward_ray.OpenZmax()
                 states = []
-                for classifier in solids:
+                for classifier, face_boxes in solids:
                     classifier.Perform(gp_Pnt(*point), 1e-9)
-                    states.append(classifier.State())
+                    state = classifier.State()
+                    # A ray clear of every face box reaches infinity without
+                    # crossing the boundary, even if OCCT reports inside.
+                    if state == TopAbs_IN and face_boxes and all(
+                            not box.IsVoid() and box.IsOut(upward_ray) for box in face_boxes):
+                        state = TopAbs_OUT
+                    states.append(state)
                 if abs(distance) <= 1e-9 or TopAbs_ON in states:
                     boundary += 1
                     continue

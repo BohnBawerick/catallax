@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -21,6 +22,10 @@ from OCP.gp import gp_Pnt
 
 from test_loopless_faces import BINARY, DRIVER, ROOT, raw_solid, unique
 from test_partial_periodic_trims import converged_volume
+
+SCOREBOARD = DRIVER.parent / 'head-to-head'
+sys.path.insert(0, str(SCOREBOARD))
+from check import check as check_scoreboard
 
 # Independent OpenCASCADE construction from the dimensions, recorded in
 # docs/milestones/2026-10-27-p3-material.md for both junction radii.
@@ -57,6 +62,7 @@ class P3RoundCharts(unittest.TestCase):
         # to 17/2, so this point changes from outside to inside.
         probes = [((20, 15, 21), TopAbs_IN, TopAbs_IN), ((20, 15, 23), TopAbs_OUT, TopAbs_OUT),
                   ((28.4, 15, 11), TopAbs_OUT, TopAbs_IN)]
+        case = json.loads((SCOREBOARD / 'cases/P3-filleted-boss.json').read_text())
         for edited, (radius, expected_volume) in enumerate(VOLUMES.items()):
             with self.subTest(radius=radius), \
                     tempfile.TemporaryDirectory(prefix='catallax-p3-charts-') as temporary:
@@ -95,6 +101,13 @@ class P3RoundCharts(unittest.TestCase):
                         for point, *states in probes:
                             classifier = BRepClass3d_SolidClassifier(shape, gp_Pnt(*point), 1e-7)
                             self.assertEqual(classifier.State(), states[edited], point)
+                label = 'edit' if edited else 'construction'
+                result = check_scoreboard(case, label, path, 13)
+                self.assertEqual(result['step']['status'], 'passed', result)
+                membership = result['membership']
+                self.assertEqual(membership['wrong'], [])
+                self.assertEqual(membership['checked'], 188)
+                self.assertEqual(membership['boundary_unresolved'], 28)
 
 
 if __name__ == '__main__':

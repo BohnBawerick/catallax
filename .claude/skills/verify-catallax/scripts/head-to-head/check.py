@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check analytic values and membership; OpenCASCADE is only the STEP consumer."""
+from itertools import chain, product
 import json
 from pathlib import Path
 import sys
@@ -8,9 +9,7 @@ from analytic import definition
 
 
 def healing_off_read(step_path):
-    """The repository's raw StepToTopoDS builder at 1e-7 mm, with no ShapeFix, sewing
-    or SameParameter. It is reported beside the verdict and never decides it, so
-    every failure, including a missing helper or binding, comes back as data."""
+    """Report the raw StepToTopoDS read at 1e-7 mm without ShapeFix, sewing or SameParameter."""
     try:
         helpers = str(Path(__file__).resolve().parents[5] / 'tools/step-regressions')
         if helpers not in sys.path:
@@ -39,8 +38,10 @@ def check(case, variant, step_path, expected_faces):
         from OCP.BRepBndLib import BRepBndLib
         from OCP.BRepCheck import BRepCheck_Analyzer
         from OCP.BRepClass3d import BRepClass3d_SolidClassifier
-        from OCP.gp import gp_Pnt
+        from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
         from OCP.IFSelect import IFSelect_RetDone
+        from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+        from OCP.Precision import Precision
         from OCP.STEPControl import STEPControl_Reader
         from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_IN, TopAbs_ON, TopAbs_OUT
         from OCP.TopExp import TopExp_Explorer
@@ -84,8 +85,12 @@ def check(case, variant, step_path, expected_faces):
                       'opened': True, 'roots': roots, 'valid': valid, 'closed_solid': closed,
                       'solids': len(solid_list), 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
-    if case.get('step_read') == 'healing-off':
-        result['step']['healing_off'] = healing_off_read(step_path)
+    step_read = case.get('step_read')
+    if step_read in ('healing-off', 'healing-off-required'):
+        raw = healing_off_read(step_path)
+        result['step']['healing_off'] = raw
+        if step_read == 'healing-off-required' and not (raw['opened'] and raw['valid']):
+            result['step'].update(status='failed', reason='raw read invalid' if raw['opened'] else 'raw read failed')
     if 'census' in case and closed:
         # Material removal is judged from each kernel's exported solid, measured in OCCT.
         from OCP.BRepGProp import BRepGProp
@@ -99,6 +104,8 @@ def check(case, variant, step_path, expected_faces):
         return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]
+    probes = case.get('membership_probes_mm', [])
+    tolerance = 1e-9
     solids = []
     for solid, solid_faces in zip(solid_list, faces_by_solid):
         face_boxes = []
@@ -107,36 +114,40 @@ def check(case, variant, step_path, expected_faces):
                 box = Bnd_Box()
                 BRepBndLib.Add_s(face, box, False)
                 face_boxes.append(box)
-        solids.append((BRepClass3d_SolidClassifier(solid), face_boxes))
+        solids.append((solid, BRepClass3d_SolidClassifier(solid), face_boxes))
     checked, boundary, wrong = 0, 0, []
-    for x in axes[0]:
-        for y in axes[1]:
-            for z in axes[2]:
-                point = (x, y, z)
-                distance = implicit(point)
-                upward_ray = Bnd_Box()
-                upward_ray.Update(*point)
-                upward_ray.OpenZmax()
-                states = []
-                for classifier, face_boxes in solids:
-                    classifier.Perform(gp_Pnt(*point), 1e-9)
-                    state = classifier.State()
-                    # A ray clear of every face box reaches infinity without
-                    # crossing the boundary, even if OCCT reports inside.
-                    if state == TopAbs_IN and face_boxes and all(
-                            not box.IsVoid() and box.IsOut(upward_ray) for box in face_boxes):
-                        state = TopAbs_OUT
-                    states.append(state)
-                if abs(distance) <= 1e-9 or TopAbs_ON in states:
-                    boundary += 1
-                    continue
-                expected, got = distance < 0, TopAbs_IN in states
-                checked += 1
-                if expected != got:
-                    wrong.append({'point': point, 'expected': expected, 'actual': got})
+    for point in chain(product(*axes), map(tuple, probes)):
+        distance = implicit(point)
+        origin = gp_Pnt(*point)
+        upward_ray = Bnd_Box()
+        upward_ray.Update(*point)
+        upward_ray.OpenZmax()
+        states = []
+        for solid, classifier, face_boxes in solids:
+            classifier.Perform(origin, tolerance)
+            state = classifier.State()
+            # Use face boxes to select candidates, then check the trimmed faces.
+            if state == TopAbs_IN and face_boxes and all(
+                    not box.IsVoid() and box.IsOut(upward_ray) for box in face_boxes):
+                intersections = IntCurvesFace_ShapeIntersector()
+                intersections.Load(solid, tolerance)
+                intersections.Perform(gp_Lin(origin, gp_Dir(0, 0, 1)), 0., Precision.Infinite_s())
+                if intersections.IsDone() and intersections.NbPnt() == 0:
+                    state = TopAbs_OUT
+            states.append(state)
+        if abs(distance) <= tolerance or TopAbs_ON in states:
+            boundary += 1
+            continue
+        expected, got = distance < 0, TopAbs_IN in states
+        checked += 1
+        if expected != got:
+            wrong.append({'point': point, 'expected': expected, 'actual': got})
+    coverage = '216-point grid'
+    if probes:
+        coverage += f' and {len(probes)} case-specific points'
     result['membership'] = {'status': 'failed' if wrong else 'passed', 'checked': checked,
                             'boundary_unresolved': boundary, 'wrong': wrong,
-                            'coverage': '216-point grid against analytic predicates, not a global set equality proof'}
+                            'coverage': f'{coverage} against analytic predicates, not a global set equality proof'}
     return result
 
 

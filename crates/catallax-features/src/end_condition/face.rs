@@ -103,6 +103,25 @@ fn nearest(
     {
         return Ok(faces[closest]);
     }
+    let ambiguous = || {
+        bad(
+            "recipe.ambiguous-reference",
+            "near point has equal minimum distance to several trimmed faces",
+        )
+    };
+    // A rounded distance enclosure can overlap zero at a shared rim.
+    let mut containing = None;
+    for (&face, distance) in faces.iter().zip(&distances) {
+        if !distance.lower.is_zero() || !catallax_boolean::face_contains(model, face, point, dec)? {
+            continue;
+        }
+        if containing.replace(face).is_some() {
+            return Err(ambiguous());
+        }
+    }
+    if let Some(face) = containing {
+        return Ok(face);
+    }
     if distances.iter().all(|d| upper <= &d.lower)
         && distances
             .iter()
@@ -110,10 +129,7 @@ fn nearest(
             .count()
             > 1
     {
-        return Err(bad(
-            "recipe.ambiguous-reference",
-            "near point has equal minimum distance to several trimmed faces",
-        ));
+        return Err(ambiguous());
     }
     Err(unsupported(
         "trimmed-face distances do not prove a unique nearest face",

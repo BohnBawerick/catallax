@@ -84,7 +84,7 @@ The app has the Edit Suite frame, a full 2D sketcher, the part features above, 2
 
 These set the order of phase 1.
 
-1. **Most real STEP files do not open as verified solids.** The same 3,000-file census now has 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). All expected solids export and pass OCCT builder validity in 384 files (12.80%); builder processing may heal internally. The new consumer also retains 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
+1. **Most real STEP files do not open as verified solids.** The v0.4.0 checkpoint census of the same 3,000 files has 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040-1)). The 16 Nov tier capture it replaces had 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%), and 384 valid exports (12.80%); builder processing may heal internally. That capture also retained 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
 2. **The loft top cuts build above the 20M target.** All 14 recorded spline Boolean requests now write checked approximate STEP. The three original top requests build at the 100M application allowance, using 26.78M, 27.29M and 25.95M work. Their files pass raw OpenCASCADE validity with healing off and a later cut. [Stage work and checks](docs/phase1/spline-boolean-top-cuts/REPORT.md) join the phase-5 list.
 3. **Fillets, shells and draft work on certified families only.** Edge and wall features are the weakest area at 39%, and no line in it is complete.
 
@@ -117,7 +117,7 @@ Twelve things neither reference kernel does are not in the count. They include e
 
 **1.2 Real-file import**
 - Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
-- Measured: the [full frozen 3,000-file rerun](docs/research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%).
+- Measured: the [full frozen 3,000-file rerun](docs/research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%). The v0.4.0 checkpoint census replaces these figures: 759 complete-source valid solid exports (25.30%) and 884 full solid admissions ([Checkpoint 2](docs/checkpoints/checkpoint-2.md#cut-run-v040-1)).
 - Why here: it is the largest single gap, and it is the first thing a user meets: a bought-in part that will not open.
 - Unlocks: bought-in parts in every later feature, the ten real parts on the scoreboard, direct edits (2.5) and imports in the field (4.4).
 - Done when: the 3,000-file census is rerun and the share that imports is published beside the 6%. Replacing an imported file re-points every reference.
@@ -439,7 +439,7 @@ Twelve changes: seven widen an existing done-when line and five add a new milest
 
 #### File exchange
 
-10. **New line: STEP import parity (X2, X4).** A census target set against OpenCASCADE's 90.03% healed-valid figure. *Most real STEP files a user is sent open as checked solids.*
+10. **New line: STEP import parity (X2, X4).** A census target set against OpenCASCADE's 90.03% healed-valid figure. *Most real STEP files a user is sent open as checked solids.* Measured at v0.4.0: 759 files (25.30%). The target is set after the v0.5.0 census ([order item 9](#order-after-the-release)).
 11. **Widen 3.2 (X8).** Done when colours, names and annotations round-trip, beside the assembly. *A user can send and receive a full product file with its structure, colours and annotations.*
 
 #### Meshes and queries
@@ -457,6 +457,145 @@ With these twelve changes every line reaches 1 at its done-when line: 61 points,
 - Generated recipes with built-in checks run nightly and publish counts by outcome.
 - The SMLib port supplies the units this roadmap needs next.
 
+
+### After the joint release: one order for every item
+
+<a id="after-the-joint-release"></a>The owner's decision of 24 Nov 2026, closing the roadmap gap board: the owner's ten SolidDraft items are done before the joint release (Catallax 0.5.0, SolidDraft 0.8.0), and the whole list below stays in this file. After the release, the v0.5.0 scoreboard and census replace the numbers here, and the owner refines each item, the discussion points first. Quality comes before release speed, and release dates are tentative.
+
+This section adds to phases 1 to 5 and the coverage follow-on; it does not reorder their milestones. Each phase-5 and coverage line keeps its own text above. A **discussion point** is an item whose value to users is still open: it needs the owner's decision before anyone builds it.
+
+#### SolidDraft: the owner's ten items
+
+<a id="owner-soliddraft-items"></a>The owner's list of 23 Nov 2026, to be built beside a redesign of the app's interface. All ten count as release work. Most are already on SolidDraft main. What is left is in stage 1 of the order below.
+
+| # | What the owner asked for | On SolidDraft main | Left before the release |
+|---|---|---|---|
+| 1 | Parameters and configurations in one place, with browser-like tabs, clear icons and formulas written like Excel formulas. | Parameters and configurations pane, formulas, and a configuration table that reads and writes CSV and XLSX. | Check the formula syntax against Excel and the tabs against the owner's screenshots (order item 5). |
+| 2 | Themes; graphics presets for performance and quality, which set how display meshes are made; a bottom bar with measure, physical analysis, selection filter and default units. Some graphics options may be desktop only. | Bottom bar with physical analysis, selection filter and units. | Themes and graphics presets, in review in [SolidDraft PR 361](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/361) (order item 2). |
+| 3 | The left panel turns into the active feature's settings, showing more as the user needs it. | Feature panel with folding sections. | Nothing. |
+| 4 | A Solid Bodies folder in the part tree. A part tree shows nothing of assemblies, and an assembly tree shows little of its parts, except when editing a part in context. | Solid Bodies and Surface Bodies folders; separate part and assembly trees. | Edit a part in context inside an assembly (order item 3). |
+| 5 | Appearance on a face, a body or the whole part, overridden in an assembly. Display states assigned to one configuration or to all. A list of which appearance sits at which level, with less complexity than SOLIDWORKS. | Face, body, part and assembly appearances, display states and the assembly appearance list. | Nothing. |
+| 6 | Press S anywhere for a shortcut menu with sensible defaults that users can extend. | S menu per workspace with a Customize dialog. | Nothing. |
+| 7 | A hole wizard with the common standards, and a positions step that is easy to edit later. | ISO, ANSI, DIN, JIS, AS, BSI and GB tables, with Type and Positions tabs. | Nothing. |
+| 8 | Materials that carry yield strength and other properties, with an automatic colour the user can override. | Material dialog that edits every property, including yield strength, and a colour that becomes the material appearance. | Nothing. |
+| 9 | Progressive disclosure in the Create menu, with commands pinned to the ribbon. | Create menu with pins. | Nothing. |
+| 10 | Extrude with flip direction, merge result and From (sketch plane, surface, vertex, offset). | Flip, merge and From. | From on a curved or non-parallel face, which refuses today (order item 4). |
+
+#### Adopted additions G1 to G26
+
+<a id="adopted-additions"></a>The gap board compared this roadmap with Draftwright, quiddity and Specify for drawings and PMI, with OpenUSD, glTF, URDF, OBJ and STL readers for scene import, and with the v0.4.0 STEP census. The owner adopted all 26 additions on 24 Nov 2026. Priority is the board's recommendation; the owner may change it after the release measurements.
+
+| ID | Addition | Why | Fits under | Priority | Order item |
+|---|---|---|---|---|---|
+| G1 | Wider feature recognition on bare imports: compound holes, bolt circles, pockets, steps, grooves, turned bodies, chamfers and fillets, modelled threads, pads and ribs, face accounting, recall measured on a public corpus. | Recognition stops at round holes, hole patterns, round bosses and round-ended slots. quiddity covers about 50 families. Without more, most bare imports still need PMI by hand. | Drawings and PMI | high | 39 |
+| G2 | Angular dimensions and datum targets. | Both are common on real drawings. Our writer has no angle kind, and our reader skips both. | Drawings and PMI | medium | 41 |
+| G3 | Threads and knurls: thread depth in the file, threads drawn in views, knurl callouts. | Tapped holes are on most machined parts. A blind thread whose depth is lost from the file is a wrong part. | Drawings and PMI | high | 38 |
+| G4 | Inspection outputs: characteristic numbers, an inspection CSV and the AS9102 first-article workbook. | Specify writes all three from PMI. A supplier needs them to get a first article accepted. | Drawings and PMI | high | 40 |
+| G5 | Graphical PMI, written and read, and PMI edits on someone else's STEP file that keep the rest of its bytes. | Many viewers show only graphical PMI. A supplier annotating a customer's file must keep the rest of it. | [Coverage 11](#coverage-follow-on-complete-the-61-lines) (X8) | medium | 44 |
+| G6 | Revisions: a STEP diff report, requirements carried to the new revision, change markup on the drawing. | Specify and Draftwright both do this. Today a revised part only marks its drawing out of date. | Drawings and PMI | medium | 48 |
+| G7 | Drawing layout parity: half and break sections, automatic details, shaded pictorial views, more sheets and sizes, fits shown as limits, hole tables. | Long parts need break views. Large parts need A2 to A0 or several sheets. Draftwright picks all of these by itself. | Drawings and PMI | medium | 46 |
+| G8 | Drawing outputs: a PNG of the sheet, DXF with native dimension entities, settings kept in the file, BOM as CSV or JSON. | Shops edit DXF in their own CAD. Purchasing wants the BOM as data, not a picture. | Drawings and PMI | medium | 47 |
+| G9 | Interview breadth: hole function, defaults for machined or printed parts, suggestions from mates. | The interview has fixed rules (H7 boss, H13 pattern). A tapped or clearance hole gets the wrong default. | Drawings and PMI | medium | 42 |
+| G10 | A Python API and command line for PMI and drawings. | Draftwright, quiddity and Specify all ship Python wheels and a command line for scripted and CI use. | New: scripting surface | low | 14 |
+| G11 | Scene instancing: OpenUSD PointInstancer and glTF GPU instancing. | Omniverse and SimReady scenes place bolts, shelves and parts by PointInstancer. Today they are dropped. | New: scene import line | medium | 32 |
+| G12 | Scene looks: per-face materials, UVs and textures, full PBR and MDL, vertex colours, in OpenUSD, glTF, OBJ and STL. | Imported scenes arrive with one flat colour per mesh. Users read that as a broken import. | New: scene import line | high | 30 |
+| G13 | Compressed glTF: Draco, meshopt and quantised meshes. | Most web and Sketchfab glTF files are compressed, and we refuse them by name. | New: scene import line | high | 29 |
+| G14 | Robots and physics: UsdPhysics bodies and collision, URDF collision and inertial data, xacro, COLLADA meshes, ROS package paths. | Isaac Sim and ROS robots carry these. Mass and collision are what a mechanical check needs. | New: scene import line | medium | 34 |
+| G15 | Omniverse plumbing: omniverse:// Nucleus paths, live layers, variant choice, usdz, kind, customData, omni: attributes, scene choice. | Files from Nucleus reference other files by omniverse:// paths. Without a resolver those references drop. | New: scene import line | medium | 35 |
+| G16 | More geometry kinds: subdivision surfaces, Cone, Capsule, Plane, curves and points, NURBS patches, skins and animation poses. | Subdivision surfaces show as a coarse cage. The rest are noted and dropped. | New: scene import line | low | 36 |
+| G17 | Name everything the scene import skips. | Lights, cameras and some glTF materials drop with no note. The import record should list every drop. | New: scene import line | low, cheap | 31 |
+| G18 | Bring closed scene meshes in as solids through Catallax mesh import. | Catallax already makes an exact solid from a closed STL or OBJ mesh, but SolidDraft's scene import keeps every body a reference mesh, so measure, mass, mates and drawings refuse it. Scan fitting (4.4) then rebuilds editable faces. | 4.4 follow-on and SolidDraft scene import | high | 27 |
+| G19 | Put STEP import opening work in phase 5. | Work exhaustion is the top first blocker at v0.4.0: 836 surface-fit bodies, 609 curve-fit bodies and 918 files whose request was already spent. 5.1 lists no import case. | [5.1](#speed-and-simplification) | high | 18 |
+| G20 | Name the torus, offset and linear-extrusion surface families. | All 64 files measured one by one open only as retained surfaces (30 torus, 20 offset, 14 extrusion). | Coverage 10 | high | 23 |
+| G21 | Solids with voids, and bodies that are not solid. | Voids refused 40 files on 16 Nov. `not_solid` stops 74 bodies in 11 files at v0.4.0. | Coverage 10 | medium | 24 |
+| G22 | Repair broken source geometry and parse more files. | Broken source geometry stops 53 bodies, and 28 files fail to parse. OpenCASCADE heals these with ShapeFix. | Coverage 10 | medium | 25 |
+| G23 | Set the number for STEP import parity and keep the roadmap's import figure current. | Coverage 10 asks for a census target but gives none. This file quoted 12.80% after v0.4.0 measured 25.30%. | Roadmap edit after the tags | high | 9 |
+| G24 | Put the owner's ten SolidDraft items into this file. | SolidDraft has no roadmap of its own, and they lived only in a notes file. | [The owner's ten items](#owner-soliddraft-items) | high | 10 |
+| G25 | Read USD BRep (BrepArray) solids as exact solids. | NVIDIA's usd-brep stores exact solids in USD. Catallax writes one solid in that form but cannot read it. How many real files carry it is not measured, so measure that first. | Phase 3 app, beside USD export | medium | 12, 33 |
+| G26 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft. | The owner asked for it on 24 Nov. Settle the routes (closed mesh to solid, scan fitting, USD BRep), what users do with these parts and which scene work follows, before building any of it. | Before the scene import work | high | 11 |
+
+#### The order: 66 items
+
+<a id="order-after-the-release"></a>Every item after the release in one order: this file's own lines, the open exits the 0.5.0 milestone note carries, the owner's ten items and G1 to G26. 58 are tasks and 8 are discussion points. Stages 5 to 7 can run in parallel lanes. Inside a stage, the list is the build order.
+
+| # | Item | Kind | Source |
+|---|---|---|---|
+| | **1. Finish the release** (before the tags) | | |
+| 1 | Close the open release steps: both mains green, SolidDraft pinned to release/0.5.0, the Catallax replay and the SolidDraft strict scenario sweep, and land or park the lanes in flight. | task | release plan |
+| 2 | Owner item 2: land themes and graphics quality presets. | task | owner item 2 |
+| 3 | Owner item 4: edit a part in context inside an assembly. | task | owner item 4 |
+| 4 | Owner item 10: Extrude From on a curved or non-parallel face. | task | owner item 10 |
+| 5 | Owner item 1: check the formulas against Excel syntax and the configuration tabs against the owner's screenshots. | task | owner item 1 |
+| 6 | Fields on imported bodies in the app, if the SolidDraft pin move did not land. | task | open exit, phase 4 app |
+| | **2. Measure and write the plan down** (right after the tags) | | |
+| 7 | Checkpoints 3 and 4: the scoreboard and the census at v0.5.0. Every order call below should use these numbers. | task | release plan |
+| 8 | Recount coverage line by line. It has stood at 55% since 14 Nov. | task | release plan |
+| 9 | Roadmap edit: move the 3.5 mesher lines to phase 5, set the STEP import parity target, and replace the import figure with the v0.5.0 census. The v0.4.0 figure replaced the stale 12.80% on 24 Nov. | task | release plan, G23 |
+| 10 | Write the owner's ten SolidDraft items, this order and G1 to G26 into this file. Done 24 Nov 2026: this section. | task | G24 |
+| | **3. Decide before building** (first week after the release) | | |
+| 11 | Count how many real USD files carry exact BrepArray solids. This feeds item 12 and decides item 33. | task | G25, first step |
+| 12 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft: the routes (closed mesh to solid, scan fitting to editable faces, reading USD BRep), what users want to do with these parts, and which scene import work follows. It uses the item 11 count. Stage 6 waits on its answer. | discussion | G26 |
+| 13 | FEA (4.5): restart it or keep it parked. Parked by the owner on 13 Nov; it needs a yes or no, not work. | discussion | open exit 4.5 |
+| 14 | A Python API and command line for PMI and drawings. Worth it only if scripted or CI users are a target. | discussion | G10 |
+| | **4. Phase 5.1: speed and simplification** | | |
+| 15 | Click targets in SolidDraft: 100 ms stock, 500 ms Boolean, 1,000 ms feature. | task | [5.1](#speed-and-simplification) |
+| 16 | Slow steps: loft 35 s, loft-edge fillet 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s. | task | 5.1 |
+| 17 | The P8 thread sweep over 20M. | task | 5.1 |
+| 18 | STEP import work exhaustion: 836 surface-fit and 609 curve-fit bodies, and 918 files whose request was already spent. The largest single import blocker is a speed problem. | task | G19 |
+| 19 | One display mesher: meet the [3.5 done-when lines](#one-display-mesher) not yet fully met. The list has 11 lines; checkpoint 3 records which ones the release meets. | task | open exit 3.5 |
+| 20 | The GPU and every core carry what they can. | task | 5.1 |
+| 21 | Remove routes the measurements show are not needed. | task | 5.1 |
+| 22 | Windows packages and signed downloads. | task | 5.1 |
+| | **5. Real STEP files as solids** (after stage 4 frees the work budget) | | |
+| 23 | Torus, offset and linear-extrusion surfaces. 151 files do not open at all for these. | task | G20, coverage 10 |
+| 24 | Solids with voids, and bodies that are not solid. | task | G21, coverage 10 |
+| 25 | Repair broken source geometry and parse more files. | task | G22, coverage 10 |
+| 26 | STEP import parity: the census against the target set in item 9. This closes the 1.2 exit. | task | coverage 10, open exit 1.2 |
+| | **6. Scene parts in SolidDraft** (after the item 12 brainstorm) | | |
+| 27 | Closed scene meshes in as solids through Catallax mesh import. This gives most scene parts measure, mass, mates and drawings. | task | G18 |
+| 28 | Scan fitting follow-ons: automatic segmentation, tori, chamfers, pockets, freeform fitting. The route from triangle solids to editable faces. | task | 4.4 follow-on |
+| 29 | Compressed glTF: Draco, meshopt, quantised. | task | G13 |
+| 30 | Scene looks: per-face materials, textures, PBR, vertex colours. | task | G12 |
+| 31 | Name everything the scene import skips. Small; do it with the glTF work. | task | G17 |
+| 32 | Instancing: PointInstancer and glTF GPU instancing. | task | G11 |
+| 33 | Read USD BRep (BrepArray) solids as exact solids. Build only if item 11 finds real files. | discussion | G25 |
+| 34 | Robots and physics: UsdPhysics, URDF collision and inertial data, xacro, COLLADA. Worth it if robot users are a target. | discussion | G14 |
+| 35 | Omniverse plumbing: Nucleus paths, live layers, variants, usdz. Worth it if Nucleus users are a target. | discussion | G15 |
+| 36 | More geometry kinds: subdivision, Cone, Capsule, curves, NURBS patches, skins. Low value until users ask. | discussion | G16 |
+| | **7. Drawings and manufacturing information** (beside stages 5 and 6) | | |
+| 37 | Close the PMI exits. C1 needs OpenCASCADE to read all 14 items; it reads 13 today. It has no reader for the AP242 surface texture, so the bore finish is missing, and it keeps THRU on the hole diameter on the product only ([SolidDraft check](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/blob/f7bf033e7ed2a6b4e164173d6af0e910cef626d4/ci/fixtures/pmi/p1-bracket-pmi.json#L503-L506)). Run the bore edit in the browser (C2). | task | open exits C1, C2 |
+| 38 | Threads and knurls: depth in the file, thread views, knurl callouts. | task | G3 |
+| 39 | Wider feature recognition on bare imports. | task | G1 |
+| 40 | Inspection outputs: characteristic numbers, inspection CSV, AS9102 workbook. | task | G4 |
+| 41 | Angular dimensions and datum targets. | task | G2 |
+| 42 | Interview breadth: hole function, machined or printed defaults, mates. | task | G9 |
+| 43 | Colours, names and annotations round-trip; PMI read back by other readers. | task | coverage 11 |
+| 44 | Graphical PMI, and PMI edits on someone else's STEP file. | task | G5, coverage 11 |
+| 45 | IGES export beyond whole spheres and ring tori. | task | open exit 3.2 |
+| 46 | Drawing layout parity: break and half sections, details, sheets, hole tables. | task | G7 |
+| 47 | Drawing outputs: PNG, DXF with native dimensions, BOM as data. | task | G8 |
+| 48 | Revisions: STEP diff report and change markup. File replacement already re-points references; decide how much more users need. | discussion | G6 |
+| | **8. Complete the 61 coverage lines** (after stages 4 to 7) | | |
+| 49 | Coverage 4: every intersection pair and tangent contact, including P8's parametric-surface pair and the curved housing's unsupported pair. Booleans, fillets and sweeps below all need it. | task | [coverage 4](#coverage-intersections), exits 2.1 and 2.4 |
+| 50 | Coverage 5: Booleans and fillets on any spline solid, including imported multi-patch fillets and the spline-plane field edge. | task | [coverage 5](#coverage-spline-booleans-and-fillets), exits 2.1 and 4.2a |
+| 51 | Coverage 8: fillet, chamfer, shell and draft on any edge or face. | task | [coverage 8](#coverage-edge-and-wall) |
+| 52 | Coverage 6: sew, non-manifold, split, imprint; surface bodies as a recipe and an app command. | task | [coverage 6](#coverage-surface-bodies), exit 2.3 |
+| 53 | Coverage 9: direct edits on any face type, in SolidDraft. | task | coverage 9, exit 2.5 |
+| 54 | Coverage 7: any sweep with taper, guide, twist, helix, up-to-face. | task | [coverage 7](#coverage-general-sweeps), exit 2.4 |
+| 55 | Coverage 1: point fitting, N-sided and Gordon fills, guided lofts. | task | [coverage 1](#coverage-guided-loft) |
+| 56 | Coverage 2: offsets of any curve, surface or solid; projection. | task | coverage 2 |
+| 57 | Coverage 3: bend, twist, G2 blends, mesh Booleans and decimation on general input. | task | [coverage 3](#coverage-bend-twist-and-blends) |
+| 58 | Coverage 12: closest point and curvature; clash checks with no unresolved pair (38 of 78 open). | task | coverage 12, exit 3.3 |
+| 59 | Predictor: measure the 2M tier. | task | open exit 3.0B |
+| 60 | Field compare: the tangent-boss and narrow-cone refusals, and the sphere-ring rows. | task | open exit 4.2a |
+| 61 | Final checkpoint: every line at its done-when line. | task | this file |
+| | **9. Late** (low priority) | | |
+| 62 | Phase 5.2: the proof button, a whole-edge proof on request. The owner set it late and low. | task | [5.2](#speed-and-simplification) |
+| | **Always alongside** | | |
+| 63 | The resolve list: every refusal of possible geometry, fixed in batches. | task | [lanes](#lanes-that-never-stop) |
+| 64 | Each kernel operation reaches SolidDraft, browser first. | task | lanes |
+| 65 | Nightly generated recipes with counts by outcome. | task | lanes |
+| 66 | The SMLib port supplies the next units. | task | lanes |
 
 ### Checkpoint 2 lane assignment
 
@@ -561,6 +700,7 @@ Kernel lanes ran on Codex models and the app lane on Claude Opus. Codex cloud re
 | 16 Nov | The delivery rule of large PRs, minimal tests and no speed work stands until phase 5. | It finished phase 1, and its Later notes became the phase 5 list. |
 | 16 Nov | The 10 Nov port rule widens for 2.2: SMLib's surface-construction code may be adapted, with attribution, and Catallax's own checks decide what ships. | The NURBS toolkit is spline-only work. |
 | 16 Nov | Checkpoints stay undated, and the scoreboard and census run only at checkpoints. When model quota runs short, the owner decides at the time. | The owner's answers at Checkpoint 1. |
+| 24 Nov | The owner's ten SolidDraft items are release work. All 26 gap-board additions, G1 to G26, are adopted, and [one order for every item after the release](#after-the-joint-release) is kept in this file, to be refined after the v0.5.0 measurements. | The owner, closing the roadmap gap board. |
 
 ### Prototypes and research
 
@@ -593,12 +733,12 @@ Each entry links to a short file: what we were trying to achieve, why it was pro
 - Durable proof jobs and the bounded-modelling contract spec. Rejected on 14 Nov.
 - Decide-once merging, tolerance as a speed lever and the two fillet prototypes. Dropped or parked on measurement, see the table above.
 - Dual-implicit experiments and the old Draftwell queue. Closed on 12 Nov.
-- Not scheduled: machine-checked core arithmetic, the field choosing which shell faces survive, USD BRep slices, a pure field kernel as its own product.
+- Not scheduled: machine-checked core arithmetic, the field choosing which shell faces survive, a pure field kernel as its own product. Reading USD BRep solids is now a discussion point ([G25](#adopted-additions)).
 - Waiting on the owner: Windows signing, crates.io publication, when FEA restarts.
 
 ## Later planning: SolidDraft feature gaps
 
-The owner put all eleven proposals in Later. They are candidates for checkpoint review. Their letters identify the research proposals, and the sizes are rough audit estimates. Starting work requires the owner's decision at a checkpoint.
+The owner put all eleven proposals in Later. They are candidates for checkpoint review. Their letters identify the research proposals, and the sizes are rough audit estimates. Starting work requires the owner's decision at a checkpoint. The owner's ten SolidDraft items of 23 Nov are release work, not Later proposals: see [the owner's ten items](#owner-soliddraft-items).
 
 | Proposal | Use case | Rough size | Existing roadmap scope |
 |---|---|---|---|

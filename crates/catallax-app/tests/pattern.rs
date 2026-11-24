@@ -186,13 +186,21 @@ fn a_rational_composite_of_algebraic_rotations_saves_without_rounding() {
 
 #[test]
 fn reflected_first_hit_features_preserve_direction_and_limit_bindings() {
-    for operation in ["extrude_to", "extrude_next"] {
+    for operation in ["extrude_to", "extrude_next", "extrude_from"] {
         let mut value: serde_json::Value = serde_json::from_str(&source().to_text()).unwrap();
         value["format"] = json!("catallax-recipe/4");
         value["steps"][2] = json!({"id":"cut","op":operation,"target":"base","profile":"profile"});
-        if operation == "extrude_to" {
-            value["steps"][2]["limit"] = json!({"face":{"step":"base","role":"end"}});
-        }
+        let centroid = if operation == "extrude_from" {
+            value["format"] = json!(catallax_recipe::FORMAT_V6);
+            value["steps"][2]["start"] = json!({"face":{"step":"base"},"near":["3/2","3/2","3"]});
+            value["steps"][2]["distance"] = json!("3");
+            "-9/2"
+        } else {
+            if operation == "extrude_to" {
+                value["steps"][2]["limit"] = json!({"face":{"step":"base","role":"end"}});
+            }
+            "-3/2"
+        };
         let recipe = Recipe::parse(&value.to_string()).unwrap();
         let copy = FeatureInstance {
             placement: Isometry::reflection(
@@ -227,6 +235,6 @@ fn reflected_first_hit_features_preserve_direction_and_limit_bindings() {
         .unwrap()
         .value;
         assert!(mass.volume.contains(&Rational::from_i64(3)));
-        assert!(mass.centroid.unwrap()[2].contains(&Rational::parse("-3/2").unwrap()));
+        assert!(mass.centroid.unwrap()[2].contains(&Rational::parse(centroid).unwrap()));
     }
 }

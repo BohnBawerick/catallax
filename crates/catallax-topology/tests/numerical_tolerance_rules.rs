@@ -516,8 +516,8 @@ fn a_vertex_near_a_large_face_interior_is_a_pair() {
     // 0.008 mm above the base: 0.0022 > 0.008 / 5.
     let pair = face_pair(&near).expect("the apex and the base are a pair");
     assert_eq!(
-        pair.tolerance_sum_mm.to_f64_nearest(),
-        apex.to_f64_nearest()
+        pair.tolerance_sum_mm.to_f64_nearest().to_bits(),
+        apex.to_f64_nearest().to_bits()
     );
     assert!(
         (pair.distance_mm.to_f64_nearest() - 0.008).abs() < 1e-9,

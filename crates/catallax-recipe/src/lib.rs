@@ -61,7 +61,8 @@ pub use operation::{
     ThroughSide, Turn, ValueKind, VariableFilletEdge,
 };
 pub use recipe::{
-    FORMAT, FORMAT_V4, FORMAT_V5, LoftParameterization, MaterialRegion, Recipe, RecipeError, Step,
+    FORMAT, FORMAT_V4, FORMAT_V5, FORMAT_V6, LoftParameterization, MaterialRegion, Recipe,
+    RecipeError, Step,
 };
 pub use stock::CanonicalStock;
 

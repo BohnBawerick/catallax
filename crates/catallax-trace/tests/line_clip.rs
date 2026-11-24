@@ -168,7 +168,11 @@ fn near_touch() -> (Extent3, Vector3, Vector3, f64, f64) {
 
 fn assert_touch(span: (f64, f64), enter: f64, exit: f64) {
     assert!(span.0.is_finite() && span.1.is_finite(), "{span:?}");
-    assert_eq!(span.0, span.1, "{span:?}");
+    assert_eq!(
+        span.0.partial_cmp(&span.1),
+        Some(std::cmp::Ordering::Equal),
+        "{span:?}"
+    );
     assert!(
         span.0 >= exit && span.0 <= enter,
         "{span:?} between {exit:e} and {enter:e}"

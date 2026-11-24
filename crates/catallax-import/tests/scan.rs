@@ -117,10 +117,22 @@ fn a_cube_with_its_top_missing_is_a_reference_but_not_a_solid() {
     assert_eq!(report.nonmanifold_edges, 0);
     assert_eq!(scan.sha256(), catallax_import::sha256_hex(&bytes));
     // Over the hole the nearest surface is the rim or a side, not a lid.
-    assert_eq!(scan.fast_distance([1.0, 1.0, 2.0]), 1.0);
-    assert_eq!(scan.fast_distance([1.0, 1.0, 1.0]), 1.0);
-    assert_eq!(scan.fast_distance([1.0, 1.0, 0.5]), 0.5);
-    assert_eq!(scan.fast_distance([3.0, 1.0, 1.0]), 1.0);
+    assert_eq!(
+        scan.fast_distance([1.0, 1.0, 2.0]).to_bits(),
+        1.0_f64.to_bits()
+    );
+    assert_eq!(
+        scan.fast_distance([1.0, 1.0, 1.0]).to_bits(),
+        1.0_f64.to_bits()
+    );
+    assert_eq!(
+        scan.fast_distance([1.0, 1.0, 0.5]).to_bits(),
+        0.5_f64.to_bits()
+    );
+    assert_eq!(
+        scan.fast_distance([3.0, 1.0, 1.0]).to_bits(),
+        1.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -158,8 +170,14 @@ fn flipped_crossing_and_degenerate_triangles_are_kept_and_counted() {
         "the longest side holds the middle corner"
     );
     assert_eq!(scan.items()[14], ScanItem::Point(11));
-    assert_eq!(scan.fast_distance([6.0, 3.0, 0.0]), 3.0);
-    assert_eq!(scan.fast_distance([4.0, 0.0, 0.0]), 1.0);
+    assert_eq!(
+        scan.fast_distance([6.0, 3.0, 0.0]).to_bits(),
+        3.0_f64.to_bits()
+    );
+    assert_eq!(
+        scan.fast_distance([4.0, 0.0, 0.0]).to_bits(),
+        1.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -175,8 +193,14 @@ fn a_point_cloud_is_a_set_of_isolated_samples() {
     assert_eq!(scan.report().triangles, 0);
     assert_eq!(scan.items().len(), 6);
     assert!(scan.items().iter().all(|i| matches!(i, ScanItem::Point(_))));
-    assert_eq!(scan.fast_distance([2.0, 0.0, 0.5]), 0.0);
-    assert_eq!(scan.fast_distance([2.5, 0.0, 0.5]), 0.5);
+    assert_eq!(
+        scan.fast_distance([2.0, 0.0, 0.5]).abs().to_bits(),
+        0.0_f64.to_bits()
+    );
+    assert_eq!(
+        scan.fast_distance([2.5, 0.0, 0.5]).to_bits(),
+        0.5_f64.to_bits()
+    );
     // Unused vertices beside triangles are samples unless they equal a corner.
     let mut bytes = obj(&CUBE, &cube_triangles());
     bytes.extend_from_slice(b"v 2 2 2\nv 9 9 9\n");
@@ -226,7 +250,10 @@ fn empty_data_is_an_empty_reference_and_limits_are_stated() {
     empty.extend_from_slice(&0u32.to_le_bytes());
     let scan = read(&empty).unwrap();
     assert!(scan.is_empty());
-    assert_eq!(scan.fast_distance([0.0, 0.0, 0.0]), f64::INFINITY);
+    assert_eq!(
+        scan.fast_distance([0.0, 0.0, 0.0]).to_bits(),
+        f64::INFINITY.to_bits()
+    );
     let bytes = obj(&CUBE, &cube_triangles());
     let limited = |triangles, vertices| {
         ScanReference::read_with_limits(

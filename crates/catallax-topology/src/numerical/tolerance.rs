@@ -904,7 +904,7 @@ mod tests {
         assert_eq!(pair_verdict(0.25, 0.5, 3.74, 0.0), PairVerdict::Warn);
         assert_eq!(pair_verdict(0.25, 0.5, 1.5, 0.0), PairVerdict::Warn);
         assert_eq!(pair_verdict(0.25, 0.5, 1.49, 0.0), PairVerdict::Error);
-        assert_eq!(PAIR_INFLATION, 5.0);
+        assert_eq!(PAIR_INFLATION.to_bits(), 5.0_f64.to_bits());
         // A measured distance is known to its rounding. Within it of the
         // error threshold neither answer is given.
         assert_eq!(pair_verdict(0.25, 0.5, 1.5, 0.01), PairVerdict::Unresolved);

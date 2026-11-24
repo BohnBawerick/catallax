@@ -287,7 +287,7 @@ fn the_shell_classifies_as_the_brep_loft() {
         };
         if location == Location::Indeterminate {
             // Only a point on a side may stay open.
-            assert_eq!(distance.lo(), 0.0, "{p:?}");
+            assert_eq!(distance.lo().abs().to_bits(), 0.0_f64.to_bits(), "{p:?}");
             assert_eq!(expected, Location::Boundary, "{p:?}");
         } else {
             assert_eq!(location, expected, "{p:?}");
@@ -337,7 +337,7 @@ fn boundary_points_are_settled_or_left_open() {
             let p = on_side(k, &r(u), &r(v));
             let (location, distance) = shell.classify(&p, &mut decider()).unwrap();
             assert_eq!(location, Location::Indeterminate, "side {k} at {u}, {v}");
-            assert_eq!(distance.lo(), 0.0);
+            assert_eq!(distance.lo().abs().to_bits(), 0.0_f64.to_bits());
             assert_eq!(brep_location(&mut built, &p), Some(Location::Boundary));
         }
     }

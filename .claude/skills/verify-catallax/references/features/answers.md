@@ -5,7 +5,7 @@ Build exact geometry or compare the two recipe evaluators without a wall-clock c
 ## Sub-features
 
 - `answer.question`: question/2 produces manifest/3 and requested STEP.
-- `answer.recipe`: recipe/3, recipe/4 and recipe/5 produce topology and STEP for implemented operations.
+- `answer.recipe`: recipe/3 through recipe/6 produce topology and STEP for implemented operations.
 - `answer.oblique-draft`: the public `crates/catallax-features/tests/fixtures/draft-oblique.json` builds an exact finite ruled body. Ordinary recipe output uses manifest/5 with genuine `bspline` kinds and bounded STEP; native field output remains manifest/3 and writes its own closed `display.obj`. `tools/step-regressions/test_draft_oblique.py` checks raw STEP validity, independently integrated polar volumes, material membership and both display routes. General oblique hollow arrangements, swallowed oblique caps and certified angular controls remain typed coverage refusals.
 - `answer.rational-loft`: version 4/5 rational lofts retain physical face/edge names, exact line/arc/spline definitions and bounded STEP. The successful `loft-spline-prism.json` fixture has four faces, six edges and four vertices. Two three-circle natural cases retain an explicit 20M application `ResourceLimit`; see `docs/LOFT-CASES.md`, not a higher work cap.
 - `answer.compare`: each accepted recipe version produces a sampled comparison report.

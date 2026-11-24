@@ -232,7 +232,7 @@ fn migration_rejects_downgrades_unknown_formats_and_invalid_input() {
         "recipe.format"
     );
     let mut invalid = recipe;
-    invalid.format = "catallax-recipe/6".into();
+    invalid.format = "catallax-recipe/7".into();
     assert_eq!(
         invalid.loft_parameterization().unwrap_err().code(),
         "recipe.format"

@@ -227,7 +227,7 @@ pub(super) fn build(
         None,
         dec,
     )?;
-    let side = |s| Role::Side {
+    let side = |s: &str| Role::Side {
         segment: sides[s].clone(),
         path: None,
     };

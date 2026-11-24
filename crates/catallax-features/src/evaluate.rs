@@ -1326,21 +1326,24 @@ fn evaluate_impl(
                         }
                     })();
                     match result {
-                        Err(error) if face::may_retry(&error) => {
-                            match face::limit(
+                        Err(error)
+                            if recipe.format == catallax_recipe::FORMAT_V6
+                                && face::may_retry(&error) =>
+                        {
+                            let selected = limit
+                                .map(|reference| face::select(model, stock.body, reference, dec))
+                                .transpose()?;
+                            let (body, radius) = face::limit(
                                 model,
                                 recipe,
                                 (target, stock.body, &stock.radius),
                                 (profile, profile_value),
                                 direction.as_ref(),
-                                limit,
+                                selected,
                                 &step.id,
                                 dec,
-                            ) {
-                                Ok((body, radius)) => BodyValue { body, radius },
-                                Err(fallback) if face::may_retry(&fallback) => return Err(error),
-                                Err(fallback) => return Err(fallback),
-                            }
+                            )?;
+                            BodyValue { body, radius }
                         }
                         result => result?,
                     }

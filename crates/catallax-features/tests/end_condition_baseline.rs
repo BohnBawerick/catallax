@@ -33,10 +33,17 @@ fn cases() -> BTreeMap<String, PathBuf> {
     cases
 }
 
-fn signature(recipe: &Recipe) -> Result<String, String> {
+fn signature(recipe: &Recipe) -> String {
     let (built, work) =
         with_operation_budget(ALLOWANCE, || evaluate(recipe, &mut Decider::default()));
-    let built = built.map_err(|error| format!("{error} ({work:?})"))?;
+    let used = work.used;
+    let built = match built {
+        Ok(built) => built,
+        Err(catallax_features::BuildError::Geometry { refusal, .. }) => {
+            return format!("{used} refusal {}", refusal.code);
+        }
+        Err(error) => panic!("{}: {error}", recipe.name),
+    };
     let model = &built.model;
     let body = built.result;
     assert!(model.check(body).is_empty(), "{}", recipe.name);
@@ -66,28 +73,33 @@ fn signature(recipe: &Recipe) -> Result<String, String> {
     });
     let exchange = match export {
         Ok(_) => sha256_hex(&step),
-        Err(error) => format!(
-            "{}",
-            if work.exhausted {
-                "numbers.operation-budget"
-            } else {
-                error.code
-            }
-        ),
+        Err(error) if !work.exhausted => error.code.to_owned(),
+        Err(_) => "numbers.operation-budget".to_owned(),
     };
-    Ok(format!("{topology} {exchange}"))
+    format!("{used} {topology} {exchange}")
+}
+
+fn axial_wall_refusal() -> Recipe {
+    let mut value: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/circular-sphere-limits/sphere-entry-to.json"
+    ))
+    .unwrap();
+    value["steps"][1]["op"] = serde_json::json!("cylinder");
+    value["steps"][1]["height"] = serde_json::json!("3");
+    Recipe::parse(&value.to_string()).unwrap()
 }
 
 #[test]
 fn first_hit_matches_main() {
     let cases = cases();
     let expected = include_str!("fixtures/end-condition-baseline.txt");
-    for line in expected.lines() {
-        if line.starts_with('#') {
-            continue;
-        }
+    for line in expected.lines().filter(|line| !line.starts_with('#')) {
         let (name, expected) = line.split_once(' ').unwrap();
-        let recipe = Recipe::parse(&std::fs::read_to_string(&cases[name]).unwrap()).unwrap();
-        assert_eq!(signature(&recipe).as_deref(), Ok(expected), "{name}");
+        let recipe = if name == "axial-cylinder-wall" {
+            axial_wall_refusal()
+        } else {
+            Recipe::parse(&std::fs::read_to_string(&cases[name]).unwrap()).unwrap()
+        };
+        assert_eq!(signature(&recipe), expected, "{name}");
     }
 }

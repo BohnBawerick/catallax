@@ -228,7 +228,7 @@ fn migration_rejects_downgrades_unknown_formats_and_invalid_input() {
         "recipe.migration-review"
     );
     assert_eq!(
-        recipe.upgrade_to("catallax-recipe/6").unwrap_err().code(),
+        recipe.upgrade_to("catallax-recipe/7").unwrap_err().code(),
         "recipe.format"
     );
     let mut invalid = recipe;

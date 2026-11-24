@@ -2,7 +2,9 @@
 
 use super::*;
 use catallax_boolean::{PatchSelection, arrange};
+use catallax_measure::distance::PreparedFace;
 use catallax_numbers::MarkLog;
+use catallax_recipe::Step;
 
 use catallax_shapes::{Curve, Isometry, Line, SplineSupport, Vector3};
 
@@ -24,7 +26,12 @@ fn unsupported(detail: &str) -> Refusal {
     bad("features.unsupported-curved-limit", detail)
 }
 
-fn select(model: &Model, body: BodyId, reference: &FaceRef) -> Result<FaceId, Refusal> {
+pub(crate) fn select(
+    model: &mut Model,
+    body: BodyId,
+    reference: &FaceRef,
+    dec: &mut Decider,
+) -> Result<FaceId, Refusal> {
     let faces = model.faces_of_body(body);
     let uses: BTreeMap<_, _> = faces
         .iter()
@@ -62,10 +69,55 @@ fn select(model: &Model, body: BodyId, reference: &FaceRef) -> Result<FaceId, Re
             "recipe.missing-reference",
             "limit matches no trimmed target face",
         )),
-        _ => Err(unsupported(
-            "face placement needs one resolved trimmed face",
-        )),
+        _ => match &reference.near {
+            Some(near) => nearest(model, &matches, &point(near), dec),
+            None => Err(unsupported(
+                "face placement needs one resolved trimmed face",
+            )),
+        },
     }
+}
+
+fn nearest(
+    model: &mut Model,
+    faces: &[FaceId],
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<FaceId, Refusal> {
+    let options = Default::default();
+    let mut distances = Vec::with_capacity(faces.len());
+    for &face in faces {
+        let prepared = PreparedFace::new(model, face, dec)?;
+        distances.push(prepared.point_to_face(model, point, &options, dec)?);
+    }
+    let (closest, upper) = distances
+        .iter()
+        .enumerate()
+        .filter_map(|(i, distance)| Some((i, distance.upper.as_ref()?)))
+        .min_by(|a, b| a.1.cmp(b.1))
+        .ok_or_else(|| unsupported("no trimmed face has a certified near witness"))?;
+    if distances
+        .iter()
+        .enumerate()
+        .all(|(i, distance)| i == closest || upper < &distance.lower)
+    {
+        return Ok(faces[closest]);
+    }
+    if distances.iter().all(|d| upper <= &d.lower)
+        && distances
+            .iter()
+            .filter(|d| d.upper.as_ref() == Some(upper))
+            .count()
+            > 1
+    {
+        return Err(bad(
+            "recipe.ambiguous-reference",
+            "near point has equal minimum distance to several trimmed faces",
+        ));
+    }
+    Err(unsupported(
+        "trimmed-face distances do not prove a unique nearest face",
+    ))
 }
 
 fn direction(
@@ -368,36 +420,48 @@ fn footprint_bounds(profile: &Profile) -> [[Rational; 2]; 2] {
 fn quadric(
     model: &mut Model,
     recipe: &Recipe,
-    target: &StepId,
+    target: Step,
     sketch: (&StepId, &Profile),
     authored: Option<&catallax_recipe::Vector3>,
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(BodyId, Rational), Refusal> {
     let (profile_id, profile) = sketch;
-    let cap_error =
-        match curved::AuthoredCap::compile(recipe, target, profile_id, authored, None, dec) {
-            Ok(cap) => return Ok((cap.build(model, step, dec)?, cap.radius().clone())),
-            Err(error)
-                if may_retry(&error)
-                    && profile.loops.iter().any(|boundary| {
-                        boundary
-                            .segments
-                            .iter()
-                            .any(|segment| segment.circle.is_some())
-                    }) =>
-            {
-                error
-            }
-            Err(error) => return Err(error),
-        };
-    let mut enclosing = recipe.clone();
-    let sketch = enclosing
-        .steps
-        .iter_mut()
-        .find(|step| &step.id == profile_id)
-        .expect("checked profile");
-    let Operation::Sketch { loops, .. } = &mut sketch.op else {
+    let target_id = target.id.clone();
+    let mut definition = Recipe {
+        format: recipe.format.clone(),
+        name: recipe.name.clone(),
+        description: String::new(),
+        result: target_id.clone(),
+        steps: vec![
+            recipe.step(profile_id).expect("checked profile").clone(),
+            target,
+        ],
+        materials: Vec::new(),
+    };
+    let cap_error = match curved::AuthoredCap::compile(
+        &definition,
+        &target_id,
+        profile_id,
+        authored,
+        None,
+        dec,
+    ) {
+        Ok(cap) => return Ok((cap.build(model, step, dec)?, cap.radius().clone())),
+        Err(error)
+            if may_retry(&error)
+                && profile.loops.iter().any(|boundary| {
+                    boundary
+                        .segments
+                        .iter()
+                        .any(|segment| segment.circle.is_some())
+                }) =>
+        {
+            error
+        }
+        Err(error) => return Err(error),
+    };
+    let Operation::Sketch { loops, .. } = &mut definition.steps[0].op else {
         unreachable!("checked sketch")
     };
     let [[u0, u1], [v0, v1]] = footprint_bounds(profile).map(|[lo, hi]| {
@@ -419,7 +483,8 @@ fn quadric(
         })
         .collect(),
     )];
-    let cap = curved::AuthoredCap::compile(&enclosing, target, profile_id, authored, None, dec)?;
+    let cap =
+        curved::AuthoredCap::compile(&definition, &target_id, profile_id, authored, None, dec)?;
     let bound = cap.radius().clone();
     let envelope = cap.build(model, step, dec)?;
     let direction = direction(profile, authored)?;
@@ -491,7 +556,7 @@ pub(crate) fn limit(
     target: (&StepId, BodyId, &Rational),
     sketch: (&StepId, &Profile),
     authored: Option<&catallax_recipe::Vector3>,
-    reference: Option<&FaceRef>,
+    selected: Option<FaceId>,
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(BodyId, Rational), Refusal> {
@@ -499,10 +564,7 @@ pub(crate) fn limit(
     let (profile_id, profile) = sketch;
     let direction = direction(profile, authored)?;
     let reach = extent(profile, bound, &direction);
-    let face = reference
-        .map(|reference| select(model, target_body, reference))
-        .transpose()?;
-    if let Some(face) = face {
+    if let Some(face) = selected {
         let surface = model.geom().surface(model.face(face).surface).clone();
         let body = match &surface {
             Surface::Plane(plane) => Some(planar(
@@ -531,7 +593,7 @@ pub(crate) fn limit(
             unsupported("the evaluated limiting target has no supported first-hit proof")
         })?,
     };
-    if reference.is_none()
+    if selected.is_none()
         && let Some((face, plane)) = axial_cap(model, target_body, profile, &direction)
     {
         let body = planar(model, face, &plane, profile, &direction, &reach, step, dec)?;
@@ -542,19 +604,10 @@ pub(crate) fn limit(
     }
     let mut target_step = recipe.step(target_id).expect("checked target").clone();
     target_step.op = cylinder;
-    let definition = Recipe {
-        result: target_id.clone(),
-        steps: vec![
-            recipe.step(profile_id).expect("checked profile").clone(),
-            target_step,
-        ],
-        materials: Vec::new(),
-        ..recipe.clone()
-    };
     quadric(
         model,
-        &definition,
-        target_id,
+        recipe,
+        target_step,
         (profile_id, profile),
         authored,
         step,
@@ -577,22 +630,23 @@ pub(crate) fn start(
     let (target_id, target_body, bound) = target;
     let (profile_id, profile) = sketch;
     let direction = direction(profile, authored)?;
-    let face = select(model, target_body, reference)?;
-    if profile.is_empty() {
-        return Ok((catallax_topology::empty(model), Rational::zero()));
-    }
+    let face = select(model, target_body, reference, dec)?;
     if distance.is_zero() {
         return Err(bad(
             "extrude.zero-distance",
             "extrusion distance must not be zero",
         ));
     }
+    if profile.is_empty() {
+        return Ok((catallax_topology::empty(model), Rational::zero()));
+    }
     let reach = extent(profile, bound, &direction);
     let offset = direction.scaled(&(-reach));
     let behind = move_recipe(recipe, profile_id, &offset);
     let shifted_profile = shifted(profile, &offset);
-    let column = match behind.step(target_id).map(|step| &step.op) {
-        Some(Operation::Torus { .. }) => {
+    let target_step = behind.step(target_id).expect("checked target");
+    let column = match &target_step.op {
+        Operation::Torus { .. } => {
             let cap = toroidal::AnnularCap::compile(
                 &behind,
                 target_id,
@@ -603,7 +657,7 @@ pub(crate) fn start(
             )?;
             cap.build(model, target_body, &shifted_profile, step, dec)?
         }
-        Some(Operation::Sphere { .. } | Operation::Cylinder { .. } | Operation::Cone { .. })
+        Operation::Sphere { .. } | Operation::Cylinder { .. } | Operation::Cone { .. }
             if !matches!(
                 model.geom().surface(model.face(face).surface),
                 Surface::Plane(_)
@@ -612,7 +666,7 @@ pub(crate) fn start(
             quadric(
                 model,
                 &behind,
-                target_id,
+                target_step.clone(),
                 (profile_id, &shifted_profile),
                 authored,
                 step,
@@ -627,7 +681,7 @@ pub(crate) fn start(
                 target,
                 (profile_id, &shifted_profile),
                 authored,
-                Some(reference),
+                Some(face),
                 step,
                 dec,
             )?

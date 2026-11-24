@@ -162,13 +162,15 @@ pub(super) fn build(
     let sketch_origin = world(&[Rational::zero(), Rational::zero()]);
     let denominator = direction.dot(&normal);
     let height = |point: &RPoint3| point.minus(&sketch_origin).dot(&normal) / denominator.clone();
-    if height(&span[0]).sign() != Sign::Positive
-        || height(span.last().unwrap()).sign() != Sign::Positive
-    {
+    let rim_heights = [height(&span[0]).sign(), height(span.last().unwrap()).sign()];
+    if rim_heights.contains(&Sign::Negative) {
         return Err(bad(
             "features.limit-missed",
             "a spline cap endpoint lies behind the sketch",
         ));
+    }
+    if rim_heights.contains(&Sign::Zero) {
+        return Err(unsupported("the Bezier cap has a trim edge at zero depth"));
     }
     if span.iter().any(|p| height(p).sign() != Sign::Positive) {
         return Err(unsupported(

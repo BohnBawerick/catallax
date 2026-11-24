@@ -76,7 +76,7 @@ fn wall(segment: &str) -> Value {
 }
 
 fn circle_sweep() -> Value {
-    json!({"format":"catallax-recipe/5","name":"circle sweep target","steps":[
+    json!({"format":"catallax-recipe/6","name":"circle sweep target","steps":[
         {"id":"section","op":"sketch",
          "plane":{"rotation":["1","1","1","1"],"translation":["-5","0","8"]},
          "loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"5"}]]},
@@ -109,7 +109,7 @@ fn the_planar_cap_of_a_circle_sweep_is_a_trimmed_end() {
 fn blind_from_an_annular_torus_has_two_exact_curved_caps() {
     let mut value: Value =
         serde_json::from_str(include_str!("fixtures/curved-limits/torus-entry-next.json")).unwrap();
-    value["format"] = json!("catallax-recipe/5");
+    value["format"] = json!("catallax-recipe/6");
     value["steps"][2] = json!({
         "id":"cap","op":"extrude_from","target":"target","profile":"profile",
         "start":wall("wall"),"distance":"2"
@@ -120,7 +120,7 @@ fn blind_from_an_annular_torus_has_two_exact_curved_caps() {
 }
 
 fn from(mut value: Value, distance: &str) -> Value {
-    value["format"] = json!("catallax-recipe/5");
+    value["format"] = json!("catallax-recipe/6");
     let steps = value["steps"].as_array_mut().unwrap();
     let cap = steps.last_mut().unwrap().as_object_mut().unwrap();
     let limit = cap.remove("limit").unwrap();
@@ -160,7 +160,7 @@ fn blind_start_copies_quadric_caps_with_the_authored_signed_depth() {
 }
 
 fn spline_roof() -> Value {
-    json!({"format":"catallax-recipe/5","name":"Bezier roof limit","steps":[
+    json!({"format":"catallax-recipe/6","name":"Bezier roof limit","steps":[
         {"id":"section","op":"sketch",
          "plane":{"rotation":["1","1","0","0"],"translation":["0","0","0"]},
          "loops":[[
@@ -294,4 +294,116 @@ fn the_next_crossing_of_an_axial_circle_sweep_is_its_near_cap() {
     let built = run(&value);
     cap_names(&built);
     volume(&built, 12.0);
+}
+
+fn stock_cylinder() -> Value {
+    json!({"format":"catallax-recipe/6","name":"stock cylinder cap","steps":[
+        {"id":"target","op":"cylinder","radius":"5","height":"10","pose":pose(["0","0","0"])},
+        {"id":"profile","op":"sketch","plane":pose(["0","0","12"]),
+         "loops":rectangle(["-1","1"],["-1","1"])},
+        {"id":"cap","op":"extrude_to","target":"target","profile":"profile",
+         "direction":["0","0","-1"],"limit":{"near":["0","0","10"]}}
+    ],"result":"cap"})
+}
+
+#[test]
+fn near_resolves_the_trimmed_stock_cap_for_both_end_conditions() {
+    let to = stock_cylinder();
+    let built = run(&to);
+    cap_names(&built);
+    volume(&built, 8.0);
+
+    let built = run(&from(to, "3"));
+    cap_names(&built);
+    volume(&built, 12.0);
+}
+
+#[test]
+fn near_on_the_stock_rim_refuses_the_tied_faces() {
+    let mut value = stock_cylinder();
+    value["steps"][2]["limit"]["near"] = json!(["5", "0", "10"]);
+    for value in [value.clone(), from(value, "2")] {
+        assert_eq!(refusal(&value).code, "recipe.ambiguous-reference");
+    }
+}
+
+#[test]
+fn an_axial_round_profile_can_stop_at_the_next_stock_cap() {
+    let mut value = stock_cylinder();
+    value["steps"][1]["loops"] =
+        json!([[{"kind":"circle","id":"rim","centre":["0","0"],"radius":"2"}]]);
+    value["steps"][2]["op"] = json!("extrude_next");
+    value["steps"][2].as_object_mut().unwrap().remove("limit");
+    let built = run(&value);
+    cap_names(&built);
+    volume(&built, 8.0 * std::f64::consts::PI);
+}
+
+#[test]
+fn rectangular_proof_preserves_a_rim_named_by_a_later_feature() {
+    let mut value = stock_cylinder();
+    value["steps"][1]["plane"] = json!({"rotation":["1","1","1","1"],"translation":["0","0","5"]});
+    value["steps"][1]["loops"] =
+        json!([[{"kind":"circle","id":"rim","centre":["0","0"],"radius":"2"}]]);
+    value["steps"][2]["direction"] = json!(["1", "0", "0"]);
+    value["steps"][2]["limit"] = wall("wall");
+    let mut value = from(value, "2");
+    let steps = value["steps"].as_array_mut().unwrap();
+    steps.push(json!({"id":"empty","op":"sketch","plane":pose(["0","0","0"]),"loops":[]}));
+    steps.push(
+        json!({"id":"later","op":"extrude_from","target":"cap","profile":"empty",
+        "start":{"face":{"step":"cap","role":{"side":{"segment":"rim"}}}},"distance":"1"}),
+    );
+    let built = run(&value);
+    volume(&built, 8.0 * std::f64::consts::PI);
+}
+
+fn refusal(value: &Value) -> catallax_numbers::Refusal {
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (built, work) =
+        with_operation_budget(100_000_000, || evaluate(&recipe, &mut Decider::default()));
+    let catallax_features::BuildError::Geometry { refusal, .. } = built.expect_err(&recipe.name)
+    else {
+        panic!("{}: expected a geometric refusal ({work:?})", recipe.name);
+    };
+    refusal
+}
+
+#[test]
+fn a_bezier_trim_edge_at_zero_depth_requires_a_coverage_proof() {
+    let mut value = spline_roof();
+    value["steps"][2]["plane"] = pose(["0", "0", "3/2"]);
+    value["steps"][3]["direction"] = json!(["0", "0", "1"]);
+    let refusal = refusal(&value);
+    assert_eq!(
+        refusal.code, "features.unsupported-curved-limit",
+        "{refusal}"
+    );
+    assert!(refusal.detail.contains("zero depth"), "{refusal}");
+}
+
+#[test]
+fn empty_face_start_still_requires_nonzero_distance() {
+    let mut value = stock_cylinder();
+    value["steps"][1]["loops"] = json!([]);
+    value["steps"][2]["limit"] = json!({"face":{"step":"target","role":"end"}});
+    let value = from(value, "0");
+    assert_eq!(refusal(&value).code, "extrude.zero-distance");
+}
+
+#[test]
+fn face_start_requires_recipe_version_six() {
+    let mut value = from(stock_cylinder(), "2");
+    for version in [3, 4, 5] {
+        value["format"] = json!(format!("catallax-recipe/{version}"));
+        assert!(
+            Recipe::parse(&value.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("extrude_from requires catallax-recipe/6")
+        );
+    }
+    value["format"] = json!("catallax-recipe/6");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    assert_eq!(Recipe::parse(&recipe.to_text()).unwrap(), recipe);
 }

@@ -11,21 +11,25 @@ use crate::names::{
 use crate::operation::{
     FilletOverflow, Grade, HoleDepth, HoleHead, HoleTip, Operation, RadiusLaw, ValueKind,
 };
-use crate::recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError};
+use crate::recipe::{FORMAT, FORMAT_V4, FORMAT_V5, FORMAT_V6, Recipe, RecipeError};
 
 mod path;
 
 pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
-    if !matches!(recipe.format.as_str(), FORMAT | FORMAT_V4 | FORMAT_V5) {
+    if !matches!(
+        recipe.format.as_str(),
+        FORMAT | FORMAT_V4 | FORMAT_V5 | FORMAT_V6
+    ) {
         return Err(RecipeError::Format {
             found: recipe.format.clone(),
         });
     }
+    let before_v5 = matches!(recipe.format.as_str(), FORMAT | FORMAT_V4);
     let mut index = BTreeMap::new();
     for (i, step) in recipe.steps.iter().enumerate() {
-        if recipe.format != FORMAT_V5 && matches!(&step.op, Operation::ExtrudeFrom { .. }) {
+        if recipe.format != FORMAT_V6 && matches!(&step.op, Operation::ExtrudeFrom { .. }) {
             return Err(RecipeError::Parse {
-                message: "extrude_from requires catallax-recipe/5".into(),
+                message: "extrude_from requires catallax-recipe/6".into(),
             });
         }
         if recipe.format == FORMAT
@@ -40,19 +44,17 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "extrusion end conditions require catallax-recipe/4".into(),
             });
         }
-        if recipe.format != FORMAT_V5 && matches!(&step.op, Operation::FilletVariable { .. }) {
+        if before_v5 && matches!(&step.op, Operation::FilletVariable { .. }) {
             return Err(RecipeError::Parse {
                 message: "variable-radius fillets require catallax-recipe/5".into(),
             });
         }
-        if recipe.format != FORMAT_V5
-            && matches!(&step.op, Operation::Twist { .. } | Operation::Bend { .. })
-        {
+        if before_v5 && matches!(&step.op, Operation::Twist { .. } | Operation::Bend { .. }) {
             return Err(RecipeError::Parse {
                 message: "bend and twist require catallax-recipe/5".into(),
             });
         }
-        if recipe.format != FORMAT_V5
+        if before_v5
             && matches!(
                 &step.op,
                 Operation::MeshBoolean { .. } | Operation::MeshDecimate { .. }
@@ -62,12 +64,12 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "mesh Booleans and decimation require catallax-recipe/5".into(),
             });
         }
-        if recipe.format != FORMAT_V5 && matches!(&step.op, Operation::FilletG2 { .. }) {
+        if before_v5 && matches!(&step.op, Operation::FilletG2 { .. }) {
             return Err(RecipeError::Parse {
                 message: "curvature-continuous fillets require catallax-recipe/5".into(),
             });
         }
-        if recipe.format != FORMAT_V5
+        if before_v5
             && matches!(
                 &step.op,
                 Operation::ShellGraded { .. } | Operation::ThickenGraded { .. }
@@ -77,7 +79,7 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "graded walls require catallax-recipe/5".into(),
             });
         }
-        if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
+        if before_v5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
             return Err(RecipeError::Parse {
                 message: "face references without `face` require catallax-recipe/5".into(),
             });

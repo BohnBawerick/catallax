@@ -1,6 +1,6 @@
 # Catallax recipe language
 
-Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, curvature-continuous fillets (section 4.5.3), bend and twist (section 4.20), and mesh Booleans and decimation (sections 4.21 and 4.22), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
+Version 6 specification, format `catallax-recipe/6`. The reader accepts versions 3 through 6 explicitly. Version 6 adds blind extrusion from a face and the evaluated-face B-rep paths described in sections 4.1.2 and 4.1.2a. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, curvature-continuous fillets (section 4.5.3), bend and twist (section 4.20), and mesh Booleans and decimation (sections 4.21 and 4.22), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
@@ -263,7 +263,7 @@ A reference term is an **origin pattern**: an origin whose role may be left out.
 | edge reference | `between` (two patterns), optional `touching`, optional `near` | edges between a face matching one pattern and a face matching the other |
 | edge selection | `"all"`, or a list of edge references | every edge, or the union of what the references choose |
 
-In version 5, `{}` is an all-faces reference. `{"near":["0","0","10"]}` starts with every face and selects the uniquely nearest one. `touching` still filters this candidate set by shared-edge adjacency. Versions 3 and 4 require `face`. An empty reference list selects no faces, so shell `open: []` is closed while `open: [{}]` opens every face. A named reference remains mandatory: a vanished origin fails rather than broadening to all faces.
+Since version 5, `{}` is an all-faces reference. `{"near":["0","0","10"]}` starts with every face and selects the uniquely nearest one. `touching` still filters this candidate set by shared-edge adjacency. Versions 3 and 4 require `face`. An empty reference list selects no faces, so shell `open: []` is closed while `open: [{}]` opens every face. A named reference remains mandatory: a vanished origin fails rather than broadening to all faces.
 
 Resolution has three steps:
 
@@ -480,15 +480,15 @@ The curved implementation covers one authored axis-aligned rectangle in its sket
 
 Coaxial annular profiles also support a stock torus. The two full circles must share the torus axis, their plane must be normal to it, and the authored direction must be parallel to it. Both radii lie strictly within the torus's radial silhouette. An exact bound on `(radius - major)² + start_height²` certifies a uniform material start for exit caps; a start below the entire tube in the ray direction certifies entry caps. Entry subtracts the torus from a finite annular column ending at the torus centre plane. Exit intersects the torus with a column ending beyond the tube. The construction cap cannot survive either operation. Both kernels use these defining sets; the B-rep reuses the existing target geometry and creates extrusion-owned face records.
 
-The B-rep evaluator can also resolve a single selected planar face against the evaluated target. This uses the actual trim, even when the target's recipe contains a circle. A normal extrusion of one circle is reduced to an equivalent stock cylinder for limits on its wall. Axial up-to-next sweeps on that cylinder use the first positive cap crossing. Circular profiles on stock quadrics can use a certified rectangular enclosure, trimmed back to the circular profile before publication. The original cylindrical, conical and spherical carriers are retained.
+In version 6, the B-rep evaluator can also resolve a single selected planar face against the evaluated target. This uses the actual trim, even when the target's recipe contains a circle. A normal extrusion of one circle is reduced to an equivalent stock cylinder for limits on its wall. Axial up-to-next sweeps on that cylinder use the first positive cap crossing. Circular profiles on stock quadrics can use a certified rectangular enclosure, trimmed back to the circular profile before publication. The original cylindrical, conical and spherical carriers are retained.
 
-A finite Bézier extrusion wall can limit a rectangular profile in its chord and generator chart. The profile must project inside the selected wall's trims. Exact section parameters restrict the original control points and produce the cap and four profile walls. This path uses rational section coordinates and a sweep perpendicular to the chord and generators.
+Version 6 also lets a finite Bézier extrusion wall limit a rectangular profile in its chord and generator chart. The profile must project inside the selected wall's trims. Exact section parameters restrict the original control points and produce the cap and four profile walls. This path uses rational section coordinates and a sweep perpendicular to the chord and generators.
 
 Silhouettes, tangencies, other profile and target combinations, and general spline limits may still require an intersection or whole-profile proof. `features.unsupported-curved-limit` reports the missing proof. `features.limit-missed` reports a cap that cannot cover the profile. `features.limit-parallel` reports a sweep direction in a selected planar cap.
 
 #### 4.1.2a Blind extrusion from a face
 
-In `catallax-recipe/5`, `extrude_from` takes `target`, `profile`, `start`, a nonzero signed `distance`, and an optional `direction` in model coordinates. `start` is a face reference on `target`. The direction defaults to the sketch normal. The sketch supplies the sweep lines. Their locations along the sweep direction do not affect which start cap is used. The first crossing is found in `direction` from behind the selected face. The end cap is a translation of the start cap by the signed distance along the unit sweep direction.
+In `catallax-recipe/6`, `extrude_from` takes `target`, `profile`, `start`, a nonzero signed `distance`, and an optional `direction` in model coordinates. `start` is a face reference on `target`. The direction defaults to the sketch normal. The sketch supplies the sweep lines. Their locations along the sweep direction do not affect which start cap is used. The first crossing is found in `direction` from behind the selected face. The end cap is a translation of the start cap by the signed distance along the unit sweep direction.
 
 Both caps and the walls belong to the extrusion step. `start` names the cap on the selected face, `end` names its translated copy, and `side.segment` names each wall by its profile segment. The operation returns a new solid. A subsequent `boolean` can unite it with or subtract it from a target. The B-rep evaluator handles this operation.
 
@@ -1404,7 +1404,7 @@ A recipe is a JSON text, RFC 8259, in UTF-8:
 
 | Key | Value |
 |---|---|
-| `format` | `"catallax-recipe/5"` |
+| `format` | `"catallax-recipe/6"` |
 | `name` | the part's name |
 | `description` | optional |
 | `steps` | list of steps; each is an object with `id`, `op` and the operation's parameters |
@@ -1514,6 +1514,8 @@ Version 4 changes loft correspondence and segment-count handling, sharp-join thi
 Do not relabel every version 3 recipe mechanically. Unchanged operations can migrate after reference validation. A loft containing arcs or unequal authored segmentation needs explicit review of correspondence; preserve the old version when its old solid is intended. Thicken edits involving sharp joins need review of the sectors and new `round` roles. The no-refresh `near` rule and split-ID policy govern new editing actions, not a rewrite of old saved ids. The reader now accepts version 4 end-condition syntax without changing version 3 fixtures, canonical output or exchange-contract formats. Schema and interpreter work for the other version 4 additions remains separate.
 
 Version 5 changes only the face-reference schema. Migrate a version 4 recipe by changing `format` to `catallax-recipe/5`, checking it and saving canonical text. Keep every existing `face`, `touching` and `near` unchanged. Do not replace named references with `{}` during migration. Version 3 recipes first need the version 4 semantic review above. Parsing never upgrades a saved recipe automatically. Rust callers wrap existing origin patterns in `Some`; use `FaceRef::all()` for an unfiltered reference.
+
+Version 6 retains the version 5 schema and adds `extrude_from`. It also enables the new evaluated-face paths for `extrude_to` and `extrude_next` in the B-rep evaluator. Use `Recipe::upgrade_to(FORMAT_V6)` or explicitly change `format` to `catallax-recipe/6` to opt in. Keep the authored steps and references when upgrading. Review any previously refused extrusion that now builds. See [the version 6 interface change](interface-changes/2026-11-24-face-bounded-extrusion.md).
 
 `Recipe::upgrade_to(format)` checks the source and target without mutating the source. It upgrades unchanged operation graphs, preserving references. A version 3 loft, thicken, sweep, fillet, chamfer or draft conservatively returns `recipe.migration-review`; callers must retain version 3 or explicitly review and author the new definition. Downgrades also require review. The API does not claim that a reviewed geometry change preserves the old solid. See the [rational path and loft schema inventory](interface-changes/2026-11-10-rational-path-schema.md).
 

@@ -649,7 +649,10 @@ mod tests {
             branch.vertices[0].uv,
             branch.vertices[branch.vertices.len() - 1].uv,
         ];
-        assert_eq!(ends[0], ends[1]);
+        assert_eq!(
+            ends[0].partial_cmp(&ends[1]),
+            Some(std::cmp::Ordering::Equal)
+        );
         for vertex in &branch.vertices {
             let level = carrier.level(vertex.uv[0], vertex.uv[1]);
             let gradient = level.grad[0].hypot(level.grad[1]);

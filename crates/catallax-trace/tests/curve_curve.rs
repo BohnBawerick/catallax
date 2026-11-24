@@ -184,7 +184,7 @@ fn analytic_line_pair_crossing() {
     for parameter in &point.start.parameters[..2] {
         assert!(common::ulps(*parameter, 0.5) <= 2);
     }
-    assert_eq!(point.start.value, 0.0);
+    assert_eq!(point.start.value.abs().to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
@@ -205,8 +205,8 @@ fn analytic_line_range_keeps_reverse_parameters() {
     assert_eq!(range.kind, SolutionType::RangeOfValues);
     assert_eq!(&range.start.parameters[..2], &[0.5, 1.0]);
     assert_eq!(&range.end.parameters[..2], &[1.0, 0.5]);
-    assert_eq!(range.start.value, 0.0);
-    assert_eq!(range.end.value, 0.0);
+    assert_eq!(range.start.value.abs().to_bits(), 0.0_f64.to_bits());
+    assert_eq!(range.end.value.abs().to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]

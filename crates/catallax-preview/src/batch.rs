@@ -615,8 +615,12 @@ mod tests {
             );
         }
         assert_eq!(
-            grid.point(grid.len() - 1),
-            grid.at(grid.counts[0] - 1, grid.counts[1] - 1, grid.counts[2] - 1)
+            grid.point(grid.len() - 1).partial_cmp(&grid.at(
+                grid.counts[0] - 1,
+                grid.counts[1] - 1,
+                grid.counts[2] - 1
+            )),
+            Some(std::cmp::Ordering::Equal)
         );
         for refused in [
             Grid::covering([0.0; 3], [1.0; 3], 41, 0),

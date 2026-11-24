@@ -466,9 +466,18 @@ mod tests {
             (spans[0].lo, spans[0].hi, spans[1].lo, spans[1].hi),
             (0.0, 0.5, 0.5, 1.0)
         );
-        assert_eq!(spans[0].ctrl[3], spans[1].ctrl[0]);
-        assert_eq!(spans[0].ctrl[0], pw[0]);
-        assert_eq!(spans[1].ctrl[3], pw[4]);
+        assert_eq!(
+            spans[0].ctrl[3].partial_cmp(&spans[1].ctrl[0]),
+            Some(std::cmp::Ordering::Equal)
+        );
+        assert_eq!(
+            spans[0].ctrl[0].partial_cmp(&pw[0]),
+            Some(std::cmp::Ordering::Equal)
+        );
+        assert_eq!(
+            spans[1].ctrl[3].partial_cmp(&pw[4]),
+            Some(std::cmp::Ordering::Equal)
+        );
         // The joint: N_{i,3}(0.5) for this knot vector is (0, 1/4, 1/2, 1/4, 0).
         let joint = spans[0].ctrl[3];
         assert!((joint[0] - 2.0).abs() < 1e-15 && (joint[1] - 0.25).abs() < 1e-15);

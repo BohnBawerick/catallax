@@ -980,7 +980,7 @@ mod tests {
             .iter()
             .map(|p| [p[0].to_f64_nearest(), p[1].to_f64_nearest(), 0.0])
             .collect();
-        assert_eq!(positions[0][0], positions[1][0]);
+        assert_eq!(positions[0][0].to_bits(), positions[1][0].to_bits());
         let points = exact
             .into_iter()
             .enumerate()

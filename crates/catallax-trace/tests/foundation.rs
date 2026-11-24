@@ -350,7 +350,10 @@ fn the_one_inexact_value_is_an_arc_cosine_near_tie() {
     let cosine = cosine.sqrt();
     assert_eq!(cosine.to_bits(), 0x3fd914b2d74833c6);
     let port = a.angle_between(b).unwrap();
-    assert_eq!(port, catallax_trace::scalar::acos(cosine));
+    assert_eq!(
+        port.partial_cmp(&catallax_trace::scalar::acos(cosine)),
+        Some(std::cmp::Ordering::Equal)
+    );
     let smlib = f64::from_bits(0x3ff2b0975fd6feb3);
     assert_eq!(port.to_bits() - smlib.to_bits(), 1);
 }

@@ -595,7 +595,10 @@ mod tests {
         let payload = (2 * (side + 2) + 4 * side * side) as u64;
         let ((), work) = with_operation_budget(2 * payload, || {
             let copy = Surface64::new(&source, &mut Decider::default()).unwrap();
-            assert_eq!(copy.point([1.5, 2.5]), [1.5, 2.5, 1.0]);
+            assert_eq!(
+                copy.point([1.5, 2.5]).partial_cmp(&[1.5, 2.5, 1.0]),
+                Some(std::cmp::Ordering::Equal)
+            );
         });
         assert!(!work.exhausted && work.used >= payload, "{work:?}");
         let (result, work) = with_operation_budget(payload - 1, || {
@@ -606,7 +609,10 @@ mod tests {
         let curve_payload = (curve.knots().len() + 4 * curve.controls().len()) as u64;
         let ((), work) = with_operation_budget(2 * curve_payload, || {
             let copy = Curve64::new(&curve, &mut Decider::default()).unwrap();
-            assert_eq!(copy.point(3.5), [0.0, 3.5, 1.0]);
+            assert_eq!(
+                copy.point(3.5).partial_cmp(&[0.0, 3.5, 1.0]),
+                Some(std::cmp::Ordering::Equal)
+            );
         });
         assert!(!work.exhausted && work.used >= curve_payload, "{work:?}");
         let (result, work) = with_operation_budget(curve_payload - 1, || {

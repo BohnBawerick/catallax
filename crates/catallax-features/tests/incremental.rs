@@ -59,6 +59,28 @@ fn assert_same(recipe: &Recipe, checkpoint: EvaluationCheckpoint) {
         assert_eq!(resumed.model.face_origins(a), full.model.face_origins(b));
     }
     assert_eq!(resumed.recipe(), recipe);
+    assert_eq!(records(resumed), records(&full));
+}
+
+// Feature records by origin, in build order: fillets, chamfers, removed faces.
+fn records(built: &Built) -> Vec<Vec<String>> {
+    vec![
+        built
+            .fillets
+            .iter()
+            .map(|d| format!("{:?}", d.origin))
+            .collect(),
+        built
+            .chamfers
+            .iter()
+            .map(|d| format!("{:?}", d.origin))
+            .collect(),
+        built
+            .consumed
+            .iter()
+            .map(|c| format!("{:?} by {:?}", c.source, c.by))
+            .collect(),
+    ]
 }
 
 #[test]
@@ -204,4 +226,56 @@ fn undo_and_independent_branches_keep_names_facts_definitions_and_step_bytes() {
         );
     }
     assert_eq!(export(saved.built()), before);
+}
+
+// Pattern and mirror copy the fillet and chamfer records of their source. A
+// suffix that resumes after those records were made copies them as a fresh
+// build does; an earlier edit discards the checkpoint, refusal included.
+#[test]
+fn copies_of_checkpointed_fillets_and_chamfers_match_fresh_builds() {
+    let wall = json!({"step":"base","role":{"side":{"segment":"wall"}}});
+    let recipe = Recipe::parse(
+        &json!({"format":"catallax-recipe/3","name":"placed features","steps":[
+            {"id":"base","op":"cylinder","radius":"8","height":"12",
+                "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+            {"id":"round","op":"fillet","body":"base","radius":"2",
+                "edges":[{"between":[{"step":"base","role":"end"},wall]}]},
+            {"id":"bevel","op":"chamfer","body":"round","distance":"1",
+                "edges":[{"between":[{"step":"base","role":"start"},wall]}]},
+            {"id":"copies","op":"pattern","body":"bevel",
+                "layout":{"linear":{"vector":["30","0","0"],"count":2}}},
+            {"id":"reflected","op":"mirror","body":"copies",
+                "plane":{"point":["-20","0","0"],"normal":["1","0","0"]},"keep_original":true}
+        ],"result":"reflected"})
+        .to_string(),
+    )
+    .unwrap();
+    let checkpoint = prefix(&recipe, 3);
+    // The checkpoint already holds the source fillet and chamfer records.
+    assert_eq!(checkpoint.built().fillets.len(), 1);
+    assert_eq!(checkpoint.built().chamfers.len(), 1);
+    assert_same(&recipe, checkpoint.clone());
+    let full = evaluate(&recipe, &mut Decider::default()).unwrap();
+    // One source, its pattern copy, and the mirror of both.
+    assert_eq!(full.fillets.len(), 4);
+    assert_eq!(full.chamfers.len(), 4);
+    let mut edited = recipe.clone();
+    if let catallax_recipe::Operation::Fillet { radius, .. } = &mut edited.steps[1].op {
+        *radius = catallax_recipe::Number::new(3.into());
+    } else {
+        panic!("fillet");
+    }
+    assert_same(&edited, checkpoint.clone());
+    if let catallax_recipe::Operation::Chamfer { distance, .. } = &mut edited.steps[2].op {
+        *distance = catallax_recipe::Number::new(0.into());
+    } else {
+        panic!("chamfer");
+    }
+    let fresh = evaluate(&edited, &mut Decider::default()).unwrap_err();
+    let resumed =
+        evaluate_incremental(&edited, Some(checkpoint), &mut Decider::default()).unwrap_err();
+    assert!(
+        matches!(&fresh, catallax_features::BuildError::Geometry { step, .. } if step.as_str() == "bevel")
+    );
+    assert_eq!(fresh.to_string(), resumed.to_string());
 }

@@ -1483,8 +1483,12 @@ impl<'a, T> ScopedWorker<'a, T> {
     }
 
     fn complete(&mut self, result: Option<Box<(T, Charges)>>) {
-        let index = self.taken.take().expect("a helper completes its claimed item");
-        lock(&self.board.state).slots[index] = result.map_or(ScopedSlot::Retry, ScopedSlot::Recorded);
+        let index = self
+            .taken
+            .take()
+            .expect("a helper completes its claimed item");
+        lock(&self.board.state).slots[index] =
+            result.map_or(ScopedSlot::Retry, ScopedSlot::Recorded);
         self.board.changed.notify_one();
     }
 }

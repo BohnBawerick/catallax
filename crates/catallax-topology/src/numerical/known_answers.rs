@@ -8,7 +8,7 @@
 //! [`EdgeGeometry`] and nothing else: names, truths and expectations stay here.
 //!
 //! The fourteen fixed edges copy recorded failures of sampled checkers in
-//! OpenCASCADE, SMLib and solidcraft. `docs/research/cp2-grill/checker-failures.md`
+//! OpenCASCADE, SMLib and solidcraft. `docs/archive/research/cp2-grill/checker-failures.md`
 //! lists the sources. The seeded edges in [`fresh`] are built by different
 //! code, so a checker tuned to the fixed edges still meets hidden bumps.
 

@@ -1,18 +1,18 @@
 # Coverage against OpenCASCADE and SMLib
 
-The combined scope is 61 capability lines. Full is 1, partial is 0.5, and not started is 0. A general capability must work for full credit; a limited domain or library call with real refusals is partial. Catallax-only capabilities, including the independent field and proof button, add no points. Speed does not fail a change before phase 5.
+The combined scope is 61 capability lines. Full is 1, partial is 0.5, and not started is 0. A general capability must work for full credit; a limited domain or library call with real refusals is partial. Catallax-only capabilities, including the independent field and proof button, add no points.
 
 ## Sources and limits
 
-Adopted by [Checkpoint 2 decisions, Q2 and section 4.10](checkpoints/checkpoint-2-decisions.md#410-coverage-the-12-changes-for-100). The list and historical scores come from the Checkpoint 2 review report, Appendix A, "The 61 lines", also reproduced in the grill pack Part 3. Full requirements below come from that report's "Smallest set of additions for 100% of both kernels", the grill pack Part 3, and their existing roadmap done-when lines. Those private working documents are not bundled; their adopted twelve changes are preserved in the [roadmap coverage follow-on](../ROADMAP.md#coverage-follow-on-complete-the-61-lines). [The checkpoint report](checkpoints/checkpoint-2.md) holds the measured release results.
+The 14 and 19 November scores below are historical. They use the scope adopted at Checkpoint 2. The [phase 6 gap groups](../ROADMAP.md) set priorities for work that gives users a better result. The score remains a public comparison, not a target of 100%.
 
 The line list was reconstructed on 19 Nov 2026 at `ade010bf` to fit the published area totals. It is not a recovered original 14 Nov list. Reference-kernel membership and the per-line 14 Nov scores were inferred in that review. Historical scores below are not new verification and do not certify the new full bars.
 
 A full bar that the sources do not state is **bar to be set**, even for a line previously scored full. Known requirements are retained beside that marker, not promoted into an invented complete test. Such a line cannot be newly claimed full until its bar is set. Generated sets and census acceptance must be frozen before implementation; this document does not invent sample counts or pass rates.
 
-Kernels: B = both OpenCASCADE and SMLib; O = OpenCASCADE only; S = SMLib only. "19 Nov" is the historical review score, not current acceptance. Each roadmap done-when must name its coverage IDs and level; the twelve coverage extensions target full, 1 point.
+Kernels: B = both OpenCASCADE and SMLib; O = OpenCASCADE only; S = SMLib only. "19 Nov" is the historical review score, not current acceptance.
 
-The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records the v0.5.0 score and evidence for each line.
+The [Checkpoint 3 recount](archive/checkpoints/checkpoint-3-coverage.md) records the v0.5.0 score and evidence for each line.
 
 ## Curves and surfaces (12)
 
@@ -48,7 +48,7 @@ The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records the v0.
 |---|---|---|---:|---:|---|
 | S1 | Primitive solids: block, cylinder, sphere, cone, torus | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
 | S2 | Unite, subtract and intersect analytic solids | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
-| S3 | Booleans on solids with spline faces | B | 0.5 | 0.5 | Booleans on spline-faced solids pass a generated set and the census parts, not just named requests. Change 5. No clock or 20M gate before phase 5. |
+| S3 | Booleans on solids with spline faces | B | 0.5 | 0.5 | Booleans on spline-faced solids pass a generated set and the census parts, not just named requests. Change 5. |
 | S4 | Several bodies in one part: combine, move, copy | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
 | S5 | Split a solid into pieces with a plane or tool body | O | 0.5 | 0.5 | Split a solid by a plane, sheet or body, keeping every piece. Change 6. |
 | S6 | Sew faces into a closed solid and check it | B | 0.5 | 0.5 | Sew any face set that closes into a checked solid. Change 6. |
@@ -89,7 +89,7 @@ The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records the v0.
 | ID | Capability | Kernels | 14 Nov | 19 Nov | Full bar |
 |---|---|---|---:|---:|---|
 | X1 | STEP export of solids | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
-| X2 | STEP import of real solids | B | 0.5 | 0.5 | bar to be set. Change 10 requires STEP import parity against OpenCASCADE's 90.03% healed-valid census reference; the exact census target and comparable protocol must be set, not invented. |
+| X2 | STEP import of real solids | B | 0.5 | 0.5 | bar to be set. Change 10 requires STEP import parity against OpenCASCADE's historical healed-valid reference. The current roadmap sets the comparable protocol; the target is still open. |
 | X3 | IGES import and export | B | 0.5 | 0.5 | bar to be set. Existing 3.2 adds IGES sphere and torus export; the complete IGES import/export bar is not stated. |
 | X4 | Repair imported geometry: gaps, tolerances, sewing | B | 0.5 | 0.5 | bar to be set. Change 10 requires STEP import parity against OpenCASCADE's 90.03% healed-valid reference. The complete repair acceptance and census target are not stated. |
 | X5 | Mesh export: STL, OBJ, 3MF | O | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
@@ -97,13 +97,13 @@ The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records the v0.
 | X7 | Surface, wire and multi-body files | B | 0.5 | 0.5 | Surface, wire and multi-body exchange; sheets and wires export as sewn shells, not loose geometric sets. Change 6. |
 | X8 | Assemblies, colours, names and annotations in files | O | 0 | 0 | Assemblies, colours, names and annotations round-trip in STEP. Change 11. The annotations include the P1 semantic-PMI C1 to C5 acceptance; drawings alone do not close the rest of X8. |
 
-[Item 3.2](milestones/3.2-assemblies-and-exchange.md) records the kernel exchange checks and remaining scope for X3 and X8.
+[Assembly exchange evidence](archive/milestones/3.2-assemblies-and-exchange.md) records the kernel exchange checks and remaining scope for X3 and X8.
 
 ## Meshes and queries (8)
 
 | ID | Capability | Kernels | 14 Nov | 19 Nov | Full bar |
 |---|---|---|---:|---:|---|
-| Q1 | Display meshes with chord and angle tolerances | B | 1 | 1 | [Milestone 3.5](../ROADMAP.md#one-display-mesher) sets the full bar. |
+| Q1 | Display meshes with chord and angle tolerances | B | 1 | 1 | [Original display acceptance](archive/ROADMAP-before-checkpoint-3.md#one-display-mesher) sets the full bar. |
 | Q2 | Mass properties: volume, area, centroid, inertia | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
 | Q3 | Point inside or outside a solid | B | 1 | 1 | bar to be set. The sources name the capability and historical score but do not state a complete acceptance bar. |
 | Q4 | Closest point on a curve or surface | B | 0.5 | 0.5 | Closest point on any curve or surface. Change 12. |
@@ -122,4 +122,4 @@ The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records the v0.
 | Of SMLib's 52 lines | 57% | 62% |
 | Complete / partial / not started | 17 / 33 / 11 | 18 / 38 / 5 |
 
-The review estimated about 67% if the old milestone demonstrations all passed, and 85% at their full planned scope. Those were planning estimates, not evidence of 100%. The twelve approved changes target full coverage; unknown bars remain explicit. Rule R5 permits one scoreboard, census and coverage recount per checkpoint, no dry runs.
+These early estimates and scores do not describe current acceptance. See the [released results](CAPABILITIES.md#release-evidence) for the v0.5.0 count.

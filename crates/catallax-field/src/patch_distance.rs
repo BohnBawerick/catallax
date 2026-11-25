@@ -32,7 +32,7 @@
 //! the subdivision bound, which is a proof. It needs no Newton step, since the
 //! corner values reach the minimum as the cells shrink.
 //!
-//! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
+//! [Checkpoint 2 decisions, section 4.6]: ../../../docs/archive/checkpoints/checkpoint-2-decisions.md
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;

@@ -75,7 +75,7 @@ substitute one for the other.
 
 ## What this piece is for
 
-Piece 4 answers "where do these meet?" exactly, for the surfaces of the first milestone: planes, cylinders and spheres, in every pair and every pose.
+Piece 4 answers "where do these meet?" exactly, for the initial analytic set: planes, cylinders and spheres, in every pair and every pose.
 
 - Where two surfaces meet: nothing, the same point set, or a list of components (curves and isolated points). Each curve is added to the store as a definition: a line, circle or ellipse with exact rational data where one exists, and an intersection curve (piece 2's `Curve::Intersection`) otherwise.
 - Where a stored curve meets a surface: nothing, the whole curve, or a list of points along the curve, each added as a meeting point (`PointDef::Meet`).
@@ -341,7 +341,7 @@ An exact tangent contact with proven branch membership records `Tangent(Curve(c)
 
 **Exactness.** For a line, circle or ellipse with rational data and a supported surface, the hits are the real roots of polynomials with rational coefficients, found by `Decider::real_roots` and other exact methods, so the answer is exact under the default budget. For an intersection curve, it also needs exact decisions about which branch a solution of the system lies on; they are signs of the frame quantities of the tables (for example the sign of `(p - F) . w`), decided by `Decider::sign`.
 
-**When a decision ends `NotExact`.** The operation refuses with that outcome's `numbers.*` code and adds nothing to the store. This covers whether a candidate is on the curve's branch (the candidate's side of the dividing plane or the witness's), whether a hit is crossing or tangent, and the order of two hits along the curve. None of them has a degenerate branch that keeps the answer right: a bound on the distance to the dividing plane is not a distance to the branch, a tangent label changes the crossing parity that later stages count, and merging two hits drops a crossing ([NOT-EXACT-INVENTORY.md](../NOT-EXACT-INVENTORY.md), section 2.2). The operation returns no marks.
+**When a decision ends `NotExact`.** The operation refuses with that outcome's `numbers.*` code and adds nothing to the store. This covers whether a candidate is on the curve's branch (the candidate's side of the dividing plane or the witness's), whether a hit is crossing or tangent, and the order of two hits along the curve. None of them has a degenerate branch that keeps the answer right: a bound on the distance to the dividing plane is not a distance to the branch, a tangent label changes the crossing parity that later stages count, and merging two hits drops a crossing ([NOT-EXACT-INVENTORY.md](../archive/NOT-EXACT-INVENTORY.md), section 2.2). The operation returns no marks.
 
 No tie is ever broken by cached coordinates.
 

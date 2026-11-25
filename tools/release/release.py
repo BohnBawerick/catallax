@@ -622,8 +622,8 @@ def prepare(args):
         require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", args.tag), "tag must be vX.Y.Z")
         require(args.tag == tag and version != "0.0.0", "tag must match the workspace version")
         subprocess.run(["git", "merge-base", "--is-ancestor", commit, f"origin/release/{version}"], cwd=ROOT, check=True)
-        milestone = ROOT / "docs/milestones" / f"M{version.split('.')[1]}.md"
-        require(milestone.is_file(), "missing milestone note under docs/milestones/MN.md")
+        milestone = ROOT / "docs/archive/milestones" / f"M{version.split('.')[1]}.md"
+        require(milestone.is_file(), "missing milestone note under docs/archive/milestones/MN.md")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:
         stream.write(f"tag={tag}\ncommit={commit}\nalpha={str(version.startswith('0.')).lower()}\n")
     print(f"{'Release' if args.publish else 'Dry run'} {tag} at {commit}")

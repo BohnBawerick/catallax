@@ -274,7 +274,7 @@ impl NumericalOptions {
 /// measurement error. A stored tolerance above the body's limit refuses. A
 /// value within its binary64 rounding error of the limit is decided on a
 /// 128-bit enclosure at that parameter; nothing else raises the precision. This is a search for the maximum, not a proof
-/// of one: see `docs/milestones/3.0A-edge-gap-checker.md` for what it can miss.
+/// of one: see `docs/archive/milestones/3.0A-edge-gap-checker.md` for what it can miss.
 /// Native UV curves also have their endpoint correspondence checked in
 /// millimetres against the declared loop endpoints. Every edge endpoint is
 /// checked against its vertex. Projected or retained native UV walks keep
@@ -910,7 +910,7 @@ const TOLERANCE_EXCEEDED: &str = "numbers.numerical-tolerance-exceeded";
 /// and the tolerance stored is that of the new copy's same-parameter gap; no
 /// tolerance is raised to cover a difference of parameter. See
 /// [`NumericalBody::import_gaps`] for what was read and done, and
-/// `docs/milestones/3.0A-import-gap-rule.md` for the method.
+/// `docs/archive/milestones/3.0A-import-gap-rule.md` for the method.
 ///
 /// Rule T3: where a stored tolerance is still over the cap, the face copies
 /// over it are refitted from their 3D curves first ("above that, refit

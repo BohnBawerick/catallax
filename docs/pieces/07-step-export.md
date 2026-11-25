@@ -93,7 +93,7 @@ It reads records independently of line endings and layout; a file it cannot read
 or one with no `ADVANCED_FACE`, refuses rather than passing.
 Among the public fixtures, the files that break it are general cone trims,
 elliptic extrusions and files that one uncovered face keeps on the legacy
-encoding; every other written file meets it. See [the interface note](../interface-changes/2026-11-11-step-seam-contract.md).
+encoding; every other written file meets it. See [the interface note](../archive/interface-changes/2026-11-11-step-seam-contract.md).
 
 ## Torus band beside a cone
 
@@ -557,7 +557,7 @@ The architect counted the entities of cases 1, 3, 4, 5 and 6 from the mapping ab
 
 No test fails for speed. A benchmark target measures and prints:
 
-1. time and file size against face count, for the primitives and for the results of piece 5's first-milestone cases once they exist;
+1. time and file size against face count, for the primitives and for the results of the initial Boolean cases;
 2. B-spline control-point counts and fitting time against `curve_tolerance` (`10^-6` to `10^-12`) for the branches of piece 4's cases 17 to 26.
 
 The numbers are written to the benchmark output so later runs can be compared.

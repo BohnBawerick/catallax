@@ -1,6 +1,6 @@
 # Piece 8: STEP import and bounded gap repair (contract)
 
-Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved approvals and declines, retained source-relative face tolerances and immutable source verification. SolidDraft preview, persistence and checked-export integration remain separate companion work. See the [local-tolerance contract](../interface-changes/2026-11-02-planar-import-local-tolerances.md) and its [source-incidence extension](../interface-changes/2026-11-12-planar-source-incidence-repair.md).
+Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved approvals and declines, retained source-relative face tolerances and immutable source verification. SolidDraft preview, persistence and checked-export integration remain separate companion work. See the [local-tolerance contract](../archive/interface-changes/2026-11-02-planar-import-local-tolerances.md) and its [source-incidence extension](../archive/interface-changes/2026-11-12-planar-source-incidence-repair.md).
 
 ## Application roundtrip slice
 
@@ -30,7 +30,7 @@ The standalone persisted-artifact smoke approved a 0.02 mm seam and reread the s
 
 The recorded repair entry also repairs straight planar faces whose boundary vertices do not lie exactly on their declared planes. It first tries refitting planes without moving vertices, then exact shared-vertex projection. Changed faces need complete convex covers and source/result neighbouring feature proofs. Every final bound stays within 0.01 mm and a tenth of the feature size. Curved dependencies, nonconvex or holed covers, inconsistent vertex constraints and over-cap bounds refuse with named stages and measured bounds where available.
 
-These repairs use `catallax-import-repair/3` and an explicit `projected_vertex_boundary/1` source definition. The immutable original vertices and finite line pieces are bounded separately against both that projected patch and the result. Records distinguish source-data discrepancy, two-sided geometric deviation, vertex movement and the direct bound over all source constraints. The [interface extension](../interface-changes/2026-11-12-planar-source-incidence-repair.md) defines those fields and migration. Exact predicates stay unchanged. The shared builder retains the separate bounded spline-edge repair and body marks described below. Both paths reserve limb-based exact-arithmetic work; no allowance is raised.
+These repairs use `catallax-import-repair/3` and an explicit `projected_vertex_boundary/1` source definition. The immutable original vertices and finite line pieces are bounded separately against both that projected patch and the result. Records distinguish source-data discrepancy, two-sided geometric deviation, vertex movement and the direct bound over all source constraints. The [interface extension](../archive/interface-changes/2026-11-12-planar-source-incidence-repair.md) defines those fields and migration. Exact predicates stay unchanged. The shared builder retains the separate bounded spline-edge repair and body marks described below. Both paths reserve limb-based exact-arithmetic work; no allowance is raised.
 
 ## Supported first path
 
@@ -66,7 +66,7 @@ through the shared numerical builder. Holes must be disjoint, strictly interior
 and not nested. Complete planar circular outer rims and holes receive continuous
 projected-disk clearance checks under the stated tolerance; general curved
 parameter walks retain their sampled checks.
-The [numerical trim contract](../interface-changes/2026-11-14-numerical-trim-sewing.md)
+The [numerical trim contract](../archive/interface-changes/2026-11-14-numerical-trim-sewing.md)
 defines the scope, padding and evidence names.
 
 ### Surface bodies
@@ -141,7 +141,7 @@ These local edge and vertex records are distinct from `face_tolerances` and do n
 Exact facts describe only the exact derivative.
 An unsupported repair returns `incidence_gap` with its measured source bounds, missing certificate and any later strict solid refusal.
 
-`catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
+`catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../archive/interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
 
 ### Tolerance-bearing source topology
 
@@ -210,7 +210,7 @@ The final deadline checkpoint runs after the result fields are constructed.
 The tolerance record alone cannot reconstruct topology changes; retaining the healing report and immutable source is required.
 The report is an observation of these repairs, not an independently trusted solid certificate or a new persisted application format.
 The existing recipe repair/approval path retains its own source-bound records and policy.
-The [healer measurements](../research/tolerant-import-healing/README.md) retain the actual fixtures and real-file outcomes.
+The [healer measurements](../archive/research/tolerant-import-healing/README.md) retain the actual fixtures and real-file outcomes.
 
 ### Per-body opening tiers and source replay
 
@@ -275,7 +275,7 @@ The observer separately reports files with at least one individually valid expor
 The independent reader also traverses the emitted product-bound representation graph and checks every claimed body root against it. A valid detached body can receive prototype/existence credit, but not strict complete-source credit; a generic successful root transfer does not override missing occurrence reachability.
 Builder processing can heal internally; neither unhealed validity nor complete source fidelity follows from that result.
 Each native root records expected and inspected parts. A converter exception can leave later parts uninspected, so completed producer export does not establish completed raw validation. Such roots, raw-reader timeout/OOM and missing results appear as unknown or observed lower bounds. Non-budget whole-document export refusals before the body loop are counted separately before considering any selected-body fallback.
-The [frozen tier census](../research/step-census-opened/README.md) owns the measured counts, producer and limitations.
+The [frozen tier census](../archive/research/step-census-opened/README.md) owns the measured counts, producer and limitations.
 
 `collect --tier-baseline PRIOR.csv` additionally pins a hash-matched prior census for per-file tier comparison. Recorded tier totals are compared separately from solid coverage, including co-occurring checked-count loss and tolerant-count gain while a file stays full. Missing tier inventories or changed body inventories produce explicit unknown comparisons. Historical aggregate totals establish neither body-identity correspondence nor a lower bound on same-body demotions.
 
@@ -285,7 +285,7 @@ The [frozen tier census](../research/step-census-opened/README.md) owns the meas
 
 Read: 186 with no voids, 514 form 1, 510, 508, 504 and 502 form 1; surfaces 190, 192, 194, 196 and 198 in forms 0 and 1, and 128; curves 110, 100 and 126; 116 points, 123 directions and 124 transforms, chained up to eight. Loops run with the face on their left about the surface normal, so a face against its surface (shell flag 0, or a 186 flag 0) reverses them. Parameter-space curves in loops are not read; the model-space curve decides. A vertex use among a loop's edges is a degenerate edge, such as a sphere pole between two uses of its seam, and bounds nothing. A two-point degree-one 126 with equal weights is a line. A 194 at exactly 45 degrees is the exact 45-degree cone; any other angle is a degree semi-angle, built through its rims as for STEP. Lengths convert to millimetres exactly from the unit flag or name (inch, millimetre, foot, mile, metre, kilometre, mil, micron, centimetre, microinch); a model-space scale other than 1 is `UnknownUnit`.
 
-Typed refusals: `Unsupported` names the entity and IGES type for other entities and forms, a 186 with voids, an open shell, a transform that is not exactly orthonormal, a topology entity with a transform, and a 100 arc whose radius is not rational. A file with no 186 names its first 143, 144 or 514 entity as `Unsupported`, or is `Malformed`. Non-ASCII text is `Malformed` before any column is read, and every count in the file is checked against the parameters its entity holds, with checked arithmetic, before anything is allocated or indexed from it. Files from other writers often carry binary trigonometric noise: an OpenCASCADE cylinder's seam vertex at `y = -7.3e-16` is `not_solid`, and a matrix entry of `2.4e-16` is `Unsupported`. Neither is moved; curved repairs with recorded local tolerances are separate work. See [the interface note](../interface-changes/2026-11-11-iges-import.md).
+Typed refusals: `Unsupported` names the entity and IGES type for other entities and forms, a 186 with voids, an open shell, a transform that is not exactly orthonormal, a topology entity with a transform, and a 100 arc whose radius is not rational. A file with no 186 names its first 143, 144 or 514 entity as `Unsupported`, or is `Malformed`. Non-ASCII text is `Malformed` before any column is read, and every count in the file is checked against the parameters its entity holds, with checked arithmetic, before anything is allocated or indexed from it. Files from other writers often carry binary trigonometric noise: an OpenCASCADE cylinder's seam vertex at `y = -7.3e-16` is `not_solid`, and a matrix entry of `2.4e-16` is `Unsupported`. Neither is moved; curved repairs with recorded local tolerances are separate work. See [the interface note](../archive/interface-changes/2026-11-11-iges-import.md).
 
 ### Binary-noise cleanup
 

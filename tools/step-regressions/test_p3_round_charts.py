@@ -31,7 +31,7 @@ sys.path.insert(0, str(SCOREBOARD))
 from check import check as check_scoreboard
 
 # Independent OpenCASCADE construction from the dimensions, recorded in
-# docs/milestones/2026-10-27-p3-material.md for both junction radii.
+# docs/archive/milestones/2026-10-27-p3-material.md for both junction radii.
 VOLUMES = {'2': 14428.640126047918, '5/2': 14455.207561827563}
 
 

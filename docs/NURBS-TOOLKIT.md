@@ -41,7 +41,7 @@ For each patch, let `e` bound the L1 control-point rounding error, `d` the weigh
 
 ## Verification
 
-On the work PC through `cx-offload`:
+Recorded Linux checks:
 
 ```sh
 cargo run -p catallax-step --example nurbs_toolkit -- OUTPUT_DIRECTORY
@@ -53,4 +53,4 @@ The six files opened with `cadquery-ocp 8.0.1.1.0` through direct `StepToTopoDS_
 
 Focused regressions also pass for matrix and Bernstein allowance exhaustion, the reported `1.04104 mm` control rounded at two significant digits under a `0.041049 mm` cap, and refusal without partial output when the cap is too small.
 
-Surface-body operations, G1 N-sided joins and app commands are not established by this surface-definition and exchange proof. The roadmap's next surface-body milestone owns sewing, trimming, extension and thickening.
+Surface-body operations, G1 N-sided joins and app commands are not established by this surface-definition and exchange proof. The separate surface-body work owns sewing, trimming, extension and thickening.

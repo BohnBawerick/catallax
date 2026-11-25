@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkpoints 3 and 4 | Catallax</title>
+<meta name="description" content="Catallax 0.5.0 measured against OpenCASCADE and SMLib on the same parts, on 3,000 public STEP files and on 61 coverage lines, at Checkpoints 3 and 4.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/checkpoint-3-4.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+<link rel="stylesheet" href="evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="checkpoint-3-4.html" aria-current="page">Checkpoints 3 and 4</a>
+  <a class="bar__link" href="checkpoint-1.html">Checkpoint 1</a>
+  <a class="bar__link" href="testing.html">Testing</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>Checkpoints 3 and 4.</span></span>
+      <span class="ln"><span>Where the kernel <em>stands</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">Phases 3 and 4 of the roadmap end with one measurement. We built the same parts in Catallax, OpenCASCADE and SMLib, imported 3,000 public STEP files, and scored 61 coverage lines. <a href="https://github.com/BohnBawerick/catallax/releases/tag/v0.5.0" target="_blank" rel="noopener">Catallax 0.5.0</a> is the release these numbers measure. <a href="https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/releases/tag/v0.8.0" target="_blank" rel="noopener">SolidDraft 0.8.0</a> pins the same kernel.</p>
+
+  <section aria-labelledby="scoreboard">
+    <h2 class="ev__h" id="scoreboard">Edit-chain scoreboard</h2>
+    <p>Each target part is built, then built again after one dimension changes. The test parts are P0, eight hard intersection cases, and P1 to P5: a bracket, a collar, a filleted boss, a shelled tray and a flanged housing. Three phase-2 targets follow: a threaded boss with a spring, a lofted duct and a curved housing. The real parts are ten files from the STEP census below. On each real part, every kernel drills a hole, then changes its radius.</p>
+    <p>One definition of done for all three kernels: both versions build, both STEP exports open in OpenCASCADE as valid closed solids with the producer's face count, and no independent check finds a wrong value. On a real part, the drilled hole and the radius edit must each reduce the independently measured volume by more than one millionth of the source volume. The filleted boss's STEP files must also read as valid with OpenCASCADE's healing turned off.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Kernel</th><th scope="col">Test parts done, of 13</th><th scope="col">Phase-2 targets done, of 3</th><th scope="col">Real parts done, of 10</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Catallax</th><td>11</td><td>0</td><td>9</td></tr>
+        <tr><th scope="row">OpenCASCADE <small>CadQuery 2.6.1</small></th><td>11</td><td>3</td><td>10</td></tr>
+        <tr><th scope="row">SMLib <small>smlibpy 0.4.0</small></th><td>7</td><td>3</td><td>8</td></tr>
+      </tbody>
+    </table></div>
+    <p>Catallax now matches OpenCASCADE on the 13 test parts. The filleted boss now passes. Read with healing turned off, its Catallax STEP files are valid and both other kernels' files are not, so their test-part totals each drop by one.</p>
+    <h3>Where Catallax falls short</h3>
+    <ul class="ev__list">
+      <li>The general cone and general torus test parts are refused. Catallax cannot yet trace where those surfaces cross.</li>
+      <li>All three phase-2 targets are refused. The threaded boss stops at the threaded union, the lofted duct at the outer loft, and the curved housing at the spline cut before its fillet.</li>
+      <li>On one real part, 00000173, the drilled hole is refused.</li>
+      <li>The flanged housing counts as done, but the separate name check finds 16 unnamed entities.</li>
+    </ul>
+    <p>OpenCASCADE fails the flanged housing's build. SMLib fails it too, along with three of the hard intersection cases and the collar's checked values. On two real parts, SMLib's hole adds volume.</p>
+    <details class="code"><summary class="mono">Show all 26 targets</summary>
+    <div class="table-wrap"><table class="ev__table ev__cases">
+      <thead><tr><th scope="col">Target</th><th scope="col">Catallax</th><th scope="col">OpenCASCADE</th><th scope="col">SMLib</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">P0 block and sphere</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 crossing pipes</th><td>Done</td><td>Done</td><td>Edit failed</td></tr>
+        <tr><th scope="row">P0 equal cylinder and sphere</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 general cone</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 general torus</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 line tangent</th><td>Done</td><td>Done</td><td>Build failed</td></tr>
+        <tr><th scope="row">P0 near miss</th><td>Done</td><td>Done</td><td>Build failed</td></tr>
+        <tr><th scope="row">P0 seam</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P1 bracket</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P2 collar</th><td>Done</td><td>Done</td><td>Two wrong checked values</td></tr>
+        <tr><th scope="row">P3 filleted boss</th><td>Done</td><td>STEP invalid without healing</td><td>STEP invalid without healing</td></tr>
+        <tr><th scope="row">P4 shelled tray</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P5 flanged housing</th><td>Done</td><td>Build failed</td><td>Build failed</td></tr>
+        <tr><th scope="row">P8 spring threaded boss</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P9 lofted duct</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">Curved housing</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000131</th><td>Done</td><td>Done</td><td>Hole added volume</td></tr>
+        <tr><th scope="row">00000173</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000190</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000405</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000511</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000605</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000632</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000633</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000695</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000821</th><td>Done</td><td>Done</td><td>Hole added volume</td></tr>
+      </tbody>
+    </table></div>
+    </details>
+  </section>
+
+  <section aria-labelledby="census">
+    <h2 class="ev__h" id="census">3,000 real STEP files</h2>
+    <p>The census takes the same 3,000 models from the public ABC collection as Checkpoint 2, with the same frozen source hashes and selection. Opening is refused on 40 of them. The headline counts complete-source, occurrence-preserving exports that a separate OpenCASCADE reader validates as solids. Full solid admission and at least one observed valid exported solid are separate measures.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Measure</th><th scope="col">Files</th><th scope="col">Share of 3,000</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Catallax, complete-source valid export</th><td>767</td><td>25.57%</td></tr>
+        <tr><th scope="row">Catallax, every body opens as a solid</th><td>889</td><td>29.63%</td></tr>
+        <tr><th scope="row">Catallax, at least one observed valid exported solid</th><td>1,148</td><td>38.27%</td></tr>
+        <tr><th scope="row">OpenCASCADE, valid after its default repair</th><td>2,701</td><td>90.03%</td></tr>
+        <tr><th scope="row">Catallax at Checkpoint 1 <small>older import and export</small></th><td>374</td><td>12.47%</td></tr>
+      </tbody>
+    </table></div>
+    <p>Import is still the largest gap between Catallax and OpenCASCADE. The two figures are not measured at one tolerance: OpenCASCADE repairs each file with its default healing before the check. The 767 counts Catallax's complete-source valid exports and the 2,701 counts OpenCASCADE's healed-valid files, so they use different protocols. A direct comparison still needs a common protocol and a target.</p>
+    <p>Against the previous release, 0.4.0, eight more files export as valid solids and five more open as solids. No file that exported validly at the frozen baseline was lost. At the frozen baseline, one solid in file 00002204 opened. That file now runs out of its work allowance while opening.</p>
+    <p>Each admitted body is certified exact, checked numerical, or sampled and tolerant. A file takes the group of its least-checked body.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Proof group</th><th scope="col">Open as solids</th><th scope="col">Export as valid solids</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Certified exact</th><td>187</td><td>177</td></tr>
+        <tr><th scope="row">Checked numerical <small>approximate</small></th><td>625</td><td>586</td></tr>
+        <tr><th scope="row">Sampled and tolerant <small>approximate</small></th><td>77</td><td>4</td></tr>
+      </tbody>
+    </table></div>
+    <p>1,662 files open only as source surfaces, without a checked solid. The most common first blockers are work and resource limits, which do not show that the geometry is invalid.</p>
+  </section>
+
+  <section aria-labelledby="coverage">
+    <h2 class="ev__h" id="coverage">Coverage of the reference kernels</h2>
+    <p>The coverage list has 61 lines, each a capability that OpenCASCADE or SMLib has. A line scores 1 when it meets its written bar, 0.5 for working evidence in a limited domain, and 0 for none.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Scope</th><th scope="col">Points</th><th scope="col">Share</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">All lines</th><td>31 of 61</td><td>50.8%</td></tr>
+        <tr><th scope="row">OpenCASCADE lines</th><td>29.5 of 58</td><td>50.9%</td></tr>
+        <tr><th scope="row">SMLib lines</th><td>26.5 of 52</td><td>51.0%</td></tr>
+      </tbody>
+    </table></div>
+    <p>Every line has working evidence. One line, spline editing, meets its full bar. This recount uses the adopted acceptance bars. The older 55% and 61% figures used their historical scoring, so the lower share alone does not show a lost capability.</p>
+  </section>
+
+  <section aria-labelledby="delivered">
+    <h2 class="ev__h" id="delivered">What phases 3 and 4 delivered</h2>
+    <ul class="ev__list">
+      <li>A tolerance-first core: an edge gap is admitted at a measured local tolerance or refused, and exact and tolerant geometry live in one model.</li>
+      <li>Manufacturing information: the P1 bracket's PMI travels in AP242 STEP, and OpenCASCADE reads 13 of its 14 items. SolidDraft drawings use the kernel's section, silhouette and hidden-line curves.</li>
+      <li>Assemblies: STEP assemblies round-trip shared parts, placements, names and colours. On a 78-pair test assembly, the clash and clearance check gives 38 clear, two clash and 38 named unresolved answers.</li>
+      <li>First builds of bend, twist, curvature-continuous fillets, mesh Booleans and mesh decimation.</li>
+      <li>The field builds the flanged housing's fillet on its own. The recorded comparison checked 3,192 vertices within 9.2e-8 mm.</li>
+      <li>Printing: P6 writes a closed STL with a bound of 0.009997891320 mm.</li>
+      <li>Scans: a measured sphere scan becomes an analytic sphere, with a largest point residual of 0.051628 mm against a requested 0.06 mm.</li>
+      <li>In SolidDraft 0.8.0, all 131 application scenarios passed their checks on the Mac, and 118 met every timing budget.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="speed">
+    <h2 class="ev__h" id="speed">Next: phase 5, speed</h2>
+    <p>Catallax's work target is 20 million units per request, inside an application allowance of 100 million. Some answers still cost more:</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Target</th><th scope="col">Step</th><th scope="col">Work</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">P0 crossing pipes, build</th><td>Measurement</td><td>88,701,624</td></tr>
+        <tr><th scope="row">P0 crossing pipes, edit</th><td>Measurement</td><td>45,059,508</td></tr>
+        <tr><th scope="row">00000405, build</th><td>Measurement</td><td>27,007,529</td></tr>
+        <tr><th scope="row">00000405, edit</th><td>Measurement</td><td>54,661,467</td></tr>
+        <tr><th scope="row">P8 spring threaded boss <small>refused</small></th><td>Build</td><td>55,626,285</td></tr>
+        <tr><th scope="row">P6 print</th><td>Print</td><td>80,742,140</td></tr>
+      </tbody>
+    </table></div>
+    <p>Phase 5 works on these costs and on the display mesher's work and size.</p>
+    <div class="scope">
+      <p>Every number on this page comes from the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-3.md" target="_blank" rel="noopener">Checkpoint 3 report</a>, the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-4.md" target="_blank" rel="noopener">Checkpoint 4 report</a> and the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-3-coverage.md" target="_blank" rel="noopener">coverage recount</a>, which have the method, the raw tables and the commands to rerun them. The plan is in the <a href="https://github.com/BohnBawerick/catallax/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.</p>
+    </div>
+  </section>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>Checkpoints 3 and 4</span></div>
+  <div class="block__cell"><small>Source</small><a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-3.md" target="_blank" rel="noopener">Checkpoint report</a></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="read.js"></script>
+</body>
+</html>

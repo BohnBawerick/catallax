@@ -19,7 +19,8 @@ mod macros;
 mod ahead;
 pub use ahead::{
     AheadSite, Charges, Helpers, RunAhead, ValuesAhead, private_cache, record, run_ahead_adopted,
-    run_ahead_waits, set_run_ahead_loops, set_run_ahead_wait, set_threads, shared_caches, threads,
+    run_ahead_waits, scoped_in_order, scoped_try_collect, set_run_ahead_loops, set_run_ahead_wait,
+    set_threads, shared_caches, threads,
 };
 mod algebraic;
 mod angle;

@@ -330,7 +330,7 @@ pub(super) fn check(
     proofs: &[SpanProof],
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    order::in_order(
+    scoped_try_collect(
         proofs.len(),
         |i, dec| {
             span(

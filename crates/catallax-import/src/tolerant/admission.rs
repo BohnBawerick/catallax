@@ -667,9 +667,7 @@ pub fn import_step(
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let (parsed, source, angles) = prepare(bytes, expected_sha256, options, dec)?;
-    // The record is in the file's length unit, which this reading has.
-    let recorded = crate::recorded::written_tolerance(bytes)
-        .and_then(|written| written.in_millimetres(&source.mm_per_unit));
+    let recorded = parsed.recorded_tolerance(&source.mm_per_unit);
     let imported = admit(
         parsed,
         source,

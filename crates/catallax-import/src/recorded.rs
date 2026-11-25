@@ -141,7 +141,14 @@ pub(crate) fn written_tolerance(bytes: &[u8]) -> Option<WrittenTolerance> {
 pub fn recorded_tolerance(bytes: &[u8]) -> Option<RecordedTolerance> {
     let written = written_tolerance(bytes)?;
     let graph = crate::part21::parse(bytes).ok()?;
-    let mm_per_unit = crate::recognize::source_length_scale(&graph, &Decider::default()).ok()?;
+    in_graph(&written, &graph)
+}
+
+pub(crate) fn in_graph(
+    written: &WrittenTolerance,
+    graph: &crate::part21::Graph,
+) -> Option<RecordedTolerance> {
+    let mm_per_unit = crate::recognize::source_length_scale(graph, &Decider::default()).ok()?;
     written.in_millimetres(&mm_per_unit)
 }
 

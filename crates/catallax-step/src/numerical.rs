@@ -901,39 +901,36 @@ fn for_receiver(
     ))
 }
 
-/// The STEP header of a numerical file: its two description strings (the
-/// stamp, then the record of the tolerance), its length unit, and, for an
-/// export with a receiver profile, its uncertainty.
-fn file_header(
+/// Serialize a numerical file with its stamp, recorded tolerance and units.
+fn render_file(
+    graph: &mut Graph,
     body: &NumericalBody,
     options: &NumericalStepOptions,
-    items: &[usize],
+    solid: Id,
     description: [&str; 2],
     uncertainty: &str,
 ) -> String {
-    let prefix = options
-        .scale
-        .map_or(crate::export::MILLI, LengthScale::prefix);
+    use crate::document::{self, BREP, MILLI, Preamble};
+    let prefix = options.scale.map_or(MILLI, LengthScale::prefix);
     // Rule T8 writes the uncertainty as part of an export with a receiver
     // profile. Without one the header stays as it was.
     let uncertainty = options.receiver.as_ref().map(|_| uncertainty);
-    if body.kind() == BodyKind::Surface {
-        crate::export::approximate_surface_header(
-            &options.product_name,
-            items,
-            &description,
-            uncertainty,
-            prefix,
-        )
+    let representation = if body.kind() == BodyKind::Surface {
+        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
     } else {
-        crate::export::approximate_header(
-            &options.product_name,
-            items,
-            &description,
-            uncertainty,
-            prefix,
-        )
-    }
+        BREP
+    };
+    let preamble = Preamble::add(
+        graph,
+        &options.product_name,
+        representation,
+        &[solid],
+        uncertainty,
+        prefix,
+        false,
+    );
+    let layout = preamble.layout(graph, &[solid], &[]);
+    document::render(graph, &layout, &options.product_name, &description)
 }
 
 /// The stamp's note of a scale and a receiver.
@@ -1152,7 +1149,7 @@ impl Writer<'_> {
     }
 
     fn finish(
-        self,
+        mut self,
         solid: Id,
         body: &NumericalBody,
         payload: Payload,
@@ -1209,16 +1206,14 @@ impl Writer<'_> {
         description.push_str(&stamp_extras(options));
         let record = recorded_stamp(&recorded);
         let uncertainty_text = crate::number::decimal(&recorded.text);
-        let mut file = self.graph.write(&[solid], |roots| {
-            file_header(
-                body,
-                options,
-                roots,
-                [&description, &record],
-                &uncertainty_text,
-            )
-        });
-        file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+        let file = render_file(
+            &mut self.graph,
+            body,
+            options,
+            solid,
+            [&description, &record],
+            &uncertainty_text,
+        );
         let written = if self.audit {
             let limit = audit_limit(&recorded.tolerance_mm);
             Some(match payload {

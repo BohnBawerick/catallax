@@ -20,6 +20,7 @@ mod canonical;
 mod certified_spline;
 mod chart;
 mod cut;
+mod document;
 mod equator;
 mod export;
 mod fit;
@@ -182,16 +183,14 @@ pub fn write_step<W: Write>(
     dec: &mut Decider,
     out: &mut W,
 ) -> Answered<StepReport> {
-    if options.seams == Seams::Legacy {
-        return write_any(model, bodies, options, dec, out)
-            .map(|answer| with_definition_deviation(model, bodies, answer));
-    }
-    let mut file = Vec::new();
-    let answer = write_any(model, bodies, options, dec, &mut file)?;
-    check_seams(&file)?;
-    out.write_all(&file)
-        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
-    Ok(with_definition_deviation(model, bodies, answer))
+    let answer = build_part(model, bodies, options, None, dec)?;
+    let report = answer
+        .value
+        .write(&options.product_name, options.seams, out)?;
+    Ok(catallax_numbers::Answer {
+        value: report,
+        marks: answer.marks,
+    })
 }
 
 /// Writes one body as a STEP AP242 file with its manufacturing information
@@ -215,67 +214,84 @@ pub fn write_step_with_pmi<W: Write>(
     dec: &mut Decider,
     out: &mut W,
 ) -> Answered<StepReport> {
-    pmi.validate()?;
-    if pmi.is_empty() {
-        return write_step(model, &[body], options, dec, out);
-    }
-    let bodies = [body];
-    let charts = model
-        .chart_expansion(body)
-        .is_some_and(catallax_topology::ChartExpansion::needs_cells);
-    if charts || catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
-        return Err(catallax_numbers::Refusal::new(
-            "step.pmi-unsupported-body",
-            "manufacturing information is not written for a body with expanded charts or a drafted cylinder",
-        ));
-    }
-    let mut file = Vec::new();
-    let answer = write_prepared(model, &bodies, options, dec, &mut file, true, Some(pmi))?;
-    if options.seams == Seams::Required {
-        check_seams(&file)?;
-    }
-    out.write_all(&file)
-        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
-    Ok(with_definition_deviation(model, &bodies, answer))
+    let answer = build_part(model, &[body], options, Some(pmi), dec)?;
+    let report = answer
+        .value
+        .write(&options.product_name, options.seams, out)?;
+    Ok(catallax_numbers::Answer {
+        value: report,
+        marks: answer.marks,
+    })
 }
 
 // The file's bound against the exact definition: what the writer moved plus
 // the worst fitted carrier's measured distance to its definition.
-fn with_definition_deviation(
+fn definition_deviation(
     model: &Model,
     bodies: &[BodyId],
-    mut answer: catallax_numbers::Answer<StepReport>,
-) -> catallax_numbers::Answer<StepReport> {
+    answer: &mut catallax_numbers::Answer<document::PartDocument>,
+) {
     if answer
         .marks
         .iter()
         .any(|mark| mark.code == "step.approximate-pipe-end")
     {
-        answer.value.definition_deviation = None;
-        return answer;
+        return;
     }
     let fit = bodies
         .iter()
         .filter_map(|body| catallax_topology::fitted_face_bound(model, *body))
         .max()
         .unwrap_or_else(Rational::zero);
-    answer.value.definition_deviation = Some(&answer.value.max_deviation + &fit);
-    answer
+    answer.value.report.definition_deviation = Some(&answer.value.report.max_deviation + &fit);
 }
 
-fn write_any<W: Write>(
+fn build_part(
+    model: &Model,
+    bodies: &[BodyId],
+    options: &StepOptions,
+    pmi: Option<&pmi::Pmi<catallax_topology::FaceId>>,
+    dec: &mut Decider,
+) -> Answered<document::PartDocument> {
+    let pmi = if let Some(pmi) = pmi {
+        pmi.validate()?;
+        (!pmi.is_empty()).then_some(pmi)
+    } else {
+        None
+    };
+    let mut answer = if let Some(pmi) = pmi {
+        let [body] = bodies else {
+            unreachable!("PMI is written for one body");
+        };
+        let charts = model
+            .chart_expansion(*body)
+            .is_some_and(catallax_topology::ChartExpansion::needs_cells);
+        if charts || catallax_topology::DraftedCylinder::of_body(model, *body, dec)?.is_some() {
+            return Err(catallax_numbers::Refusal::new(
+                "step.pmi-unsupported-body",
+                "manufacturing information is not written for a body with expanded charts or a drafted cylinder",
+            ));
+        }
+        build_prepared(model, bodies, options, dec, true, Some(pmi))?
+    } else {
+        build_geometry(model, bodies, options, dec)?
+    };
+    definition_deviation(model, bodies, &mut answer);
+    Ok(answer)
+}
+
+fn build_geometry(
     model: &Model,
     bodies: &[BodyId],
     options: &StepOptions,
     dec: &mut Decider,
-    out: &mut W,
-) -> Answered<StepReport> {
+) -> Answered<document::PartDocument> {
     if bodies.iter().any(|body| {
         model
             .chart_expansion(*body)
             .is_some_and(catallax_topology::ChartExpansion::needs_cells)
     }) {
-        return rational_atlas::write(model, bodies, options, dec, out);
+        return rational_atlas::build(model, bodies, options, dec);
     }
     if let [body] = bodies
         && catallax_topology::DraftedCylinder::of_body(model, *body, dec)?.is_some()
@@ -285,42 +301,34 @@ fn write_any<W: Write>(
             file_tolerance: options.curve_tolerance.clone(),
             decimal_places: options.significant_digits,
         };
-        return certified_spline::oblique::write(model, *body, &spline_options, dec, out);
+        return certified_spline::oblique::build(model, *body, &spline_options, dec);
     }
-    write_prepared(model, bodies, options, dec, out, false, None)
+    build_prepared(model, bodies, options, dec, false, None)
 }
 
-fn write_prepared<W: Write>(
+fn build_prepared(
     model: &Model,
     bodies: &[BodyId],
     options: &StepOptions,
     dec: &mut Decider,
-    out: &mut W,
     face_regions: bool,
     pmi: Option<&pmi::Pmi<catallax_topology::FaceId>>,
-) -> Answered<StepReport> {
+) -> Answered<document::PartDocument> {
     let prepared = observe("step.regularize", &"export", dec, |dec| {
         regularize::prepare(model, bodies, options, dec)
     })?;
-    let answer = if let Some(prepared) = prepared {
+    if let Some(prepared) = prepared {
         export::Exporter::new(&prepared.model, options, dec)
             .face_regions(face_regions)
             .regularizations(prepared.records, prepared.face_errors, prepared.edge_errors)
             .pmi(pmi.cloned())
-            .build(&prepared.bodies)?
+            .build(&prepared.bodies)
     } else {
         export::Exporter::new(model, options, dec)
             .face_regions(face_regions)
             .pmi(pmi.cloned())
-            .build(bodies)?
-    };
-    let (file, report) = answer.value;
-    out.write_all(file.as_bytes())
-        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
-    Ok(catallax_numbers::Answer {
-        value: report,
-        marks: answer.marks,
-    })
+            .build(bodies)
+    }
 }
 
 pub(crate) fn observe<T>(
@@ -391,12 +399,9 @@ pub fn write_stand_in_step<W: Write>(
     out: &mut W,
 ) -> Answered<StepReport> {
     let answer = export::Exporter::new(model, options, dec).build_stand_in(envelope, bodies)?;
-    let (file, report) = answer.value;
-    if options.seams == Seams::Required {
-        seams::check(&file)?;
-    }
-    out.write_all(file.as_bytes())
-        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
+    let report = answer
+        .value
+        .write(&options.product_name, options.seams, out)?;
     Ok(catallax_numbers::Answer {
         value: report,
         marks: answer.marks,

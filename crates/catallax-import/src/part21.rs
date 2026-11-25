@@ -57,7 +57,19 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Graph, ImportRefusal> {
     Ok(parse_document(bytes)?.graph)
 }
 
+#[cfg(test)]
+thread_local! {
+    static PARSE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn parse_count() -> usize {
+    PARSE_COUNT.with(std::cell::Cell::get)
+}
+
 pub(crate) fn parse_document(bytes: &[u8]) -> Result<Document, ImportRefusal> {
+    #[cfg(test)]
+    PARSE_COUNT.with(|count| count.set(count.get() + 1));
     let text = std::str::from_utf8(bytes).map_err(|_| malformed("file is not UTF-8 text"))?;
     let text = strip_comments(text)?;
     let (mut in_data, mut seen_data) = (false, false);

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
@@ -9,7 +8,8 @@ use catallax_numbers::{
 use catallax_shapes::{CurveId, Point3, Surface, SurfaceId, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model, Sense, ShellId, VertexId};
 
-use crate::graph::{Graph, Id, boolean, refs, string, text};
+use crate::document::{BREP, MILLI, PartDocument, PartReferences, Preamble};
+use crate::graph::{Graph, Id, boolean, refs, text};
 use crate::number::{self, Number, Point};
 use crate::{StepOptions, StepReport};
 
@@ -1718,7 +1718,11 @@ impl<'a> Exporter<'a> {
 
     /// The entities of the part's manufacturing information, added after
     /// every face is written. Each dimension's nominal is measured here.
-    fn annotations(&mut self, pmi: &crate::pmi::Pmi<FaceId>) -> Result<Vec<Id>, Refusal> {
+    fn annotations(
+        &mut self,
+        pmi: &crate::pmi::Pmi<FaceId>,
+        references: PartReferences,
+    ) -> Result<Vec<Id>, Refusal> {
         pmi.validate()?;
         let digits = self.digits();
         let mut nominals = Vec::with_capacity(pmi.items.len());
@@ -1734,12 +1738,13 @@ impl<'a> Exporter<'a> {
             &mut self.graph,
             self.model,
             &self.written_faces,
+            references,
             pmi,
             &nominals,
         )
     }
 
-    pub(crate) fn build(self, bodies: &[BodyId]) -> Answered<(String, StepReport)> {
+    pub(crate) fn build(self, bodies: &[BodyId]) -> Answered<PartDocument> {
         self.build_parts(bodies, None)
     }
 
@@ -1747,7 +1752,7 @@ impl<'a> Exporter<'a> {
         self,
         envelope: BodyId,
         bodies: &[BodyId],
-    ) -> Answered<(String, StepReport)> {
+    ) -> Answered<PartDocument> {
         self.build_parts(bodies, Some(envelope))
     }
 
@@ -1755,7 +1760,7 @@ impl<'a> Exporter<'a> {
         mut self,
         bodies: &[BodyId],
         envelope: Option<BodyId>,
-    ) -> Answered<(String, StepReport)> {
+    ) -> Answered<PartDocument> {
         self.fillet |= bodies
             .iter()
             .copied()
@@ -1847,7 +1852,7 @@ impl<'a> Exporter<'a> {
                                 .charts(prepared.plan)
                                 .build_parts(&prepared.bodies[..bodies.len()], envelope)
                                 .map(|mut answer| {
-                                    for region in &mut answer.value.1.face_map {
+                                    for region in &mut answer.value.report.face_map {
                                         if let Some(source) = sources.get(&region.face) {
                                             region.face = *source;
                                         }
@@ -1857,7 +1862,8 @@ impl<'a> Exporter<'a> {
                         });
                     match charted {
                         Ok(Some(answer))
-                            if answer.value.1.max_deviation <= self.options.curve_tolerance =>
+                            if answer.value.report.max_deviation
+                                <= self.options.curve_tolerance =>
                         {
                             return Ok(answer);
                         }
@@ -1985,50 +1991,57 @@ impl<'a> Exporter<'a> {
             .curve_tolerance
             .clone()
             .max(self.report.max_deviation.clone());
-        let uncertainty = number::decimal(&uncertainty.to_decimal_bounds(self.digits()).1);
+        let uncertainty = (!self.approximate_pipe_ends || envelope.is_some())
+            .then(|| number::decimal(&uncertainty.to_decimal_bounds(self.digits()).1));
+        let representation = if envelope.is_some() || surfaces || wires {
+            if envelope.is_none() && self.report.solids == 0 && wires && !surfaces {
+                "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION"
+            } else if envelope.is_none() && self.report.solids == 0 && surfaces && !wires {
+                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+            } else {
+                "SHAPE_REPRESENTATION"
+            }
+        } else {
+            BREP
+        };
+        let description: &[_] = if self.approximate_pipe_ends && envelope.is_none() {
+            &[
+                "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished",
+            ]
+        } else {
+            &["catallax export"]
+        };
+        let preamble = Preamble::add(
+            &mut self.graph,
+            &self.options.product_name,
+            representation,
+            &solids,
+            uncertainty.as_deref(),
+            MILLI,
+            false,
+        );
         let annotations = match self.pmi.take() {
-            Some(pmi) => self.annotations(&pmi)?,
+            Some(pmi) => self.annotations(&pmi, preamble.references)?,
             None => Vec::new(),
         };
-        let mut output = self.graph.write_with(&solids, &annotations, |numbers| {
-            if envelope.is_some() {
-                stand_in_header(&self.options.product_name, numbers, &uncertainty)
-            } else if surfaces || wires {
-                representation_header(
-                    &self.options.product_name,
-                    numbers,
-                    if self.approximate_pipe_ends { None } else { Some(&uncertainty) },
-                    if self.report.solids == 0 && wires && !surfaces {
-                        "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION"
-                    } else if self.report.solids == 0 && surfaces && !wires {
-                        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
-                    } else {
-                        "SHAPE_REPRESENTATION"
-                    },
-                    &[if self.approximate_pipe_ends {
-                        "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished"
-                    } else {
-                        "catallax export"
-                    }],
-                    MILLI,
-                )
-            } else if self.approximate_pipe_ends {
-                approximate_header(&self.options.product_name, numbers, &["approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished"], None, MILLI)
-            } else {
-                header(&self.options.product_name, numbers, &uncertainty)
-            }
+        let layout = preamble.layout(&self.graph, &solids, &annotations);
+        let mut answer = Answer::exact(PartDocument {
+            graph: self.graph,
+            layout,
+            references: preamble.references,
+            items: solids,
+            description,
+            report: self.report,
         });
-        output.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
-        let mut answer = Answer::exact((output, self.report));
         if self.approximate_pipe_ends {
             // The value is a category flag, not an invented distance bound.
             answer.marks.push(Mark::new("step.approximate-pipe-end", BoundKind::Value, Rational::one(), "numerically qualified end-section parameter maps; complete file bound unestablished"));
         }
-        if answer.value.1.max_deviation > self.options.curve_tolerance {
+        if answer.value.report.max_deviation > self.options.curve_tolerance {
             answer.marks.push(Mark::new(
                 "step.tolerance-not-reached",
                 BoundKind::Distance,
-                answer.value.1.max_deviation.clone(),
+                answer.value.report.max_deviation.clone(),
                 "decimal rounding or spline fitting exceeded the requested tolerance",
             ));
         }
@@ -2084,131 +2097,6 @@ fn include_bounds(bounds: &mut Option<Bounds>, other: &Bounds) {
     } else {
         *bounds = Some(other.clone());
     }
-}
-
-pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) -> String {
-    representation_header(
-        product_name,
-        solids,
-        Some(uncertainty),
-        "ADVANCED_BREP_SHAPE_REPRESENTATION",
-        &["catallax export"],
-        MILLI,
-    )
-}
-
-pub(crate) fn assembly_header(
-    product_name: &str,
-    placements: &[usize],
-    complete_body_bound: bool,
-) -> String {
-    let description: &[&str] = if complete_body_bound {
-        &["catallax assembly export"]
-    } else {
-        &[
-            "catallax assembly export",
-            "at least one part lacks a complete deviation bound; complete_body_bound=unestablished",
-        ]
-    };
-    let mut header = representation_header(
-        product_name,
-        placements,
-        None,
-        "SHAPE_REPRESENTATION",
-        description,
-        MILLI,
-    );
-    let category = "\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('";
-    let start = header
-        .find(category)
-        .expect("STEP header has a product category")
-        + category.len();
-    header.replace_range(start..start + "part".len(), "assembly");
-    header
-}
-
-fn stand_in_header(product_name: &str, items: &[usize], uncertainty: &str) -> String {
-    representation_header(
-        product_name,
-        items,
-        Some(uncertainty),
-        "SHAPE_REPRESENTATION",
-        &["catallax export"],
-        MILLI,
-    )
-}
-
-/// The length unit of every file but a scaled numerical export.
-pub(crate) const MILLI: &str = ".MILLI.";
-
-/// `description` is the header's list of description strings, in order.
-pub(crate) fn approximate_header(
-    product_name: &str,
-    solids: &[usize],
-    description: &[&str],
-    uncertainty: Option<&str>,
-    length_prefix: &str,
-) -> String {
-    representation_header(
-        product_name,
-        solids,
-        uncertainty,
-        "ADVANCED_BREP_SHAPE_REPRESENTATION",
-        description,
-        length_prefix,
-    )
-}
-
-pub(crate) fn approximate_surface_header(
-    product_name: &str,
-    items: &[usize],
-    description: &[&str],
-    uncertainty: Option<&str>,
-    length_prefix: &str,
-) -> String {
-    representation_header(
-        product_name,
-        items,
-        uncertainty,
-        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
-        description,
-        length_prefix,
-    )
-}
-
-fn representation_header(
-    product_name: &str,
-    solids: &[usize],
-    uncertainty: Option<&str>,
-    representation: &str,
-    description: &[&str],
-    length_prefix: &str,
-) -> String {
-    // One STEP string per entry: text inside one entry cannot end it, so an
-    // entry of its own is never mixed with another's text.
-    let description = description
-        .iter()
-        .copied()
-        .map(string)
-        .collect::<Vec<_>>()
-        .join(",");
-    let uncertainty_entity = uncertainty.map_or_else(String::new, |value| format!(
-        "#13=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({value}),#10,'distance_accuracy_value','maximum deviation from the exact model');\n"
-    ));
-    let uncertainty_context = if uncertainty.is_some() {
-        "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#13))"
-    } else {
-        ""
-    };
-    let name = string(product_name);
-    let filename = string(&format!("{product_name}.step"));
-    let mut items = String::from("#17");
-    for id in solids {
-        write!(items, ",#{id}").unwrap();
-    }
-    format!(
-        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(({description}),'2;1');\nFILE_NAME({filename},'1970-01-01T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {{ 1 0 10303 442 1 1 4 }}'));\nENDSEC;\nDATA;\n#1=APPLICATION_CONTEXT('managed model based 3d engineering');\n#2=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#1);\n#3=PRODUCT_CONTEXT('',#1,'mechanical');\n#4=PRODUCT({name},{name},'',(#3));\n#5=PRODUCT_DEFINITION_FORMATION('','',#4);\n#6=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');\n#7=PRODUCT_DEFINITION('design','',#5,#6);\n#8=PRODUCT_DEFINITION_SHAPE('','',#7);\n#9=SHAPE_DEFINITION_REPRESENTATION(#8,#16);\n#10=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT({length_prefix},.METRE.));\n#11=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n#12=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());\n{uncertainty_entity}#14=(GEOMETRIC_REPRESENTATION_CONTEXT(3){uncertainty_context}GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11,#12))REPRESENTATION_CONTEXT('',''));\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#4));\n#16={representation}({name},({items}),#14);\n#17=AXIS2_PLACEMENT_3D('',#18,#19,#20);\n#18=CARTESIAN_POINT('',(0.,0.,0.));\n#19=DIRECTION('',(0.,0.,1.));\n#20=DIRECTION('',(1.,0.,0.));\n"
-    )
 }
 
 fn arc_error(curve: &Curve, start: &Vertex, end: &Vertex) -> Rational {

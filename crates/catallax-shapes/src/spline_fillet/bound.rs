@@ -169,12 +169,12 @@ pub(super) fn recompute(
     estimates: &[[f64; 3]],
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
-    let data = order::in_order(
+    let data = scoped_try_collect(
         nodes.len(),
-        |i, dec| Ok(carrier::node(exact, &nodes[i].tau, estimates[i], dec)?.1),
+        |i, dec| carrier::node(exact, &nodes[i].tau, estimates[i], dec).map(|(_, data)| data),
         dec,
     )?;
-    let bounds = order::in_order(
+    let bounds = scoped_try_collect(
         nodes.len() - 1,
         |i, dec| {
             span_bound(
@@ -283,7 +283,7 @@ pub(super) fn refine(
         let open: Vec<usize> = (0..entries.len())
             .filter(|&i| entries[i].proved.is_none())
             .collect();
-        let proved = order::in_order(
+        let proved = scoped_try_collect(
             open.len(),
             |k, dec| {
                 let entry = &entries[open[k]];
@@ -300,7 +300,7 @@ pub(super) fn refine(
         let open: Vec<usize> = (0..pieces.len())
             .filter(|&i| pieces[i].outcome.is_none())
             .collect();
-        let outcomes = order::in_order(
+        let outcomes = scoped_try_collect(
             open.len(),
             |k, dec| {
                 let i = open[k];

@@ -34,6 +34,8 @@ There are two kinds of record.
 
 A loop of such computations uses `values_ahead!`. The writer visits the items in order, and other threads compute later ones whole. Each item's value and charges are taken once: from a worker when its record is usable and fits the allowance, otherwise from the writer's own run. The writer waits a while for an item a worker has begun, no longer than its own deadline, and then runs the item itself. A search that stops at the first success works the same way; what the workers computed past the stop is dropped.
 
+When inputs already live on the calling thread, use `catallax_numbers::scoped_in_order` instead of copying them into a pooled job. The spline fillet and patch-pair proofs use `scoped_try_collect` to stop at the first refusal in input order. The scoped loop joins its helpers before returning. If a helper unwinds or its work cannot be adopted, the caller computes that item again. Work past the caller's stop is discarded without charging it.
+
 ### Work that adds to the model
 
 Most loop items in a Boolean are not values. The cell of a face in imprint, or the classification of a piece, adds points, coedges, faces and facts to the model while it runs, and later stages read what it left. Such an item can still run on a copy, with a journal.

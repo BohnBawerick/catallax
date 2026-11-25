@@ -10,13 +10,13 @@ use catallax_features::evaluate;
 use catallax_import::read_step_pmi;
 use catallax_numbers::{Decider, Rational};
 use catallax_recipe::Recipe;
-use catallax_shapes::Surface;
+use catallax_shapes::{Pose, Surface};
 use catallax_step::pmi::{
     Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, Item, ItemKind, Limits,
     Location, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture, nominals,
 };
 use catallax_step::{StepOptions, write_step_with_pmi};
-use catallax_topology::{BodyId, FaceId, Loop, Model};
+use catallax_topology::{BodyId, FaceId, Loop, Model, cylinder};
 
 fn q(text: &str) -> Rational {
     Rational::parse(text).unwrap()
@@ -494,7 +494,6 @@ fn the_bracket_pmi_reads_back_on_the_same_faces() {
         }
     }
     assert_eq!(sorted(back), sorted(expected));
-    check_conflicting_datum(&part, &pmi, &file, &read.pmi);
 
     // The geometry is the file the plain writer makes, with the faces named.
     let mut plain = Vec::new();
@@ -514,20 +513,65 @@ fn the_bracket_pmi_reads_back_on_the_same_faces() {
     assert_eq!(count(&plain, "SHAPE_ASPECT"), 0);
 }
 
-fn check_conflicting_datum(part: &Bracket, pmi: &Pmi<FaceId>, clean: &str, expected: &Pmi<String>) {
+#[test]
+fn a_conflicting_datum_does_not_reserve_its_letter() {
+    let mut model = Model::new();
+    let body = cylinder(&mut model, q("4"), q("5"), &Pose::identity()).unwrap();
+    let part = Bracket { model, body };
+    let bottom = part.planes(2, "0");
+    let top = part.planes(2, "5");
+    let barrel = part.round(2, "4", ["0", "0"]);
+    let datum = |letter: &str, feature| {
+        item(
+            &format!("Datum {letter}"),
+            ItemKind::Datum(Datum {
+                letter: letter.into(),
+                feature,
+            }),
+        )
+    };
+    let pmi = Pmi {
+        items: vec![
+            datum("A", bottom.clone()),
+            datum("B", top),
+            item(
+                "Diameter",
+                ItemKind::Size(Size {
+                    kind: SizeKind::Diameter,
+                    features: vec![barrel.clone()],
+                    limits: None,
+                    nominal: Some(q("8")),
+                    through: false,
+                    thread: None,
+                }),
+            ),
+            item(
+                "Parallelism to B",
+                ItemKind::Tolerance(GeometricTolerance {
+                    characteristic: Characteristic::Parallelism,
+                    value: q("0.1"),
+                    diameter_zone: false,
+                    material: None,
+                    datums: vec!["B".into()],
+                    features: vec![bottom],
+                }),
+            ),
+        ],
+        part: PartNotes::default(),
+    };
+    let (clean, _) = write(&part, &pmi);
+    if let Some(directory) = std::env::var_os("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("datum-conflict-cylinder.step"),
+            &clean,
+        )
+        .unwrap();
+    }
+
     // Put a datum before the real B, then make it claim B's letter and A's faces.
     let mut mixed = pmi.clone();
-    mixed.items.insert(
-        1,
-        item(
-            "Conflicting datum",
-            ItemKind::Datum(Datum {
-                letter: "X".into(),
-                feature: part.planes(2, "21"),
-            }),
-        ),
-    );
-    let (file, report) = write(part, &mixed);
+    mixed.items.insert(1, datum("X", barrel));
+    let (file, report) = write(&part, &mixed);
     let datum = |letter| {
         let suffix = format!(",'{letter}');");
         file.lines()
@@ -569,25 +613,24 @@ fn check_conflicting_datum(part: &Bracket, pmi: &Pmi<FaceId>, clean: &str, expec
             reason: "its feature already carries a datum".into(),
         }]
     );
-    assert_eq!(&read.pmi, expected);
     let faces = written_faces(&file, &report);
     let retained = read
         .pmi
         .try_map(|_, face| faces.get(face).copied().ok_or_else(|| face.clone()))
         .unwrap();
-    assert_eq!(write(part, &retained).0, clean);
+    assert_eq!(sorted(retained.clone()), sorted(pmi));
+    assert_eq!(write(&part, &retained).0, clean);
 
-    // With no valid B, the conflicting datum still leaves both tolerances
-    // unresolved, with the same diagnostic as before.
+    // With no valid B, the tolerance still has the same diagnostic as before.
     let without_b = file.replacen(relationship(b), "", 1);
     let read = read_step_pmi(without_b.as_bytes()).unwrap();
     let reasons: Vec<_> = read
         .skipped
         .iter()
-        .filter(|skip| skip.kind == "GEOMETRIC_TOLERANCE")
+        .filter(|skip| skip.kind == "PARALLELISM_TOLERANCE")
         .map(|skip| skip.reason.as_str())
         .collect();
-    assert_eq!(reasons, ["datum B is not defined"; 2]);
+    assert_eq!(reasons, ["datum B is not defined"]);
 }
 
 #[test]

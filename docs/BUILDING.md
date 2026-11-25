@@ -34,11 +34,8 @@ cargo build --release -p catallax-cli --bins
 
 The [verification skill](../.claude/skills/verify-catallax/SKILL.md) covers corpus replay, caching, resume, strict STEP comparison and matched-pair timing. The [versioned contract](VERIFY-INTERFACE.md) defines work accounting and the expanded geometry kind tags. Pass private inputs as runtime paths and keep proof artifacts outside the repository.
 
-
 ## Contributing
 
-Read the design rules first. A guessed topological decision, an unproven construction fact, an `unsafe` block or a silent fallback is a defect. Keep API and format changes explicit, update callers and document the migration in a new [interface-change fragment](interface-changes/README.md). Bring mathematical evidence for geometry changes and report refusals honestly.
+Read the [architecture rules](ARCHITECTURE.md) first. A guessed topological decision, an unproven construction fact, an `unsafe` block or a silent fallback is a defect. Keep API and format changes explicit, update callers and document the migration in a new [interface-change fragment](interface-changes/README.md). Bring mathematical evidence for geometry changes and report refusals honestly.
 
-Catallax uses AI coding agents, directed and checked by a human. Most of the inherited implementation was written that way. Whether that approach scales to a useful CAD kernel remains an open question.
-
-Agent-written code is welcome. Say how it was produced and stay accountable for what it does. This repository's independent tester was built without seeing the kernel's code.
+Agent-written code is welcome. Say how it was produced and stay accountable for it.

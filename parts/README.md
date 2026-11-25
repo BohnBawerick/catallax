@@ -1,6 +1,6 @@
 # Target parts
 
-The [M5 scoreboard](../docs/milestones/M5-scoreboard.md) adds ten answering
+The [M5 scoreboard](../docs/archive/milestones/M5-scoreboard.md) adds ten answering
 real parts from the pinned R8 corpus beside these synthetic targets. It also
 republishes all eight P0 cases with translated, scaled and seam-shifted copies.
 Its shared-machine clocks are observations for M26, not a timing qualification.
@@ -8,7 +8,7 @@ Original recipes and the historical census are unchanged. Private corpus
 wrappers are prepared at runtime with `tools/research/m5_scoreboard.py`;
 source geometry is not checked in.
 
-These are versioned `catallax-recipe` inputs for the roadmap's target parts. P5 uses version 4 for the [reviewed roll-over migration](../docs/interface-changes/2026-10-27-p5-roll-over-recipe-migration.md). Dimensions use exact decimal or rational strings in millimetres. P0 has eight separate recipes so an early refusal cannot hide another hard-case family.
+These are versioned `catallax-recipe` inputs for the roadmap's target parts. P5 uses version 4 for the [reviewed roll-over migration](../docs/archive/interface-changes/2026-10-27-p5-roll-over-recipe-migration.md). Dimensions use exact decimal or rational strings in millimetres. P0 has eight separate recipes so an early refusal cannot hide another hard-case family.
 
 | Input | Fixed dimensions and construction |
 | --- | --- |
@@ -55,7 +55,7 @@ python -B .claude/skills/verify-catallax/scripts/check-stl.py \
   /path/to/answer/print.stl /path/to/answer/manifest.json
 ```
 
-The [4.3 printing controls](../docs/milestones/4.3-printing.md) record the P6 baseline, P7 and sheet results.
+The [4.3 printing controls](../docs/archive/milestones/4.3-printing.md) record the P6 baseline, P7 and sheet results.
 
 For a scoreboard that also retains qualified print artifacts, add `--print-tolerance 0.5` to `parts`. Every row then includes a separate `print` response naming its route. Ordinary recipes use B-rep and native-field definitions use field. Use an explicit `route: "field"` wrapper to exercise the independent field print gate; a successful B-rep print does not close it. Unsupported print definitions keep their typed refusal with no route fallback.
 
@@ -89,4 +89,4 @@ python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts part
 
 This is also the separate name-stability CI matrix. Every non-passing B-rep check, including a build wait, fails this focused command. Inspect `brep.summary`, the per-name `brep.faces` and `brep.edges` rows, `field.status` and `waiting`. The 100M name allowance does not change the 1M geometry scoreboard, website comparisons or application latency gates.
 
-The [26 October P1 proof-cost investigation](../docs/milestones/2026-10-26-p1-proof-costs.md) records per-Boolean-stage work and decision shares, including refused stages, and measured construction-route changes. It is not a completed P1 preview/proof or target-part acceptance result.
+The [26 October P1 proof-cost investigation](../docs/archive/milestones/2026-10-26-p1-proof-costs.md) records per-Boolean-stage work and decision shares, including refused stages, and measured construction-route changes. It is not a completed P1 preview/proof or target-part acceptance result.

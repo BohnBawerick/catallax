@@ -89,7 +89,7 @@ count. The GPU uses binary32, while the processor measures in binary64 after
 rounding coordinates and triangles to binary32. Equal triangle minima select the
 first triangle, pending exact resolution. `max_tests` bounds the point-triangle
 product before evaluation. The
-[interface record](../../docs/interface-changes/2026-11-11-unproved-gpu-preview.md#general-named-preview-picking)
+[interface record](../../docs/archive/interface-changes/2026-11-11-unproved-gpu-preview.md#general-named-preview-picking)
 records limits and refusal codes.
 
 The surface-nets first paint remains unnamed. Use its named chart preview when

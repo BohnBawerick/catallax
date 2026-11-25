@@ -74,7 +74,7 @@
 //! unit per binary64 or interval product, the limb rule's price for one-limb
 //! operands (`exact_cost` in `catallax-numbers`). The proof is sequential.
 //!
-//! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
+//! [Checkpoint 2 decisions, section 4.6]: ../../../docs/archive/checkpoints/checkpoint-2-decisions.md
 
 use std::f64::consts::FRAC_1_SQRT_2;
 

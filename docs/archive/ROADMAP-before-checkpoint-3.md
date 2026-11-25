@@ -1,0 +1,773 @@
+Archived on 2026-11-26. Historical record only. Not current rules or plans. Current: [Roadmap](../../ROADMAP.md).
+
+This record preserves the roadmap as it stood before the Checkpoint 3 decisions. Internal staffing notes are omitted.
+The old display plan names 5.1a to 5.1e correspond to steps 5.1 to 5.5 in the current roadmap.
+
+# Roadmap
+
+One roadmap for Catallax, the kernel, and SolidDraft, the app. They are one project in two repositories.
+`VISION.md` in each repository says why. This file says what is done, where we are and what comes next.
+Dates appear only on finished work. Nothing ahead has a date.
+
+## How we run it
+
+- **Most critical first.** The order is set by what hurts most against OpenCASCADE and by what unlocks the most other work. Speed is the last phase.
+- Milestones are numbered by phase in the order of work: 1.1 is the first milestone of phase 1. Work on different code runs side by side. When machines or people are short, the lower number wins.
+- Every phase ends at a checkpoint. A checkpoint is a real step with four parts:
+  1. No new work starts. Running work merges, or is parked with a note saying what works and what does not.
+  2. We gather the results: the coverage count, the edit-chain scoreboard, the STEP census, the list of what still refuses and why, prototype verdicts.
+  3. We update this file. Finished items move to the history with their date.
+  4. The owner picks the order of the next phase.
+- Direction changes at checkpoints. Between them we follow this file. One exception: a proven answer found wrong stops work on that method at once.
+- A milestone is done when its "done when" line is shown on real parts, through SolidDraft where the app has the feature.
+- Earlier plans named milestones M1 to M35. [The table at the end](#old-milestone-names) maps each old name to its number here, so old notes still resolve.
+- **Walk the done-when line first.** A milestone opens by walking its "done when" line end to end, through SolidDraft where the app has the feature, and listing every missing piece on the first day.
+- **Delivery until phase 5.** Large PRs that cover a whole step. Tests are the fewest that prove the change works. No speed work: a speed idea becomes a one-line note in the PR's Later section and joins the phase 5 list. Work off the "done when" line becomes such a note too. The owner's rule of 16 Nov, kept until phase 5 at Checkpoint 1. 3.0A and 3.0B are design work and are not blocked by the no-speed-work rule, Q18.
+- **Tolerance first.** Build fitted geometry in f64, measure the gap, store 1.1 x gap within the caps of T0 to T8, check once, and write STEP marked approximate. The predictor chooses the exact path where it is cheap. The proof button comes at 5.2. [Checkpoint 2 decisions](checkpoints/checkpoint-2-decisions.md), Q1, Q13 and Q30, replace the numerical-first rule.
+- Before writing a new algorithm, check how OpenCASCADE and SMLib solve it, and say in the PR which approach you follow.
+- **The allowance until phase 5.** The application's default work allowance is 100M until phase 5, so slow parts still build in SolidDraft. 20M stays the target. Every edit over 20M records its measured work per stage and joins the [list of cases for phase 5](../phase5-work-cases.md). A request still refuses at the allowance in force, and a refused step is not a completed build.
+- A SolidDraft feedback list goes to one worker as one PR, or two when the kernel changes too.
+
+**Lessons, 15 Nov.** From the first ten hours of phase 1:
+- Tiny cards cost more than they changed. Setup, build, a 50-minute CI queue and review rounds outweighed each change.
+- Exact-first spent 13.6M work units rounding one fillet-end vertex. OpenCASCADE computes that vertex numerically.
+- Nine app items as nine PRs queued on the same test runners.
+
+**Lessons, Checkpoint 1 (16 Nov).** From the whole of phase 1, 98 merged PRs in 48 hours:
+- Waiting cost more than the work. 34 of the 98 PRs waited over 2 hours between opening and merge, through two or three review rounds of 20 to 60 minutes and 30 to 45 minutes of hosted CI. Several CI failures came from the runners, not the change.
+- Splitting the spline work let independent changes run in parallel.
+- Two pieces a "done when" line needed surfaced on the last day: drawing an oblique draft in the app and re-pointing references after a file replacement. Hence walking the line first.
+- The measure moved during the phase. The census headline changed definition several times, the scoreboard became one command only at the checkpoint, three of its ten real parts test nothing and P6 to P10 have no definition. Hence the measures are fixed at the start of phase 2 and their definitions held to Checkpoint 2.
+- Numerical first paid. Complete STEP solid imports rose from 186 to 418, 11 of the 14 spline Boolean requests reach STEP, and P1, P4, P5 and the crossing pipes build.
+- Speed ideas parked as Later notes cost nothing and gave the checkpoint its phase 5 list. A side robustness test cost an hour.
+
+The edit-chain scoreboard is the measure `VISION.md` asks for. The target parts P1 to P10 and ten real parts from the public STEP census are built and edited step by step in Catallax, OpenCASCADE and SMLib, with one definition of done for all three.
+
+## Where we are
+
+[Checkpoint 3](checkpoints/checkpoint-3.md) and [Checkpoint 4](checkpoints/checkpoint-4.md) share the Catallax v0.5.0 cut. SolidDraft v0.8.0 pins the same kernel. The reports record measured results and the remaining acceptance lines.
+
+| Measure at v0.5.0 | Catallax | OpenCASCADE | SMLib |
+| --- | --- | --- | --- |
+| Edit chains, P0 to P5 (13) | 11 | 11 | 7 |
+| Edit chains, phase-2 targets (3) | 0 | 3 | 3 |
+| Edit chains, census parts (10) | 9 | 10 | 8 |
+| STEP census, complete-source valid solid exports (3,000) | 767 | 2,701 healed-valid reference | n/a |
+
+The kernel builds exact solids from a recipe. It has stock solids, extrude, revolve, pattern and mirror, Booleans on analytic solids, certified fillet families, chamfers, planar shells, planar and cylindrical draft, exact lofts, and sweeps along lines, arcs and one spline. It proves where spline faces meet, cuts lofts from the side, and reads and writes STEP and IGES. It imports closed meshes, turns a scan into a clean part, reports mass with proved bounds and answers clash or clearance. A second kernel, the distance field, previews the same recipe and owns lattices and gyroids.
+
+The app has the Edit Suite frame, a 2D sketcher, the part features above, assembly mates, drawings and STEP, IGES, STL, 3MF and OBJ export. It runs on Linux, on macOS and in the browser. SolidDraft also runs [assemblies in the browser](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/348).
+
+### Coverage against OpenCASCADE and SMLib
+
+The [Checkpoint 3 recount](checkpoints/checkpoint-3-coverage.md) records 31 of 61 points (50.8%) under the adopted acceptance bars, with one full and 60 partial lines. The [coverage definitions](../COVERAGE.md) retain the historical 55% and 61% reviews and their different scoring. The recount measures capability scope. STEP file counts and deterministic work have separate measures.
+
+### The three gaps that hurt most
+
+These set the order of phase 1.
+
+1. **Most real STEP files do not open as verified solids.** The v0.5.0 checkpoint census of the same 3,000 files has 767 complete-source valid solid exports (25.57%) and 889 full solid admissions ([Checkpoint 4](checkpoints/checkpoint-4.md#step-census)). Baseline acceptance failed on [one opening work exhaustion](checkpoints/checkpoint-4.md#baseline-preservation). The 16 Nov tier capture had 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%), and 384 valid exports (12.80%); builder processing may heal internally. That capture also retained 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](research/step-census-opened/README.md) records every input and remaining cause.
+2. **The loft top cuts build above the 20M target.** All 14 recorded spline Boolean requests now write checked approximate STEP. The three original top requests build at the 100M application allowance, using 26.78M, 27.29M and 25.95M work. Their files pass raw OpenCASCADE validity with healing off and a later cut. [Stage work and checks](phase1/spline-boolean-top-cuts/REPORT.md) join the phase-5 list.
+3. **Fillets, shells and draft work on certified families only.** Every edge and wall line remains partial in the v0.5.0 recount.
+
+A work unit counts exact arithmetic and is the same on every machine. The target per edit is 20 million units, about 2 to 4 seconds of proof work on one core. Until phase 5 the application allows 100 million.
+
+Twelve things neither reference kernel does are not in the count. They include exact numbers for exact pieces, the same answer on every machine, the field kernel, lattices and scan to part.
+
+## Plan
+
+### Phase 0: close the release
+
+**Doing:** making the 0.2.0 and 0.5.0 cut clean. **Why first:** everything after starts from a working release. **Unlocks:** a fixed point to measure from.
+
+- Both tags published. SolidDraft pinned to the Catallax tag.
+- Every download installs, builds a part and exports it. The browser app loads, opens, edits and exports.
+- Release notes list the slow steps and the two export timeouts, with working links.
+- Faults found at the cut: the macOS test panic is fixed on main. The lattice and gyroid export that timed out is rerun on a quiet machine.
+- Docs match the cut. This file replaces the old plan and roadmap files.
+- Three quick re-checks: whether the later cuts on the filleted P5 housing already build (deferred to 2.1), the last 72,166 units on P4's scoreboard run, and P1 with its fast route off.
+
+**Checkpoint 0.** This roadmap is adopted. Coverage is 55%. Review the 13 pending PRD proposals with the owner (section 14 of [the archived plan](PLAN-2026-11.md#14-proposed-prd-changes)).
+
+### Phase 1: close the three biggest gaps against OpenCASCADE
+
+**1.1 Numerical modelling under stated tolerances**
+- Doing: where an exact proof is unavailable, because it is missing or too costly, the kernel builds the geometry numerically within a stated tolerance. Each result records its tolerance, the checks it passed and any repair. Its STEP file is written and marked approximate.
+- Why here: it is the base under all three gaps. Real files miss exact rules by micrometres. Spline Booleans stop on a gap or a coincidence they cannot prove. OpenCASCADE and SMLib work to a tolerance throughout. We will work to one only where the exact proof is missing or too costly.
+- Unlocks: milestones 1.2 and 1.3 below, the spline fillets of 2.1, and the first bounded-answer rule, for [tangent contact](research/tangent-touch.md).
+- Done when: numerical results carry their tolerance, checks and repair history through import (1.2) and spline cuts (1.3). A STEP file marked approximate opens in OpenCASCADE with healing off and takes an edit there. The curved-housing chain (loft, spline cut, fillet across patches, one more edit, STEP opened by OpenCASCADE) closes with the spline fillets in phase 2 (2.1).
+
+**1.2 Real-file import**
+- Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
+- Measured: the [full frozen 3,000-file rerun](research/step-census-opened/README.md) gives 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). Every expected solid exports and is valid after OCCT builder processing in 384 files (12.80%), with possible internal healing. There are also 119 mixed/partial files and 2,202 retained unverified source-surface sets; 259 inputs refuse recognition/geometry reading and two opening queries time out. No solid tier or export-valid file was lost against the landed 405/374 baseline; all ten real P06 controls are retained. Kernel verified correspondence and atomic source replacement are landed; SolidDraft replacement/reference UI remains in the app slice. The distinct OCCT reference has 2,701 healed-valid solid files (90.03%). The v0.5.0 checkpoint census replaces these figures with 767 complete-source valid solid exports (25.57%) and 889 full solid admissions ([Checkpoint 4](checkpoints/checkpoint-4.md#step-census)).
+- Why here: it is the largest single gap, and it is the first thing a user meets: a bought-in part that will not open.
+- Unlocks: bought-in parts in every later feature, the ten real parts on the scoreboard, direct edits (2.5) and imports in the field (4.4).
+- Done when: the 3,000-file census is rerun and the share that imports is published beside the 6%. Replacing an imported file re-points every reference.
+
+**1.3 Cuts and joins on spline faces, with what is left of the SMLib intersection port**
+- Doing: Booleans on lofts and imported freeform parts that finish and export.
+- Why here: cuts and joins shape every part after its first feature, and today they stop at the first freeform face. It comes after 1.1 because 4 of the 14 refusals are unproved gaps and coincidences, which the rules of 1.1 are meant to settle.
+- Unlocks: every freeform part past its first cut, and the spline fillets of milestone 2.1.
+- Done when: the 14 recorded spline Boolean requests and the loft top cut build and reach STEP. The later cuts on the filleted housing are not a criterion here. They are deferred to 2.1.
+
+<a id="everyday-edge-and-wall"></a>**1.4 Everyday edge and wall features**
+- Doing: fillets over mixed corners, shells with side openings, hollow oblique draft, chamfer corners and general holes on ordinary prismatic and turned parts.
+- Why here: two thirds of the census files have only flat and round faces, so this is where most real parts are. It touches different code from 1.1 to 1.3 and runs beside them. The owner's bar from 7 Nov stands: at least match OpenCASCADE on fillets.
+- Unlocks: the five everyday target parts end to end, and the first complete line in the weakest area.
+- Done when: P1 to P5 each build, edit, save, reopen and export through SolidDraft.
+
+**App, alongside:** browser first. Kernel work runs off the interface thread, commands disabled in the browser work there, and a part built within tolerance shows as finished. Why here: the browser is where a new user tries a real file.
+
+**Checkpoint 1, 16 Nov.** Reached before the spline fillets. State of each milestone against its "done when" line:
+
+- 1.1: done. Numerical results carry tolerance, checks and repairs through import and spline cuts, and approximate STEP opens raw in OpenCASCADE and takes a later cut. The curved-housing chain moved to 2.1.
+- 1.2: done by its line. The census is published at 374 valid files (12.47%) beside the old 6.20%, and replacing an imported file re-points every reference it can match and names the rest. Import is still the largest gap against OpenCASCADE.
+- 1.3: open. 11 of the 14 recorded requests reach checked STEP inside 20M. The three loft top cuts carry into phase 2, lane 1.
+- 1.4: done. P1 to P5 build, edit, save, reopen and export through SolidDraft. The scoreboard still shows P3's membership point and P5's 16 unnamed faces or edges.
+- App: kernel work runs off the page. Cancel and the edit after it stay over 250 ms in the browser; the fix carries into the phase 2 app lane.
+
+### Phase 2: the modelling lines we do not have yet
+
+Why this phase is second: these are whole lines of the count with nothing built. They matter less than phase 1 because a user can work around a missing surface tool, but not around a file that will not open or an edge that will not round.
+
+Existing phase 2 open work remains open; P8 remains parked. Coverage extensions are listed below without renumbering or dropping the existing acceptance criteria.
+
+| # | Milestone | What we are doing | Why here | Unlocks | Done when |
+|---|---|---|---|---|---|
+| 2.1 | <a id="spline-fillets"></a>Fillets between spline faces | Rounded edges on lofted and imported freeform parts, across more than one surface patch. | Needs 1.3. The centre curve of a spline fillet is found by the same engine that intersects spline faces. [One loft edge already rounds within 59 nm](research/spline-fillet-offset-search.md). Moved from phase 1 on 16 Nov. | Finished freeform parts. P9, the lofted duct. The curved-housing chain of 1.1. | A fillet across several patches builds on a loft and on an imported part, and a radius edit keeps the names. The curved housing builds as loft, spline cut, fillet, one more edit, its STEP opens in OpenCASCADE with healing off and takes an edit there, and the later cuts on the filleted housing (old M8) build. |
+| 2.2 | <a id="nurbs-toolkit"></a>NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. SMLib's surface-construction code may be adapted, with attribution, under the 16 Nov widening of the port rule. | Lane 3, from the first day. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. |
+| 2.3 | <a id="surface-bodies"></a>Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Lane 2. Sewing comes first, as stitching imported surface bodies into checked solids; trim, extend and thicken follow 2.2. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
+| 2.4 | <a id="general-sweeps"></a>General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Lane 3, after 2.2. Two "not started" lines. It depends on neither 2.2 nor 2.3. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
+| 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Lane 3, after 2.3, while lane 1 keeps 2.1. Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
+
+**2.4 partial delivery:** taper, guide/twist sweeps, a quarter helix and curved-face termination have build/edit/save/reopen and unhealed STEP evidence. General-motion fits are explicitly numerical. P8 clears the earlier 100M carrier-comparison budget barrier but still refuses `intersect.parametric-surface` during threaded-union clipping at 55,626,285 work; the milestone remains open. Its [stage record](../RECIPE.md#work-recorded-for-phase-5) is retained for Phase 5.
+
+<a id="phase-2-app"></a>**App, alongside:** import health report, reverse-engineering workspace, direct-edit commands, reference axis and point, slot, draft check, exact sketch solver.
+
+**Checkpoint 2.** Scoreboard and census rerun, and the coverage recount. Order of phase 3.
+
+### Phase 3: drawings, assemblies, exchange and the last lines
+
+Why this phase is third: it completes the count. Each item has a working stand-in today (mesh outlines in drawings, assemblies in the app), so parts get made without it.
+
+**3.0A Tolerance-first core**
+
+[Checkpoint 2 specification, section 4.1](checkpoints/checkpoint-2-decisions.md#41-item-30a-tolerance-first-core), Q1, Q5 to Q11, Q18 and Q25. Starts before any other implementation, after owner approval of this roadmap PR. This is design work, not phase-5 speed work.
+
+
+Contents, in order:
+
+1. The 14-edge known-answer test set and its three guards (below). Built first, so the new checker is measured before it replaces the old one.
+2. The A+ checker ([decisions, section 4.2](checkpoints/checkpoint-2-decisions.md#42-the-a-checker)).
+3. Copy tagging ([decisions, section 4.4](checkpoints/checkpoint-2-decisions.md#44-copy-tagging)).
+4. Tolerance rules T0 to T8 ([decisions, section 4.3](checkpoints/checkpoint-2-decisions.md#43-tolerance-rules-t0-to-t8)), including the export receiver profile.
+5. Check once. Export writes the numbers and adds the rounding error to the tolerance; it does not re-admit the body. Reopening trusts the tolerance recorded at export. Today export re-admits every face (21.9M to 42M work on measured cases) and reopening admits again (47 s to 7 min on the R2 rim). The kept test file for opening speed is `owner-pocket-rim-r2.step` (private acceptance fixture, not bundled here).
+6. The gap rule for imports (Q9).
+
+Done when:
+
+- The checker passes all 14 known-answer edges: on each, the reported gap is at least the true gap and at most 1.1 times it.
+- The three guards hold (below).
+- Export no longer re-admits; reopening the R2 rim file no longer re-checks; the work and time of both are recorded before and after.
+- Every existing exact answer is unchanged.
+
+The 14 edges, each with an exact known maximum gap:
+
+1. A narrow peak between the fitter's eighths, on an edge with 100 to 300 knots.
+2. A peak set only by the surface's knot lines.
+3. A narrow peak on a degree-25 surface.
+4. A rational end weight, and a rational rail against a cubic face-curve.
+5. Origin at 1e6 to 1e12.
+6. A peak exactly midway between two equal samples.
+7. Seam crossing, a one-period shift, and a full closed circle.
+8. A 1.0000057 parameter stretch.
+9. A face-curve outside the face domain.
+10. A traced section between faces meeting at under 5 degrees.
+11. A fit that passes at eighths but fails at sixteenths.
+12. A 256-span edge, for work cost.
+13. Zero-gap controls.
+14. A circle against its rational-spline copy with known sag.
+
+Each one copies a recorded failure in OpenCASCADE or SMLib (section 9.6).
+
+The three guards against tuning to the test:
+
+1. Fresh cases each run. Besides the 14 fixed edges, every run generates new random edges, each with a hidden bump of known size and position.
+2. The checker's point count depends only on the shape (knots, seams, poles, piece complexity), never on which edge it is. A reviewer can see this in the code.
+3. Every method in the checker names its source (paper or kernel). No unexplained constants.
+
+Coverage: infrastructure for existing lines; no line becomes full from this milestone alone.
+
+<a id="one-model-and-predictor"></a>**3.0B One model and the predictor**
+
+[Checkpoint 2 specification, section 4.5](checkpoints/checkpoint-2-decisions.md#45-item-30b-one-model-and-the-predictor), Q12 to Q14, Q18, Q25 and Q28. Follows 3.0A, before 3.1.
+
+
+One model (Q12):
+
+- One topology type. Vertex, edge and face gain an optional tolerance; none means exact. Geometry stays stored as it is (even fitted geometry is stored as exact rationals today), so this changes topology, not geometry.
+- Exact-exact decisions keep today's exact predicates. Any decision with a tolerant participant is "distance against the sum of tolerances" through a filtered predicate: f64, then interval, then exact (the CGAL and Shewchuk pattern; Catallax already uses it in mesh and field).
+- Tolerant entities never reach the exact intersector. Every slow case on record is exact arithmetic on fitted or near-tangent data.
+- An exact face never takes a tolerance. Only vertices and edges forced by a tolerant neighbour do (vertex >= edge >= face).
+- Re-tighten tolerant edges between exact surfaces after each operation, as Parasolid's `PK_EDGE_optimise` and ACIS tweak do.
+- The `features.numerical-continuation` refusal goes away: a hole after a numerical fillet works.
+- The numerical checker merges into `Model::check`. `NumericalBody` becomes a view or goes.
+
+Why not the pure CGAL route: on curved faces, exact decisions need exact roots (degree 4 for two cylinders, 324 for two bicubic splines), so the exact fallback is impractical on splines; exact decisions on rounded floats lose design intent (two coaxial cylinders are no longer coaxial); and planes and cylinders lose their exact formulas. The useful part of CGAL, filtered decisions, is inside the one-model design above.
+
+The predictor (Q13):
+
+1. First fix the work meter. Report refunded speculative work in its own counter instead of erasing it (`catallax-numbers/src/operation.rs:192-233`, called at `evaluate.rs:1499`). Charge work in `catallax-step/src/fit.rs` by limb product, as the decider does (`decider.rs:1659`). Today exact STEP export took 8.5 s on 807k counted work.
+2. A quick look reads degree product D, limb count L of the rationals, and proven bounding-box separation. It costs at most 1% of the operation.
+3. Two cap tiers by D x L^2: low-complexity inputs get the 20M target for the exact attempt; fitted splines stored as 53-bit fractions get about 2M.
+4. If exact finishes under the cap, the result is exact. If it hits the cap, the fitted path takes over.
+5. No cap where no fitted path exists yet; exact is then the only way to a result.
+6. The normal angle is used only to tune the fitted path and to demote spline pairs, never to demote analytic pairs (tangency is cheap in exact arithmetic).
+7. No memo per recipe step and no learned model.
+
+On the measured cases, a fixed rule by shape kind gets two results wrong that the predictor gets right: the far-disjoint loft cut (k12, builds exact at 9M) and the spline top cuts (26M to 27M, built exact). The predictor also saves 62M to 79M per doomed loft cut.
+
+Predictor done when, on a frozen corpus (all phase-5 rows, checkpoint-1 parts, the box fillet, and a held-out ABC subset chosen before tuning):
+
+- path choice and work are identical at 1, 2, 4 and 24 threads and on two machines;
+- the quick look costs at most 1% of each operation's work;
+- everything that builds exact under 20M today still does;
+- refunded work stays within its tier cap;
+- wall time per million work units stays within a 10x band across all rows;
+- thresholds are unchanged on the held-out set.
+
+The 2M and 20M tiers are judgement and need measuring.
+
+Open sub-question for 3.0B: whether exact entities use no tolerance or a floor like Parasolid's 5e-6 mm. T0 says none; the research suggested measuring the M8 loft cuts under both before the code fixes it.
+
+Done when, for one model: exact and tolerant entities coexist under the rules above; a hole after a numerical fillet works without `features.numerical-continuation`; the numerical checker is part of `Model::check`. The predictor's frozen-corpus done-when lines above also hold. Coverage: infrastructure and continuation within existing lines, not a full-line promotion.
+
+<a id="drawings-and-pmi"></a>**Drawings and PMI, alongside and just behind 3.0B**
+
+- Doing: AP242 semantic PMI stored on the part, automatic drawings from it, feature recognition on bare imports and a rules-based interview. The [P1 bracket specification with D1 to D6](checkpoints/checkpoint-2-drawings-pmi.md) defines the scope.
+- Why here: the owner adopted the P1 bracket test, Q3 and Q20. Runs mostly in parallel wherever it does not touch 3.0A or 3.0B code. Its roadmap place is just behind 3.0B, not a renumbering of 3.1.
+- Unlocks: manufacturing information travels in STEP and produces the drawing without hand layout. The PMI owner owns annotations within 3.2; the exchange lane owns structure, names and colours.
+- <a id="drawings-pmi-acceptance"></a>Done when: C1 round trip of all 14 items passes the NIST analyzer, OCCT reads all 14, and re-import, save and reopen keep their attachments; C2 bore edit 8 to 10 mm keeps its tolerance; C3 one button gives STEP plus PDF and DXF, every item once, no overlaps or hand moves, with title block; C4 no drawing information is absent from the file; C5 bare-import recognition finds bore, boss, four holes and slot, and the interview asks only for missing information. These are the specification's C1 to C5, not coverage IDs. Coverage: X8 annotations, partial until 3.2's structure, colours and names also round-trip.
+
+
+| # | Milestone | What we are doing | Why here | Unlocks | Done when |
+|---|---|---|---|---|---|
+| 3.1 | Drawing views from the kernel | Exact section curves, silhouettes on curved solids, hidden-line views. | Drawings work today from meshes. This makes them exact. | Drawings that match the model to the last digit. | SolidDraft drawings use them in place of mesh outlines. |
+| 3.2 | Assemblies and exchange | The kernel holds several solids as an assembly. STEP carries structure, colours, names and annotations. | Needs import (1.2) to be solid first. | Whole products in one file, both ways. | A STEP assembly round-trips. IGES exports spheres and tori. |
+| 3.3 | Clash, clearance and mass | Clash, clear by a stated gap, or unresolved, for every pair. | Exact overlap already works. Distant and nested pairs are left. | A proven gap between parts. Refusals that state the largest radius or thickness that fits. | Every pair in a test assembly gets one of the three answers. |
+| 3.4 | <a id="smlib-modelling-tools"></a>Tools only SMLib has | Bend and twist. Curvature-continuous blends. Mesh Booleans and decimation. | Last because OpenCASCADE does not have them either. | The final three lines. | Each has a first build. |
+| 3.5 | <a id="one-display-mesher"></a>One display mesher | Mesh every face by one path. Sample shared edges first, triangulate each face in its own parameters and set density from second-derivative bounds. Preview, bounded and proven use the same path. | SolidDraft cannot draw the filleted M11 loft. Each new spline feature would otherwise need its own grid scheme. | Display of every spline body, whole-body two-kernel checks and per-face reuse after edits. | See below. |
+
+**3.5 steps**
+
+1. Freeze the display corpus and record current work, point counts, bounds and refusals. Include P1 to P5, the [phase 5 work cases](../phase5-work-cases.md), the three M11 loft fillets, the small-warp loft, saddle and ellipse fillets, phase 2 spline bodies, and the SolidDraft three-turn coil.
+2. Put spline charts on the shared path. Bound derivatives per span. Project in floating point, starting from the neighbouring point, and include the projection residual in the bound. Split charts where first derivatives vanish.
+3. Plan each edge once using the stricter of the curve chord rule and the chord and normal limits of both incident charts. Cache those checks and sample one polyline on the edge curve for both faces, without retries or exchanges between faces. Record the charged work on the frozen corpus. Reuse the analytic path's trim triangulation and keep its chord checks and the spline angle and no-fold checks. Remove the junction, spline prism and oblique family grids.
+4. Make preview, bounded and proven levels of one option. Fold the preview routes into it.
+5. Cache by face and tolerance and make the levels nest. After an edit, mesh only the changed faces.
+6. Share the bound formula and triangle check between B-rep and field display.
+7. Draw the 4.2a rolling fillets and patch shells with the shared charts. Add rolling and shell trim handling, a swept-arc chart for rolling pieces and the spline chart for shell faces.
+
+**3.5 done when**
+
+- Every body in the frozen corpus displays at 0.01 mm and 0.005 mm chord with no refusal, including the three M11 loft fillets.
+- Both faces at every shared edge use the same polyline. Every B-rep mesh passes the existing closed-mesh check and retains chord, angle and no-fold checks.
+- Independent dense sampling on every face finds no point farther from the mesh than the reported bound.
+- The point count predicted before meshing equals the point count produced.
+- Mesh bytes and work agree at 1, 2, 4 and 24 workers, and on two machines.
+- SolidDraft draws the M11 loft fillet with one later feature on top (R2).
+- Compare's whole-body forward pass runs on the M11 rows and the [P5 flanged housing](../../parts/P5-flanged-housing.json) inside 100M work.
+- SolidDraft's three-turn helical sweep (2 mm wire diameter, 34 mm coil diameter, 3 mm pitch) displays with its periodic seam represented in the display chart.
+- Field chart display draws each 4.2a fillet row the field builds, including the filleted M11 loft, and the patch shells without `field.display-unsupported`. The same dense-sampling test checks their proven two-sided bounds.
+
+This sets the full bar for [coverage line Q1](../COVERAGE.md#meshes-and-queries-8). Keep the existing display entry points. The display work and size lines are in [phase 5.1](#display-mesher-work).
+
+**App, alongside:** assemblies in the browser, assembly drawings, BOM and balloons, Pack and Go, the remaining mates, drawing annotations, URDF and USD export with joints, the refusal assistant.
+
+**[Checkpoint 3](checkpoints/checkpoint-3.md).** The scoreboard and [61-line recount](checkpoints/checkpoint-3-coverage.md) record v0.5.0 against the acceptance bars in the [coverage follow-on](#coverage-follow-on-complete-the-61-lines) and [docs/COVERAGE.md](../COVERAGE.md). The owner decides which open lines to resolve first.
+
+### Phase 4: field, lattices, printing and scans
+
+Why this phase is fourth: this is what neither reference kernel has. It is our edge, not a gap, so it waits until the gaps are closed. It never blocks a B-rep feature in the meantime.
+
+| # | Milestone | What we are doing | Why here | Unlocks | Done when |
+|---|---|---|---|---|---|
+| 4.1 | Field preview and first display * | The app draws field previews only for field-only features, lattices and gyroids. The B-rep previews everything else. Remove proved and bounded lights; keep a refused message and a working indicator. | First in the phase: field-only features need a display. [Checkpoint 2 decisions](checkpoints/checkpoint-2-decisions.md), Q31 and Q32. | A feature shows at once. | A preview never stands in for an export. |
+| 4.2 | <a id="field-modelling"></a>The field catches up | Field versions of fillets, sweeps and lofts. The field may take over a B-rep step's result only when that is the only way to build the part, and only with no downstream problem, Q15. | The field must hold every part before it can print or analyse it. | Every part has both descriptions. | P5 builds in the field with no fillet refusal. 4.2a below defines the independent fillet route. |
+| 4.3 | Lattices and printing | Printable lattice parts. The missing piece is [a proof that a mesh keeps its cavities](research/adaptive-printing.md). | Needs 4.2. | P6 and P7. Sheet gyroids. | P6 exports a printable mesh at its recorded accuracy. |
+| 4.4 | Imports and scans in both kernels | Imported spline parts in the field. [Scan fitting](research/scan-fitting.md) grows past planes and cylinders. | Needs import (1.2) and the spline work (1.3, 2.1). | Bought-in parts and real scans in the field. | An imported spline part builds in the field. A real scan becomes a clean part. |
+| 4.5 | FEA groundwork, first result and P10 | [Parked by the owner on 13 Nov](research/fea-first-beam.md). | Starts on the owner's word at a checkpoint. | Stress on the same part the B-rep exports. | |
+
+**4.2a The field builds every fillet on its own**
+
+[Checkpoint 2 specification, section 4.6](checkpoints/checkpoint-2-decisions.md#46-item-42a-the-field-builds-every-fillet-on-its-own), Q15 to Q17, Q21 and Q23. A sub-milestone inside 4.2, not a change to any old number. Any extra building block field parity needs is added in the order it is needed.
+
+A numbered sub-milestone of 4.2, "the field catches up". Constant-radius rolling-ball fillets only; variable radius, setback vertex blends and conic or G2 sections keep their typed refusals.
+
+Rule: the field derives its own ball paths. It does not reuse the B-rep's `rolling_pipe`, `rolling_saddle`, `rolling_sphere` or `rolling_mitre`, because a shared bug would fool both kernels. The milestone document names any shared dependency (the M10 pair search is one).
+
+Field queries return inside or outside plus a guaranteed distance range near the surface (Q23).
+
+Steps, easiest first:
+
+1. Turn `rolling_region` into one general routine for distance to a path piece. Today's plane-plane and plane-cylinder answers stay bit-identical.
+2. Plane with cylinder in any pose, cone or sphere: the oblique, oblique-cone and generator test files.
+3. Quadric pairs: saddle, coaxial, sphere-ring and equal-crossing files. Paths have closed forms (Dupont, Lazard, Lazard, Petitjean 2008).
+4. Fillet ends that touch an edge or vertex: P5 at radius 2, rim-contact, hole-ring and slot files.
+5. Fillet over fillet, using the nested path.
+6. Torus pairs.
+7. Spline faces (below).
+
+Done when, for steps 1 to 6:
+
+- P5 builds in the field at radius 2 with no fillet refusal (the existing 4.2 line);
+- for every constant-radius rolling-ball case in the fillet test files (list frozen at the start), catallax-compare finds every B-rep display vertex within the field's bound at the part's tolerance;
+- each remaining refusal is named with its reason.
+
+Step 7, spline faces. Viability study verdict: go, with conditions.
+
+Measured on this machine (release build, i7-9750H; logs in [docs/research/cp2-grill/viability-logs/](../research/cp2-grill/viability-logs/)):
+
+- M10 spine search 2,332,939 / 2,666,401 / 6,793,048 work on the three M11 edges, identical at 1, 2 and 4 workers, 0.14 s to 0.40 s per edge;
+- full B-rep fillet 5.25M / 6.97M / 16.43M work, within 78 / 5 / 80 nm of the exact fillet.
+
+4.2a remains open. See [the step 7 evidence and remaining refusal](M42A-FIELD-FILLETS.md#steps-75-to-77-near-tangency-and-a-plane-chart).
+
+Step 7 sub-steps:
+
+- 7.0 The query contract is already set by Q23; no new decision is needed.
+- 7.1 Spike: certified point-to-patch distance on the M27 patch pair, in catallax-field, timed over 10^4 points. This retires the biggest risk.
+- 7.2 The spline-face building block for whole, untrimmed patches, with ray-crossing sign. Trimmed faces go to 4.4 with a typed refusal until then.
+- 7.3 The field's own spine proof: prove the two end points on the face borders, then a parametric Krawczyk proof span by span. Tube width eps <= min(100 nm, part tolerance / 2). A build that cannot reach it refuses and reports the eps reached.
+- 7.4 The swept-ball distance query on that tube.
+- 7.5 Near-tangent sweep on a synthetic edge: record the smallest face angle proved inside 20M, then decide the tail policy (deflation per Leykin et al. 2006, or a labelled bound).
+- 7.6 Spline-with-analytic pairs: write the analytic offset (same family) as a rational patch with offset 0.
+- 7.7 Typed refusals, including a singular-contact control.
+
+Step 7 done when, on the three M11 edges plus one spline-plane edge:
+
+- the field proves its own eps <= min(100 nm, tolerance / 2) inside 20M work, identical at 1, 2 and 4 workers;
+- every B-rep display vertex of each fillet face lies inside the field range widened by the B-rep's reported bound;
+- a dense-sampling third check in tests agrees (catches a bug shared through M10);
+- median query time is recorded;
+- a near-tangent control refuses or returns a labelled bound.
+
+Why a proven tube and not an estimate: the field is the yardstick for B-rep bugs (Q16). An estimated path cannot tell whether the B-rep path is wrong. It runs in tests only, and it proves only down to the tolerance, never past it.
+
+Caveat: the three M11 test edges are single-span bilinear or biquadratic patches, so they say little about real imported parts.
+
+Coverage: independent field parity is outside the 61 reference-kernel lines. No extra coverage points.
+
+
+<a id="phase-4-app"></a>**App, alongside:** field-driven thickness, more grades, fields on imported bodies, infill that is denser near the skin or the load.
+
+**[Checkpoint 4](checkpoints/checkpoint-4.md).** The shared cut records the STEP census, field results and cases for the speed phase.
+
+### Phase 5: speed and simplification *
+
+<a id="speed-and-simplification"></a>**5.1 Speed and simplification.**
+
+Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability work, and speeding up a method that is about to be replaced is wasted.
+
+- P1 to P5 and their edits meet the click targets in SolidDraft: 100 ms for stock, 500 ms for a Boolean, 1,000 ms for a feature.
+- The GPU and every core carry what they can. [Booleans gain nothing from extra cores today](research/run-ahead.md).
+- Simplify. Routes that the measurements show are not needed are removed.
+- Slow steps recorded at the 0.5.0 cut: loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s.
+- Later: the 2.4 P8 thread sweep exceeds 20M; its [per-stage record](../RECIPE.md#work-recorded-for-phase-5) distinguishes the completed fit from the refused whole-part Boolean. The 100M application allowance is unchanged.
+- STEP opening work exhausts during surface and curve fitting and can leave later bodies unmeasured. [Census blockers](checkpoints/checkpoint-4.md#first-blockers-and-observation-limits)
+- Windows packages and signed downloads.
+
+<a id="display-mesher-work"></a>**Display mesher work and size, from 3.5**
+
+- At 0.005 mm each M11 loft body takes under 1M display work.
+- Display work for each analytic body is at most its baseline.
+- The three-turn helical sweep specified in 3.5 displays inside 100M work. Target under 20M display work for a few turns.
+- `catallax-mesh` has at least 2,000 fewer lines than at the baseline.
+
+[Checkpoint 3](checkpoints/checkpoint-3.md#one-display-mesher) records the evidence for these lines. The separate [3.5 correctness gates](#one-display-mesher) remain in phase 3.
+
+**5.2 The proof button**
+
+[Checkpoint 2 specification, section 4.7](checkpoints/checkpoint-2-decisions.md#47-item-52-the-proof-button), Q10.
+
+A real whole-edge proof on demand for one part (Q10 B). Late and low priority. Built from parts Catallax already has: exact range arithmetic (`evaluate_box`, `jet_box`, Ball and Interval) and a one-dimensional branch and bound that splits wherever an upper bound beats the best sample. Nothing in Catallax computes a certified maximum of |C(t) - S(P(t))| today. Expect minutes per part and "could not prove" on blends and sweeps (solidcraft's experience: one edge took 153 s, some bounds came out 60x loose, blends were not provable). VISION.md's "no proof jobs or proof services" still holds: the button is one computation on request, with nothing stored and no service.
+
+- Done when: on request for one part, the button runs a real whole-edge proof, not sampled admission, and reports proof or "could not prove". It stores no proof job and runs no proof service. Coverage: this is outside the 61 reference-kernel lines.
+
+### Coverage follow-on: complete the 61 lines
+
+[Checkpoint 2 decisions, section 4.10](checkpoints/checkpoint-2-decisions.md#410-coverage-the-12-changes-for-100), Q2. These additions follow the current milestones and do not reorder them. Existing demonstrations remain required, including the open 2.1 and 2.5 lines and 2.4 with P8 parked. The extensions below widen their final bars. Every coverage ID named below targets **full**, 1 point, not a first example; unresolved full bars remain "bar to be set" in [docs/COVERAGE.md](../COVERAGE.md), not invented acceptance criteria.
+
+Twelve changes: seven widen an existing done-when line and five add a new milestone line. Each widened done-when line moves from a named demonstration to a generated-recipe or census pass rate, with the line's Doing scope as the test. Underneath all of them: write `docs/COVERAGE.md` with the full bar for each of the 61 lines, and make every done-when line name the coverage lines it closes and at which level.
+
+#### Curves and surfaces
+
+1. <a id="coverage-guided-loft"></a>**Widen 2.2 (C7, C8, C9, C10, F8).** Add least-squares fitting of curves and surfaces to points within a stated tolerance, G1 N-sided and Gordon fills, curve networks whose corners miss by up to the stated tolerance, and lofts with guide curves. Done when each builds on a generated set without refusing possible geometry. *A user can fit a smooth surface to a point cloud, fill an n-sided hole with a tangent patch, and loft through sections along guide rails.*
+2. **New line: offsets and projection (C6, C11, E6).** Offset any curve, surface or whole solid, spline faces included, within a stated tolerance. Project curves onto surfaces. *A user can offset a freeform part's skin by 2 mm or wrap a sketch onto a curved face.*
+3. <a id="coverage-bend-twist-and-blends"></a>**Widen 3.4 from "a first build" to general input (C12, E8, Q8).** *A user can bend or twist any body, blend faces with curvature continuity, and run Booleans and decimation on meshes.*
+
+#### Intersection
+
+4. <a id="coverage-intersections"></a>**New line: intersections complete (I1, I3, I4, I5).** Every analytic pair, skew cone/torus and cylinder/torus included. Spline against spline, and curve against surface, with no refusal on the generated set. Tangent and near-tangent contact answered under the bounded-answer rule. *A user's cut or join never stops because two faces touch or meet at an awkward angle.*
+
+#### Solids and topology
+
+5. <a id="coverage-spline-booleans-and-fillets"></a>**Widen 1.3 and 2.1 (S3, E3).** Done when Booleans and fillets on spline-faced solids pass a generated set and the census parts, not 15 named requests. *A user can cut, join and round any freeform part, imported or modelled.*
+6. <a id="coverage-surface-bodies"></a>**Widen 2.3 (S6, S7, X7) and add split and imprint (S5, F10).** Sew any face set that closes. Non-manifold bodies. Sheets and wires export as sewn shells. Split a solid by a plane, sheet or body, keeping every piece. Imprint a curve on a face. *A user can sew a patchwork of imported faces into a solid, slice a part in two, and imprint a logo outline on a face.*
+
+#### Features
+
+7. <a id="coverage-general-sweeps"></a>**Widen 2.4 from "P8 builds" (F4, F5, F6, F7, F9, F11).** Taper, guide, twist, helix and up-to-face each build on line, arc, ellipse and spline profiles along any path. *A user can sweep any profile along any path, with a guide or twist, and extrude up to any curved face.*
+
+#### Edge and wall features
+
+8. <a id="coverage-edge-and-wall"></a>**New line: edge and wall features in general (E1, E2, E4, E5, E7).** Constant and variable-radius fillets with any law on any edge. Chamfer roll-over and general corners. Shells and draft on any face, spline and oblique cylinder included. Done when the census parts take each feature without refusal of possible geometry. *A user can round, chamfer, shell or draft any edge or face of a bought-in part, as in OpenCASCADE.*
+9. **Widen 2.5 (E9).** Each direct edit works on any face type, through SolidDraft. *A user can delete a fillet or move a face on any imported part.*
+
+#### File exchange
+
+10. <a id="coverage-step-import-parity"></a>**New line: STEP import parity (X2, X4).** A census target set against OpenCASCADE's 90.03% healed-valid figure. *Most real STEP files a user is sent open as checked solids.* The [v0.5.0 census](checkpoints/checkpoint-4.md#step-census) measures 767 complete-source valid solid exports (25.57%). The parity target and comparable protocol still need to be set.
+11. **Widen 3.2 (X8).** Done when colours, names and annotations round-trip, beside the assembly. *A user can send and receive a full product file with its structure, colours and annotations.*
+
+#### Meshes and queries
+
+12. **New line: geometry queries (Q4, Q5), and widen 3.3 (Q6).** Closest point on any curve or surface. Curvature and local surface analysis. 3.3 done when no pair answers "unresolved" outside the stated tolerance. *A user can check curvature on a freeform face and get a proved gap for every pair in an assembly.*
+
+With these twelve changes every line reaches 1 at its done-when line: 61 points, 100% of OpenCASCADE's 58 and SMLib's 52. The "or more" can only come from the twelve extras outside the count ("Twelve things neither reference kernel does"). They never raise the count itself above 100%.
+
+**Final checkpoint.**
+
+### Lanes that never stop
+
+- The resolve list. Every refusal of possible geometry is sorted by cause and fixed in batches. Cases a target part hits go first.
+- Each new kernel operation reaches SolidDraft as it lands, in the browser first.
+- Generated recipes with built-in checks run nightly and publish counts by outcome.
+- The SMLib port supplies the units this roadmap needs next.
+
+
+### After the joint release: one order for every item
+
+<a id="after-the-joint-release"></a>The owner's decision of 24 Nov 2026, closing the roadmap gap board: the owner's ten SolidDraft items are done before the joint release (Catallax 0.5.0, SolidDraft 0.8.0), and the whole list below stays in this file. After the release, the v0.5.0 scoreboard and census replace the numbers here, and the owner refines each item, the discussion points first. Quality comes before release speed, and release dates are tentative.
+
+This section adds to phases 1 to 5 and the coverage follow-on; it does not reorder their milestones. Each phase-5 and coverage line keeps its own text above. A **discussion point** is an item whose value to users is still open: it needs the owner's decision before anyone builds it.
+
+#### SolidDraft: the owner's ten items
+
+<a id="owner-soliddraft-items"></a>The owner's list of 23 Nov 2026, to be built beside a redesign of the app's interface. All ten count as release work. Most are already on SolidDraft main. What is left is in stage 1 of the order below.
+
+| # | What the owner asked for | On SolidDraft main | Left before the release |
+|---|---|---|---|
+| 1 | Parameters and configurations in one place, with browser-like tabs, clear icons and formulas written like Excel formulas. | Parameters and configurations pane, formulas, and a configuration table that reads and writes CSV and XLSX. | Check the formula syntax against Excel and the tabs against the owner's screenshots (order item 5). |
+| 2 | Themes; graphics presets for performance and quality, which set how display meshes are made; a bottom bar with measure, physical analysis, selection filter and default units. Some graphics options may be desktop only. | Bottom bar with physical analysis, selection filter and units. | Themes and graphics presets, in review in [SolidDraft PR 361](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/361) (order item 2). |
+| 3 | The left panel turns into the active feature's settings, showing more as the user needs it. | Feature panel with folding sections. | Nothing. |
+| 4 | A Solid Bodies folder in the part tree. A part tree shows nothing of assemblies, and an assembly tree shows little of its parts, except when editing a part in context. | Solid Bodies and Surface Bodies folders; separate part and assembly trees. | Edit a part in context inside an assembly (order item 3). |
+| 5 | Appearance on a face, a body or the whole part, overridden in an assembly. Display states assigned to one configuration or to all. A list of which appearance sits at which level, with less complexity than SOLIDWORKS. | Face, body, part and assembly appearances, display states and the assembly appearance list. | Nothing. |
+| 6 | Press S anywhere for a shortcut menu with sensible defaults that users can extend. | S menu per workspace with a Customize dialog. | Nothing. |
+| 7 | A hole wizard with the common standards, and a positions step that is easy to edit later. | ISO, ANSI, DIN, JIS, AS, BSI and GB tables, with Type and Positions tabs. | Nothing. |
+| 8 | Materials that carry yield strength and other properties, with an automatic colour the user can override. | Material dialog that edits every property, including yield strength, and a colour that becomes the material appearance. | Nothing. |
+| 9 | Progressive disclosure in the Create menu, with commands pinned to the ribbon. | Create menu with pins. | Nothing. |
+| 10 | Extrude with flip direction, merge result and From (sketch plane, surface, vertex, offset). | Flip, merge and From. | From on a curved or non-parallel face, which refuses today (order item 4). |
+
+#### Adopted additions G1 to G26
+
+<a id="adopted-additions"></a>The gap board compared this roadmap with Draftwright, quiddity and Specify for drawings and PMI, with OpenUSD, glTF, URDF, OBJ and STL readers for scene import, and with the v0.4.0 STEP census. The owner adopted all 26 additions on 24 Nov 2026. Priority is the board's recommendation; the owner may change it after the release measurements.
+
+| ID | Addition | Why | Fits under | Priority | Order item |
+|---|---|---|---|---|---|
+| G1 | Wider feature recognition on bare imports: compound holes, bolt circles, pockets, steps, grooves, turned bodies, chamfers and fillets, modelled threads, pads and ribs, face accounting, recall measured on a public corpus. | Recognition stops at round holes, hole patterns, round bosses and round-ended slots. quiddity covers about 50 families. Without more, most bare imports still need PMI by hand. | Drawings and PMI | high | 39 |
+| G2 | Angular dimensions and datum targets. | Both are common on real drawings. Our writer has no angle kind, and our reader skips both. | Drawings and PMI | medium | 41 |
+| G3 | Threads and knurls: thread depth in the file, threads drawn in views, knurl callouts. | Tapped holes are on most machined parts. A blind thread whose depth is lost from the file is a wrong part. | Drawings and PMI | high | 38 |
+| G4 | Inspection outputs: characteristic numbers, an inspection CSV and the AS9102 first-article workbook. | Specify writes all three from PMI. A supplier needs them to get a first article accepted. | Drawings and PMI | high | 40 |
+| G5 | Graphical PMI, written and read, and PMI edits on someone else's STEP file that keep the rest of its bytes. | Many viewers show only graphical PMI. A supplier annotating a customer's file must keep the rest of it. | [Coverage 11](#coverage-follow-on-complete-the-61-lines) (X8) | medium | 44 |
+| G6 | Revisions: a STEP diff report, requirements carried to the new revision, change markup on the drawing. | Specify and Draftwright both do this. Today a revised part only marks its drawing out of date. | Drawings and PMI | medium | 48 |
+| G7 | Drawing layout parity: half and break sections, automatic details, shaded pictorial views, more sheets and sizes, fits shown as limits, hole tables. | Long parts need break views. Large parts need A2 to A0 or several sheets. Draftwright picks all of these by itself. | Drawings and PMI | medium | 46 |
+| G8 | Drawing outputs: a PNG of the sheet, DXF with native dimension entities, settings kept in the file, BOM as CSV or JSON. | Shops edit DXF in their own CAD. Purchasing wants the BOM as data, not a picture. | Drawings and PMI | medium | 47 |
+| G9 | Interview breadth: hole function, defaults for machined or printed parts, suggestions from mates. | The interview has fixed rules (H7 boss, H13 pattern). A tapped or clearance hole gets the wrong default. | Drawings and PMI | medium | 42 |
+| G10 | A Python API and command line for PMI and drawings. | Draftwright, quiddity and Specify all ship Python wheels and a command line for scripted and CI use. | New: scripting surface | low | 14 |
+| G11 | Scene instancing: OpenUSD PointInstancer and glTF GPU instancing. | Omniverse and SimReady scenes place bolts, shelves and parts by PointInstancer. Today they are dropped. | New: scene import line | medium | 32 |
+| G12 | Scene looks: per-face materials, UVs and textures, full PBR and MDL, vertex colours, in OpenUSD, glTF, OBJ and STL. | Imported scenes arrive with one flat colour per mesh. Users read that as a broken import. | New: scene import line | high | 30 |
+| G13 | Compressed glTF: Draco, meshopt and quantised meshes. | Most web and Sketchfab glTF files are compressed, and we refuse them by name. | New: scene import line | high | 29 |
+| G14 | Robots and physics: UsdPhysics bodies and collision, URDF collision and inertial data, xacro, COLLADA meshes, ROS package paths. | Isaac Sim and ROS robots carry these. Mass and collision are what a mechanical check needs. | New: scene import line | medium | 34 |
+| G15 | Omniverse plumbing: omniverse:// Nucleus paths, live layers, variant choice, usdz, kind, customData, omni: attributes, scene choice. | Files from Nucleus reference other files by omniverse:// paths. Without a resolver those references drop. | New: scene import line | medium | 35 |
+| G16 | More geometry kinds: subdivision surfaces, Cone, Capsule, Plane, curves and points, NURBS patches, skins and animation poses. | Subdivision surfaces show as a coarse cage. The rest are noted and dropped. | New: scene import line | low | 36 |
+| G17 | Name everything the scene import skips. | Lights, cameras and some glTF materials drop with no note. The import record should list every drop. | New: scene import line | low, cheap | 31 |
+| G18 | Bring closed scene meshes in as solids through Catallax mesh import. | Catallax already makes an exact solid from a closed STL or OBJ mesh, but SolidDraft's scene import keeps every body a reference mesh, so measure, mass, mates and drawings refuse it. Scan fitting (4.4) then rebuilds editable faces. | 4.4 follow-on and SolidDraft scene import | high | 27 |
+| G19 | Put STEP import opening work in phase 5. | At v0.5.0, work exhaustion stops 841 surface-fit bodies and 604 curve-fit bodies. In 915 files the request was already spent before at least one body. [Census blockers](checkpoints/checkpoint-4.md#first-blockers-and-observation-limits) | [5.1](#speed-and-simplification) | high | 18 |
+| G20 | Name the torus, offset and linear-extrusion surface families. | All 64 files measured one by one open only as retained surfaces (30 torus, 20 offset, 14 extrusion). | Coverage 10 | high | 23 |
+| G21 | Solids with voids, and bodies that are not solid. | Voids refused 40 files on 16 Nov. `not_solid` stops 74 bodies in 11 files at v0.4.0. | Coverage 10 | medium | 24 |
+| G22 | Repair broken source geometry and parse more files. | Broken source geometry stops 53 bodies, and 28 files fail to parse. OpenCASCADE heals these with ShapeFix. | Coverage 10 | medium | 25 |
+| G23 | Set the STEP import parity target and comparable protocol. | Coverage 10 gives a reference figure. [Checkpoint 4](checkpoints/checkpoint-4.md#step-census) supplies the Catallax result. | Before the parity census | high | 9, 26 |
+| G24 | Put the owner's ten SolidDraft items into this file. | SolidDraft has no roadmap of its own, and they lived only in a notes file. | [The owner's ten items](#owner-soliddraft-items) | high | 10 |
+| G25 | Read USD BRep (BrepArray) solids as exact solids. | NVIDIA's usd-brep stores exact solids in USD. Catallax writes one solid in that form but cannot read it. How many real files carry it is not measured, so measure that first. | Phase 3 app, beside USD export | medium | 12, 33 |
+| G26 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft. | The owner asked for it on 24 Nov. Settle the routes (closed mesh to solid, scan fitting, USD BRep), what users do with these parts and which scene work follows, before building any of it. | Before the scene import work | high | 11 |
+
+#### The order: 66 items
+
+<a id="order-after-the-release"></a>Every item after the release in one order: this file's own lines, the open exits the 0.5.0 milestone note carries, the owner's ten items and G1 to G26. 58 are tasks and 8 are discussion points. Stages 5 to 7 can run in parallel lanes. Inside a stage, the list is the build order.
+
+| # | Item | Kind | Source |
+|---|---|---|---|
+| | **1. Finish the release** (before the tags) | | |
+| 1 | Close the open release steps: both mains green, SolidDraft pinned to release/0.5.0, the Catallax replay and the SolidDraft strict scenario sweep, and land or park the lanes in flight. | task | release plan |
+| 2 | Owner item 2: land themes and graphics quality presets. | task | owner item 2 |
+| 3 | Owner item 4: edit a part in context inside an assembly. | task | owner item 4 |
+| 4 | Owner item 10: Extrude From on a curved or non-parallel face. | task | owner item 10 |
+| 5 | Owner item 1: check the formulas against Excel syntax and the configuration tabs against the owner's screenshots. | task | owner item 1 |
+| 6 | Fields on imported bodies in the app, if the SolidDraft pin move did not land. | task | open exit, phase 4 app |
+| | **2. Measure and write the plan down** (right after the tags) | | |
+| 7 | Done 25 Nov 2026. One v0.5.0 cut for the [Checkpoint 3 scoreboard](checkpoints/checkpoint-3.md#edit-chain-scoreboard) and [Checkpoint 4 census](checkpoints/checkpoint-4.md#step-census). | task | release plan |
+| 8 | Done 25 Nov 2026. [Coverage recounted line by line](checkpoints/checkpoint-3-coverage.md). | task | release plan |
+| 9 | Done 25 Nov 2026. Moved the 3.5 work and size lines to [phase 5.1](#display-mesher-work) and updated the import figure from the [v0.5.0 census](checkpoints/checkpoint-4.md#step-census). The parity target and protocol remain in item 26. | task | release plan, G23 |
+| 10 | Write the owner's ten SolidDraft items, this order and G1 to G26 into this file. Done 24 Nov 2026: this section. | task | G24 |
+| | **3. Decide before building** (first week after the release) | | |
+| 11 | Count how many real USD files carry exact BrepArray solids. This feeds item 12 and decides item 33. | task | G25, first step |
+| 12 | Brainstorm how USD and other scene parts become as usable as possible in SolidDraft: the routes (closed mesh to solid, scan fitting to editable faces, reading USD BRep), what users want to do with these parts, and which scene import work follows. It uses the item 11 count. Stage 6 waits on its answer. | discussion | G26 |
+| 13 | FEA (4.5): restart it or keep it parked. Parked by the owner on 13 Nov; it needs a yes or no, not work. | discussion | open exit 4.5 |
+| 14 | A Python API and command line for PMI and drawings. Worth it only if scripted or CI users are a target. | discussion | G10 |
+| | **4. Phase 5.1: speed and simplification** | | |
+| 15 | Click targets in SolidDraft: 100 ms stock, 500 ms Boolean, 1,000 ms feature. | task | [5.1](#speed-and-simplification) |
+| 16 | Slow steps: loft 35 s, loft-edge fillet 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s. | task | 5.1 |
+| 17 | The P8 thread sweep over 20M. | task | 5.1 |
+| 18 | STEP import work exhaustion in the [v0.5.0 census](checkpoints/checkpoint-4.md#first-blockers-and-observation-limits), including the [ABC 00002204 baseline loss](checkpoints/checkpoint-4.md#baseline-preservation). | task | G19 |
+| 19 | One display mesher: finish the [work and size lines](#display-mesher-work). [Checkpoint 3](checkpoints/checkpoint-3.md#one-display-mesher) also records the open correctness lines in 3.5. | task | open exit 3.5 |
+| 20 | The GPU and every core carry what they can. | task | 5.1 |
+| 21 | Remove routes the measurements show are not needed. | task | 5.1 |
+| 22 | Windows packages and signed downloads. | task | 5.1 |
+| | **5. Real STEP files as solids** (after stage 4 frees the work budget) | | |
+| 23 | Torus, offset and linear-extrusion surfaces. 151 files do not open at all for these. | task | G20, coverage 10 |
+| 24 | Solids with voids, and bodies that are not solid. | task | G21, coverage 10 |
+| 25 | Repair broken source geometry and parse more files. | task | G22, coverage 10 |
+| 26 | STEP import parity: set the target and comparable protocol, then run the census against them. This closes the 1.2 exit. | task | [coverage 10](#coverage-step-import-parity), G23, open exit 1.2 |
+| | **6. Scene parts in SolidDraft** (after the item 12 brainstorm) | | |
+| 27 | Closed scene meshes in as solids through Catallax mesh import. This gives most scene parts measure, mass, mates and drawings. | task | G18 |
+| 28 | Scan fitting follow-ons: automatic segmentation, tori, chamfers, pockets, freeform fitting. The route from triangle solids to editable faces. | task | 4.4 follow-on |
+| 29 | Compressed glTF: Draco, meshopt, quantised. | task | G13 |
+| 30 | Scene looks: per-face materials, textures, PBR, vertex colours. | task | G12 |
+| 31 | Name everything the scene import skips. Small; do it with the glTF work. | task | G17 |
+| 32 | Instancing: PointInstancer and glTF GPU instancing. | task | G11 |
+| 33 | Read USD BRep (BrepArray) solids as exact solids. Build only if item 11 finds real files. | discussion | G25 |
+| 34 | Robots and physics: UsdPhysics, URDF collision and inertial data, xacro, COLLADA. Worth it if robot users are a target. | discussion | G14 |
+| 35 | Omniverse plumbing: Nucleus paths, live layers, variants, usdz. Worth it if Nucleus users are a target. | discussion | G15 |
+| 36 | More geometry kinds: subdivision, Cone, Capsule, curves, NURBS patches, skins. Low value until users ask. | discussion | G16 |
+| | **7. Drawings and manufacturing information** (beside stages 5 and 6) | | |
+| 37 | Close the PMI exits. C1 needs OpenCASCADE to read all 14 items; it reads 13 today. It has no reader for the AP242 surface texture, so the bore finish is missing, and it keeps THRU on the hole diameter on the product only ([SolidDraft check](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/blob/f7bf033e7ed2a6b4e164173d6af0e910cef626d4/ci/fixtures/pmi/p1-bracket-pmi.json#L503-L506)). Run the bore edit in the browser (C2). | task | open exits C1, C2 |
+| 38 | Threads and knurls: depth in the file, thread views, knurl callouts. | task | G3 |
+| 39 | Wider feature recognition on bare imports. | task | G1 |
+| 40 | Inspection outputs: characteristic numbers, inspection CSV, AS9102 workbook. | task | G4 |
+| 41 | Angular dimensions and datum targets. | task | G2 |
+| 42 | Interview breadth: hole function, machined or printed defaults, mates. | task | G9 |
+| 43 | Colours, names and annotations round-trip; PMI read back by other readers. | task | coverage 11 |
+| 44 | Graphical PMI, and PMI edits on someone else's STEP file. | task | G5, coverage 11 |
+| 45 | IGES export beyond whole spheres and ring tori. | task | open exit 3.2 |
+| 46 | Drawing layout parity: break and half sections, details, sheets, hole tables. | task | G7 |
+| 47 | Drawing outputs: PNG, DXF with native dimensions, BOM as data. | task | G8 |
+| 48 | Revisions: STEP diff report and change markup. File replacement already re-points references; decide how much more users need. | discussion | G6 |
+| | **8. Complete the 61 coverage lines** (after stages 4 to 7) | | |
+| 49 | Coverage 4: every intersection pair and tangent contact, including P8's parametric-surface pair and the curved housing's unsupported pair. Booleans, fillets and sweeps below all need it. | task | [coverage 4](#coverage-intersections), exits 2.1 and 2.4 |
+| 50 | Coverage 5: Booleans and fillets on any spline solid, including imported multi-patch fillets and the spline-plane field edge. | task | [coverage 5](#coverage-spline-booleans-and-fillets), exits 2.1 and 4.2a |
+| 51 | Coverage 8: fillet, chamfer, shell and draft on any edge or face. | task | [coverage 8](#coverage-edge-and-wall) |
+| 52 | Coverage 6: sew, non-manifold, split, imprint; surface bodies as a recipe and an app command. | task | [coverage 6](#coverage-surface-bodies), exit 2.3 |
+| 53 | Coverage 9: direct edits on any face type, in SolidDraft. | task | coverage 9, exit 2.5 |
+| 54 | Coverage 7: any sweep with taper, guide, twist, helix, up-to-face. | task | [coverage 7](#coverage-general-sweeps), exit 2.4 |
+| 55 | Coverage 1: point fitting, N-sided and Gordon fills, guided lofts. | task | [coverage 1](#coverage-guided-loft) |
+| 56 | Coverage 2: offsets of any curve, surface or solid; projection. | task | coverage 2 |
+| 57 | Coverage 3: bend, twist, G2 blends, mesh Booleans and decimation on general input. | task | [coverage 3](#coverage-bend-twist-and-blends) |
+| 58 | Coverage 12: closest point and curvature; clash checks with no unresolved pair (38 of 78 open). | task | coverage 12, exit 3.3 |
+| 59 | Predictor: measure the 2M tier. | task | open exit 3.0B |
+| 60 | Field compare: the tangent-boss and narrow-cone refusals, and the sphere-ring rows. | task | open exit 4.2a |
+| 61 | Final checkpoint: every line at its done-when line. | task | this file |
+| | **9. Late** (low priority) | | |
+| 62 | Phase 5.2: the proof button, a whole-edge proof on request. The owner set it late and low. | task | [5.2](#speed-and-simplification) |
+| | **Always alongside** | | |
+| 63 | The resolve list: every refusal of possible geometry, fixed in batches. | task | [lanes](#lanes-that-never-stop) |
+| 64 | Each kernel operation reaches SolidDraft, browser first. | task | lanes |
+| 65 | Nightly generated recipes with counts by outcome. | task | lanes |
+| 66 | The SMLib port supplies the next units. | task | lanes |
+
+### Checkpoint 2 implementation order
+
+The owner approves the roadmap update before implementation. The order was 3.0A, 3.0B, drawings alongside independent work, 3.1 to 3.4, phase 4 with 4.2a inside 4.2, then phase 5.
+The app work started with R2 scenario selection, removing proved and bounded lights while keeping refusals and a working indicator, and narrowing 4.1 preview. Mixed exact and tolerant bodies and continuation after fillets followed.
+
+## Rules that stay fixed between checkpoints
+
+- The allowance target is 20M. Until phase 5 the application default is 100M.
+- Proven, bounded and refused answers stay separate inside the kernel. The user sees results as approximate until the proof button, Q14. The app removes proved and bounded lights, retaining the refused message and working indicator, Q31.
+- Kernel changes are general. No allowance or tolerance is loosened to make one case pass.
+- Clock time never fails a change before phase 5.
+- The app shows Coming soon only for scope written on this roadmap.
+
+[Checkpoint 2 working rules, section 4.9](checkpoints/checkpoint-2-decisions.md#49-working-rules-r1-to-r5-with-the-r2-tuning), Q4 and Q24.
+
+- R1: one feature, one owner across kernel and app; parallel lanes only on different features.
+- R2: a kernel change to an app-used feature passes that app acceptance, with one later feature on top, before merge. Tuning (Q24): each SolidDraft scenario lists the kernel parts it uses; a Catallax pin bump runs only the scenarios whose kernel parts changed, plus the bracket scenario as a smoke test; the full set runs nightly and before every release; shared core changes or scenarios with no list run everything.
+- R3: a target that fails two different approaches is parked and brought to the owner.
+- R4: once a release is called, only wrong-result, crash and broken-feature fixes go in.
+- R5: scoreboard and census once per checkpoint, no dry runs; coverage counted from `docs/COVERAGE.md`.
+
+### Tolerance rules T0 to T8
+
+[Checkpoint 2 tolerance specification, section 4.3](checkpoints/checkpoint-2-decisions.md#43-tolerance-rules-t0-to-t8), Q7.
+
+| Rule | Content |
+|---|---|
+| T0 | Exact entities store no tolerance and have no size limit |
+| T1 | Floor for f64 geometry: eps(R) = max(1e-7 mm, 1e-11 x R), R the coordinate size in the frame the operation runs in (about 1e-5 mm at 1 km). Warn when one body exceeds 1 km. Operations run in local frames reached by exact rational transforms |
+| T2 | Own fitted geometry: fit to max(1e-6 mm, 10 x eps), tightened to L/100 near small features; cap max(1e-5 mm, 100 x eps). Today it is 1e-7 mm |
+| T3 | Imports: measure every entity; the file's declared value is only a hint. Automatic cap 0.01 mm for edges and faces, 0.02 mm for vertices. Above that, refit first, then the user may opt in up to 0.1 mm |
+| T4 | Margin: 1.1 x (measured gap + measurement error), applied only to fresh measurements, never stacked. Where three or more surfaces meet, build the vertex first |
+| T5 | Pair rule: for two entities that share no topology, error if t_a + t_b > d/2, warn if t_a + t_b > d/5. Found with a bounding-box tree inflated by 5t, so a part with no small features needs no distance computation |
+| T6 | Short edges and slivers are invalid only through T5 |
+| T7 | After each operation: refit the 2D copy, measure again, lower where possible. Warn if a tolerance rises more than 10x above its inputs |
+| T8 | Export with a receiver profile (for example NX at 0.01 mm, CATIA at 0.001 mm): refit edges above the receiver tolerance, warn on features under 10x and 4x the receiver tolerance, write the largest entity tolerance as the file uncertainty, offer scaled export for micro parts |
+
+The cap that applies is always the smaller of the class cap and the local term. On a part with no small features, the class cap governs.
+
+## History
+
+### Phase 2 implementation order, superseded at Checkpoint 2
+
+- Fix the measures: correct the census-part hole, add P8, P9 and the curved-housing chain to the scoreboard, and hold the definitions fixed to Checkpoint 2.
+- Spline work: finish the three loft top cuts in 1.3, then take 2.1.
+- Import work: rank failures by files gained, sew imported surfaces into checked solids, then take the other 2.3 operations.
+- New tools: 2.2, the rest of 2.3, and 2.5. General sweeps stay in 2.4.
+- App: fix Cancel, show and label surface bodies, then add the import health report and each kernel operation as it lands.
+
+
+### What was added
+
+| Date | Added |
+|---|---|
+| 22 Oct 2026 | Catallax starts after the Fornjot retrospective. Exact numbers, one recipe, a B-rep kernel and a field kernel, work counted in deterministic units. |
+| 25 to 29 Oct | Catallax 0.1.0 with target parts P0 to P5 and a scoreboard. IGES export. SolidDraft 0.1.0 runs on Catallax only. |
+| 1 to 4 Nov | Draft past holes and bosses. Fillets between planes and cylinders, ring and loop fillets. Sweeps along lines and arcs. Planar shells. Clean analytic STEP import with repairs. Sketch editing tools, autosave, the website. Catallax 0.1.2 and 0.1.3, SolidDraft 0.2.0 and 0.3.0. |
+| 5 to 9 Nov | Fillet campaign: corners, linear variable radius, cone bands and sphere rings. Exact spline import. Ellipse and spline profiles. Sketch relations, trims and text. 20 mate types, interference and clearance. Scene import. Catallax 0.1.4. |
+| 10 Nov | Exact rational lofts. Names checked to survive edits. Catallax 0.1.5, SolidDraft 0.4.0. Coverage 48%. |
+| 11 Nov | Three-circle lofts inside 20M. Sweep along a spline. Proved cuts of spline faces by planes, cylinders, spheres, cones and tori. Closed mesh import in both kernels. First clash and mass queries. GPU viewer. Census of 3,000 public STEP files. |
+| 12 Nov | Spline faces meeting spline faces, by the 2026 method with exact proof. SMLib intersection code ported as a source of candidates. IGES import. Scan to clean part. First fillets between spline faces and on a loft edge. Coverage 52%. |
+| 13 Nov | Exact sections and first silhouettes. Side Booleans on lofts. Files with several solids. P1 inside 20M, down from 41.6M to 15.3M units. The bounded answer kind. In the app: Edit Suite frame, Loft, spline sweep, Offset, Thicken, feature patterns, proof lights, STEP proof reports, scan fit, exact clash. |
+| 14 Nov | Several bodies and Combine. Tolerance exit run recorded. `VISION.md` in both repositories. Release cut: Catallax 0.2.0, SolidDraft 0.5.0. Coverage 55%. |
+| 15 to 16 Nov | Phase 1. Numerical bodies under stated tolerances with approximate STEP. STEP import by tier, per-entity tolerances and source topology healing: 418 complete solid imports and 384 valid exports of 3,000 in the tier census. Spline loft Booleans: 11 of 14 recorded requests reach STEP. Mixed fillet corners, partial-oblique fillet ends, hollow drafts, three-edge chamfer corners, shells with side openings, skew holes through bevelled collars: P1 to P5 through SolidDraft. Body handover between kernel instances. Browser kernel worker. Verified STEP file replacement. First edit-chain scoreboard. Checkpoint 1. Catallax 0.3.0, SolidDraft 0.6.0. |
+
+### Decisions
+
+| Date | Decision | Reason |
+|---|---|---|
+| 22 Oct | Geometry is exact by definition. One modelling tolerance of 1 nm. | One rule for sameness, and no error growth across edits. |
+| 23 Oct | Fitted faces are allowed with local caps, 100 nm target and 1 µm limit. | A 1 nm bound on the whole part was out of reach for fitted faces. |
+| 26 Oct | Display and proof have separate budgets. Field comparison runs on request only. | What the user sees must not wait for proof. |
+| 7 Nov | Fillets must at least match OpenCASCADE. | The owner's bar for the fillet campaign. |
+| 8 Nov | The fillet panel asks for edges and radius only. | Users should not have to pick kernel constructions. |
+| 10 Nov | NURBS first. SMLib code is adapted only for spline intersections, spline blends and fitting. | There is no other efficient way in those areas. |
+| 10 Nov | Both kernels act on the same geometry, imports included. The faster one does the job. The B-rep owns export. | Use each kernel where it is strong. |
+| 11 Nov | Capability first, speed last, in one final speed milestone (now 5.1). | Clock targets were stalling capability work. |
+| 11 Nov | Use every core and the GPU by design, with the same answer at any thread count. | Do not gate parallel work on speed studies. |
+| 11 Nov | Spline against spline uses the 2026 method with an exact proof layer. | Fast search, with Catallax's own checks deciding. |
+| 13 Nov | Fewer refusals. Tolerance levels per kind of case, and a bounded answer that is never shown as proved. | A kernel that refuses possible geometry is unfinished. |
+| 13 Nov | New milestones in this order: NURBS toolkit, surface bodies, then drawing views and direct edits. | Owner's order on the release board. |
+| 13 Nov | Kernel work must be general. When a general method cannot meet a strict requirement, choose an exception. | Tuning to one sample part is worthless. |
+| 13 Nov | FEA parked. | Owner's ruling. |
+| 14 Nov | Better algorithms. No proof-job machinery. | The point of a kernel is to create the geometry. |
+| 14 Nov | Numerical B-reps under stated tolerances where exact construction is unavailable. Each answer claims what its checks establish. Approximate STEP is written and marked. | Finish the part, honestly. |
+| 14 Nov | One roadmap with checkpoints. Most critical first: the biggest gaps against OpenCASCADE lead. The allowance stays 20M. Speed and GPU work last. | Stop changing direction between checkpoints, and work on what hurts most. |
+| 15 Nov | Until phase 5 the application's default allowance is 100M. 20M stays the target, and every edit over it is measured per stage and listed for phase 5. | Slow parts still build in SolidDraft while capability comes first. |
+| 16 Nov | The owner moved Checkpoint 1 before the spline fillets. Milestone 1.5 is now 2.1, and the curved-housing chain moves with it. | Reach the first scoreboard sooner. |
+| 16 Nov | Stitch imported surface bodies into checked solids early in phase 2. | Import is the largest gap, and 2,202 census files open only as unchecked surface sets. |
+| 16 Nov | Phase 2 runs as three kernel lanes from the start. The import lane ranks measured failure causes before choosing its next batch. | Start the longest chain on the first day. Work where the files are. |
+| 16 Nov | The delivery rule of large PRs, minimal tests and no speed work stands until phase 5. | It finished phase 1, and its Later notes became the phase 5 list. |
+| 16 Nov | The 10 Nov port rule widens for 2.2: SMLib's surface-construction code may be adapted, with attribution, and Catallax's own checks decide what ships. | The NURBS toolkit is spline-only work. |
+| 16 Nov | Checkpoints stay undated, and the scoreboard and census run only at checkpoints. When model quota runs short, the owner decides at the time. | The owner's answers at Checkpoint 1. |
+| 24 Nov | The owner's ten SolidDraft items are release work. All 26 gap-board additions, G1 to G26, are adopted, and [one order for every item after the release](#after-the-joint-release) is kept in this file, to be refined after the v0.5.0 measurements. | The owner, closing the roadmap gap board. |
+
+### Prototypes and research
+
+Each entry links to a short file: what we were trying to achieve, why it was proposed, what was tried, the result, and why it was adopted, parked or dropped.
+
+| Work | Outcome | Result in one line |
+|---|---|---|
+| [Fillet prototypes: which kernel builds it, and patch-first](research/fillet-prototypes.md) | Parked | No solid came out of either round. Certified fillet families replaced them. |
+| [Hard-intersection prototype](research/hard-intersections.md) | Parked | The existing code answered 15 of 56 hard inputs. The two candidates answered 10 and 7. |
+| [Tolerance as a speed lever](research/tolerance-as-speed-lever.md) | Dropped | Exact-zero proofs are 0.4% to 12.4% of the work, so a tolerance does not make slow cases fit. |
+| [Decide-once merging](research/decide-once-merging.md) | Dropped | No saved answer would have improved. |
+| [Threads inside one field request](research/field-threads.md) | Adopted | Same bytes and work counts on 1 to 12 processors. |
+| [Running ahead on other cores](research/run-ahead.md) | Adopted | STEP export about 8 times quicker on 24 threads. Booleans no quicker. |
+| [SMLib intersection port scope](research/smlib-intersection-port-scope.md) | Adopted | 37,255 physical lines of SMLib left to port before a plane cut. SMLib's tracer missed a tiny loop, so Catallax keeps its own complete search. |
+| [Spline against spline by the 2026 method](research/spline-intersection-2026-method.md) | Adopted with a proof per cell | All 24 test pairs resolve inside 20M: 20 proved, 4 tangent contacts refused by name. |
+| [Spline fillets: the offset search](research/spline-fillet-offset-search.md) | Route changed | The direct search hit its depth limit. The replacement rounds one loft edge within 59 nm. |
+| [Tangent-touch prototype](research/tangent-touch.md) | Parked | Interior touches classify. A touch on a border is undecided. First candidate for a bounded answer. |
+| [Census of 3,000 public STEP files](research/step-census.md) | Recorded | 369 files (12.3%) valid after OCCT builder construction, including possible internal pcurve healing, beside 2,701 OCCT healed-valid (90.0%). Conditioning: 400 admitted, 369 valid after builder construction (92.25%), 14 invalid, 15 export-refused, 2 timeouts. Original 186 (6.20%) is admission-only. Same seed, source hashes and denominator. |
+| [Rational support projection qualification](research/step-census-opened/README.md#rational-support-projection-qualification) | Measured, no file gain | Determinant/trace bounds certify a wider patch class, but the census stays at 550 complete solid files and 516 builder-valid exports. Six initial refusals change; later incidence and resource gates remain. |
+| [Cheaper proof on P1](research/cheaper-proof-p1.md) | Adopted | 41.6M to 15.3M units by proofs from construction and reuse inside one request. |
+| [Proof-cost research](research/proof-cost.md) | Recorded | No fixed allowance covers every input. Sampling alone is unsound. A GPU cannot rescue a work refusal. |
+| [Independent body checker audit](research/body-checker-audit.md) | Closed | Checking can cost up to 25 times the build. The owner chose not to build certificate systems. |
+| [Adaptive printing](research/adaptive-printing.md) | Parked in parts | Works on a convex block. A distance bound cannot prove that cavities survive. |
+| [Scan fitting](research/scan-fitting.md) | First cut | 30,000 noisy points from P3 come back as its planes and cylinders. The torus round does not. |
+| [First FEA beam](research/fea-first-beam.md) | Parked | The cantilever runs within 0.9% of beam theory, unproved. |
+
+## Closed or not scheduled
+
+- Independent body checker and the proof verifier idea. Closed by the 14 Nov choice not to build certificate systems.
+- Durable proof jobs and the bounded-modelling contract spec. Rejected on 14 Nov.
+- Decide-once merging, tolerance as a speed lever and the two fillet prototypes. Dropped or parked on measurement, see the table above.
+- Dual-implicit experiments and the old Draftwell queue. Closed on 12 Nov.
+- Not scheduled: machine-checked core arithmetic, the field choosing which shell faces survive, a pure field kernel as its own product. Reading USD BRep solids is now a discussion point ([G25](#adopted-additions)).
+- Waiting on the owner: Windows signing, crates.io publication, when FEA restarts.
+
+## Later planning: SolidDraft feature gaps
+
+The owner put all eleven proposals in Later. They are candidates for checkpoint review. Their letters identify the research proposals, and the sizes are rough audit estimates. Starting work requires the owner's decision at a checkpoint. The owner's ten SolidDraft items of 23 Nov are release work, not Later proposals: see [the owner's ten items](#owner-soliddraft-items).
+
+| Proposal | Use case | Rough size | Existing roadmap scope |
+|---|---|---|---|
+| [A. Hole stacks and callouts](research/feature-gap/report.md#proposal-a) | Edit a compound fastener seat as one hole and carry its stages into a drawing callout. | M · 2–4 engineer-weeks | [1.4](#everyday-edge-and-wall) delivered ordinary holes. [3.0B](#one-model-and-predictor) covers continuation. [Drawings and PMI](#drawings-and-pmi) owns the annotation pipeline. |
+| [B. Grid and adaptive feature patterns](research/feature-gap/report.md#proposal-b) | Lay out holes or pockets with two pitches, skip members and replay the seed where supports vary. | M · 2–4 engineer-weeks for a grid, L with replay | [C5](#drawings-pmi-acceptance) covers recognition of bracket holes on import. The authoring grid and replay are Later. |
+| [C. Slot, pocket and profile cuts](research/feature-gap/report.md#proposal-c) | Edit a keyway, guide slot or radiused-floor pocket through its profile and termination. | M · 2–4 engineer-weeks for straight cuts, L for general sweeps | [Phase 2 App](#phase-2-app) owns Solid Slot. [2.4 and Coverage #7](#coverage-general-sweeps) cover sweep and termination breadth. [Coverage #5](#coverage-spline-booleans-and-fillets) and [#8](#coverage-edge-and-wall) cover spline stock and floor-round dependencies. Later planning covers the expanded profile-cut workflow. |
+| [D. Revolved cuts and groove presets](research/feature-gap/report.md#proposal-d) | Place a retaining-ring seat or seal gland and move it from an axis or face datum. | M · 2–4 engineer-weeks | [Coverage #8](#coverage-edge-and-wall) covers edge treatments used on groove rims. |
+| [E. Edge finishing that survives edits](research/feature-gap/report.md#proposal-e) | Adjust a housing's rounds and chamfers after a recess or hole changes while keeping surviving references. | L · 1–2 engineer-months per major slice | [2.1](#spline-fillets), [3.0B](#one-model-and-predictor), [3.4](#smlib-modelling-tools) and Coverage [#3](#coverage-bend-twist-and-blends), [#5](#coverage-spline-booleans-and-fillets) and [#8](#coverage-edge-and-wall) own kernel blends, chamfers and continuation. [4.2/4.2a](#field-modelling) owns field fillets. Later planning covers app controls and previews beyond those commitments. |
+| [F. Rib and gusset](research/feature-gap/report.md#proposal-f) | Stiffen a bracket or housing with a repeatable support that follows adjacent faces. | M · 2–4 engineer-weeks for planar ribs | [Coverage #8](#coverage-edge-and-wall) covers subsequent rib finishing. |
+| [G. Shell and enclosed cavity controls](research/feature-gap/report.md#proposal-g) | Lighten an enclosure while inspecting its walls, openings and sealed cavities. | L · 1–2 engineer-months for first curved coverage | [Coverage #8](#coverage-edge-and-wall) owns wider shell geometry. [Phase 4 App](#phase-4-app) covers field-driven thickness. Later planning covers cavity controls and section previews. |
+| [H. Sheet metal and flat patterns](research/feature-gap/report.md#proposal-h) | Produce a folded bracket, its flat DXF and bend directions from one feature history. | XL · 2–4+ engineer-months, staged | [3.4](#smlib-modelling-tools) and [Coverage #3](#coverage-bend-twist-and-blends) cover general bend and twist geometry. [Coverage #8](#coverage-edge-and-wall) supports edge and wall geometry. The bend graph and flat pattern are Later. |
+| [I. Threads and coils](research/feature-gap/report.md#proposal-i) | Specify tapped holes for manufacture, model printable threads and check coil fit. | M · 2–4 engineer-weeks for thread intent, XL for geometry | [2.4 and P8](#general-sweeps), [Coverage #7](#coverage-general-sweeps) and [5.1](#speed-and-simplification) own helix delivery and cost follow-up. Later planning covers thread intent and thread/coil controls. |
+| [J. Guided loft and connected surfaces](research/feature-gap/report.md#proposal-j) | Shape a duct along editable rails and repair and close its surfaces for manufacturing. | XL · 2–4+ engineer-months, staged | [2.2](#nurbs-toolkit), [2.3](#surface-bodies), [2.1](#spline-fillets) and Coverage [#1](#coverage-guided-loft), [#5](#coverage-spline-booleans-and-fillets) and [#6](#coverage-surface-bodies) own guided construction, surface operations and spline finishing. Later planning covers rail and section controls and diagnostics. |
+| [K. Dedicated spur gear generator](research/feature-gap/report.md#proposal-k) | Generate an involute spur gear for a prototype transmission with editable tooth size and backlash. | L · 1–2 engineer-months for external spur gears | Dedicated gear authoring is Later. |
+
+## Further reading
+
+Existing: `VISION.md` in both repositories, `docs/ARCHITECTURE.md` for dated decisions, `docs/CAPABILITIES.md` for what works today, `docs/TARGET-PARTS.md` for P0 to P10 and when a part counts as built, `docs/milestones/` for milestone notes and the STEP census, `docs/research/` for the files linked above, and `docs/archive/PLAN-2026-11.md` for the plan this file replaces. [docs/COVERAGE.md](../COVERAGE.md) records the 61 lines and bars; [Checkpoint 2 decisions](checkpoints/checkpoint-2-decisions.md) records the adopted direction and acceptance specifications.
+
+To be written, each short:
+
+- `docs/LEFTOVERS-0.2.0.md`: everything the release sprint postponed, with its recommendation.
+
+### Old milestone names
+
+| Old name | Now |
+|---|---|
+| M1 Catallax 0.1.0 alpha | Reached with Catallax 0.1.0. See the history for 25 to 29 Oct. |
+| M2 to M5 The first part in SolidDraft, everyday features, distance features, general fillets and draft | 1.4 Everyday edge and wall features |
+| M6 The roadmap and the decisions written down | Reached. This file replaces its plan. |
+| M7 Lofts and spline sweeps finished | Reached. See the history for 10 and 11 Nov. |
+| M8 Cuts after a fitted fillet | Deferred to 2.1 Fillets between spline faces |
+| M9 Spline intersections ported | Part of 1.3 Cuts and joins on spline faces |
+| M10 Catallax cuts and joins spline faces | 1.3 Cuts and joins on spline faces |
+| M11 Fillets between spline faces | 2.1 Fillets between spline faces |
+| M12 The tolerance rules finished | Exit run recorded on 14 Nov. What is left belongs to 1.1. |
+| M13 to M15 Field preview, fast evaluator, graphics-card viewer | 4.1 Field preview and first display |
+| M16 FEA groundwork and M20 the first FEA result | 4.5 FEA, parked |
+| M17 Clash, clearance and mass | 3.3 Clash, clearance and mass |
+| M18 The field catches up | 4.2 The field catches up |
+| M19 Lattices and printing | 4.3 Lattices and printing |
+| M21 The field reads imported STEP and M23 Mesh and scan to a clean part | 4.4 Imports and scans in both kernels |
+| M22 Closed mesh import in both kernels | Reached. See the history for 11 Nov. |
+| M24 STEP and IGES import and editing finished | 1.2 Real-file import |
+| M25 The spline-intersection port scoped | Recorded. See [SMLib intersection port scope](research/smlib-intersection-port-scope.md). |
+| M26 Speed optimisation | 5.1 Speed and simplification |
+| M27 The spline-fillet proof scoped | Recorded. See [the offset search](research/spline-fillet-offset-search.md). |
+| M28 Numerical modelling under stated tolerances | 1.1 Numerical modelling under stated tolerances |
+| M29 NURBS toolkit | 2.2 NURBS toolkit |
+| M30 Surface bodies | 2.3 Surface bodies |
+| M31 General sweeps | 2.4 General sweeps |
+| M32 Direct edits | 2.5 Direct edits |
+| M33 Drawing views from the kernel | 3.1 Drawing views from the kernel |
+| M34 Assemblies and exchange | 3.2 Assemblies and exchange |
+| M35 Tools only SMLib has | 3.4 Tools only SMLib has |

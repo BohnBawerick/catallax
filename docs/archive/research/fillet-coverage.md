@@ -1,0 +1,1940 @@
+Archived on 2026-11-26. Historical record only. Not current rules or plans. Current: [Roadmap](../../../ROADMAP.md).
+
+# Fillet coverage
+
+This is the first coverage inventory, not M5 acceptance. The source baseline is
+`86a81a5eaf35af18715978da066e6e8f209f1e75`. It includes the landed
+[coaxial rounds](https://github.com/BohnBawerick/catallax/pull/298),
+[collapsed-pole diagnostics](https://github.com/BohnBawerick/catallax/pull/299),
+[fillets over fillets](https://github.com/BohnBawerick/catallax/pull/300) and
+[equal-cylinder crossing construction](https://github.com/BohnBawerick/catallax/pull/304).
+The older PLAN and M5 snapshots do not describe this baseline's full coverage.
+
+## What counts
+
+A build means the unchanged recipe CLI answered, wrote STEP, and the direct
+OpenCASCADE import produced one raw-valid solid with positive finite volume.
+The check does not sew, run ShapeFix, increase the import tolerance or retry a
+smaller radius. It records maximum face/edge/vertex tolerance and rejects values
+above 0.001 mm. That is an observer sanity limit, not permission to increase
+Catallax's modelling tolerance. Matching OCCT volume within
+`max(0.00001 mm^3, 0.0000001 * reference volume)` is a numerical cross-check,
+not a distance certificate. The box and exact-linear variable controls also
+have independent analytic volumes and material witnesses.
+
+`refused-with-reason` retains the actual code, detail and failing step. It is not
+an impossible-geometry verdict. `wrong` means an invalid solid, failed material
+witness, excessive tolerance or volume disagreement. A disagreement needs a
+geometry/definition investigation before assigning blame to either kernel.
+A crash, timeout, missing binding or missing response is `incomplete`, never a
+clean refusal. OCCT's partial `BadShape` is not accepted as a result.
+
+All 45 rows now carry executable Catallax recipes. The setback case executes its
+authored station-plane policy and produces a checked export rather than a
+schema gap. The two variable cases use version-5 `fillet_variable` recipes with
+explicit endpoint names and linear laws. They execute exact planar contact-section
+construction and retain independent, explicitly labelled OCCT ruled-section
+references. Neither law is replaced by a constant round.
+
+Construction, material side, naming/edit retention, whole-face deviation,
+measurement, display, raw STEP and independent field evaluation are separate
+gates. This first scoreboard checks the complete recipe/export route and raw
+STEP, not every gate. `operations.json` preserves the construction spans even
+when a later measurement/export refuses. No preview, interactive latency,
+full-result distance, tangency or general self-intersection proof follows from
+an OCCT topology check. In particular, `IsDone` plus `BRepCheck` is insufficient
+for claiming arbitrary imported blends correct.
+
+## Case inventory and public evidence
+
+The table describes documented mechanisms, not measured parity. C names the
+Catallax baseline; O, S and P refer to the sources below. A general surface
+interface is not proof that every pair of surfaces succeeds.
+
+| Family | Catallax baseline and executable controls | OpenCASCADE | SMLib | Parasolid |
+| --- | --- | --- | --- | --- |
+| Constant radius, convex and concave | Elementary plane strips, cylinder generators and circular reductions. `box-single`, `l-concave`, `boss-rim`, `hole-mouth`. | O1 constant-radius tangent contours. | S1 rolling ball with material side and selectable section. | P1 rolling-ball blend description. |
+| Variable radius, including a zero end | Version 5 stores oriented linear endpoint laws. Exact planar contact-section bands retain those laws; a zero end has one shared apex. `variable-linear`, `variable-zero-end`. | O1 endpoint, sampled parameter/radius and `Law_Function` overloads; the two exact-linear references use the explicitly labelled ruled-section route below. | S1 variable rolling ball; documents zero radius at an end. | P1 documents varying radius along a blend. No local run. |
+| Plane/plane at extreme material angles | Four polygon-prism controls approach 0 and 180 degrees without changing the requested angle or radius. Names say approximate degrees. | O1 numerical construction can fail; no universal angle guarantee. | S1 common solver/corner framework, no universal angle guarantee. | No public per-angle success boundary found. |
+| Plane/cylinder, perpendicular and oblique | Circular torus and certified closed oblique bands. `cylinder-rim`, `oblique-cylinder`. | O1/O2 walking and approximation. | S1 trace rails, then create sections/surface. | P1 signed-offset centre path. |
+| Plane/cone and cone/cylinder | Coaxial circular reductions landed. `cone-top`, `cone-base`, `narrow-cone`; `oblique-cone` builds an exact band above the 1M allowance; see the oblique cone section. Cone/cylinder general contacts need a later control. | General fillet interface, not pairwise guaranteed success. | General surface solver, not pairwise guaranteed success. | General blend description, not pairwise guaranteed success. |
+| Sphere neighbours | Coaxial circles versus varying-curvature contact. `sphere-dome`, `sphere-cylinder`. | O1/O2 general support/walking route. | S1 surface/topology-based construction. | P1 general rolling-ball description. |
+| Torus neighbours and representation changes | Coaxial reductions include rational-radius plane/torus circles. `torus-slice` constructs before an export-budget refusal. `torus-intersection` keeps the unsupported irrational intersection-curve representation. | General support route; measure the actual case. | General support route; no per-case guarantee. | No public per-case guarantee found. |
+| Spline neighbours and closed spline rims | Certified spline carriers do not imply general fillet construction. Not yet an executable row in this ordinary-recipe corpus. | O1 accepts general B-rep inputs; reported closed-spline failures in O4 are not locally reproduced here. | S1 NURBS support and approximate section controls. | General support claims, no local fixture or run. |
+| Nonparallel cylinders, equal crossings and loops | Certified rings, saddles/loops and equal-crossing pole fans already exist. `cross-equal`, `cross-unequal`. | O2 walking can encounter domain, singularity and twist events. | S2 continuation, then corner dispatch. | Public internals insufficient to compare branch handling. |
+| Chains, tangent chains and periodic seams | `box-mitre`, `tangent-boss`, `tangent-pocket`, and rotated boss seam. One selected edge must propagate along its intended tangent chain. | O1 `Add` constructs tangent contours. | S1 3x2 tangent continuation requires compatible radius/section. | P1 tangent-chain propagation. |
+| Setbacks and preservation of neighbours | Version-4 station-plane syntax and exact straight plane/plane runs are implemented with limits at both endpoints and whole-neighbour separation proofs. `explicit-setbacks` builds without a roll-over fallback. | No matching station-limit API used; the observer clips the removed region to the authored interval explicitly. | S1 separate radius, section and corner policies; not a claim of matching this recipe's station semantics. | P1 setback/collar controls are different authored policies, not silent retries. |
+| Three or more selected edges at a vertex | Equal planar spherical corners and non-concurrent four-face offset networks; mixed/curved corners remain bounded families. `box-all`, `l-mixed-all`; pyramid `vertex-4-one/two/all` covers valence four and partial selection. `vertex-4-all-unequal-slopes` needs two triple-contact spheres and an internal cylinder. Valence five remains a corpus gap. | O1 warns that termination at 4+ incident edges is not handled. A successful local example does not remove that documented warning. | S1 NxN convex/mixed patch families; S2 dispatch is not complete for every N/M combination. | P1 vertex blends; no public general valence limit or tested parity. |
+| Rolling over earlier fillets and unequal radii | Landed tangent cylinder/torus/sphere continuations. `unequal-ordered`, `mixed-ordered`, `roll-over-mitres`, `unequal-mitres`. | O1's limiting-face warning matters; do not use a failed OCCT round as a reason to reject Catallax's answer. | S1 tangent rollover and fillet/fillet trimming. | P2/P3 distinguish reblending and overflow capabilities from a universal promise. |
+| Radius near face size, swallowed faces and mitres | Exact below/at/above controls retain roll-over semantics. `near-face-limit`, `at-face-limit`, `past-face-limit`, `swallowed-face`, `cylinder-collapse`. A regular-contact limit is not geometric impossibility. | O1 `StartSolFailure` can mean excessive radius for that construction; O4 reports threshold sensitivity. | S1 describes rail self-intersection, small adjacent edges, cliff rollover and feature interactions; S2 limits the shipped repair claim. | P1 smooth/cliff/notch outcomes differ. P2 specifically documents notch overflow on mixed geometry. |
+| Partial rails and end walls | Closed oblique ellipse support is not support for clipped ellipse ends. `partial-oblique` preserves a real vertical end wall. | O1 warns when a blend escapes a limiting face. | S1 explicit end/corner handlers. | No public end-wall success guarantee found. |
+
+## Sources and limits
+
+- **O1:** OCCT 7.9.3 [MakeFillet header](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_3/src/BRepFilletAPI/BRepFilletAPI_MakeFillet.hxx),
+  especially `Add`, `Build`, `BadShape` and `StripeStatus`. `SetContinuity`
+  controls approximation continuity; it must not be advertised as an arbitrary
+  G2 contact-to-support guarantee. `Build` explicitly lists 4+-edge termination
+  and limiting-face escape restrictions.
+- **O2:** [BRepBlend walking](https://occt3d.com/dev/doc/refman/html/class_b_rep_blend___walking.html)
+  and the pinned [three-stripe corner builder](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_3/src/ChFi3d/ChFi3d_Builder_C3.cxx).
+  Initial section, continuation, approximation and corner assembly are separate
+  failure stages. No implementation code was copied.
+- **O3:** [BRepCheck analyzer](https://occt3d.com/dev/doc/refman/html/class_b_rep_check___analyzer.html).
+  Its optional exact curve-on-surface check applies only to SameParameter
+  edges. The fast scoreboard does not enable it or claim that it proves
+  self-intersection absence.
+- **O4:** Upstream reports [1177](https://github.com/Open-Cascade-SAS/OCCT/issues/1177),
+  [1371](https://github.com/Open-Cascade-SAS/OCCT/issues/1371) and
+  [1695](https://github.com/Open-Cascade-SAS/OCCT/issues/1695). The independent
+  reviewer supplied these as adversarial leads, not reproduced results. The
+  last report is a reason to record tolerance growth, not merely `IsDone`.
+- **S1:** NVIDIA's [SMLib filleting manual](https://docs.nvidia.com/smlib/manual/smlib/fillets/),
+  sections Fillet Corners and Large Radius Filleting. It separates radius law,
+  cross-section and corner generation. Topology-based G1/G2/G3 options must
+  not be confused with the more limited surface/surface section implementation.
+- **S2:** Pinned SMLib source `3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5`,
+  [corner dispatch](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmFilletCorner.cpp#L1277-L1462)
+  and [self-intersection handling](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmFilletIntersector.cpp#L1631-L1718).
+  The latter leaves its self-intersection test disabled and says the test is
+  not implemented. Manual claims are not evidence of general automatic repair
+  in this source revision. Repair can also change a circular section.
+- **P1:** [Overview of Parasolid, v35 mirror](https://www.q-solid.com/Parasolid_Docs_V35/pdf/ov.pdf).
+  Only indexed excerpts and the independent review were available; the full
+  download timed out. Treat these capability descriptions as provisional, not
+  source-verified solver internals or measured success. No fallback order or
+  universal surface/angle coverage is inferred.
+- **P2:** Siemens [Parasolid v34.1 release highlights](https://blogs.sw.siemens.com/plm-components/parasolid-v34-1-release-highlights/),
+  section Blending Mixed Models. This is evidence for the named notch-overflow
+  improvement, not every pure B-rep swallowed-face case.
+- **P3:** Siemens [Parasolid v39.0](https://blogs.sw.siemens.com/plm-components/parasolid-v39-0-advancing-the-future-of-geometry-modeling/)
+  documents changing a blend's size, shape and type during reblending. That
+  does not demonstrate initial construction on our failing cases.
+- **R1:** Farouki and Sverrisson, *Approximation of rolling-ball blends for
+  free-form parametric surfaces*, 1996,
+  [DOI 10.1016/0010-4485(96)00008-5](https://doi.org/10.1016/0010-4485(96)00008-5).
+  Offset-intersection/contact-curve approximation suggests a construction
+  family, not a guarantee of correct global trimming or a Catallax certificate.
+
+The baseline review was checked against the landed source and the SMLib
+manual/source excerpts. Its upstream issue leads and Parasolid mirror notes
+retain the qualifications above. Neither SMLib nor Parasolid has been run on
+this corpus. There is no measured parity claim.
+
+## Next constructions to compare
+
+Keep [ownership round 1](../prototypes/fillet-ownership.md) and
+[patch-first round 2](../prototypes/fillet-patch-first.md) parked. Round 1's
+finite-sphere Boolean envelope spent its allowance without producing a body.
+Round 2's fitted patches did not supply all production proof/trim obligations.
+Neither result rules out contact-rail continuation with shared boundary curves.
+
+Start with the small gaps that preserve current definitions: plane/torus
+intersection-circle recognition, partial oblique end-wall clipping, and narrow
+cone exchange. Compare their general contact/patch alternatives against the
+same frozen recipes, not reduced replacements. Then tackle mixed corners,
+unequal earlier mitres and swallowed-face continuation. The four-valence
+pyramid must stay in the set so a special box-corner fix cannot masquerade as
+general vertex support.
+
+For each candidate, record initial-section solve, rail tracing/event handling,
+corner assembly, trim ownership, certification and consumers separately. Reject
+silent radius reduction, seam changes, healing, altered overflow policy or
+unselected-edge rounding. Explicitly labelled alternative constructions can
+be experiments, not replacements for the requested case. Keep losers here
+with their failure stage and measured coverage. No new candidate is promoted
+by this first PR. The oblique-volume disagreement below turned out to be
+OCCT's approximation. Prefer an analytic volume over either kernel's when a
+case allows one.
+
+A fitted carrier must name its retained rolling-ball definition, local bound,
+affected faces and cap exception. The existing policy targets 100 nm and caps
+regular fitted fillets at 1 um, additionally bounded by neighbouring geometry.
+The existing named P5 exceptions remain named exceptions. This work does not
+raise those caps, relabel samples as whole-face proofs, or make approximate
+answers `exact`. Any larger exception needs its own recorded reason and
+review rather than an undocumented fallback.
+
+## Measured baseline
+
+The frozen 43-case run completed at 1,000,000 work units per executable recipe.
+All status/code snapshots matched. Catallax delivered 13 checked exports,
+returned 26 kernel refusals and had one volume disagreement. Three further
+rows are schema-unavailable intents, not executed kernel requests. Thus the
+table's 29 refusal records include three corpus records. OCCT independently
+built 34 cases and refused nine. No process, binding or import was incomplete.
+Fourteen Catallax exports imported as raw-valid solids; only thirteen met the
+comparison checks. All thirteen accepted manifests report exact definitions.
+
+The final selected fillet span answered in 25 cases, refused in 13, and was not
+reached in five. Three of the latter are schema gaps and two are upstream
+Boolean work refusals. These span counts are construction diagnostics, not
+25 export, topology or whole-face proof passes. Export-budget failures must
+not erase construction coverage already demonstrated by the logs.
+
+The run used nice 10, affinity 0..11 and initial load averages
+2.05/4.60/8.19. It took about 139 seconds including process startup and raw
+imports, measured at the launching shell. It was not an idle-host benchmark.
+Binary SHA-256:
+`98696d0b1d262786c31fd217b3f26a9248b380e343b68b234155942fe12f7e9b`.
+Original corpus SHA-256:
+`8081b56b35eeeb154b62023c1b81e4d20769b0adaec921c50ca94aaf0001399a`.
+
+### Stage accounting
+
+The primary Catallax ledger separates construction from consumers. The raw
+`counts` field remains unchanged for compatibility; `stage_counts` and each
+row's `stage_result` locate the gap.
+
+| Stage result | Cases | Meaning |
+| --- | ---: | --- |
+| checked-export | 13 | Raw STEP and numerical checks passed. |
+| construction-refusal | 12 | The final requested fillet returned a non-budget refusal. |
+| construction-budget | 1 | The final fillet exhausted its allowance. |
+| upstream-budget | 2 | An input Boolean exhausted its allowance before the final fillet. |
+| consumer-budget | 10 | The final fillet answered; later work exhausted the allowance. |
+| consumer-refusal | 1 | The final fillet answered; STEP rejected its carrier. |
+| failed-check | 1 | The oblique-volume disagreement, since attributed to OCCT below. |
+| schema-gap | 3 | The intent cannot yet be expressed as an executable recipe. |
+
+Of the thirteen work-budget failures, ten are consumer failures, not missing
+fillet construction. One is construction-limited and two are input-limited.
+An earlier answered fillet in an ordered recipe does not qualify the final
+requested fillet. An answered span is still not a topology, STEP or whole-face
+proof pass.
+
+The corpus now snapshots `expected_stage` as well as status/code. `--check`
+detects a refusal moving between construction and consumers even if its
+overall `numbers.operation-budget` code stays unchanged. Only snapshot
+metadata changed; recipe definitions, OCCT selections and outcome targets did
+not. The corpus with stage metadata has SHA-256
+`9e0f92944a1b1c56b2c43a8f64a312355358996ba50f4cd35808d57ac380ab52`.
+
+| Case | Catallax stage result | Catallax export | ms | Final fillet span | ms | OCCT | ms |
+| --- | --- | --- | ---: | --- | ---: | --- | ---: |
+| box-single | checked-export | built | 412.81 | answered | 0.64 | built | 7.40 |
+| near-face-limit | checked-export | built | 480.30 | answered | 0.87 | built | 8.52 |
+| at-face-limit | construction-refusal | refused-with-reason `fillet.unsupported-overflow` | 1.37 | refused | 0.28 | refused-with-reason `occt.fillet-not-done` | 7.77 |
+| past-face-limit | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.49 | refused | 0.32 | refused-with-reason `occt.fillet-not-done` | 7.19 |
+| swallowed-face | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.28 | refused | 0.26 | refused-with-reason `occt.fillet-not-done` | 8.21 |
+| box-all | consumer-budget | refused-with-reason `numbers.operation-budget` | 41.68 | answered | 2.15 | built | 37.34 |
+| box-mitre | checked-export | built | 4461.32 | answered | 1.83 | built | 15.80 |
+| acute-5deg | consumer-budget | refused-with-reason `numbers.operation-budget` | 34.68 | answered | 4.11 | built | 8.03 |
+| acute-halfdeg | consumer-budget | refused-with-reason `numbers.operation-budget` | 30.70 | answered | 3.62 | built | 7.12 |
+| obtuse-174deg | checked-export | built | 28.94 | answered | 3.09 | refused-with-reason `occt.fillet-exception` | 2.31 |
+| obtuse-179deg | checked-export | built | 28.04 | answered | 3.20 | refused-with-reason `occt.fillet-exception` | 2.28 |
+| l-concave | checked-export | built | 1024.18 | answered | 0.65 | built | 19.12 |
+| l-mixed-all | construction-refusal | refused-with-reason `fillet.unsupported-overflow` | 25.42 | refused | 1.76 | built | 87.67 |
+| cylinder-rim | checked-export | built | 11452.36 | answered | 0.32 | built | 3.92 |
+| cylinder-collapse | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.19 | refused | 0.14 | built | 4.15 |
+| cylinder-past-collapse | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.12 | refused | 0.16 | refused-with-reason `occt.fillet-not-done` | 11.10 |
+| boss-rim | checked-export | built | 8597.22 | answered | 0.30 | built | 11.32 |
+| boss-seam-rotated | checked-export | built | 8583.24 | answered | 0.27 | built | 17.10 |
+| hole-mouth | checked-export | built | 8468.40 | answered | 0.26 | built | 16.85 |
+| cone-top | checked-export | built | 7.57 | answered | 0.65 | built | 3.73 |
+| cone-base | checked-export | built | 8.08 | answered | 0.45 | built | 3.85 |
+| sphere-dome | consumer-budget | refused-with-reason `numbers.operation-budget` | 4938.59 | answered | 0.38 | built | 21.90 |
+| torus-slice | consumer-budget | refused-with-reason `numbers.operation-budget` | 49.56 | answered | 0.64 | built | 40.28 |
+| torus-intersection | upstream-budget | refused-with-reason `numbers.operation-budget` | 24.19 | not-reached | n/a | refused-with-reason `occt.fillet-not-done` | 10.64 |
+| cross-equal | consumer-budget | refused-with-reason `numbers.operation-budget` | 724.12 | answered | 96.78 | built | 96.42 |
+| cross-unequal | construction-budget | refused-with-reason `numbers.operation-budget` | 1464.66 | refused | 1388.00 | built | 307.25 |
+| oblique-cylinder | failed-check | wrong `volume.disagreement` | 3473.41 | answered | 3.10 | built | 33.85 |
+| oblique-cone | construction-refusal | refused-with-reason `fillet.unsupported-contact` | 53.57 | refused | 0.06 | built | 60.90 |
+| sphere-cylinder | construction-refusal | refused-with-reason `fillet.unsupported-contact` | 79.97 | refused | 0.10 | built | 212.03 |
+| tangent-boss | consumer-budget | refused-with-reason `numbers.operation-budget` | 82.64 | answered | 4.37 | built | 21.91 |
+| tangent-pocket | consumer-budget | refused-with-reason `numbers.operation-budget` | 1584.24 | answered | 5.10 | built | 31.24 |
+| unequal-ordered | consumer-budget | refused-with-reason `numbers.operation-budget` | 97.54 | answered | 1.75 | built | 11.39 |
+| roll-over-mitres | consumer-budget | refused-with-reason `numbers.operation-budget` | 35.76 | answered | 1.52 | refused-with-reason `occt.fillet-not-done` | 24.04 |
+| mixed-ordered | checked-export | built | 4428.35 | answered | 1.81 | built | 24.89 |
+| explicit-setbacks | schema-gap | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 22.15 |
+| variable-linear | schema-gap | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 19.45 |
+| variable-zero-end | schema-gap | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 21.14 |
+| vertex-4-one | construction-refusal | refused-with-reason `fillet.unsupported-end` | 23.99 | refused | 0.47 | built | 16.21 |
+| vertex-4-two | construction-refusal | refused-with-reason `fillet.unsupported-corner` | 23.04 | refused | 1.97 | built | 108.26 |
+| vertex-4-all | construction-refusal | refused-with-reason `fillet.unsupported-corner` | 28.37 | refused | 5.27 | built | 84.34 |
+| partial-oblique | upstream-budget | refused-with-reason `numbers.operation-budget` | 95.93 | not-reached | n/a | built | 70.46 |
+| unequal-mitres | construction-refusal | refused-with-reason `fillet.unsupported-corner` | 3.27 | refused | 0.13 | refused-with-reason `occt.fillet-not-done` | 17.54 |
+| narrow-cone | consumer-refusal | refused-with-reason `step.unsupported-geometry` | 3.04 | answered | 0.38 | built | 3.29 |
+
+### Separate higher-work probes
+
+These four requests use 20,000,000 work units and a 45-second process guard,
+not the default snapshot allowance. They separate coverage gaps from cheap-run
+budget failures. They do not change the primary counts above.
+
+| Case | Complete Catallax request | ms | Final fillet span |
+| --- | --- | ---: | --- |
+| box-all | built with raw-valid STEP | 13793.18 | answered |
+| torus-intersection | `fillet.unsupported-contact` | 38.17 | refused |
+| partial-oblique | `fillet.unsupported-end` | 137.14 | refused |
+| narrow-cone | `step.unsupported-geometry` | 3.48 | answered |
+
+The first two torus controls deliberately differ. The rational-radius slice
+constructs and reaches export; the irrational circle represented by an
+intersection curve reaches a contact refusal once its Boolean has enough
+work. The narrow cone constructs its outer torus sheet but cannot export it.
+These are not four instances of an impossible fillet.
+
+### Oblique volume disagreement, attributed
+
+For `oblique-cylinder`, direct Catallax STEP import gives
+618.494339781691 mm^3; OCCT's independently constructed fillet gives
+618.511633890515 mm^3. Both are raw-valid. The difference is about
+0.01729411 mm^3, above the 0.00006185 mm^3 comparison allowance.
+
+An exact volume settles it. The cut cylinder is convex and the selected rim is
+convex, so the rounded rim is the cut cylinder's opening by the unit ball,
+except that the opening also rounds the bottom rim. Let `E` be the cut
+cylinder moved 1 mm inward: radius 4, from `z = 1` to the plane moved 1 mm
+down. Steiner's formula gives the opening as
+`V(E) + S(E) + M(E) + 4*pi/3`. `M(E)` is the wall's mean curvature integral
+plus half of each edge's length times its exterior angle. The tilted rim's
+exterior angle is `acos(s cos t)` for the plane normal `(s, 0, c)`. Adding back
+the bottom-rim band `2*pi*(25/6 - pi)` gives 618.494339781694701 mm^3. With
+the tilt set to zero, the same formula reproduces the exact torus band
+`2*pi*(25/6 - pi)`. Catallax's raw STEP differs from the exact value by about
+4e-12 mm^3; OCCT differs by 0.0172941 mm^3.
+
+A second derivation used 40-digit `mpmath` quadrature for the rim term and
+Pappus's theorem for the bottom band, with the quarter-circle spandrel centroid
+`(10 - 3*pi)/(12 - 3*pi)` from the corner. It agrees with the value above to
+all 21 recorded digits.
+
+OCCT's own surfaces confirm the attribution. Every point of an exact rolling-ball
+face lies 1 mm from the centre ellipse. OCCT's fillet face is one rational
+B-spline patch of degree 6 by 10 with 7 x 38 poles. On a 1201 x 61 parameter
+grid, the 70,741 samples inside the face trim lie up to 0.0019535 mm off that
+distance, and on average 0.00033 mm outside it. Weighting each sample's signed
+distance by its area element over the 48.892 mm^2 face gives 0.017308 mm^3 of
+extra material. That accounts for the whole 0.017294 mm^3 gap. Its planar
+cap measures 59.7274 mm^2, while the exact cap inside the plane contact ellipse
+is `16*pi/c`, 59.6128 mm^2. Rebuilding with
+`SetParams(1e-6,1e-7,1e-7,1e-7,1e-7,1e-7)` gives a 7 x 54 pole patch with the
+same 0.0019531 mm deviation and the same 0.017313 mm^3 excess. This is OCCT's
+blend surface, not its tolerance setting or its volume integration. The same
+sampling of Catallax's raw STEP fillet face, a rational degree 4 by 2 patch,
+finds every point within 8.4e-15 mm of the exact surface.
+
+The corpus row now carries this analytic volume, with its derivation, in
+`reference_volume`. The runner compares Catallax's raw STEP against an analytic
+volume when one exists, and against OCCT's otherwise. It records OCCT's own
+difference as `analytic_volume_difference` without changing OCCT's
+classification, which still checks raw validity, tolerance and witnesses.
+Ten material witnesses now cover both kernels' solids. The coverage suite
+recomputes the Steiner value independently. The case is a checked export.
+
+## Rational spherical export frames
+
+The export work after main `5e48ae71417b0b156a1f767eba6b736437140143`
+targets the ten consumer-budget cases without changing their constructors or
+the default file tolerance.
+
+### Trials and decision
+
+- Explicit file tolerances of 0.1, 1 and 100 nm produced no checked gains.
+  An additional precision trial used 12, 8 and 6 significant digits at
+  100 nm. Its preliminary per-decision policy differed from the CLI, so
+  it is not production coverage evidence.
+- Repeating the default 17-digit / 0.1 nm and 8- or 6-digit / 100 nm candidates
+  with the production per-decision policy produced thirty request-budget
+  refusals. No accuracy relaxation is promoted.
+- Profiling actual CLI replays located the work. At 20M, `box-all`
+  finished chart preparation at 6,990,760 work and export at 8,370,180.
+  `sphere-dome` finished preparation at 525,143 and export at 2,508,825.
+  `tangent-boss` still exhausted 20M during preparation. This is not one
+  uniform surface-fitting bottleneck.
+- Rational spherical frames produced a raw-valid `roll-over-mitres`
+  export at 1M. Its volume differed from `3888 + 83*pi/3` by about
+  0.000000000371 mm^3. The reported file bound was below
+  0.000000004462 mm, with the default 0.0000001 mm request unchanged.
+- Trying an existing clear-pole frame before pole-cap construction added no
+  checked cases beyond the rational-frame result. Park that extra path.
+  Keep the rational frames, with all previous diagonal candidates retained.
+
+For perpendicular unit directions `a,r`, the direction
+`3*a/5 + 4*r/5` is already unit. Rational unit source frames therefore need no new
+square root before their chart and decimal proofs. The sphere's centre,
+radius and point set do not change. The original axis permutations stay first;
+the previous diagonals remain fallbacks for domains the new directions miss.
+Only triangular trims prefer these turns. Applying that preference to every
+sphere trim exhausted 100M on three earlier sphere/box answers that used
+about 5.5M to 6.5M before the change. Non-triangular trims therefore keep the
+original eight candidates, without even constructing the new turns.
+
+The new material regression checks the rounded block's top and upright
+corners. Its footprint area is `396 + pi`; the first nine units have that
+section. Integrating the final unit gives `324 + 56*pi/3`, hence
+`V = 3888 + 83*pi/3`. This numerical volume control and five inside/outside
+witnesses supplement raw topology checks; they are not a whole-part distance
+certificate. The existing exact fillet definition is unchanged.
+
+### Required certificate failures
+
+A separate API probe used a 1M per-decision policy as well as a 1M request
+allowance. For `sphere-dome`, the writer discarded a
+`step.budget-exhausted` chart failure and returned an unseamed legacy file
+that failed raw OCCT validity. The red regression reproduces that false
+success without the fix. Local work, precision and decimal-certificate
+failures now propagate instead of reaching that fallback; refusal leaves the
+caller's output buffer unchanged. The ordinary CLI still builds this dome
+with sufficient work. Do not count this safety correction as a new fillet
+construction.
+
+CI exposed an old assumption in the closed-form conic boolean test: it
+required every legacy export to succeed. Public CLI replays refuse three
+vertical half-torus booleans after the guard. The base exported all three,
+but its union file is raw-invalid and has volume 195.5120104948717 mm^3
+instead of `200 + 3*pi^2`. Reclassifying the missing meridian certificate as
+an optional encoding gap would restore that false success. Do not do it.
+Keep the exact construction and mass checks, while requiring explicit
+refusal and an unchanged output buffer for uncertified exports.
+
+The updated expected export outcome and material witnesses have corpus
+SHA-256 `61f27ce8dc3a0316a2bb5f83bf1676b3a21f1a9ab6bdedac7798fc76620f6175`. Recipe dimensions, selections and OCCT operations did not
+change. Every kernel PR still reports a fresh full 43-case run at its final
+committed head. CI's small live smoke is not that full run.
+
+## Complete coaxial bands for toroidal fillets
+
+The next iteration starts at main
+`8a2102205b7a4ac9337084cbcd723893ebdbfab4`. All nine remaining
+consumer-budget cases were reproduced at 1M with the same accuracy policy.
+
+Removing the cone-neighbour routing restriction from the existing complete-band
+encoder gave one checked gain: `torus-slice`. A narrower route preserves that
+gain: complete scenes containing a torus with a recorded `blend` origin may
+use the band encoder. Other torus scenes keep their existing chart route.
+The origin selects an encoding; all existing geometric and whole-scene
+eligibility checks still apply. A trimmed sphere or arbitrary periodic patch
+declines the whole band plan. Unit coverage checks both scene orders and an
+unblended result whose model also contains unused fillet history.
+
+This is not new fillet construction. The native model remains exact. A raw
+import gives one valid solid with four faces, and the reported file bound is
+below 0.000000000000000838 mm. The caller still requests 17 digits and
+0.0000001 mm. Seven witnesses check the retained cap side, the hole and both
+rounded radial boundaries.
+
+For an independent volume control, let `d(z)` be the radial offset from the
+major circle of radius 6. The washer area is `24*pi*d(z)`. The base plane is
+`z0 = 6/5`, the small-circle centre height is `zc = 7/5`, and contact with
+the original radius-2 tube occurs at `zt = 14/9`. Then
+
+- `d(z) = 4*sqrt(2)/5 + sqrt(1/25 - (z - 7/5)^2)` for `z0 <= z <= zt`;
+- `d(z) = sqrt(4 - z^2)` for `zt <= z <= 2`.
+
+Integrating gives 63.55320719690321 mm^3; raw STEP measures
+63.55320719690311 mm^3. This numerical section control and the material
+witnesses supplement topology checks, not a general distance certificate.
+
+The updated export snapshot and witnesses have corpus SHA-256
+`de360f8602f5527bca824d25979ef8f9fda8a2fed4b0063228f1032ef8d60c4c`. Input recipes, radii, selected edges,
+overflow policy and independent OCCT operations are unchanged. No partial
+sphere support, fitted carrier, caller-tolerance change or SolidDraft pin
+update is included.
+
+## Interior torus probes
+
+This iteration starts at main `d1dde82ac643576472669880c1eb331ee9be8359`.
+A partial torus needs an interior meridian probe to certify its tube seam.
+The old search tried hundreds of directions outside a quadrant before trying
+its near-reference directions. The first outer-sheet torus in `tangent-boss`
+spent 15,543,003 work on this seam check alone.
+
+Interior probes now interleave the two existing rational ray families. The
+four axis rays, candidate set and all geometric checks remain intact. Chart
+cuts keep their old order, so this does not choose a different export frame
+or topology. No resource failure becomes an optional fallback.
+
+`unequal-ordered` now exports at 1M with one raw-valid ten-face solid and ten
+material witnesses. Its volume is 3976.6533101556693 mm^3 versus independent
+OCCT construction at 3976.6533101556697 mm^3. The reported file bound is
+3.15774367966936e-9 mm at the unchanged 17 digits and 0.0000001 mm tolerance.
+Its STEP bytes match the old main export at 20M exactly. This is consumer
+coverage, not a new fillet constructor or fitted carrier.
+
+Recipes, ordered radii, material sides, overflow policy and independent OCCT
+operations are unchanged. The remaining consumer budgets and oblique-volume
+disagreement stay explicit. Raw validity, witnesses and a volume match do not
+close whole-face distance, general self-intersection or interactive latency.
+Each PR still needs a fresh full 43-case report at its final committed head.
+
+## Algebraic circle-plane chords
+
+This iteration starts at main `ea57de24d4426aa75350705de8b8cc3159399b8b`.
+Both acute-angle recipes still constructed their native fillets before STEP
+spent about 1M on four circle/plane intersections. A deeper trace located
+roughly 692k in generic algebraic solving, with another 220k in contact tests.
+Boundary setup and trim-arc membership were cheap.
+
+The intersection code now solves an explicit non-rational circle/plane chord
+directly. Rational definitions and implicit intersection carriers retain
+their original solver and witnesses. Parallel-section handling and every
+subsequent branch, contact, ordering and witness check remain intact. The exact midpoint and chord
+width use the stored squared radius and unnormalised normals. A scaled,
+non-axis-aligned control covers separation, tangency, two hits and rational
+route preservation. No chart search order or geometry definition changes.
+
+`acute-5deg` and `acute-halfdeg` now give raw-valid six-face solids at 1M.
+Their volumes are 198.14710863794278 mm^3 and 19.80156079661844 mm^3,
+respectively. Independent OCCT construction agrees within 5e-12 mm^3.
+Reported file bounds are 5.09542963823344e-9 mm and 2.16921773566340e-9 mm
+at the unchanged 17 digits and 0.0000001 mm tolerance. Each file exactly
+matches its old-main STEP export at 20M work.
+
+For a wedge of length 20, height `h`, extrusion depth 10 and radius `r`, let
+`a = atan(h/20)`. Its rounded volume is
+`10*(10*h - r*r*(cot(a/2) - (pi-a)/2))`.
+The regression checks this independent section formula and ten material
+witnesses per case, including the removed tip, circular trim, both end caps
+and both retained wedge sides. Recipes, radii, side selection, overflow policy
+and independent OCCT operations are unchanged.
+
+The other 38 executable corpus requests preserve their normalised manifests
+and strict STEP bytes in the candidate comparison. This is export coverage,
+not a new fillet constructor, fitted surface or whole-face distance proof.
+The oblique-volume disagreement stays unresolved and unattributed. Every PR
+still requires the full 43-case report at its clean final committed head.
+
+## Complete regular horn and spindle bands
+
+This pass starts at main `83ed9eb14e3ffe19d1a068e6e6fb2219bb357fb4`.
+`narrow-cone` constructs a native outer-sheet torus fillet, then refuses STEP
+at 18,133 work. More work does not help. Complete-band selection excluded
+`TorusSheet`; general chart preparation excluded its neighbouring cone.
+
+The complete-band encoder now accepts a horn or spindle sheet only after
+proving its two circular parallels, orientation and tube-angle interval.
+Both boundary radii must be positive. The interval must avoid the inner
+equator, where its radius is smallest. This proves the whole interval stays
+away from the omitted axis and self-intersecting sheet. The complementary
+band between the same rings declines. The writer also requires radial
+clearance and distinct seam endpoints beyond twice its composed file bound.
+A near-axis control
+that initially produced raw-invalid STEP now refuses without touching output.
+No general cone chart or new carrier was added.
+
+At 1M, `narrow-cone` produces one raw-valid four-face solid, passes ten
+material witnesses and matches OCCT's 131.57107953520654 mm^3. Its reported
+bound is 6.31436118304804546077760640474008644538e-16 mm at unchanged digits
+and tolerance. An independent meridian integral checks cone disks below the
+contact and the outer tube above it. Conical ring, exact horn, spindle,
+quarter-turn and close-axis controls pass those import, witness and integral
+checks. Cylindrical horn, spindle and quarter-turn controls also pass.
+Arbitrary quaternion placements still refuse during construction on both
+fresh main and the candidate. General placement is not claimed.
+
+The full candidate report has 19 checked exports, 23 refusal records and the
+unchanged failed volume comparison. Recipes, selected edges, radii, material
+sides, overflow policy and reference operations remain unchanged. Only the
+proved `narrow-cone` expectation and its material witnesses change. Trimmed
+spheres still cannot bypass their chart through band selection. Sphere-dome
+remains a separate 1M consumer budget; its fresh-main 20M probe uses 2,214,090
+work. Every published head still needs its own full clean-head report.
+
+## Circular latitude jets
+
+This pass starts at main `da638f04c0f84d7f74d0d1e14182d29758687bca`.
+The fresh 43-case baseline is 19 checked exports, 23 refusal records and the
+same failed comparison. Sphere-dome answers its fillet at 1M but export
+exhausts that request. An explicit 20M replay checks at 2,214,090 work.
+Tracing found 199,013 chart-preparation work and about 1.3M in toroidal
+latitude pcurve fits with 132 to 212 spans per circular edge.
+
+The writer now proves circular latitudes in the rounded STEP placements.
+Positive equal semi-axes, exactly parallel normals, a coaxial centre and a
+nonzero tube vector give longitude derivative `+1` or `-1`, constant tube
+angle and zero higher derivatives. The existing value lifts, endpoint
+coupling, rounding bounds and arithmetic budgets remain. Actual trimmed
+spherical charts plus toroidal fillet provenance select the route; rational
+geometry checks certify it. Nonspherical and unblended handoffs retain their
+old bytes. No sphere or incomplete trim bypasses chart preparation.
+
+Sphere-dome now checks at 945,971 work, with one raw-valid five-face solid,
+ten material witnesses, no fitted 3D curves and the same 5.656937652983913e-9 mm
+file bound. Integrating washers through its tube then its spherical cap gives
+47.3569106407326 mm^3; raw STEP measures 47.35691064032189 mm^3. Independent
+OCCT gives 47.356912004414255 mm^3, within the original comparison allowance.
+The original strict local-fitting-budget/no-output API test remains unchanged.
+
+The candidate report has 20 checked exports, 22 refusal records and the same
+open oblique-cylinder comparison. Only sphere-dome gains checked status.
+All other 39 executable outputs remain strict-equal to fresh main. The first
+broader selector changed protected nonspherical P3 STEP bytes, not its report
+or correctness work. The exact native probe reproduced the CI byte failure;
+spherical-only selection restores the protected bytes without changing the
+gate. Recipes, dimensions,
+reference operations, radius, material side, defaults, overflow behavior and
+accepted earlier-answer policy stay fixed. This is not a latency result.
+
+Smaller-radius, larger-sphere and general-placement controls can still
+exhaust 1M. Tested spherical horn/spindle scenes still refuse STEP. Separate
+20M exploration found pre-existing raw-invalid `cross-equal` STEP identical
+on fresh main and the previous candidate; its canonical 1M refusal is not a
+checked gain. The oblique attribution and this higher-work fault remain open.
+See [the interface note](../interface-changes/2026-11-06-circular-latitude-jets.md).
+Every published head still needs its own clean full 43-case report.
+
+## Explicit station syntax
+
+The schema-only prerequisite accepts the defined fillet overflow policy in
+versions 4 and 5. The setback row uses canonical `{"faces": [...]}` endpoint
+names and keeps the same radius, distances, edge selection and independent
+OCCT station window. That prerequisite moved the row from a synthetic schema
+gap to an explicit construction refusal without claiming another export.
+
+## Station-clipped exact runs
+
+The B-rep now constructs one straight plane/plane affected region between two
+explicit station-normal planes. Its exact tangent triangles enclose every
+cross-section. Strict separation of their six-point hull from every other
+input carrier preserves each unselected neighbour's whole trimmed point set.
+The regularised Boolean subtracts a convex region or adds a concave region.
+The cylinder, station closures and input supports share exact boundary edges.
+Closure planes retain their original endpoint `corner.vertex` names.
+
+The unchanged `explicit-setbacks` recipe produces one raw-valid nine-face
+solid at 1M work. Its volume is 3996.566370614358 mm^3, exactly matching the
+independent station-window reference numerically and agreeing with
+`4000 - 16 (1 - pi/4)`. Construction uses 68,732 work units. The measured
+whole-face bounds are zero for the cylinder and both station closures, below
+the 100 nm target. All three names resolve after a radius edit to 1.5 mm.
+The checked file bound is 3.15774367966936241196372006707745230733e-9 mm.
+
+Regressions exercise preserved end walls, sharp edge ends, asymmetric limits
+in either record order, concave additions and incompatible station intervals.
+Curved runs, multiple selected edges, a missing endpoint limit and unproved
+neighbour clearance remain explicit coverage refusals. The independent field
+compiler still refuses this mode rather than silently dropping the stations.
+The selected-case proof does not replace the required full 43-case report at
+each published head.
+
+## Fully selected planar multiface corners
+
+This pass starts at main `29de79528b32b8aa1e5fae469ae1b410aa28faa1`.
+The fresh 43-case baseline has 20 checked exports, 22 refusal records and
+the unchanged oblique-cylinder volume disagreement. All snapshots match.
+On the shared host, three requests exceeded the 30-second process guard;
+the complete rerun uses a 180-second guard with the same 1M work allowance.
+
+Integration with explicit station syntax keeps that authored setback row
+executable. Only the two variable-radius laws remain schema gaps. The corpus
+size, stage and family guards remain active, and the schema-gap count is two.
+
+`vertex-4-all` now constructs its exact four-contact sphere polygon. All
+incident edges must be selected, all strips must have one radius and
+material side, and their axes must pass through a ball at that radius from
+every incident plane. Contact normals lie in an open hemisphere. Each
+selected pair bounds an exposed edge of their positive cone, proving the
+whole spherical convex hull and its shorter great-circle boundaries. Those
+arcs are single shared edges with the strips. Non-incident supports must be
+clear, ball centres must stay within their input edge intervals, and corner
+ends cannot reverse or consume a retained rail.
+
+At 1M the final fillet answers using 257,925 work units, then STEP export
+exhausts the request. The row changes from `construction-refusal` to
+`consumer-budget`; this is not an extra checked export at the scoreboard
+allowance. At an explicit 20M allowance the complete request uses 14,012,254
+work and writes a raw-valid solid without healing. The native body has
+18 faces, including one four-sided spherical apex patch. STEP splits two
+charts and has 20 faces. The file bound is
+5.569808867159556034910916092483513545794e-9 mm. The model sphere is exact,
+not a fit measured only at its vertices.
+
+For the radius-0.5 square pyramid, the inner parallel body is a homothetic
+pyramid of scale `s = 1 - r*(1 + sqrt(2))/10`. Adding the ball gives volume
+`4000*s^3/3 + 400*r*(1+sqrt(2))*s^2
++ pi*r^2*(30+20*sqrt(3)/3)*s + 4*pi*r^3/3`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent inner-parallel formula | 1308.9550554188074 |
+| Raw Catallax STEP | 1308.955055418953 |
+| Independent OCCT construction | 1308.9550274302617 |
+
+The reference difference stays within the original comparison allowance.
+Five material witnesses cover the retained core, removed apex, selected
+edge and exterior. Radius-edit, translated and nonperpendicular-normal
+controls check the same exact sphere and shared boundary invariants.
+`vertex-4-one`, `vertex-4-two` and `unequal-mitres` remain construction gaps.
+No work-limit optimization, independent-field extension or general
+valence-five claim is included. See
+[the interface note](../interface-changes/2026-11-07-planar-multiface-fillet-corners.md).
+
+## Cliff rule for wider balls
+
+In `unequal-mitres`, the radius-2 upright ball reaches the earlier radius-1
+top rounds at the top of its side faces. A ball wider than a round cannot roll
+onto it: the round's offset at distance 2 folds back, and the only contact
+solution has the ball containing the round. Section 4.5.1 of the recipe
+specification now gives that run end the cliff rule. The run
+keeps its two planar supports and continues along its spine, and the earlier
+rounds cut it. SolidWorks and Parasolid's cliff-edge overflow give the same
+result. It is exact: planes, cylinders and the curves where two cylinders
+meet.
+
+### Cliff construction
+
+The B-rep now builds the cliff rule for a straight strip between planes. One
+of its feet must reach an earlier round of the strip's convexity, narrower
+than the ball and tangent to the foot's face. That foot ends where its rail
+meets the round's rail. The strip's cylinder meets the round on a curve with
+a node there, where the two are tangent. From that foot the cut walks across
+the faces the extended strip meets. On each face it follows the cylinder's
+intersection with that face to the one boundary crossing inside the strip's
+sector. It stops on an edge of the strip's other face, which is where the
+other rail ends. A cut arc must lie on the face it crosses. Where both feet
+are cliffs, as at a mitre, the other foot also rules out the wrong arc of
+each figure-eight. Vertices past the edge's end, inside the sector and
+outside the cylinder are removed. Edges between them go, and edges leaving
+them end on the cut. No sphere sector or fitted carrier is involved.
+
+At a mitre of two narrower rounds, the cut crosses the mitre and the mitre
+keeps its outer part. A ball as wide as the rounds keeps the sphere sector. A
+narrower ball rolls over the mitre to its apex, as the next section
+describes.
+
+A tangent chain no longer continues over a narrower round of its convexity.
+It stops there and its straight strip takes the cliff. Examples are a block's
+top edge at radius 3 after its uprights at radius 1, the concave floor edge
+of a pocket at 3 after its uprights at 1, and a top edge at radius 2 reaching
+an earlier radius-1 edge round. They refused with `fillet.radius-too-large`
+and a limit of 1. An arc of such a round chosen by name still refuses that
+way, since no ball of the radius rolls along it.
+
+The strip's region is bounded at each cliff end by a plane normal to its edge,
+past every cut curve. Certified enclosures of the arcs place that plane. The
+guard then proves the region clear of every face the cut does not cross, as
+at other ends.
+
+`unequal-mitres` constructs, and its final fillet uses 1,280,748 work units.
+That is past the 1M allowance, so the row moves from `construction-refusal`
+to `construction-budget`. Most of the cost is exact proof on the cut curves'
+algebraic points: membership of the feet and exits on the cylinder/cylinder
+curves, the carrier's hits on the mitre curve and their trims. An explicit
+20M replay uses 4,164,103 work and writes one raw-valid solid without
+healing. The solid has 14 faces, and 8 curves are approximated with a file
+bound of 3.766191261595745291526513029171743683571e-8 mm. OCCT refuses the
+case.
+
+The independent volume is the block with its top loop rounded,
+`4000 - 220/3 + 18*pi`, less four corner wedges. Each wedge has section
+`4 - pi` over nine units. Above that, at height `w` into the radius-1
+round, the corner square of side `s = 1 + sqrt(1 - w^2)` lies outside the
+upright's disk over area `s^2 + pi - s*sqrt(4 - s^2) - 4*asin(s/2)`, down to
+zero at `s = sqrt(2)`. Quadrature of that section at 50 digits, split at
+that point, gives the reference.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent section quadrature | 3950.5424955609326 |
+| Catallax exact measurement (Rust test) | within 1e-9 |
+| Raw Catallax STEP (20M replay) | 3950.5424955251915 |
+
+The corpus row carries this value, with its derivation, in
+`reference_volume`, since OCCT gives no volume to compare against. The
+coverage suite recomputes it with Simpson's rule in the round's angle.
+
+Six material witnesses pass on the raw STEP. One of them, `(0.9, 0.9, 9.95)`
+on the mitre's surviving part, is inside. A sphere corner would have removed
+that point, so the witness separates the cliff result from a smooth one.
+Rust controls also check radius-4 uprights after radius-3 top edges and a
+concave pocket, uprights at 3/2 after a radius-1 floor loop. The three chain
+examples above are checked the same way. Each matches its own independent
+quadrature within 1e-9 mm^3. For the chains, that quadrature integrates the
+strip's section over the stretch where the round shrinks the input section.
+
+### Narrower balls at a mitre
+
+`narrow-mitres` is `unequal-mitres` with radius-1/2 uprights. The ball is
+narrower than the radius-1 rounds, so section 4.5.1 rolls it over the mitre.
+At z = 9 both feet reach the rounds together. The ball then touches the two
+rounds of the corner, and its centre runs on the ellipse
+`c(t) = (1 - cos(t)/2, 1 - cos(t)/2, 9 + sin(t)/2)` for `t` in `[0, pi/2]`.
+That ellipse is where the rounds' offsets meet. Both contact rays lie in the
+spine's normal plane, so the blend is a constant-radius pipe around the
+ellipse. Its contact curves are planar sections of the rounds. They meet at
+`(1, 1, 10)`, the mitre's top end, where the pipe closes to a point. Only
+equal rounds give a planar spine. Rounds of different radii meet their offsets
+on a quartic space curve.
+
+OCCT builds an 18-face solid of 3981.141477225886 mm^3. That is 0.0033 mm^3
+below the rolling-ball value, so the row carries the independent volume in
+`reference_volume`. Catallax builds the band exactly, as the next section
+describes.
+
+The reference is 3981.14478206068032165465886714390960314813664. It is the
+block with its top loop rounded and four upright wedges of section
+`(1 - pi/4)/4` over nine units removed. Each corner then loses
+0.0347839602949145227 mm^3 above z = 9. This is the integral over `t` of
+`|c'| (A - kappa <M, nu>)`. Here `A` and `M` are the area and first moment,
+about `c`, of the normal-plane section between the ball's arc and the rounds'
+traces. `kappa` and `nu` are the spine's curvature and principal normal.
+mpmath gives it at 45 digits. The coverage suite recomputes it in floats
+with Gauss-Legendre rules.
+
+A second derivation checks the definition itself. The rounded block is
+convex. Near a corner, the rolling-ball result is its opening by the ball:
+a point stays exactly when it lies within `1/2` of the block eroded by `1/2`.
+Removed heights over grids of 100, 200 and 400 squares per side give
+0.034864, 0.034814 and 0.034794, converging on the section integral.
+
+The six shared witnesses hold for both kernels. Two `target_witnesses` lie
+0.002 inside the pipe, on its symmetry plane at `t = pi/8` and `t = 3*pi/32`.
+OCCT's corner surface passes up to about 0.004 inside the pipe there, and it
+classifies both points as outside.
+
+### Rolling mitre construction
+
+The B-rep now builds this case. The new support `RollingMitre` holds the
+band's law and its exact carrier. With `tau = tan(t/2)` along the spine and
+`v` across the section, the band is a rational Bezier patch of bidegree
+(6, 2) over the unit square. Row `v = 0` is the contact with the first round
+and row `v = 1` the contact with the second. Each is an ellipse centred
+where the rounds' axes meet. Column `u = 0` is the strip's end section, a
+circle of the ball's radius. Column `u = 1` collapses to the mitre's apex.
+The carrier is built from the law with its rational coefficients folded as
+they are made, so each control is a short expression in the two square
+roots `sqrt((1 -+ a1.a2)/2)`.
+
+A strip qualifies when both its feet reach an earlier mitre of two equal
+rounds together, both of its convexity and wider than its ball, and the
+band's end section is the strip's own section. The strip then ends at that
+section. Each round loses the part beyond its contact ellipse and the mitre
+goes. The band face takes the corner's `corner.vertex` name. A guard proves
+every other face clear of the band, using the box of its centre's quarter
+ellipse widened by the ball's radius. The feet are written as the simple
+rationals they provably equal, which keeps later proofs about them short.
+
+Exact measurement integrates the band in closed form over its section and
+with a certified Taylor integral in `tau`. Classification and display use the same whole-band
+chart. STEP writes the band as its own rational surface. Its rails stay
+their exact ellipses and its end section its exact circle, charted on the
+neighbouring cylinders like any other conic. On the band, each conic's
+chart curve is a cubic Hermite fit of `tan(x/2)` in the conic's angle. Its
+fourth derivative has a closed-form maximum, so the fit's miss is proved,
+not sampled. No 3D curve is approximated.
+
+The final fillet uses 304,860 work units, under the 1M allowance. STEP
+export uses 2,713,202 more in the chart writer, so at 1M the row stops at
+`consumer-budget`. An explicit 20M replay writes one raw-valid solid of 18
+faces with a file bound of 3.5895e-9 mm, without healing.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent section integral | 3981.1447820606803 |
+| Catallax exact measurement (Rust test) | within 1e-9 |
+| Raw Catallax STEP (20M replay) | 3981.144782060678 |
+| Independent OCCT construction | 3981.141477225886 |
+
+All eight witnesses hold on the raw STEP, including both target witnesses
+that OCCT's corner surface misses. Rust controls also build a concave pocket,
+uprights at 1/2 after a radius-1 floor loop, and check its volume against
+its own section integral.
+
+## Face-limit roll-over regions
+
+`at-face-limit` rounds the top edge of a 20 x 20 x 10 block with radius 10.
+The side foot reaches the bottom edge exactly at the requested radius. Section
+4.5.1 still keeps that foot on the side face, so the affected region is the
+plain tangent-triangle prism and the side face is consumed. The strip
+construction refused because the bottom plane meets the cylinder carrier.
+
+The roll-over path now reuses the exact region of the station-clipped runs
+above, with its caps in the end-wall planes. It runs only after the strip
+construction refuses for overflow, for one straight plane/plane run whose
+endpoints are three-face vertices with plane end walls normal to the edge.
+Every other input support must be strictly clear of the region's hull or
+touch it only along a contact rail. A boundary of a contact face inside its
+contact band would belong to some other face whose support meets the hull
+elsewhere. That proof keeps every foot in its closed face for the whole
+radius homotopy, so no continuation event is skipped. The consumed side face
+is reported in the evaluation's `consumed` history with the blend origin.
+
+The unchanged recipe writes one raw-valid six-face solid at 1M work. OCCT
+refuses it with `occt.fillet-not-done`. The raw STEP volume
+3570.7963267948912 mm^3 matches the section integral `2000 + 500*pi` =
+3570.7963267948962 mm^3. The cylinder and five planes are exact elementary
+carriers, so their whole-face deviation is zero. Nine material witnesses pass
+in the native classifier and the raw import. A concave control, `l-concave`
+at radius 5, adds the region up to the wall top and consumes the wall side.
+A notched side that the foot leaves before the full radius, and
+`past-face-limit`, keep their refusals.
+
+The full candidate report has 22 checked exports. Five rows exceeded the
+30-second process guard on a host with load average above 30; a rerun of
+those five with a 300-second guard and the same 1M work allowance matched
+their snapshots. No other row changed status, code or stage.
+
+## Inscribed coaxial rings
+
+`torus-intersection` keeps the top of the torus R = 6, r = 2 above z = 1.
+Its meridian section is a circular segment of height 1. The section's
+inscribed circle has radius 1/2 about (6, 3/2), exactly the requested radius.
+The two rings at rho = 6 +- sqrt 3 therefore reach one centre circle. Their
+contacts are (6, 1) and (6, 2), opposite ends of a diameter, so no arc is
+shorter. Under roll-over each ring keeps the half tube on its own side, the
+one-sided limit of its homotopy. The halves close the whole torus R = 6,
+r = 1/2 about z = 3/2. Both input faces are consumed by both blends.
+OpenCASCADE refuses this request with `occt.fillet-not-done`.
+
+Exact circle recovery for the intersection rings came from the lane D
+handoff. `RollingTorus::inscribed` proves exactly one offset condition is
+zero and the rest strictly positive. It then places the centre where the
+offsets touch, without the square root that separates two crossings. The
+feature builder accepts only complete two-ring pairs of two-face shells, with
+equal convexity, one centre circle and opposite halves. Each pair shares two
+exact contact circles between its halves. Other configurations at that
+radius keep the regular `fillet.radius-too-large` refusal. A convex shell
+must be the only shell of its lump and a concave shell a void of the body's
+only lump. Otherwise another shell could lie in the rounded region, and the
+pair refuses `fillet.unsupported-overflow`; a spherical cavity inside the cap
+and an island inside a lens void are the regressions. The pair reports both
+consumed faces with its blend origins, as the face-limit run does.
+
+At 20M work the unchanged recipe produces one raw-valid two-face solid.
+Raw STEP measures 29.608813203267985 mm^3, against 3 pi^2 =
+29.608813203268074 mm^3. The fillet uses 3,803 work; the input Boolean
+needs about 1.94M, so the 1M snapshot stays `upstream-budget`. Concave pairs
+round a lens-shaped void to a toroidal void; a two-lens pattern rounded by
+`"all"` closes two tori. Below the limit (2/5) both faces survive with two
+regular strips. Above it (3/5) the refusal is unchanged.
+
+`narrow-cone` already exports on main, so this pass made no change there.
+
+## Mixed convex and concave vertices
+
+`l-mixed-all` rounds every edge of an L-shaped prism with radius 1. Each end
+of the inner concave edge is a vertex where one concave and two convex
+selected edges meet. Section 4.5.1 now settles that vertex: the concave blend
+forms first and the convex sheets roll over it. The blend leaves a quarter
+arc against the end face, tangent to the two convex end edges, and the end
+rounds continue around it as a torus. That torus is the vertex's junction
+sector and is named `corner.vertex`.
+
+OCCT's simultaneous result is the same shape. A Catallax recipe that fillets
+the concave edge first and then every remaining sharp edge gives a raw STEP
+volume 7.8e-10 mm^3 from OCCT's 2458.7872985489207 mm^3. The plain set
+reading of the older text would leave a knife edge where the concave addition
+meets the convex removals.
+
+The B-rep builds this in one operation when every edge at each mixed vertex
+is selected: a concave pass, then a convex pass over the surviving pieces of
+the selected convex edges and the arcs at mixed vertices. A same-named piece
+split off upstream and left unselected stays sharp. Both passes use the ordinary strip
+construction. The strip guard first had to stop refusing on the unbounded
+wall-side plane. It now also proves a plane face bounded by straight edges
+clear when a hull face separates the face's corners from the strip's hull.
+
+At 1M the final fillet answers with 38 exact faces using 68,518 work units,
+then STEP export exhausts the request, as for `box-all`. The row moves from
+`construction-refusal` to `consumer-budget`. At an explicit 20M allowance the
+complete request uses 2,997,397 work and writes one raw-valid 38-face solid.
+Its volume is 2458.7872985497056 mm^3, 7.8e-10 mm^3 from OCCT. The file bound
+is 5.662642637035545e-9 mm. Ten material witnesses pass in the native
+classifier, the raw import and OCCT's independent construction. A mixed
+vertex that leaves an edge unselected keeps its refusal.
+
+## One selected strip at a four-face vertex
+
+This family starts at `eb89df26a561ec291c0c220596b355095eb26206`.
+The pyramid's selected edge now ends on both unselected apex walls. Their
+shared input edge has one cylinder hit in the strip's shorter normal sector.
+Two exact conic arcs connect that hit to the contact rails. Each arc is a
+single shared boundary with its original end wall; no connected unselected
+edge starts another blend run.
+
+The builder proves a convex straight-edged planar input skin and transversal
+end walls. Conic projection onto the cylinder's normal circle is one-to-one.
+Excluding the other rail fixes each sector interval. All plane crossings of
+the complete conics are enumerated, and no interior event may lie in the
+retained arcs. Their material-side test therefore certifies whole finite
+arcs. The strip remains an exact rolling cylinder, with positively ordered
+contact rails and no fitted model face.
+
+At an explicit 20M allowance, `vertex-4-one` uses 4,167,270 work units,
+including 2,658,585 for the final fillet, and exports one raw-valid six-face
+solid without healing. Its file bound is
+4.564144149380011770722525218291367494769e-9 mm. At 1M the constructor still
+exhausts its allowance. The corpus snapshot changes from
+`fillet.unsupported-end` to `construction-budget`, not another 1M checked
+export. Work-limit optimization remains deferred.
+
+An independent normal-section integral clips the removed circular segment
+by the base and both apex walls. For the original pyramid and radius `r`,
+the removed volume is
+`10*r^2*(1-pi/(2*sqrt(3)))
+- r^3*(3-(pi+2)/sqrt(3))/(2*sqrt(2))`.
+Subtract it from `4000/3`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent clipped-section integral | 1333.1019746594054 |
+| Raw Catallax STEP | 1333.101974659405 |
+| Independent OCCT construction | 1333.101974741626 |
+
+Seven material witnesses cover the core, the removed selected edge and apex,
+retained material beside an unselected edge, and the exterior. Rust controls
+also cover a translated radius edit and a shallower pyramid. Two selected
+strips and unequal earlier mitres remain separate families. See
+[the interface note](../interface-changes/2026-11-07-four-face-single-strip-ends.md).
+
+## Partial selected-normal cliff corners
+
+For `vertex-4-two`, the selected A/B and B/C runs activate A/B/C, not the
+unselected end wall D. Their common radius-1/2 ball touches all four input
+planes, but that extra tangency does not activate D. The prescribed corner
+is the A/B/C normal-cone cell outside its ball. Its exposed A/C side closes
+on the plane through the centre spanned by the A and C normals. Here that
+plane is `y=0`. This is the default settled in RECIPE section 4.5.1.
+
+The exact boundary has eleven connected faces. Each selected cylinder has
+an upper incoming component and a lower component beyond the cliff. They
+touch only at their outer spherical contact foot and must remain separate
+faces with the same selected-edge origin. The sphere and cliff share the
+four-face input vertex's `corner.vertex` origin. The original end-wall arcs
+and the lower cylinder/cylinder ellipse survive; no unselected run starts.
+
+The construction proves a convex planar input skin, one common ball inside
+every input halfspace, and an exposed cone side stationary through the
+original vertex. All conic/plane events are enumerated before selecting
+each finite arc. The remaining input planes are either transverse to the
+cylinder axis or proved clear, so a lower patch cannot have an unexamined
+interior support extremum. The sphere uses its exact selected-normal hull.
+Every model carrier is an exact plane, cylinder or sphere, with zero model
+deviation over its whole face.
+
+The stationary cliff also supplies an exact coordinate equality for the
+common centre. For a nonzero normal component `n_i`, write
+`c_i=v_i-sum(n_j*(c_j-v_j), j!=i)/n_i`, where `v` is the original vertex.
+The already-proved plane equation makes this the same point. In the frozen
+pyramid it stores the exact zero Y coordinate rather than an algebraic
+cancellation with a tiny nonzero enclosure midpoint. STEP can then write
+zero without repeatedly refining a relative decimal bound. This changes
+neither the point set nor a numerical tolerance.
+
+Stationarity also certifies the homotopy. A point first enters the angular
+cell through an incoming strip's normal plane. There the distances to the
+ball and that cylinder agree, so an exterior point is already consumed by
+the strip. For a point not consumed by a strip at the final radius, the
+squared ball-distance minus radius-squared is a convex quadratic in the
+homotopy radius. After entering the ball it has only one later outward
+exit. Thus combining the strips with the final corner cell loses no earlier
+affected region. Moving normal-cone cliffs need their swept affected set
+and do not use this stationary reduction.
+
+### Independent section and cone volume
+
+Let `r=1/2`. The single-strip removal from the preceding section is `L`.
+For the overlap of the two selected strips, define
+
+```text
+J0(s) = (s*sqrt(1-s^2) + asin(s))/2
+J1(s) = -(1-s^2)^(3/2)/3
+F1(s) = 5*s - 4*s^3/3 - 4*sqrt(3)*J0(s) + 2*sqrt(3)*J1(s)
+F2(s) = 4*s - s^3 - 2*sqrt(3)*J0(s)
+s0 = sqrt(3)/2
+s1 = sqrt(2/3)
+K = sqrt(2)*(F1(1)-F1(s0))/4 + (F2(s0)-F2(s1))/sqrt(2)
+```
+
+The overlap volume is `r^3*K`. To derive it, use orthonormal coordinates
+`d=(10-y-z)/sqrt(2)` and `t=(y-z+10)/sqrt(2)`. At fixed `d`, put
+`T=r-sqrt(3)*sqrt(2*r*d-d^2)`. The shared section lies between
+`max(0,sqrt(2)*abs(x)-d)` and `T-sqrt(2)*abs(x)` in `t`.
+Integrating that section gives `K`.
+
+Translate the ball centre `(0,0,10-r*sqrt(2))` to the origin. Its active
+cone is `Y>=0, Z>=abs(X)+Y`. For `X>=0`, the A/B cylinder is the tighter
+one; its interior in this cone already satisfies all input halfspaces.
+The extra corner removal is twice that cylinder's cone portion outside
+the ball. The half-cone has rays `(1,0,1)/sqrt(2)`, `(0,1,1)/sqrt(2)` and
+`(0,0,1)`, with solid angle `Omega=2*atan(3-2*sqrt(2))`.
+
+For the cylinder part, substitute `u=X+Y`, `v=X-Y`. Put
+`S=sqrt(2*r^2-v^2)`. The bounds are `abs(v)<=u<=S/sqrt(3)` and
+`u<=Z<=-u/2+sqrt(3)*S/2`, with `abs(v)<=r/sqrt(2)` and Jacobian `1/2`.
+Its volume is `r^3*(2*sqrt(2)-sqrt(6))/3`. Subtracting the ball sector
+and reflecting gives the additional removal
+`E=2*r^3*(2*sqrt(2)-sqrt(6)-Omega)/3`.
+The prescribed volume is therefore `4000/3-2*L+r^3*K-E`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent prescribed cliff integral | 1332.8688454588128 |
+| Raw Catallax STEP, eleven valid faces | 1332.8688454588148 |
+| OCCT smooth alternative | 1332.8654256638408 |
+
+These are different definitions, not numerical agreement. The unchanged
+pinned OCCT construction has eight faces, including a degree-(8,8) corner
+spline with 16 by 16 poles. An interior point of that trimmed patch is
+0.038856993726028355 mm from every prescribed plane, cylinder and sphere
+carrier. Its face tolerance is 0.00038032685675395473 mm.
+
+The corpus uses its existing `reference_volume` path with the derived
+formula. Shared `witnesses` still apply to both engines. Separate
+`target_witnesses` apply only to raw Catallax STEP; OCCT records them as
+diagnostics without changing its construction status. At
+`(0,+1/100,99/10)`, `(0,-1/100,99/10)` and `(0,0,99/10)`, the prescribed
+states are OUT, IN and ON. The pinned reference produces OUT, OUT and OUT.
+No shared tolerance is relaxed. The old seven-face strip union fails both
+the target witnesses and the independent volume check.
+
+The actual CLI proof uses a private 100M allowance and finishes with
+20,079,415 work: 36,851 before the fillet, 12,611,809 for construction and
+7,430,755 for STEP. The file reports a whole-face deviation bound of
+3.515278019967841804683348889091929316915e-9 mm. The unhealed import has one
+valid solid and satisfies all four target witnesses. The ordinary 1M corpus
+row remains a construction-budget refusal; its former unsupported-corner
+refusal is removed. Work-limit tuning is not part of this construction.
+Both partial recipes also export raw-valid solids after the general rigid
+pose with quaternion `(1,2,3,4)` and translation `(3,-2,7)`. Their transformed
+material witnesses pass, including the two-strip cliff's ON point.
+
+## Smooth full-radius partial corners
+
+The selectable `corner: "smooth"` target continues the missing A/C contact
+sheet from the common A/B/C ball into end wall D. For the frozen pyramid,
+its centre line is `(0,y,10-r*sqrt(2))`, leaving the common centre toward
+negative Y. Its contact section has radius `r`, not a tapering corner
+radius. The sphere joins this exact cylinder along its A/C great-circle
+arc. Its contact rails are tangent to A and C; D cuts its other end
+transversally. No planar cliff or fitted filling surface remains.
+
+The target has five input planes, the two selected cylinders, the continued
+A/C cylinder and the common sphere. The continued cylinder keeps the
+four-face vertex's `corner.vertex` origin. The B-rep constructs this fan
+with shared vertices and exact great-circle joins. An unproved requested
+continuation remains a refusal, never a cliff fallback.
+
+An independent construction extends the input past D to expose the virtual
+A/C edge, rounds all three edges of that A/B/C trihedral at radius `r`, then
+clips by the original D halfspace. OCCT builds one valid nine-face solid
+with only planes, cylinders and a sphere. This is not OCCT's original
+eight-face two-edge spline closure.
+
+For unit active normals `a,b,c` at vertex `v`, put
+`m=(b-a) cross (c-a)` and `c0=v-r*m/(m dot a)`. Independence proves
+the divisor nonzero, and the three offset-plane equalities fix the common
+centre. Every incoming cylinder axis passes through `c0`. The continued
+A/C axis is oriented away from B, and D must be transverse to it.
+
+For material coverage, let `P` contain only the active A/B/C halfspaces
+and let `P_r` be their inward radius offsets. The normal fan of `P_r`
+gives the three pair sheets and the common sphere on the boundary of
+`P_r+B_r`. Completing the missing A/C sheet gives this exact local
+construction, clipped by the original
+source solid. D and the other input walls are not offset or rounded;
+this is not a whole-body morphological opening.
+
+The full three-support centre set is contained in each incoming wedge's
+centre set, so completing the fan cannot restore material removed by an
+incoming strip. Radius-ball openings are nested as the radius increases,
+and clipping by the unchanged source preserves that nesting. D faces
+the outgoing virtual A/C axis at the original vertex, making the retained
+continuation shrink to that vertex at zero radius. This supplies the
+homotopy even when the common centre moves along the exposed side.
+
+The whole ball lies in every input halfspace. Complete conic/plane events
+certify the finite D cap against every input face, both angular-sector
+planes and the outgoing halfspace through `c0`. Projection along the axis
+maps that cap one-to-one to the shorter normal-circle interval. Each
+cylinder ruling joins two certified caps and is affine in every input
+halfspace, proving the whole face rather than sampled points.
+
+All seven opt-in variants import without healing as one valid solid.
+The disjoint extra-strip control has ten faces; the others have nine.
+Every target-only material witness passes. All runs use a private 100M
+allowance, with whole-face STEP bounds below the 100 nm target.
+
+| Variant | Proof/export work | Whole-face STEP bound, mm |
+| --- | ---: | ---: |
+| Original, r=1/2 | 8,423,655 | 3.3517068760986992e-9 |
+| Mirrored selection | 7,329,228 | 3.5894997691003290e-9 |
+| r=1/4, translated | 9,461,222 | 4.6889334756173493e-9 |
+| Height 5, r=1/3 | 6,765,118 | 4.7955405210262699e-9 |
+| General rigid pose | 14,198,081 | 3.3517087923323394e-9 |
+| Moving common centre | 9,846,474 | 5.5413664850572824e-9 |
+| Disjoint extra D/base strip | 12,835,966 | 5.3948651005064052e-9 |
+
+The moving-centre control changes the B/D section to base points
+`(-14,0),(10,0)` and apex `(-2,10)`, with an A/C prism extent of 24.
+Its original vertex is `(0,-2,10)`, but the sphere's Y coordinate is
+`-2+r*(6*sqrt(2)-sqrt(61))/5`. Smooth closure needs no stationary-cliff
+assumption.
+
+The independent field uses analytic halfspace cells minus cylinder or
+sphere interiors, with the same active normal-cone and outgoing caps.
+It derives outward prism halfspaces with the existing convex-prism proof;
+an extrusion start carrier's natural normal need not point outward.
+No B-rep construction or fitted rational section supplies this field.
+Original, mirrored/translated, moving-centre and disjoint-strip point queries pass.
+
+Other selected runs must be separated from the entire new affected region.
+For a cone displacement `d=sum(alpha_i*n_i)`, `alpha_i>=0`, and
+`h=v-c0`, the input constraints give
+`d dot (h-d)=sum(alpha_i*(r-n_i dot d))>=0`.
+Thus the whole cone cell lies in the ball with diameter `[0,h]`, not just
+near the radius-r sphere. Its enclosing box joins the continuation's
+tangent-triangle hull for separation against other strips and corners.
+Derived region bounds are only evaluated when an interaction needs them.
+
+Unproved terminations and mixed higher-contact field fans refuse rather
+than using the cliff path. No default work allowance, geometric tolerance
+or frozen corpus row changes.
+
+### Independent section integral
+
+Positive-Y material is unchanged from the prescribed cliff result.
+For negative Y, the continued A/C roof is
+`f(x)=10-r*sqrt(2)+sqrt(r^2-x^2)` for `abs(x)<=r/sqrt(2)`.
+Clipping that roof by D gives a removed volume
+`r^3*N_ac`, where `N_ac=sqrt(2)*(5/6-pi/4)`.
+
+To remove the old two-strip negative-Y contribution from the earlier
+formula, use `u=(x-y)/r`, `v=(x+y)/r` in the half with `x>=0`.
+The old A/B cylinder is the lower of the two selected roofs there. Put
+`t(u)=sqrt(2)-u/2-sqrt(3)*sqrt(2-u^2)/2`,
+`a=1/sqrt(2)` and `b=1/sqrt(2)-1/sqrt(3)`. The D clip changes at
+`u=t(u)`, namely `u=b`. After reflecting in X, the removed volume is
+`r^3*N_two`, with
+
+```text
+N_two = F1(b)-F1(0) + F2(a)-F2(b)
+F1(u) = sqrt(2)*u^2-u^3/2+sqrt(3)*(2-u^2)^(3/2)/3
+F2(u) = 7*u/4+sqrt(2)*u^2/4-u^3/4
+        +sqrt(3)*(2-u^2)^(3/2)/12
+        -sqrt(6)*(u*sqrt(2-u^2)/2+asin(u/sqrt(2)))/2
+```
+
+Thus `V_smooth=V_cliff-r^3*(N_ac-N_two)`. This derives the target without
+using either kernel's answer as a calibration.
+
+| Volume source, r=1/2 | mm^3 |
+| --- | ---: |
+| Independent full-radius contact integral | 1332.8616680333976 |
+| Raw Catallax smooth STEP | 1332.8616680334003 |
+| Independent virtual-trihedral round clipped by D | 1332.8616681734295 |
+| Original OCCT two-edge spline closure | 1332.8654256638408 |
+
+The point `(0,-1/5,1959/200)` is OUT of this target but IN the original
+OCCT two-edge result. `(1/3,-1/3,29/3)` is OUT of this target but ON the
+original result. These are target-only discriminants, not shared witnesses.
+Neither agreement with that spline nor a tolerance waiver defines smooth.
+
+### Independent disjoint-strip quantity
+
+The additional selected D/base edge is separated from the upper junction.
+At height `z`, the source width along X is `20-2*z`. The removed Y width is
+`w(z)=r*(1+sqrt(2))-z-sqrt(r^2-(z-r)^2)` for
+`0<=z<=r*(1+1/sqrt(2))`. Integrating `(20-2*z)*w(z)` gives
+
+```text
+I0 = 1+sqrt(2)-3*pi/8
+I1 = 2/3+3*sqrt(2)/4-3*pi/8
+removed = 20*r^2*I0-2*r^3*I1
+V_disjoint = V_smooth-removed
+```
+
+This reference uses closed-form antiderivatives, not numerical quadrature.
+Outward 70-decimal interval evaluation encloses it with width below
+`9.274e-68` mm^3. The reference below is shown rounded.
+
+| Volume source, r=1/2 | mm^3 | Difference from the closed form, mm^3 |
+| --- | ---: | ---: |
+| Independent closed form | 1326.8183938453505344 | 0 |
+| Unhealed Catallax STEP | 1326.8183938453544 | 3.8871e-12 |
+| OCCT construction, adaptive volume integration | 1326.8184051492976 | 1.1304e-5 |
+
+The OCCT difference is within the unchanged shared observer allowance:
+`1e-7` relative, about `1.327e-4` mm^3 here. This is an observer comparison,
+not a tolerance waiver or an exact-reference calibration to OCCT.
+Catallax is checked directly against the independent closed form.
+All eight target-only witnesses pass on its raw ten-face STEP.
+
+### Integrated verification
+
+This implementation was rebuilt on main
+`57ad4143551ceb663263c8c14e4c06758bac33ff`.
+The 16-package all-target Clippy gate passes with `-D warnings`;
+94 focused Rust regressions and 13 live corpus-consumer regressions pass.
+At 1M work per recipe and a 300-second process guard, the full 43-case
+`--check` run has no wrong, incomplete or changed-snapshot outcome.
+
+| Kernel | Built | Reasoned refusals |
+| --- | ---: | ---: |
+| Catallax | 23 | 20 |
+| OCCT | 34 | 9 |
+
+All seven controls above were freshly exported and imported without healing
+as valid single solids, with every material witness matching.
+The reporting tree was dirty; the scoreboard records that separately from
+the tested binary SHA-256
+`cc6af66eab9c8b4cb8fa74dbee053ff0b949e5f8855cdb24fbf6335366e93c4c`.
+
+A standalone consumer compiled seven independent field plans and proved
+44 exact material queries, including two shared-cap states. Raw STEP agrees
+on those states. This is not a field-display check.
+
+## Closed-rim consumption and beyond-limit decisions
+
+A single convex rim of a complete capped cylinder now follows its first
+finite contact event. The proof identifies one solid component with an
+outward wall and two complete coaxial planar disks. It derives the physical
+radius `R` and height `H` in the placed geometry, before constructing a
+replacement. Other input components keep their whole point sets: their
+interiors are disjoint and every affected region lies inside this cylinder.
+Cavities, nonplanar caps and multiple selected rims need separate proofs.
+
+For regular radius `rho`, the top-rim centres are
+`((R-rho) cos(theta), (R-rho) sin(theta), H-rho)`.
+The plane foot stays inside its disk until `rho=R`; the wall foot stays
+inside its finite wall until `rho=H`. Thus the first event is `L=min(R,H)`.
+At `R` the plane foot contracts to the pole, the wall feet fill the equator,
+and their normal sectors form the exact hemisphere. At `H<R` the wall is
+consumed while a positive top disk remains; the band is an exact torus or
+regular outer horn/spindle sheet. Equality consumes both the cap and wall.
+No zero-area face or zero-length native edge is retained.
+
+Inside the cylinder, closest support distance is `R-s` with `s>=0`, so no
+material-side closest-contact spine exists beyond `R`. A negative signed
+radius would touch the far wall, not its nearest foot. Beyond `H`, a centre
+that still contacts the original cap lies below the opposite cap and
+outside the shared edge's inward normal cone. That flat neighbour has no
+offset fold. These are terminal contact events, not the wider-ball cliff
+rule above; neither supplies a valid full-radius cliff sheet to extend.
+
+In a normal section, inward distances `u,d>=0` give the affected region
+`W_rho = {u+d+sqrt(2*u*d) <= rho}`. These regions are nested. Section 4.5.1
+keeps their union consumed when the last branch ends, so requests above `L`
+retain the exact terminal region. The authored request remains available as
+`FilletDefinition.requested_radius`; `radius` is the exposed sheet's physical
+radius. This is a proved event, not a guessed smaller-radius retry.
+Before that event, the same finite proof also handles ordinary bands whose
+untrimmed toroidal carrier reaches the opposite cap while the exposed
+quarter remains above it.
+
+The band has the exact normal-section parametrisation
+`s=R-rho+rho*cos(phi), z=H-rho+rho*sin(phi)`, `0<=phi<=pi/2`.
+Its distance to the centre circle of radius `R-rho` is exactly `rho` on the
+whole band. At `rho=R` this reduces to the hemispherical parametrisation.
+The exact whole-face circle-distance certificate covers ring tori and the
+regular positive-radial horn/spindle sheet alike; folded carrier branches and
+axis nodes are not members of that support.
+The surviving cap/wall keep their input origins; the new sheet keeps the
+original `blend.edge`. Canonical `consumed` records identify retired input
+faces without aliasing their names onto replacements. Material regressions
+cover either cap, rigid placement, rational scaling, early wall events,
+ordinary finite-band clearance, oversized requests, disconnected components
+and incremental edits that restore source faces.
+
+The unchanged `cylinder-collapse` and `cylinder-past-collapse` recipes both
+have a raw-valid checked export at an explicit 20M allowance, with all nine
+material witnesses matching in each file. Their volume is
+`pi*R^2*(H-R)+2*pi*R^3/3 = 625*pi/3` mm^3. The measured whole-face bound on
+the collapsed cap is zero, including the 5.01 mm request and a separate
+posed lower-rim control requesting 100 mm on a 1.5 mm stock. Blend names
+resolve after radius edits. The canonical 1M allowance is unchanged;
+construction, consumer work, whole-face measurements and independent
+whole-recipe field compilation remain separate gates. Each published head
+requires its own full 43-case report. See
+[the interface note](../interface-changes/2026-11-07-fillet-rim-consumption.md).
+
+Additional controls on `R=5` stock give the following raw STEP volumes.
+Each imports as one valid solid with all seven material witnesses matching,
+a zero whole-face band deviation and blend names resolving after edits.
+The second control selects the lower rim in a rigidly placed stock.
+
+| Stock height (mm) | Declared radius (mm) | Exposed radius (mm) | Raw volume (mm^3) |
+| --- | --- | --- | --- |
+| 3 | 2.5 | 2.5 | 198.18850124061674 |
+| 3 | 4 | 3 | 183.0742192174976 |
+| 2 | 3 | 2 | 132.52145499029768 |
+
+The analytic section integral is
+`pi*(R^2*(H-rho)+(R-rho)^2*rho+2*rho^3/3)
++ (pi^2/2)*(R-rho)*rho^2`.
+The raw volumes agree within `5e-13` mm^3. Fresh OCCT builds the first
+control and refuses the two oversized declarations. These controls use
+20M work allowances; their STEP deviation bounds are below `3e-16` mm.
+A disconnected second cylinder remains a separate valid solid, retaining
+its names and material. The two-solid raw volume agrees with `673*pi/3`
+mm^3 within `7e-9` mm^3; its maximum STEP deviation is below `5e-9` mm.
+
+The same rule gives a positive geometric decision for `past-face-limit`
+and `swallowed-face`. On their `20 x 20 x 10` block the top/x-max centre is
+`(20-rho,y,10-rho)`. At `rho=10` its wall foot reaches the bottom boundary.
+A bottom-plane contact cannot continue with the same centre/foot limit:
+its distance from that centre is zero, not ten. Beyond it a centre would
+leave the shared edge's inward normal cone; the flat plane has no offset
+fold. The union stops at `W_10`. Its complement extrudes a left `10 x 10`
+rectangle joined to the quarter disk `(x-10)^2+z^2<=100`, `x>=10,z>=0`.
+The volume is `2000+500*pi` mm^3. Direct analytic-profile construction and
+raw STEP import produce one valid six-face solid with all nine material
+witnesses matching. This is constructive reference evidence, not a Catallax
+build or an OCCT fillet of either larger request. Their construction belongs
+to the separate planar face-consumption path. OCCT refusal alone is no
+reason to label any of these three beyond-limit results impossible.
+
+## Oblique cone bands
+
+`oblique-cone` refused with `fillet.unsupported-contact`: its edge is the
+closed ellipse where a plane cuts a cone off its axis. The ball centre runs on
+the section of the cone's offset by the plane's offset. About the axis that
+centre path is a conic with polar eccentricity `e = slope tilt / along`, at
+radius `offset / (1 + e cos t)`. The rolling-ball band is therefore the
+oblique cylinder's exact construction with one more factor: a rational carrier
+of degree (6, 2) whose weights grow by eight over each quarter of six columns.
+Its plane rail stays an exact ellipse. Its cone rail is the carrier's last row,
+exact but no conic, and it becomes the cone face's new edge. A carrier check
+on a 13 x 5 grid per span, rails on both supports, the closed seam and the
+input section are tested against the law, with a rational and the corpus's
+irrational (`sqrt(17) / 4`) normal scale.
+
+The consumers needed more than the constructor:
+
+- STEP writes the cone rail as the written carrier's row and gives its curve
+  on the `CONICAL_SURFACE` exact rational power-form pieces, with Taylor jets
+  that divide by the weight series. Only a cone face trimmed by such a rail
+  takes the chart path, so every other cone keeps its legacy topology and
+  bytes.
+- Spline curve traces expanded each span in the global knot parameter. On
+  the span from 3 to 4 the power-form coefficients cancel heavily, and the
+  cone face's volume enclosure stayed near 1e59 after five refinements. Each
+  span now expands about its own start, and the face converges at depth 3.
+- Classifying a point whose ray crosses the band needs the band's line
+  crossings. Those were solved only for rational cylinder laws. They now also
+  solve over algebraic coefficients: the foot equation gives the line
+  parameter, and the distance equation becomes one polynomial of degree eight
+  in the half-angle tangent. Its coefficients lie in `Q(sqrt(17))`, where the
+  general eliminant spent its allowance. `RealPoly::real_roots` now lowers
+  coefficients in any quadratic tower into the existing tower arithmetic. It
+  takes the rational norm one generator at a time, as
+  `(A + sqrt(r) B)(A - sqrt(r) B)`, isolates the norm's roots, and keeps a
+  candidate where the polynomial's exact sign is zero. That sign comes from
+  the signs of `A`, `B` and `A^2 - r B^2`, down to rational polynomials. The
+  same path answers lines through a cylinder band whose law brings in
+  `sqrt(2)`, `sqrt(3)` and `sqrt(7)`, which used to refuse.
+
+The case's exact volume follows from the oblique-cylinder argument. The cut
+frustum and its rim are convex, so the rounded rim is the frustum's opening by
+the 1/2 ball, apart from the bottom rim that the opening also rounds. With `E`
+the frustum moved 1/2 inward, Steiner's formula plus that rim's Pappus band
+gives 1957.48968726864861 mm^3; the derivation reproduces Pappus's value for a
+square cut. The corpus row carries it in `reference_volume`, with ten
+witnesses, four of them inside or just outside the ball near the rim's lowest
+and highest points.
+
+At 1M the case now refuses with `numbers.operation-budget` in the fillet
+(construction-budget), not with an unsupported contact. Construction needs
+23.3M work, 22.6M of it in trimming, and STEP 9.9M more. At a raised
+allowance the CLI answers exactly with `catallax-manifest/5`. Raw OCCT import
+of that STEP finds one valid four-face solid of volume 1957.4896872686613
+mm^3, 1.3e-11 from the exact value, and all ten witnesses agree. OCCT's own
+fillet measures 1957.4901903688324 mm^3, 5.0e-4 high, above the comparison
+allowance. Catallax's own volume, area, centroid, display mesh and
+classification answer on the built solid as well.
+
+The integrated 43-case corpus at 1M work with a 300-second guard matches
+every expected status, code and stage under `--check`.
+Catallax writes 25 checked exports and refuses 18 with reasons: 4
+construction refusals, 8 consumer budgets, 4 construction budgets and 2
+upstream budgets. OCCT builds 34 and refuses 9. Each of the 25 exports
+imports raw-valid into OCCT and passes all 110 witnesses. The 21 with a
+volume reference match it within the allowance; the other 4 are rows OCCT
+refuses.
+
+A mirror after the round reverses the band's frame. The chart's turn is
+`across x side`, which follows that reversal, so the case mirrored in x = 0
+keeps its rail directions. Its raw STEP is valid, holds the exact volume and
+matches all ten mirrored witnesses.
+
+See [the interface note](../interface-changes/2026-11-07-oblique-cone-bands.md).
+
+## Exact-linear OCCT reference
+
+The two variable rows explicitly select `occt.ruled_linear_sections`.
+The observer builds their stock independently, constructs circular contact
+sections at the authored endpoint radii, lofts the removed corner with
+`BRepOffsetAPI_ThruSections` in ruled-solid mode, then subtracts it.
+An exact zero endpoint uses `AddVertex`, not a tiny substitute wire.
+The report and readable scoreboard label the route
+`OCCT ruled linear contact sections`. This route does not import Catallax's
+unfilleted stock or copy its rational control net.
+
+For the 20 mm right-angle controls, independently integrate the removed area
+`r(y)^2 (1-pi/4)`. The expected volume is
+`4000 - 20 (r0^2+r0*r1+r1^2)/3 (1-pi/4)`.
+Both the reference and the raw Catallax import must satisfy this check and the
+authored inside/outside/on-boundary witnesses. The existing volume allowance
+and tolerance limits are unchanged.
+
+The native endpoint-radius overload is recorded separately under
+`cases[].occt.native_fillet_observations` in `scoreboard.json`, with its own
+shape summary, material witnesses and `GetLaw` samples. On pinned OCP
+7.9.3.1.1 it constructs `Law_Interpol`, not the requested linear law:
+
+| Endpoint radii, mm | Native radius at 5 mm | Required linear radius at 5 mm |
+| --- | ---: | ---: |
+| 1 to 2 | 1.1964285714285716 | 1.25 |
+| 0 to 2 | 0.3928571428571429 | 0.5 |
+
+The outside witnesses `(19.64,5,9.64)` and `(19.87,5,9.87)` distinguish the
+respective linear solids from those smoothed results. Both ruled references
+produce raw-valid single seven-face solids and agree with the analytic volumes.
+Their observed volume errors are below `0.000001 mm^3`.
+The native custom-law route fails in this pinned build; its implementation
+does not install the supplied law in
+[ChFiDS_FilSpine](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_3/src/ChFiDS/ChFiDS_FilSpine.cxx).
+
+This corrects the reference definition, not Catallax's law. Historical OCCT
+endpoint-overload builds remain observations of a different law, not matching
+authority for these two authored controls. The OCCT reference count includes
+the explicitly labelled ruled route; it is not native fillet-API parity.
+
+## Exact-linear construction
+
+The B-rep retains the two original plane supports and their material senses,
+the directed original input edge `E(v) = E0 + v L`, and
+`r(v) = r0 + v (r1-r0)`. It does not fit sampled radii or a varying-sphere
+envelope. With outward unit contact normals `n0,n1`, let
+
+```text
+d = n0 dot n1
+s = -(n0+n1)/(1+d)
+w = sqrt((1+d)/2)
+a = s+n0, b = s+n1
+D(t) = (1-t)^2 + 2 w t (1-t) + t^2
+h(t) = [a (1-t)^2 + b t^2] / D(t)
+S(t,v) = E(v) + r(v) h(t),  0 <= t,v <= 1.
+```
+
+The degree-(2,1) carrier has u-major/v-minor controls
+`[footA0,footA1,E0,E1,footB0,footB1]` and weights
+`[1,1,w,w,1,1]`. The identities `n0 dot s = n1 dot s = -1`,
+`|s|^2 = 1/w^2` and `2w^2 = 1+d` give
+`|h(t)-s|^2 = 1` over the entire parameter interval. Every section is the
+specified shorter circle, with exact contact tangency. Since `h dot L = 0`,
+projection along the edge recovers its unique station. Positive interior radius
+and the shorter-arc branch prove regularity and injectivity away from a declared
+zero end. At zero, the complete row is one physical apex, not a small circle.
+
+This is a whole-face equality proof: model representation displacement is zero,
+so the 100 nm target is met without spending an approximation allowance.
+It is not an independently sampled field result or an M5/SolidDraft acceptance
+claim. The supported constructor checks a closed convex planar input skin,
+station-normal end walls and containment of the complete positive-weight control
+hull in the input half-spaces. Strict nonincident clearance and separating hulls
+exclude unhandled overflow or junction interactions throughout the radius
+homotopy. All changed neighbouring trims use the same rails and end circles.
+`LinearFilletBand::of_face` rechecks the actual finite loop, branch, endpoint
+incidence, shared apex and coedge/face orientation; a carrier hull alone is
+insufficient. Curved supports, oblique ends and interacting nonconstant runs
+remain coverage gaps rather than impossible geometry.
+
+For display, `D >= 1/2`, `H = max(|a|,|b|)`,
+`|h'| <= 12 H` and `|h''| <= 120 H` give
+
+```text
+|S_tt| <= 120 H max(r0,r1)
+|S_tv| <= 12 H |r1-r0|
+S_vv = 0
+cell chord <= |S_tt| dt^2/8 + |S_tv| dt dv/4.
+```
+
+These bounds cover both full cell triangles. Analytic neighbours reuse the
+same exact boundary samples; a zero row becomes one mesh vertex and a fan,
+not a thin end cap. Requested properties use
+`S_t x S_v = r(v) h'(t) x [L + (r1-r0) h(t)]`.
+Area is affine in station and the volume, component-gauge centroid and inertia
+fluxes have station degree at most four. Three-point Gauss integration is exact
+in station; validated Taylor panels bound the remaining arc integral.
+Independent section integrals check the volume, centroid and inertia.
+
+STEP keeps its own output bound. Surface and 3D boundary curves share one
+rounded positive control table and matching unit-parameter pcurves. At a zero
+end the file includes the surface's constant 3D row, whose points all equal the
+existing apex, rather than a pcurve-only edge or a positive-radius substitute.
+This closes the parameter boundary without changing native topology. The
+encoded-control/weight bound covers every parameter, including that row;
+file rounding and display chords do not become model tolerances.
+
+## Terminal planar events
+
+The decision in [Closed-rim consumption and beyond-limit decisions](#closed-rim-consumption-and-beyond-limit-decisions)
+for `past-face-limit` (radius 10.001) and `swallowed-face` (radius 12) is now
+built. Only convex selected runs take this route: a concave run's ball lies
+outside the material and can keep touching a convex boundary edge. The
+straight top/x-max run first finds the smallest fraction of its request at
+which a contact rail meets a
+straight edge of its face parallel to the selected edge: here the side's
+bottom edge at radius 10. At that radius the face-limit proof must hold, and
+every rail that ends on a neighbour must lie along one whole straight edge
+shared with it, at a convex, non-tangent edge. The region `W_10` is then
+subtracted. The retained definition has radius 10 and keeps the authored
+request in `requested_radius`. The consumed side face is reported with the
+blend origin.
+
+Both unchanged recipes write one raw-valid six-face solid at 1M work, using
+67,084 work units for the fillet. Their raw STEP volume is
+3570.7963267948912 mm^3, matching `2000 + 500*pi` within 5e-12 mm^3 and the
+`at-face-limit` export. Nine material witnesses pass in the raw import. The
+file bound is 4.56e-9 mm. The carriers are exact planes and a cylinder, so
+the whole-face deviation is zero. OCCT refuses both.
+
+`l-concave` at radius 6 shows the concave case. The wall side ends at
+radius 5, but an exterior branch with centre
+`(x, 5+sqrt(10*rho-25), 5+rho)` keeps touching the wall-top edge up to
+radius 6. That request keeps its earlier route instead of stopping at `W_5`.
+A control with a slab beside the bottom makes the side's lower edge concave.
+The ball could roll onto the slab there, so the event is not terminal and the
+request keeps its refusal. A side cut short by a notch whose wall crosses the
+event hull also keeps its refusal.
+
+## Non-concurrent four-face contact fans
+
+`vertex-4-all-unequal-slopes` selects the four apex edges of the intersection
+of two triangular prisms. Its side constraints and unselected base are
+
+```text
+A: x+z <= 10       C: -x+z <= 10
+B: y+z <= 10       D: -2y+z <= 10
+base: z >= 0      r = 1/2.
+```
+
+The four inward offsets do not share one ball. Their feasible triple-contact
+vertices are `c_ABD=(t,t,z)` and `c_CBD=(-t,t,z)`, where
+
+```text
+t = r (sqrt(5)-sqrt(2))/3
+z = 10-r (2 sqrt(2)+sqrt(5))/3.
+```
+
+The B/D offset edge joins these centres. Its radius-`r` cylinder joins the
+B/D great-circle arc on each contact sphere. Thus the junction has two
+spherical triangles and one finite internal sheet, not a four-contact ball
+or a fitted filling patch. All three retain the original four-face vertex's
+`corner.vertex` origin. B/D is not a newly selected input edge. This is an
+internal stratum of the complete active fan, so the exposed-side `corner`
+policy does not change it.
+
+The construction enumerates independent triples, proves feasibility against
+the fourth inward halfspace, and identifies the shared non-input pair. The
+four physical pairs must be exposed edges of one pointed normal cone. Each
+physical run terminates at its unique feasible contact vertex. A concurrent
+four-offset fan retains its single spherical polygon; a vanishing internal
+edge is not exported as a zero-length cylinder. The opposite diagonal is
+handled by the same predicates, not by face order or a coordinate-axis case.
+
+Every sphere/cylinder seam is a great circle of radius `r`, centred on the
+cylinder axis. On its entire arc, projection onto that axis is the sphere
+centre, so the two radial normals agree. Each new contact rail is a straight
+generator of a cylinder whose axis is parallel to, and distance `r` from,
+its input plane. These identities prove G1 along whole joins. The carriers
+are exact planes, cylinders and spheres; no fitted surface or modelling
+tolerance is introduced.
+
+For a sphere cell write `p=c+d`, `h=v-c` and
+`d=sum(alpha_i n_i)`, with `alpha_i>=0`. The incident source constraints give
+`n_i dot d <= r` and `n_i dot h = r`. Therefore
+`|d|² <= d dot h`: the complete affected cell, after clipping by the source,
+lies in the ball with diameter `[c,v]`. Along the internal edge these balls
+lie in the convex hull of the two endpoint balls. The B-rep bounds that hull
+with its endpoint boxes before accepting non-incident walls or other blends.
+The independent field builds the cone cells and the station-clipped internal
+cylinder directly from the recipe. It checks the diametral bounds against
+certified outward input halfspaces; it does not consult B-rep trims. Shared
+station planes are auxiliary partitions, not material boundaries.
+
+### Independent quantity and definition difference
+
+For this fixture the target is `(P_r + B_r) intersect S`, where `P_r` offsets
+only the four side supports. The base is not eroded or rounded. The volume
+reference is the divergence integral `V=(sum integral p dot n dA)/3`.
+Retained planes have constant flux density. On each incoming cylinder,
+`n(theta)=a cos(theta)+w sin(theta)` and the base gives the axial length
+`(c_z+r n_z(theta))/(-u_z)`. Its flux therefore has a quadratic trigonometric
+antiderivative. The internal cylinder has constant length `2t`. A spherical
+triangle contributes `r² c dot M+r³ Omega`, with
+
+```text
+M = (1/2) sum angle(a,b) unit(a cross b)
+Omega = 2 atan2(det(a,b,c), 1+a dot b+b dot c+c dot a).
+```
+
+[The executable reference](../../../tools/fillet-coverage/vertex_four_quantity.py)
+uses only these formulas and outward 70-decimal interval arithmetic, with
+no quadrature or kernel calibration. With `mpmath==1.3.0`:
+
+```sh
+python3 -B tools/fillet-coverage/vertex_four_quantity.py /tmp/four-vertex-volume.json
+```
+
+It bounds the volume between
+`998.802640321878442185948446934521335319966086287135154402884329414934099128`
+and
+`998.802640321878442185948446934521335319966086287135154402884329414934572053`
+mm³, width below `4.73e-67` mm³.
+
+An independent OCCT outward offset of the four-side core truncated at `z=-r`,
+then intersected with the original stock, produced one valid 12-face solid
+(five planes, five cylinders, two spheres). Its volume differs from the
+bounded reference by `2.68e-10` mm³. Truncation cannot affect `z>=0`: a centre
+below `-r` cannot reach it with a radius-`r` ball.
+
+OCCT's ordinary four-edge fillet also builds a valid solid, but has 10 faces
+and volume `998.819720856989` mm³. It includes `(0,0.14,9.66)` and
+`(+/-0.31,0.09,9.63)`, which the authored target excludes. This is recorded as
+a definition difference, not used to recalibrate the target or relax the
+volume comparison.
+
+The unchanged new recipe writes an exact 12-face solid with no approximated
+curves. Its raw STEP volume is `998.80264032189` mm³, within `1.16e-11` mm³
+of the bounded reference; all 12 distinct material witnesses pass. The
+encoded whole-file deviation is at most `6.22e-9` mm. This request used
+`260,556` work for the fillet and `5,138,714` through STEP. At the unchanged
+1M allowance it completes construction and refuses during STEP, so its row
+records `consumer-budget`, not a checked default-allowance export. No work
+limit was optimised or raised in the corpus.
+
+The standalone independent field compiles in `12,102` work and passes the
+same 12 material queries in `5,215,077` cumulative work. Those are point-set
+checks, not display or true-distance evidence.
+
+Five additional raw controls pass: a posed quarter-radius request, the other
+fan diagonal, all input edges, rational-normal shared caps, and a nearly
+concurrent fan with a `3.54e-6` mm internal edge.
+
+**Known STEP-export limit.** A separate control with an internal edge of
+`3.54e-10` mm, far below the reader's `1e-7` mm tolerance, imports with a
+self-intersecting cylindrical wire and invalid volume despite a
+`9.91e-15` mm encoding bound. Exact normalized NURBS prototypes also fail
+after raw STEP import. This control is outside this change's acceptance
+set and remains export follow-up work. Neither the model tolerance nor the
+observer tolerance was increased. A valid native contact network alone does
+not establish a valid exchange result at this scale.
+
+### Complete corpus replay
+
+The full 45-case replay at the unchanged 1M allowance matches every recorded
+status, refusal code and stage. No case is wrong or incomplete, and every
+previously built case remains built.
+
+| Engine | Built | Refused with reason |
+| --- | ---: | ---: |
+| Catallax | 27 | 18 |
+| OpenCASCADE | 36 | 9 |
+
+The new case is a consumer-budget row in this table. Its raised-allowance
+geometry proof above does not count as a default-allowance export.
+
+## Rings where a cylinder passes through a sphere
+
+`sphere-cylinder` unions a radius-5 sphere at the origin with a radius-2
+cylinder on the axis x = 1, y = 0, and rounds the two intersection rings with
+radius 1/2. The ball centre runs on the intersection of the offset sphere
+(radius 11/2) and the offset cylinder (radius 5/2). That is an elliptic
+quartic, so no analytic surface carries the blend. With the gap g = 1 from the
+sphere's centre to the axis and offsets P = 11/2 and p = 5/2, the centre at
+angle t is (g + p cos t, p sin t, h) with h = sqrt(P^2 - g^2 - p^2 - 2 g p
+cos t). The cylinder contact keeps that angle and height. The sphere contact
+is the centre scaled by R/P.
+
+`RollingSphere` fits this law as a closed rational band of degree (8, 2),
+like a saddle's through ring. Its cylinder rail is exact by construction. Its
+sphere rail is exact through a stereographic chart from the pole beyond the
+ring, so a rail point is always a rational point of the sphere. The carrier
+is the rational quadratic arc between the two rails through the apex of the
+contact rays, with a fitted middle weight. Each row is a cubic Hermite fit
+whose bound comes from an interval jet. The whole-face bound covers both
+rails, the apex and the weight spread, and the fit doubles its spans until it
+meets the 100 nm target. Here it does so at 64 spans, with a bound of
+1.46e-5 mm (14.6 nm) on each ring.
+
+The junction certificate gains a sphere-band region. It checks that each rail
+is the carrier's own row on the exact sphere or cylinder, and bounds the
+shortest edge and narrowest face beside the band. STEP writes the band with
+one seam, as for a saddle. The cylinder's cut meets its rail at the chart's
+start, and the sphere turns about the cylinder's axis with its cut at the
+sphere rail's start. Each rail's chart curve comes from a parameter table:
+the cylinder's angle and height, and the sphere's longitude and latitude. A
+sphere rail winds once round the axis, so it cuts the sphere into two caps by
+height along that axis. That places the sphere's poles off the face in STEP,
+and points on the sphere face in the native classifier, without a plane or
+line solver for the fitted rail. The band itself answers line queries through
+the shared rational-sheet solver.
+
+### Independent volume
+
+The union's volume is 500 pi/3 + 80 pi less the overlap, the integral of
+`2 sqrt(24 - 2 rho cos psi - rho^2) rho` over the cylinder's disk in polar
+coordinates about its axis. Each ring's added material is bounded by the ball
+surface between the contacts, a strip of the sphere between the ring and the
+sphere rail, and a strip of the cylinder between the ring and the cylinder
+rail. By the divergence theorem its volume is a third of the flux of x
+through those three pieces:
+
+- on the sphere strip, `x . n = -5`, so the flux is -5 times its area. Each
+  curve winds once round the z axis, so a cap's area is the line integral of
+  `(25 - 5 z) d(phi)` round it.
+- on the cylinder strip, `x . n = -(2 + cos phi)` with area element
+  `2 dphi dz`, between the ring height `sqrt(20 - 4 cos phi)` and the rail
+  height `h`.
+- on the ball surface, the flux of the point `c(t) + u(t, s) / 2`, with `u`
+  the unit ray turning from the sphere contact to the cylinder contact, and
+  the normal toward the centre.
+
+With mpmath at 30 digits the union is 657.21258507792132703 mm^3 and each
+ring adds 0.22990859754533665204 mm^3, so the rounded solid is
+657.67240227301200033 mm^3. OCCT's seven-face blend measures 657.6721183385,
+2.8e-4 mm^3 low, outside the 6.6e-5 allowance, so the row carries the
+independent value in `reference_volume`.
+
+### Result
+
+At the default 1M allowance the row is a construction-budget refusal. The
+input Boolean uses 461,310 work units and the fillet needs 2,135,818: 289,358
+to fit each band and 1,556,960 to trim. Work-limit tuning is not part of this
+construction. At an explicit 20M allowance the request uses 2,597,128 work and
+writes one raw-valid seven-face solid: the sphere, a wall and a cap on each
+side, and the two bands. Its volume is 657.6724011295 mm^3, 1.1e-6 mm^3 from
+the independent value. The file is within 5.1e-9 mm of the model and 1.46e-5
+mm of the definition. Six witnesses pass in the native classifier, the raw
+import and OCCT's independent construction. Two of them lie just off the
+sharp edge, in material only the round adds. A cylinder that leaves the sphere
+through its side, so that the edge is one loop round neither, keeps the
+`fillet.unsupported-contact` refusal.
+
+Volume, area, mass properties, bounding box and meshing refuse such a body
+for now: the band has no change integral or display grid yet.
+
+## work reuse at the normal allowance
+
+The speed pass keeps the 1,000,000-work allowance, approximation targets,
+precision and refusal rules. The 34 checked exports retain identical STEP
+bytes and complete manifests apart from kernel metadata. Their aggregate
+work falls from 7,570,590 to 7,325,603; 17 use less work and none uses more.
+The oblique-cone case completes construction and reaches its consumer budget.
+No budget case is promoted to a checked export in this pass.
+
+Fitted bands retain their native homogeneous controls, share completed
+coefficient enclosures and reuse dyadic samples across fitting retries.
+Conical pipes use an exact bound on their swept centre ellipse and section
+radius. Framed intersection hits retain proved chart locations; rational
+chart queries keep their original zero-work path. Saddle measurements use
+the existing exact conic antiderivatives for the unfilleted base.
+
+Crossing saddle integrals use certified eight-point Gauss quadrature. In the
+turn parameter, the enclosed sixteenth Taylor coefficient multiplies
+`h^17 / (17 * binom(16,8)^2)` for a panel of width `h`; the final integral
+retains its closing pi factor. This is the signed
+[Gaussian remainder](https://dlmf.nist.gov/3.5.E19), not an estimated error.
+The common-perpendicular reflection makes scalar densities even and the
+corresponding local first moments odd. One symmetric half uses half the
+requested width before doubling. Exact band reflections reuse completed
+integrals, including their local moments. Zero displacement tubes need no
+curvature, boundary-length or moment-range terms.
+
+Cliff walks reject a finite line segment or complete conic only when an
+exact sector halfspace strictly separates it. Tangencies remain candidates.
+The optional filter accepts rational data and otherwise keeps the complete
+intersection path.
+
+Ten cases still exceed the allowance: torus-intersection, cross-equal,
+cross-unequal, oblique-cone, sphere-cylinder, vertex-4-two, vertex-4-all,
+unequal-mitres, narrow-mitres and vertex-4-all-unequal-slopes. They remain
+follow-up work. An excluded crossing rail-table reuse experiment completed
+cross-equal at this allowance but produced an invalid raw STEP, so its
+performance gain is not shipped or counted as coverage. That export needs a
+geometry investigation before a later promotion.
+
+## M5 proof controls, 11 November 2026
+
+The ordinary P5 recipe already builds at its authored radius of 2 mm. Its
+22-face result keeps 18 exact supports and four bounded rim-contact carriers.
+The represented body reports `exact: false`; the retained rolling-ball
+definition stays exact. Raw and ordinary STEP imports pass the existing face,
+volume and material checks at both the authored radius and the 5/2 mm edit.
+
+| P5 radius, mm | Work through export | Allowance | Result |
+| --- | ---: | ---: | --- |
+| 999/1000 | 284852 | 20000000 | Exact, 15 faces, one torus |
+| 1 | 293617 | 20000000 | Exact, 19 faces, tangent mouth contacts |
+| 2 | 1737135 | 20000000 | 22 faces; carrier bound below 4.171 nm |
+| 5/2 | 1804741 | 20000000 | 22 faces; carrier bound below 10.616 nm |
+| 7/2 | 272915 | 20000000 | `shapes.rolling-envelope`: the ball leaves the mouth edge for its second face |
+| 2 | 999979 | 1000000 | `numbers.operation-budget`; no STEP |
+
+The P5 regression now checks every face's evidence binding, complete face and
+trim scope, neighbouring feature-size tenths, whole-result dependency and
+composed file-to-definition bound. It compares fresh requests at 1, 2 and 4
+workers and kernel threads, then with every available core. These checks retain
+the 20M application allowance and the separate 1M refusal control.
+
+The inventory now also requires the existing collapsed `torus-intersection`
+construction to export at 1M. It uses 774000 work and no fitted curves. This is
+an updated expectation for existing kernel code, not a new constructor. In the
+meridian section, the radius-2 circle centred at radial distance 6 is cut at
+z = 1. Its inward offsets have radius `2-r` and height `1+r`. At `r=1/2` their
+two intersections merge at radial distance 6 and z = 3/2. The remaining balls
+therefore form a torus with major radius 6 and minor radius 1/2, of volume
+`2*pi^2*6*(1/2)^2 = 3*pi^2` mm³. The raw two-face STEP volume is
+29.608813203267985 mm³. Ten material witnesses include points in the removed
+sharp cap and both tangent circles. OCCT's independent fillet still refuses;
+its failure is not the volume reference.
+
+The resulting 45-case expectation is 35 checked exports, nine work-budget
+refusals and one missing end family. `partial-oblique` retains
+`fillet.unsupported-end` after 512030 work at the 1M allowance. Its radius-5
+cylinder, radius-1/2 fillet and plane normal `(336,0,527)/625` leave an ellipse
+clipped at x = 0, with endpoints `(0,+/-5,8)`. The missing construction is the
+shared end section and trim on that vertical wall. A complete closed oblique
+ring does not qualify this end family. It is not needed by P5.
+
+These controls do not close M5. Spline-face blends remain M11 work; native
+field continuation, wider corner/end families and the remaining draft exits
+need their own proofs. No kernel source, tolerance or work allowance changes in
+this qualification. Raw evidence retained privately.
+
+## Reproduce
+
+The corpus is [parts/fillets/cases.jsonl](../../../parts/fillets/cases.jsonl).
+Each row stores a complete ordinary recipe or a clearly unexpressible law,
+expected geometric intent, family tags, OCCT edge witnesses and the observed
+baseline outcome. The OCCT adapter independently constructs stock, polygon
+prisms and booleans; it does not import Catallax's unfilleted body. Edge
+witnesses must select exactly one edge, never a face index or nearest guess.
+
+Build the ordinary verification CLI, then use an external proof directory and
+a Python environment with `cadquery-ocp==7.9.3.1.1`:
+
+```sh
+CARGO_TARGET_DIR=/tmp/catallax-fillet-target nice -n 10 cargo build --release -p catallax-cli --bins -j 2
+nice -n 10 python3 -B tools/fillet-coverage/run.py \
+  --binary /tmp/catallax-fillet-target/release/catallax-verify \
+  --occt-python /tmp/occt/bin/python --out /tmp/fillet-coverage --check
+CATALLAX_VERIFY_BINARY=/tmp/catallax-fillet-target/release/catallax-verify \
+  /tmp/occt/bin/python -B -m unittest discover -s tools/step-regressions \
+  -p test_fillet_coverage.py -v
+```
+
+`--case ID` repeats to select controls. The default allowance is 1,000,000
+work units per recipe and the process guard is 30 seconds per request, not a
+speed target. Each case freezes its input, command output, ordinary driver
+bundle, independent reference and raw-import report. `scoreboard.json`
+checkpoints after each case; `scoreboard.md` is a readable view. The report
+records the reporting source's `source_head` and `source_dirty` flag separately
+from the binary hash. Run the full corpus at each final PR head and quote that
+head with its scoreboard; CI's smoke controls do not exercise all 45 cases.
+Nonzero exit
+means a wrong/incomplete outcome, or a changed baseline when `--check` is set.
+A clean refusal is expected coverage debt, not a passing geometric target.
+`--check` compares the recorded status/code and stage, not the timing; it does not waive
+an expected `wrong` result. Use the same work allowance as the snapshot when
+checking it. Require `status: completed` before treating a report as a full run.
+
+The table's Catallax clock covers the complete CLI request. Its separate final
+fillet span excludes later measurement/export. The OCCT clock includes its
+construction and numerical checks, without Python startup. Raw STEP import
+has a separate clock in JSON. These are single observations on a shared host,
+not a paired speed comparison or application latency measurements.

@@ -42,7 +42,7 @@ SolidDraft still needs its Loft command and document conversion: collect profile
 
 ## Where the 20M allowance goes
 
-This count follows the deterministic work profile of [NOT-EXACT-INVENTORY.md](NOT-EXACT-INVENTORY.md), applied to the eager application build. The `app_work_profile` example (feature `work-profile`) runs `catallax_app::build` on one recipe with display, chord tolerance 1e-2 and 200,000 display vertices, the suite's options. It attributes every unit of the build's work to a decider call, its calling line and the logged operation. Work outside the loft operation is display and naming. Work units are the same on any machine and under any load.
+This count follows the deterministic work profile of [NOT-EXACT-INVENTORY.md](archive/NOT-EXACT-INVENTORY.md), applied to the eager application build. The `app_work_profile` example (feature `work-profile`) runs `catallax_app::build` on one recipe with display, chord tolerance 1e-2 and 200,000 display vertices, the suite's options. It attributes every unit of the build's work to a decider call, its calling line and the logged operation. Work outside the loft operation is display and naming. Work units are the same on any machine and under any load.
 
 ```text
 cargo run --release -p catallax-cli --features work-profile --example app_work_profile -- RECIPE --max-work UNITS

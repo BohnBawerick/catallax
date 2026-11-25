@@ -82,7 +82,7 @@ A coedge's start vertex is its edge's `start` when its sense is `Same`, and its 
 
 ### Exact and tolerant entities
 
-One model holds exact and tolerant entities ([Checkpoint 2 decisions, section 4.5](../checkpoints/checkpoint-2-decisions.md#45-item-30b-one-model-and-the-predictor), Q12). The structure is Parasolid's (Jackson 1995, "Boundary representation modelling with local tolerances"): a tolerance belongs to topology, and points, curves and surfaces are stored as they are.
+One model holds exact and tolerant entities ([Checkpoint 2 decisions, section 4.5](../archive/checkpoints/checkpoint-2-decisions.md#45-item-30b-one-model-and-the-predictor), Q12). The structure is Parasolid's (Jackson 1995, "Boundary representation modelling with local tolerances"): a tolerance belongs to topology, and points, curves and surfaces are stored as they are.
 
 - A vertex, an edge or a face whose `tolerance` is `None` is exact. It stores no tolerance and has no size limit (rule T0).
 - `Some(Tolerance)` is a length in millimetres, always greater than zero. `Tolerance::new` refuses zero and negative values with `topology.tolerance-not-positive`: exact is `None`, never a tolerance of zero.

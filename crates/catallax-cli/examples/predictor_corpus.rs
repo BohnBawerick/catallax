@@ -3,7 +3,7 @@
 //!
 //! Checkpoint 2 decisions, section 4.5, state the predictor's done-when lines
 //! on a frozen corpus. `tools/predictor/corpus.json` is that corpus and
-//! `docs/milestones/3.0B-predictor.md` says how it was chosen. `run` builds
+//! `docs/archive/milestones/3.0B-predictor.md` says how it was chosen. `run` builds
 //! every row through the application's ordinary build, the one that tries the
 //! exact builders and then the fitted construction, exports the result, and
 //! writes one line for each row and thread count. `check` reads those lines

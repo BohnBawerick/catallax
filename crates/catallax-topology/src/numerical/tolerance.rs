@@ -20,7 +20,7 @@
 //! [`NumericalOptions::tolerance_mm`](super::NumericalOptions); the local
 //! term is rule T5, which refuses a pair whose tolerances add up to more than
 //! half their distance. This module holds the numbers and the checks that
-//! read them. The milestone note `docs/milestones/3.0A-tolerance-rules.md`
+//! read them. The milestone note `docs/archive/milestones/3.0A-tolerance-rules.md`
 //! says where each rule acts.
 
 use catallax_numbers::{Decider, NumericalCheck, NumericalEvidence, Rational, Refusal};

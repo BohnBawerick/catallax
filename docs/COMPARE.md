@@ -60,7 +60,7 @@ vertex with detail `field.spline-bound-unresolved`. Reverse origin and direction
 remain unresolved, so passing all forward vertices still gives an
 unresolved verdict.
 
-See [the 4.2a fixture results](M42A-FIELD-FILLETS.md#forward-display-comparison)
+See [the 4.2a fixture results](archive/M42A-FIELD-FILLETS.md#forward-display-comparison)
 for the measured loft and bare-carrier checks.
 
 ### Ordinary comparison coverage at the initial rollout

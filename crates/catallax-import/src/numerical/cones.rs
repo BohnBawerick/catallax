@@ -4,7 +4,7 @@ use super::*;
 use catallax_shapes::Cone;
 
 pub(super) fn eligible(
-    bytes: &[u8],
+    parsed: &ParsedStep,
     error: &ImportRefusal,
     dec: &mut Decider,
 ) -> Result<bool, ImportError> {
@@ -16,8 +16,8 @@ pub(super) fn eligible(
         }
         _ => return Ok(false),
     };
-    dec.charge_work(bytes.len() as u64)?;
-    let file = crate::read_step(bytes)?;
+    dec.charge_work(parsed.byte_len())?;
+    let file = parsed.certified_view(&Decider::default())?;
     in_file(&file, entity, dec)
 }
 

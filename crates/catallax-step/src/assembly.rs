@@ -1,14 +1,14 @@
 //! AP242 product definitions and rigid occurrences.
 
 use std::collections::BTreeSet;
-use std::fmt::Write as _;
 use std::io::Write;
 
 use catallax_numbers::{Decider, MarkLog, Rational, Refusal};
 use catallax_shapes::{Point3, Pose, Vector3};
 use catallax_topology::{BodyId, BodyKind, FaceId, Model};
 
-use crate::graph::string;
+use crate::document::{self, MILLI, Preamble, Product as ProductHandles};
+use crate::graph::{Field, Graph, Id, Layout, refs, string, text};
 use crate::{StepOptions, StepReport, pmi::Pmi};
 
 /// A product and its children or part data. Indices are local to the document.
@@ -133,13 +133,6 @@ pub struct PlacementRounding {
     pub basis_error: Rational,
 }
 
-#[derive(Clone, Copy)]
-struct ProductIds {
-    definition: usize,
-    representation: usize,
-    frame: usize,
-}
-
 /// Writes a rooted assembly as one AP242 document, using the ordinary part
 /// writers for each unique definition. Validation completes before writing.
 pub fn write_step_assembly<W: Write>(
@@ -150,27 +143,32 @@ pub fn write_step_assembly<W: Write>(
 ) -> Result<AssemblyReport, Refusal> {
     dec.charge_work(assembly.products.len() as u64)?;
     assembly.validate()?;
-    let mut step = String::new();
-    let mut next = 21; // The assembly header reserves the original STEP prefix.
+    let name = &assembly.products[assembly.root].name;
+    let mut graph = Graph::default();
+    let mut layout = Layout::default();
+    let root = Preamble::add(
+        &mut graph,
+        name,
+        "SHAPE_REPRESENTATION",
+        &[],
+        None,
+        MILLI,
+        true,
+    );
+    layout.prefix(&root.slots);
     let mut products = Vec::with_capacity(assembly.products.len());
     let mut reports = Vec::new();
     let mut placements = Vec::new();
     let mut marks = MarkLog::new();
     for (index, product) in assembly.products.iter().enumerate() {
-        let ids = match &product.content {
-            ProductContent::Assembly(_) if index == assembly.root => ProductIds {
-                definition: 7,
-                representation: 16,
-                frame: 17,
-            },
+        let entry = match &product.content {
+            ProductContent::Assembly(_) if index == assembly.root => {
+                (root.references.product, None)
+            }
             ProductContent::Assembly(_) => {
-                let id = next;
-                next += 7;
-                ProductIds {
-                    definition: id + 2,
-                    representation: id + 5,
-                    frame: 17,
-                }
+                let (product, entities) = root.subassembly(&mut graph, &product.name);
+                layout.reserve(&entities);
+                (product, Some(entities))
             }
             ProductContent::Part(part) => {
                 let body = part.model.body(part.body);
@@ -190,51 +188,43 @@ pub fn write_step_assembly<W: Write>(
                         ),
                     ));
                 }
-                let mut file = Vec::new();
+                let bodies = [part.body];
                 let mut settings = options.clone();
                 settings.product_name.clone_from(&product.name);
-                let answer = match part.pmi {
-                    Some(pmi) => crate::write_step_with_pmi(
-                        part.model, part.body, &settings, pmi, dec, &mut file,
-                    )?,
-                    None => crate::write_step(part.model, &[part.body], &settings, dec, &mut file)?,
-                };
-                let file = std::str::from_utf8(&file).expect("the STEP writer emits ASCII");
-                let base = next - 1;
-                let entities = append_part(file, base, &mut step)?;
-                dec.charge_work(entities as u64)?;
-                next += entities;
+                let answer = crate::build_part(part.model, &bodies, &settings, part.pmi, dec)?;
+                if settings.seams == crate::Seams::Required {
+                    // Keep part-local seam diagnostics and their refusal order.
+                    crate::seams::check(&answer.value.file(&settings.product_name))?;
+                }
+                dec.charge_work(answer.value.layout.part_span() as u64)?;
+                let (product, context, items, report) =
+                    answer.value.append(&mut graph, &mut layout);
                 if let Some(colour) = &part.colour {
-                    write_colour(colour, file, base, &mut next, &mut step)?;
+                    add_colour(&mut graph, &mut layout, colour, context, items)?;
                 }
-                reports.push((index, answer.value));
+                reports.push((index, report));
                 marks.extend(&answer.marks);
-                ProductIds {
-                    definition: base + 7,
-                    representation: base + 16,
-                    frame: base + 17,
-                }
+                (product, None)
             }
         };
-        products.push(ids);
+        products.push(entry);
     }
 
-    let mut root_items = Vec::new();
     for (index, product) in assembly.products.iter().enumerate() {
         let ProductContent::Assembly(children) = &product.content else {
             continue;
         };
-        let parent = products[index];
+        let (parent, entities) = &products[index];
         let mut items = Vec::with_capacity(children.len());
         dec.charge_work(children.len() as u64)?;
         for (child_index, child) in children.iter().enumerate() {
-            let target = products[child.product];
-            let (frame, origin_error, basis_error) = write_frame(
+            let target = products[child.product].0;
+            let (frame, origin_error, basis_error) = add_frame(
+                &mut graph,
+                &mut layout,
                 &child.pose,
                 options.significant_digits,
                 dec,
-                &mut next,
-                &mut step,
             )?;
             placements.push(PlacementRounding {
                 parent: index,
@@ -243,100 +233,33 @@ pub fn write_step_assembly<W: Write>(
                 basis_error,
             });
             items.push(frame);
-            let id = next;
-            next += 5;
-            let name = string(&child.name);
-            // OCCT's ProSTEP assembly relationship maps the child frame to the
-            // occurrence frame listed in the parent representation.
-            writeln!(
-                step,
-                "#{id}=NEXT_ASSEMBLY_USAGE_OCCURRENCE('{id}',{name},'',#{},#{},$);",
-                parent.definition, target.definition
-            )
-            .unwrap();
-            writeln!(step, "#{}=PRODUCT_DEFINITION_SHAPE('','',#{id});", id + 1).unwrap();
-            writeln!(
-                step,
-                "#{}=ITEM_DEFINED_TRANSFORMATION('','',#{},#{frame});",
-                id + 2,
-                target.frame
-            )
-            .unwrap();
-            writeln!(step, "#{}=(REPRESENTATION_RELATIONSHIP('','',#{},#{})REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#{})SHAPE_REPRESENTATION_RELATIONSHIP());",
-                     id + 3, target.representation, parent.representation, id + 2).unwrap();
-            writeln!(
-                step,
-                "#{}=CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#{},#{});",
-                id + 4,
-                id + 3,
-                id + 1
-            )
-            .unwrap();
+            layout.extend(add_occurrence(
+                &mut graph,
+                &child.name,
+                *parent,
+                target,
+                frame,
+            ));
         }
-        if index == assembly.root {
-            root_items = items;
-        } else {
-            let id = parent.definition - 2;
-            let name = string(&product.name);
-            let items = items.iter().fold(String::from("#17"), |mut list, id| {
-                write!(list, ",#{id}").unwrap();
-                list
-            });
-            writeln!(step, "#{id}=PRODUCT({name},{name},'',(#3));").unwrap();
-            writeln!(
-                step,
-                "#{}=PRODUCT_DEFINITION_FORMATION('','',#{id});",
-                id + 1
-            )
-            .unwrap();
-            writeln!(
-                step,
-                "#{}=PRODUCT_DEFINITION('design','',#{},#6);",
-                id + 2,
-                id + 1
-            )
-            .unwrap();
-            writeln!(
-                step,
-                "#{}=PRODUCT_DEFINITION_SHAPE('','',#{});",
-                id + 3,
-                id + 2
-            )
-            .unwrap();
-            writeln!(
-                step,
-                "#{}=SHAPE_DEFINITION_REPRESENTATION(#{},#{});",
-                id + 4,
-                id + 3,
-                id + 5
-            )
-            .unwrap();
-            writeln!(
-                step,
-                "#{}=SHAPE_REPRESENTATION({name},({items}),#14);",
-                id + 5
-            )
-            .unwrap();
-            writeln!(
-                step,
-                "#{}=PRODUCT_RELATED_PRODUCT_CATEGORY('assembly',$,(#{id}));",
-                id + 6
-            )
-            .unwrap();
+        parent.add_frames(&mut graph, items);
+        if let Some(entities) = entities {
+            layout.emit(entities);
         }
     }
 
     let complete_body_bound = reports
         .iter()
         .all(|(_, report)| report.definition_deviation.is_some());
-    let header = crate::export::assembly_header(
-        &assembly.products[assembly.root].name,
-        &root_items,
-        complete_body_bound,
-    );
-    out.write_all(header.as_bytes())
-        .and_then(|_| out.write_all(step.as_bytes()))
-        .and_then(|_| out.write_all(b"ENDSEC;\nEND-ISO-10303-21;\n"))
+    let description: &[_] = if complete_body_bound {
+        &["catallax assembly export"]
+    } else {
+        &[
+            "catallax assembly export",
+            "at least one part lacks a complete deviation bound; complete_body_bound=unestablished",
+        ]
+    };
+    let file = document::render(&graph, &layout, name, description);
+    out.write_all(file.as_bytes())
         .map_err(|error| Refusal::new("step.io-error", error.to_string()))?;
     Ok(AssemblyReport {
         parts: reports,
@@ -345,49 +268,66 @@ pub fn write_step_assembly<W: Write>(
     })
 }
 
-/// Part writers all emit one Part 21 DATA section with symbolic references
-/// already numbered. Relocate those numbers without touching quoted strings.
-fn append_part(file: &str, base: usize, output: &mut String) -> Result<usize, Refusal> {
-    let data = file
-        .split_once("\nDATA;\n")
-        .and_then(|(_, data)| data.strip_suffix("ENDSEC;\nEND-ISO-10303-21;\n"))
-        .ok_or_else(|| invalid("unexpected part writer envelope"))?;
-    let mut quoted = false;
-    let mut highest = 0;
-    let mut at = 0;
-    for (index, byte) in data.bytes().enumerate() {
-        if byte == b'\'' {
-            quoted = !quoted;
-        }
-        if byte != b'#' || quoted {
-            continue;
-        }
-        let end = index
-            + 1
-            + data[index + 1..]
-                .bytes()
-                .take_while(u8::is_ascii_digit)
-                .count();
-        let entity: usize = data[index + 1..end]
-            .parse()
-            .map_err(|_| invalid("invalid part entity number"))?;
-        output.push_str(&data[at..index]);
-        write!(output, "#{}", base + entity).unwrap();
-        highest = highest.max(entity);
-        at = end;
-    }
-    output.push_str(&data[at..]);
-    Ok(highest)
+fn add_occurrence(
+    graph: &mut Graph,
+    name: &str,
+    parent: ProductHandles,
+    child: ProductHandles,
+    frame: Id,
+) -> [Id; 5] {
+    const OCCURRENCE: &str = "NEXT_ASSEMBLY_USAGE_OCCURRENCE";
+    let occurrence = graph.add(OCCURRENCE, Vec::new());
+    graph.replace(
+        occurrence,
+        OCCURRENCE,
+        vec![
+            Field::QuotedNumber(occurrence),
+            text(string(name)),
+            text("''"),
+            parent.definition.into(),
+            child.definition.into(),
+            text("$"),
+        ],
+    );
+    let shape = graph.add(
+        "PRODUCT_DEFINITION_SHAPE",
+        vec![text("''"), text("''"), occurrence.into()],
+    );
+    // Map the child frame to the occurrence frame in the parent representation.
+    let transform = graph.add(
+        "ITEM_DEFINED_TRANSFORMATION",
+        vec![text("''"), text("''"), child.frame.into(), frame.into()],
+    );
+    let relationship = graph.add_complex(vec![
+        (
+            "REPRESENTATION_RELATIONSHIP",
+            vec![
+                text("''"),
+                text("''"),
+                child.representation.into(),
+                parent.representation.into(),
+            ],
+        ),
+        (
+            "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
+            vec![transform.into()],
+        ),
+        ("SHAPE_REPRESENTATION_RELATIONSHIP", vec![]),
+    ]);
+    let dependent = graph.add(
+        "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
+        vec![relationship.into(), shape.into()],
+    );
+    [occurrence, shape, transform, relationship, dependent]
 }
 
-fn write_frame(
+fn add_frame(
+    graph: &mut Graph,
+    layout: &mut Layout,
     pose: &Pose,
     digits: u32,
     dec: &mut Decider,
-    next: &mut usize,
-    output: &mut String,
-) -> Result<(usize, Rational, Rational), Refusal> {
-    let id = *next;
+) -> Result<(Id, Rational, Rational), Refusal> {
     let matrix = pose.rotation.matrix();
     let basis = |column: usize| {
         Vector3::new(
@@ -401,29 +341,25 @@ fn write_frame(
     let x = crate::number::direction(&basis(0), digits, dec)?;
     let triple = |point: &crate::number::Point| {
         let [a, b, c] = point.xyz.each_ref();
-        format!("{},{},{}", a.text, b.text, c.text)
+        text(format!("({},{},{})", a.text, b.text, c.text))
     };
-    writeln!(output, "#{id}=CARTESIAN_POINT('',({}));", triple(&origin)).unwrap();
-    writeln!(output, "#{}=DIRECTION('',({}));", id + 1, triple(&z)).unwrap();
-    writeln!(output, "#{}=DIRECTION('',({}));", id + 2, triple(&x)).unwrap();
-    writeln!(
-        output,
-        "#{}=AXIS2_PLACEMENT_3D('',#{id},#{},#{});",
-        id + 3,
-        id + 1,
-        id + 2
-    )
-    .unwrap();
-    *next += 4;
-    Ok((id + 3, origin.error(), crate::number::frame_error(&x, &z)))
+    let p = graph.add("CARTESIAN_POINT", vec![text("''"), triple(&origin)]);
+    let axis = graph.add("DIRECTION", vec![text("''"), triple(&z)]);
+    let reference = graph.add("DIRECTION", vec![text("''"), triple(&x)]);
+    let frame = graph.add(
+        "AXIS2_PLACEMENT_3D",
+        vec![text("''"), p.into(), axis.into(), reference.into()],
+    );
+    layout.extend([p, axis, reference, frame]);
+    Ok((frame, origin.error(), crate::number::frame_error(&x, &z)))
 }
 
-fn write_colour(
+fn add_colour(
+    graph: &mut Graph,
+    layout: &mut Layout,
     colour: &Colour,
-    part: &str,
-    base: usize,
-    next: &mut usize,
-    output: &mut String,
+    context: Id,
+    targets: Vec<Id>,
 ) -> Result<(), Refusal> {
     if colour
         .iter()
@@ -431,64 +367,36 @@ fn write_colour(
     {
         return Err(invalid("RGB channels must be between zero and one"));
     }
-    // One style can target every solid lump in the part's B-rep representation.
-    let line = part
-        .lines()
-        .find(|line| line.starts_with("#16="))
-        .and_then(|line| line.rsplit_once(",(#17,"))
-        .and_then(|(_, items)| items.strip_suffix("),#14);"))
-        .ok_or_else(|| invalid("part has no supported B-rep representation items"))?;
-    let id = *next;
-    *next += 6;
+    if targets.is_empty() {
+        return Err(invalid("part has no supported B-rep representation items"));
+    }
     let [r, g, b] = colour
         .each_ref()
         .map(|c| crate::number::rational(c, 17).text);
-    writeln!(output, "#{id}=COLOUR_RGB('',{r},{g},{b});").unwrap();
-    writeln!(output, "#{}=FILL_AREA_STYLE_COLOUR('',#{id});", id + 1).unwrap();
-    writeln!(output, "#{}=FILL_AREA_STYLE('',(#{}));", id + 2, id + 1).unwrap();
-    writeln!(output, "#{}=SURFACE_STYLE_FILL_AREA(#{});", id + 3, id + 2).unwrap();
-    writeln!(output, "#{}=SURFACE_SIDE_STYLE('',(#{}));", id + 4, id + 3).unwrap();
-    writeln!(
-        output,
-        "#{}=SURFACE_STYLE_USAGE(.BOTH.,#{});",
-        id + 5,
-        id + 4
-    )
-    .unwrap();
-    let assignment = *next;
-    *next += 1;
-    writeln!(
-        output,
-        "#{assignment}=PRESENTATION_STYLE_ASSIGNMENT((#{}));",
-        id + 5
-    )
-    .unwrap();
-    let mut styles = String::new();
-    for item in line.split(',') {
-        let target: usize = item
-            .strip_prefix('#')
-            .and_then(|n| n.parse().ok())
-            .ok_or_else(|| invalid("unexpected B-rep representation item"))?;
-        if !styles.is_empty() {
-            styles.push(',');
-        }
-        let id = *next;
-        *next += 1;
-        write!(styles, "#{id}").unwrap();
-        writeln!(
-            output,
-            "#{id}=STYLED_ITEM('',(#{assignment}),#{});",
-            base + target
-        )
-        .unwrap();
-    }
-    let id = *next;
-    *next += 1;
-    writeln!(
-        output,
-        "#{id}=MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',({styles}),#{});",
-        base + 14
-    )
-    .unwrap();
+    let mut add = |name, fields| {
+        let id = graph.add(name, fields);
+        layout.push(id);
+        id
+    };
+    let rgb = add("COLOUR_RGB", vec![text("''"), text(r), text(g), text(b)]);
+    let colour = add("FILL_AREA_STYLE_COLOUR", vec![text("''"), rgb.into()]);
+    let fill = add("FILL_AREA_STYLE", vec![text("''"), refs([colour])]);
+    let area = add("SURFACE_STYLE_FILL_AREA", vec![fill.into()]);
+    let side = add("SURFACE_SIDE_STYLE", vec![text("''"), refs([area])]);
+    let usage = add("SURFACE_STYLE_USAGE", vec![text(".BOTH."), side.into()]);
+    let assignment = add("PRESENTATION_STYLE_ASSIGNMENT", vec![refs([usage])]);
+    let styles = targets
+        .into_iter()
+        .map(|target| {
+            add(
+                "STYLED_ITEM",
+                vec![text("''"), refs([assignment]), target.into()],
+            )
+        })
+        .collect::<Vec<_>>();
+    add(
+        "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION",
+        vec![text("''"), refs(styles), context.into()],
+    );
     Ok(())
 }

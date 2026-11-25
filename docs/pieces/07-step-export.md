@@ -186,6 +186,8 @@ texture is not repeated there.
 
 Piece 7 writes bodies as STEP AP242 files (ISO 10303-21 text) that other kernels read as valid solids. It is the outbound half of conversion at the border (DESIGN.md): exact geometry becomes ordinary STEP entities, and the export proves and reports the largest distance between what it wrote and the exact model.
 
+Part and assembly writers share the symbolic AP242 product and geometry graph. Placement, colour and PMI link to product or representation handles before the writer gives them Part 21 numbers. The layout keeps the existing entity numbers, line order and part deviation reports.
+
 ## Number types
 
 | What | Type | Meaning |

@@ -168,6 +168,8 @@ Changed or renumbered sources require separate correspondence and never inherit 
 This storage API does not add geometry-reading families or assign body tiers.
 The existing certified and numerical import entry points retain their current behavior.
 
+The default open shares one immutable Part 21 document between checked and native admission. Its header, SHA-256 and entity numbers stay tied to the source graph. Each route uses its existing unit rule when converting a recorded tolerance to millimetres.
+
 ### Transactional source healing
 
 `tolerant::healing::heal` prepares a separate candidate from a `TolerantFile`.

@@ -29,9 +29,16 @@ use std::sync::Arc;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ParsedStep {
     graph: Arc<Graph>,
-    source_sha256: String,
+    source: Arc<SourceIdentity>,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+struct SourceIdentity {
+    sha256: String,
+    byte_len: u64,
     schemas: Vec<String>,
     schema_error: Option<String>,
+    written_tolerance: Option<crate::recorded::WrittenTolerance>,
 }
 
 impl ParsedStep {
@@ -42,28 +49,65 @@ impl ParsedStep {
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
         let document = crate::part21::parse_document(bytes)?;
-        let graph = Arc::new(document.graph);
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
-        Ok(Self {
-            graph,
-            source_sha256: crate::sha256_hex(bytes),
-            schemas: document.schemas,
-            schema_error: document.schema_error,
-        })
+        Ok(Self::from_document(
+            document,
+            crate::sha256_hex(bytes),
+            bytes.len() as u64,
+            crate::recorded::written_tolerance(bytes),
+        ))
+    }
+
+    pub(crate) fn from_document(
+        document: crate::part21::Document,
+        source_sha256: String,
+        byte_len: u64,
+        written_tolerance: Option<crate::recorded::WrittenTolerance>,
+    ) -> Self {
+        Self {
+            graph: Arc::new(document.graph),
+            source: Arc::new(SourceIdentity {
+                sha256: source_sha256,
+                byte_len,
+                schemas: document.schemas,
+                schema_error: document.schema_error,
+                written_tolerance,
+            }),
+        }
     }
 
     /// Immutable input identity shared by native and certified source views.
     pub fn source_sha256(&self) -> &str {
-        &self.source_sha256
+        &self.source.sha256
+    }
+
+    pub(crate) fn byte_len(&self) -> u64 {
+        self.source.byte_len
+    }
+
+    pub(crate) fn recorded_tolerance(
+        &self,
+        scale: &catallax_numbers::Rational,
+    ) -> Option<crate::recorded::RecordedTolerance> {
+        self.source
+            .written_tolerance
+            .as_ref()?
+            .in_millimetres(scale)
+    }
+
+    pub(crate) fn recorded_tolerance_for_recognition(
+        &self,
+    ) -> Option<crate::recorded::RecordedTolerance> {
+        crate::recorded::in_graph(self.source.written_tolerance.as_ref()?, &self.graph)
     }
 
     pub(crate) fn schemas(&self) -> Result<&[String], ImportRefusal> {
-        match &self.schema_error {
+        match &self.source.schema_error {
             Some(detail) => Err(ImportRefusal::Malformed {
                 detail: detail.clone(),
             }),
-            None => Ok(&self.schemas),
+            None => Ok(&self.source.schemas),
         }
     }
 
@@ -239,7 +283,9 @@ impl RetainedGeometry {
     pub(crate) fn identity(&self) -> String {
         format!(
             "{} #{} {}",
-            self.source.source_sha256, self.entity, self.length_mm
+            self.source.source_sha256(),
+            self.entity,
+            self.length_mm
         )
     }
     /// Immutable original declarations, including wrappers and associated geometry.

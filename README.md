@@ -30,8 +30,8 @@ Catallax 0.5.0 includes:
 This is alpha software. Valid cases still refuse or take seconds. Checkpoints 3 and 4 measured the 0.5.0 release against OpenCASCADE and SMLib:
 
 - Edit chains: Catallax finished 11 of 13 test parts and 9 of 10 census parts. OpenCASCADE finished 11 and 10, SMLib 7 and 8.
-- STEP census: 767 of 3,000 public files (25.57%) export as valid solids. OpenCASCADE's healed reference is 2,701 (90.03%).
-- Coverage: 31 of 61 reference-kernel lines (50.8%), with working evidence on every line and the full bar met on one.
+- STEP census: 767 of 3,000 public files (25.57%) give complete-source, occurrence-preserving exports that a separate OpenCASCADE reader validates as solids. Full solid admission is a separate measure, at 889 files. OpenCASCADE's healed-valid reference is 2,701 (90.03%), under a different protocol with default ShapeFix.
+- Coverage: 31 points across 61 reference-kernel lines (50.8%). One line meets its full bar, 60 have partial evidence and every line has working evidence.
 
 Catallax still refuses the general cone and torus intersections, all three phase-2 targets (the threaded boss, the lofted duct and the curved housing) and one census-part drill. Some answers cost more than the 20M work target.
 

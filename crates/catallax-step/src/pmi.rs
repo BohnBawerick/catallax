@@ -13,6 +13,7 @@
 //! The entity forms follow the CAx-IF recommended practices for the
 //! representation of PMI in AP242, version 4.1.
 
+mod callout;
 mod measure;
 mod write;
 

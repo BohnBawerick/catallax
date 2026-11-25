@@ -42,7 +42,7 @@
   <section aria-labelledby="scoreboard">
     <h2 class="ev__h" id="scoreboard">Edit-chain scoreboard</h2>
     <p>Each target part is built, then built again after one dimension changes. The test parts are P0, eight hard intersection cases, and P1 to P5: a bracket, a collar, a filleted boss, a shelled tray and a flanged housing. Three phase-2 targets follow: a threaded boss with a spring, a lofted duct and a curved housing. The real parts are ten files from the STEP census below. On each real part, every kernel drills a hole, then changes its radius.</p>
-    <p>One definition of done for all three kernels: both versions build, both STEP exports open in OpenCASCADE as valid closed solids with the right number of faces, and no independent check finds a wrong value. On a real part, the hole and the radius edit must each remove material. The filleted boss's STEP files must also read as valid with OpenCASCADE's healing turned off.</p>
+    <p>One definition of done for all three kernels: both versions build, both STEP exports open in OpenCASCADE as valid closed solids with the producer's face count, and no independent check finds a wrong value. On a real part, the drilled hole and the radius edit must each reduce the independently measured volume by more than one millionth of the source volume. The filleted boss's STEP files must also read as valid with OpenCASCADE's healing turned off.</p>
     <div class="table-wrap"><table class="ev__table ev__table--num">
       <thead><tr><th scope="col">Kernel</th><th scope="col">Test parts done, of 13</th><th scope="col">Phase-2 targets done, of 3</th><th scope="col">Real parts done, of 10</th></tr></thead>
       <tbody>
@@ -51,7 +51,7 @@
         <tr><th scope="row">SMLib <small>smlibpy 0.4.0</small></th><td>7</td><td>3</td><td>8</td></tr>
       </tbody>
     </table></div>
-    <p>Catallax now matches OpenCASCADE on the 13 test parts. At <a href="checkpoint-1.html">Checkpoint 1</a> it finished 10 of them. The filleted boss now passes. Read with healing turned off, its Catallax STEP files are valid and both other kernels' files are not, so their test-part totals each drop by one.</p>
+    <p>Catallax now matches OpenCASCADE on the 13 test parts. The filleted boss now passes. Read with healing turned off, its Catallax STEP files are valid and both other kernels' files are not, so their test-part totals each drop by one.</p>
     <h3>Where Catallax falls short</h3>
     <ul class="ev__list">
       <li>The general cone and general torus test parts are refused. Catallax cannot yet trace where those surfaces cross.</li>
@@ -97,18 +97,18 @@
 
   <section aria-labelledby="census">
     <h2 class="ev__h" id="census">3,000 real STEP files</h2>
-    <p>The census takes the same 3,000 models from the public ABC collection as before, picked with a fixed seed, and imports every one. The headline counts a file only when every body in it imports, exports again as STEP, and that export passes a separate OpenCASCADE validity check as a solid.</p>
+    <p>The census takes the same 3,000 models from the public ABC collection as Checkpoint 2, with the same frozen source hashes and selection. Opening is refused on 40 of them. The headline counts complete-source, occurrence-preserving exports that a separate OpenCASCADE reader validates as solids. Full solid admission and at least one observed valid exported solid are separate measures.</p>
     <div class="table-wrap"><table class="ev__table ev__table--num">
       <thead><tr><th scope="col">Measure</th><th scope="col">Files</th><th scope="col">Share of 3,000</th></tr></thead>
       <tbody>
-        <tr><th scope="row">Catallax, every body exports as a valid solid</th><td>767</td><td>25.57%</td></tr>
+        <tr><th scope="row">Catallax, complete-source valid export</th><td>767</td><td>25.57%</td></tr>
         <tr><th scope="row">Catallax, every body opens as a solid</th><td>889</td><td>29.63%</td></tr>
-        <tr><th scope="row">Catallax, at least one valid exported solid</th><td>1,148</td><td>38.27%</td></tr>
+        <tr><th scope="row">Catallax, at least one observed valid exported solid</th><td>1,148</td><td>38.27%</td></tr>
         <tr><th scope="row">OpenCASCADE, valid after its default repair</th><td>2,701</td><td>90.03%</td></tr>
         <tr><th scope="row">Catallax at Checkpoint 1 <small>older import and export</small></th><td>374</td><td>12.47%</td></tr>
       </tbody>
     </table></div>
-    <p>Import is still the largest gap between Catallax and OpenCASCADE. The two figures are not measured at one tolerance: OpenCASCADE repairs each file with its default healing before the check. They compare how many files each kernel opens, not accuracy.</p>
+    <p>Import is still the largest gap between Catallax and OpenCASCADE. The two figures are not measured at one tolerance: OpenCASCADE repairs each file with its default healing before the check. The 767 counts Catallax's complete-source valid exports and the 2,701 counts OpenCASCADE's healed-valid files, so they use different protocols. A direct comparison still needs a common protocol and a target.</p>
     <p>Against the previous release, 0.4.0, eight more files export as valid solids and five more open as solids. No file that exported validly at the frozen baseline was lost. At the frozen baseline, one solid in file 00002204 opened. That file now runs out of its work allowance while opening.</p>
     <p>Each admitted body is certified exact, checked numerical, or sampled and tolerant. A file takes the group of its least-checked body.</p>
     <div class="table-wrap"><table class="ev__table ev__table--num">

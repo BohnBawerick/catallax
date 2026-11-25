@@ -34,6 +34,7 @@
 use crate::{BSplineSurface, Isometry, PatchPairIntersection, Point3, RationalPatch};
 use catallax_numbers::{
     Ball, Decider, EvidenceBound, EvidenceUnit, MPoly, Rational, Real, Refusal, Sign,
+    scoped_try_collect,
 };
 use std::sync::Arc;
 
@@ -53,8 +54,6 @@ mod cut_trace;
 mod jets;
 #[path = "spline_fillet/numerical.rs"]
 mod numerical;
-#[path = "spline_fillet/order.rs"]
-mod order;
 #[path = "spline_fillet/surface.rs"]
 mod surface;
 

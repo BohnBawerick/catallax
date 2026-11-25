@@ -651,7 +651,7 @@ const REGULAR_DEPTH: u32 = 8;
 /// Proves the carrier's normal nonzero: on each box of each span its
 /// component along the middle of its own enclosure is positive.
 pub(super) fn regular(rows: &[SpanRows], dec: &mut Decider) -> Result<(), Refusal> {
-    order::in_order(
+    scoped_try_collect(
         rows.len(),
         |index, dec| {
             let mut meter = Meter::default();

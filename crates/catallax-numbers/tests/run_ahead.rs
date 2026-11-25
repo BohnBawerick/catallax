@@ -488,6 +488,131 @@ fn a_value_that_no_longer_holds_is_dropped_with_its_charges() {
     }
 }
 
+#[test]
+fn scoped_items_take_the_first_refusal_and_charge_only_its_prefix() {
+    use std::{ops::ControlFlow, sync::mpsc, time::Duration};
+
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    let items = ["first", "second", "earlier refusal", "later refusal"].map(String::from);
+    let run = |threads, limit| {
+        set_threads(NonZeroUsize::new(threads));
+        set_run_ahead_wait(true);
+        let (later_done, later) = mpsc::channel();
+        let before = run_ahead_adopted();
+        let ((seen, outcome), work) = with_operation_budget(limit, || {
+            let mut seen = Vec::new();
+            let outcome = scoped_in_order(
+                items.len(),
+                |index, dec| {
+                    dec.charge_traversal([2, 3, 5, 7][index])?;
+                    match index {
+                        1 => private_cache(),
+                        2 => return Err(Refusal::new("test.earlier", &items[index])),
+                        3 => {
+                            later_done.send(()).unwrap();
+                            return Err(Refusal::new("test.later", &items[index]));
+                        }
+                        _ => (),
+                    }
+                    Ok(items[index].as_str())
+                },
+                &mut Decider::default(),
+                |index, result, _| {
+                    if index == 0 && threads > 1 {
+                        later.recv_timeout(Duration::from_secs(5)).unwrap();
+                    }
+                    match result {
+                        Ok(value) => {
+                            seen.push(value);
+                            ControlFlow::Continue(())
+                        }
+                        Err(error) => ControlFlow::Break(error.code),
+                    }
+                },
+            );
+            (seen, outcome)
+        });
+        set_threads(None);
+        set_run_ahead_wait(false);
+        let adopted = if threads == 1 {
+            0
+        } else if limit < 10 {
+            1
+        } else {
+            2
+        };
+        assert_eq!(run_ahead_adopted() - before, adopted);
+        (seen, outcome, work.used, work.exhausted)
+    };
+    for (limit, code, used, exhausted) in [
+        (10, "test.earlier", 10, false),
+        (7, "numbers.operation-budget", 5, true),
+    ] {
+        for threads in [1, 2, 4] {
+            assert_eq!(
+                run(threads, limit),
+                (
+                    vec!["first", "second"],
+                    ControlFlow::Break(code),
+                    used,
+                    exhausted,
+                ),
+                "{threads} threads, {limit} units",
+            );
+        }
+    }
+}
+
+#[test]
+fn scoped_items_retry_after_all_helpers_unwind() {
+    use std::{
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
+        thread,
+        time::Duration,
+    };
+
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    let (finished, result) = mpsc::channel();
+    let writer = thread::spawn(move || {
+        let writer = thread::current().id();
+        let items: Vec<String> = (0..8).map(|index| index.to_string()).collect();
+        set_run_ahead_wait(true);
+        for threads in [2, 4] {
+            set_threads(NonZeroUsize::new(threads));
+            let unwound = AtomicUsize::new(0);
+            let (seen, work) = with_operation_budget(8, || {
+                scoped_try_collect(
+                    items.len(),
+                    |index, dec| {
+                        dec.charge_traversal(1)?;
+                        if thread::current().id() != writer {
+                            unwound.fetch_add(1, Ordering::Relaxed);
+                            panic!("helper unwinds after charging item {index}");
+                        }
+                        Ok::<_, Refusal>(items[index].as_str())
+                    },
+                    &mut Decider::default(),
+                )
+            });
+            assert_eq!(seen.unwrap(), items);
+            assert_eq!(unwound.load(Ordering::Relaxed), threads - 1);
+            assert_eq!(work.used, 8);
+            assert!(!work.exhausted);
+        }
+        finished.send(()).unwrap();
+    });
+    let completed = result.recv_timeout(Duration::from_secs(5));
+    set_threads(None);
+    set_run_ahead_wait(false);
+    if completed != Err(mpsc::RecvTimeoutError::Timeout) {
+        writer.join().unwrap();
+    }
+    completed.expect("the writer waited for a slot no helper could finish");
+}
+
 // The pool keeps the workers it once had. After the thread count drops, only
 // the first few may take work, and a loop that waits for its workers must
 // still get one of those.

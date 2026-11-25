@@ -4,10 +4,8 @@
 //! refusal and the work count are those of one thread.
 
 use super::*;
-use catallax_numbers::{Charges, Helpers};
+use catallax_numbers::scoped_try_collect;
 use join::Resolved;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Condvar, Mutex};
 use unit::{Done, Node, Step};
 
 /// The complete search: every accepted arc in a fixed order, and the counts.
@@ -143,28 +141,6 @@ fn process(
     done.map(|done| Processed { done, requests })
 }
 
-enum Slot {
-    Open,
-    Taken,
-    Writer,
-    Done(Box<Result<Processed, Refusal>>, Option<Charges>),
-}
-
-// One lock guards every slot. The writer waits on `changed` for slot after
-// slot, and a condition variable must always be used with the same mutex:
-// macOS panics on a second one.
-struct Board {
-    slots: Mutex<Vec<Slot>>,
-    changed: Condvar,
-    next: AtomicUsize,
-}
-
-fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// Proves one level's pairs, in order.
 fn run_level(
     ctx: &Context,
@@ -172,132 +148,10 @@ fn run_level(
     snapshot: Option<&reuse::Snapshot>,
     dec: &mut Decider,
 ) -> Result<Vec<Processed>, Refusal> {
-    let helpers = if pairs.len() > 1 {
-        Helpers::new(dec)
-    } else {
-        None
-    };
-    let Some(helpers) = helpers else {
-        return pairs
-            .iter()
-            .map(|pair| process(ctx, pair, snapshot, dec).map_err(|e| named(e, pair)))
-            .collect();
-    };
-    let board = Board {
-        slots: Mutex::new((0..pairs.len()).map(|_| Slot::Open).collect()),
-        changed: Condvar::new(),
-        next: AtomicUsize::new(0),
-    };
-    let wait = catallax_numbers::run_ahead_waits();
-    std::thread::scope(|scope| {
-        // The scope joins the helpers on every path out, so they are told
-        // to stop on every path out too.
-        struct Stop<'h>(&'h Helpers);
-        impl Drop for Stop<'_> {
-            fn drop(&mut self) {
-                self.0.stop();
-            }
-        }
-        let _stop = Stop(&helpers);
-        let mut started = 0;
-        for _ in 0..helpers.count() {
-            let spawned = std::thread::Builder::new()
-                .name("catallax-patch-pair".into())
-                .stack_size(helpers.stack_size())
-                .spawn_scoped(scope, || {
-                    helpers.run(|worker| explore(ctx, pairs, snapshot, &board, &helpers, worker));
-                });
-            if spawned.is_err() {
-                break;
-            }
-            started += 1;
-        }
-        let mut out = Vec::with_capacity(pairs.len());
-        for index in 0..pairs.len() {
-            out.push(
-                take(
-                    ctx,
-                    pairs,
-                    snapshot,
-                    &board,
-                    index,
-                    wait && started > 0,
-                    dec,
-                )
-                .map_err(|e| named(e, &pairs[index]))?,
-            );
-        }
-        Ok(out)
-    })
-}
-
-fn explore(
-    ctx: &Context,
-    pairs: &[Node],
-    snapshot: Option<&reuse::Snapshot>,
-    board: &Board,
-    helpers: &Helpers,
-    worker: &mut Decider,
-) {
-    loop {
-        if helpers.stopped() {
-            return;
-        }
-        let index = board.next.fetch_add(1, Ordering::Relaxed);
-        if index >= pairs.len() {
-            return;
-        }
-        {
-            let mut slots = locked(&board.slots);
-            if !matches!(slots[index], Slot::Open) {
-                continue;
-            }
-            slots[index] = Slot::Taken;
-        }
-        let (value, charges) =
-            catallax_numbers::record(|| process(ctx, &pairs[index], snapshot, worker));
-        locked(&board.slots)[index] = Slot::Done(Box::new(value), charges);
-        board.changed.notify_all();
-    }
-}
-
-/// The writer's result for one pair: a helper's, adopted with its charges,
-/// or its own.
-fn take(
-    ctx: &Context,
-    pairs: &[Node],
-    snapshot: Option<&reuse::Snapshot>,
-    board: &Board,
-    index: usize,
-    wait: bool,
-    dec: &mut Decider,
-) -> Result<Processed, Refusal> {
-    let mut slots = locked(&board.slots);
-    loop {
-        match &slots[index] {
-            Slot::Open if !wait => {
-                slots[index] = Slot::Writer;
-                drop(slots);
-                return process(ctx, &pairs[index], snapshot, dec);
-            }
-            Slot::Open | Slot::Taken => {
-                slots = board
-                    .changed
-                    .wait(slots)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-            }
-            Slot::Writer => unreachable!("the writer takes each pair once"),
-            Slot::Done(..) => break,
-        }
-    }
-    let Slot::Done(value, charges) = std::mem::replace(&mut slots[index], Slot::Writer) else {
-        unreachable!("matched above");
-    };
-    drop(slots);
-    if let Some(charges) = charges
-        && charges.adopt(dec)
-    {
-        return *value;
-    }
-    process(ctx, &pairs[index], snapshot, dec)
+    scoped_try_collect(
+        pairs.len(),
+        |index, dec| process(ctx, &pairs[index], snapshot, dec).map_err(|error| (index, error)),
+        dec,
+    )
+    .map_err(|(index, error)| named(error, &pairs[index]))
 }

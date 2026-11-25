@@ -2,6 +2,7 @@
 mod common;
 
 use catallax_import::{
+    ImportRefusal,
     numerical::StepImport,
     sha256_hex,
     tolerant::{
@@ -10,7 +11,7 @@ use catallax_import::{
     },
 };
 use catallax_numbers::{Decider, with_operation_budget};
-use catallax_recipe::StepId;
+use catallax_recipe::{Role, StepId};
 use common::{BoxFixture, box_step, boxes_step, r};
 
 fn open(source: &str) -> opened::OpenedStep {
@@ -72,7 +73,27 @@ fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
     assert_eq!(opened.bodies().len(), 2);
     assert_eq!(opened.bodies()[0].tier(), Tier::ValidSolid);
     assert!(!opened.bodies()[0].approximate());
-    assert!(matches!(opened.body(0), Some(BodyView::Certified { .. })));
+    let Some(BodyView::Certified { model, body }) = opened.body(0) else {
+        panic!("the good sibling must retain its certified body");
+    };
+    let mut names = model
+        .faces_of_body(body)
+        .into_iter()
+        .flat_map(|face| model.face_origins(face))
+        .filter_map(|origin| match &origin.role {
+            Role::Imported { key } => Some(key.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let recognized = catallax_import::read_step(source.as_bytes()).unwrap();
+    let mut expected = recognized.solids[0]
+        .faces
+        .iter()
+        .map(|face| face.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(names, expected);
     assert_eq!(opened.bodies()[1].tier(), Tier::SurfaceBody);
     let Some(BodyView::Surfaces { source, .. }) = opened.body(1) else {
         panic!("source surface representation required")
@@ -80,6 +101,27 @@ fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
     let source = source.materialize(&mut Decider::default()).unwrap();
     assert_eq!(source.shells()[0].faces.len(), 5);
     assert_ne!(opened.source().bodies()[0].name(), source.name());
+}
+
+#[test]
+fn malformed_source_and_wrong_hash_keep_the_public_refusal_order() {
+    let bytes = b"not a Part 21 document";
+    let step = StepId::new("source").unwrap();
+    let mut dec = Decider::default();
+    assert!(matches!(
+        catallax_import::numerical::import_step(
+            bytes,
+            "wrong",
+            &step,
+            &Default::default(),
+            &mut dec
+        ),
+        Err(tolerant::Error::Source(ImportRefusal::HashMismatch { .. }))
+    ));
+    assert!(matches!(
+        opened::open_step(bytes, "wrong", &step, Default::default(), &mut dec),
+        Err(tolerant::Error::Source(ImportRefusal::Malformed { .. }))
+    ));
 }
 
 #[test]
@@ -128,10 +170,12 @@ fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
         &mut Decider::default(),
     )
     .unwrap();
+    let artifact = checked_artifact(&original);
+    assert_eq!(artifact.0, (6, 12, 8));
+    assert_eq!(artifact, checked_artifact(&replayed));
     for file in [&original, &replayed] {
         assert_eq!(file.bodies()[0].tier(), Tier::RepairedSolid);
         assert!(file.bodies()[0].approximate());
-        assert_eq!(checked_artifact(file).0, (6, 12, 8));
         assert_eq!(file.bodies()[1].tier(), Tier::SurfaceBody);
     }
     let retained = history(&original);

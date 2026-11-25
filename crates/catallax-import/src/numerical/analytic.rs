@@ -785,8 +785,7 @@ fn many_planar_pairs_do_not_prepay_optional_work() {
 
 pub(super) fn import(
     cap: &mut super::EdgeCap,
-    bytes: &[u8],
-    verified_sha256: &str,
+    parsed: &ParsedStep,
     refusal: ImportRefusal,
     options: &n::NumericalOptions,
     recorded: Option<&Rational>,
@@ -801,12 +800,12 @@ pub(super) fn import(
         )
         .into());
     }
-    dec.charge_work(bytes.len() as u64)?;
-    let file = crate::read_step(bytes)?;
+    dec.charge_work(parsed.byte_len())?;
+    let file = parsed.certified_view(&Decider::default())?;
     admit_definition(
         cap,
         &file,
-        verified_sha256,
+        parsed.source_sha256(),
         refusal,
         options,
         false,

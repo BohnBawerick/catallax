@@ -10,7 +10,7 @@ use catallax_recipe::StepId;
 use catallax_shapes::{Curve, Line, Plane, RPoint3, RVector3, Surface};
 use catallax_topology::{BodyId, Model, Sense, numerical as n};
 
-use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
+use crate::{ImportRefusal, RepairRecord, Solid, Vec3, geometry_source::ParsedStep};
 
 mod analytic;
 mod cones;
@@ -188,14 +188,39 @@ pub fn import_step(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
-    import_step_under(
-        &mut EdgeCap::of_the_checker(),
-        bytes,
-        expected_sha256,
-        step,
-        options,
-        dec,
-    )
+    let mut cap = EdgeCap::of_the_checker();
+    let mut import = || {
+        charge_source(bytes.len() as u64, dec)?;
+        // The byte API reads a producer record before checking the hash. Keep
+        // that order, but reuse its parse when the hash matches.
+        let written = crate::recorded::written_tolerance(bytes);
+        let document = written
+            .as_ref()
+            .map(|_| crate::part21::parse_document(bytes));
+        let recorded = written.as_ref().and_then(|written| {
+            let document = document.as_ref()?.as_ref().ok()?;
+            crate::recorded::in_graph(written, &document.graph)
+        });
+        let actual = crate::sha256_hex(bytes);
+        if actual != expected_sha256 {
+            return Err(ImportRefusal::HashMismatch {
+                expected: expected_sha256.into(),
+                actual,
+            }
+            .into());
+        }
+        let document = document.unwrap_or_else(|| crate::part21::parse_document(bytes))?;
+        let parsed = ParsedStep::from_document(document, actual, bytes.len() as u64, written);
+        import_document(&mut cap, &parsed, step, options, recorded.as_ref(), dec)
+    };
+    if operation_budget_active() {
+        return import();
+    }
+    let (result, work) = with_operation_budget(n::DEFAULT_WORK, import);
+    if work.exhausted {
+        return Err(ImportRefusal::ResourceLimit.into());
+    }
+    result
 }
 
 /// The hard work cap of each edge in one admission of a file's solids
@@ -219,48 +244,46 @@ impl EdgeCap {
     }
 }
 
-/// [`import_step`] under `cap`, which also says which solid its cap refused.
-pub(crate) fn import_step_under(
+/// Checked admission of the document already verified by tolerant open.
+pub(crate) fn import_document_under(
     cap: &mut EdgeCap,
-    bytes: &[u8],
-    expected_sha256: &str,
+    parsed: &ParsedStep,
     step: &StepId,
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
-    if operation_budget_active() {
-        return import_inner(cap, bytes, expected_sha256, step, options, dec);
-    }
-    let (result, work) = with_operation_budget(n::DEFAULT_WORK, || {
-        import_inner(cap, bytes, expected_sha256, step, options, dec)
-    });
-    if work.exhausted {
-        return Err(ImportRefusal::ResourceLimit.into());
-    }
-    result
+    // Keep the admission allowance and refusal boundary even though the bytes
+    // have already been verified. No second hash or parse is performed.
+    charge_source(parsed.byte_len(), dec)?;
+    let recorded = parsed.recorded_tolerance_for_recognition();
+    import_document(cap, parsed, step, options, recorded.as_ref(), dec)
 }
 
-fn import_inner(
-    cap: &mut EdgeCap,
-    bytes: &[u8],
-    expected_sha256: &str,
-    step: &StepId,
-    options: &n::NumericalOptions,
-    dec: &mut Decider,
-) -> Result<StepImport, ImportError> {
-    // Verification is part of this request, including a mismatch that would
-    // otherwise return before any geometry work. Do not hash an unmetered slice.
-    dec.charge_work(bytes.len() as u64).map_err(|refusal| {
+fn charge_source(bytes: u64, dec: &mut Decider) -> Result<(), ImportError> {
+    dec.charge_work(bytes).map_err(|refusal| {
         if catallax_numbers::current_operation_work().exhausted {
             ImportError::Source(ImportRefusal::ResourceLimit)
         } else {
             ImportError::Numerical(refusal)
         }
-    })?;
+    })
+}
+
+fn import_document(
+    cap: &mut EdgeCap,
+    parsed: &ParsedStep,
+    step: &StepId,
+    options: &n::NumericalOptions,
+    recorded: Option<&crate::recorded::RecordedTolerance>,
+    dec: &mut Decider,
+) -> Result<StepImport, ImportError> {
+    let expected_sha256 = parsed.source_sha256();
+    let recorded = recorded.map(|record| &record.tolerance_mm);
     let mut model = Model::new();
-    let recorded = crate::recorded::recorded_tolerance(bytes);
-    let recorded = recorded.as_ref().map(|record| &record.tolerance_mm);
-    let strict_refusal = match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
+    let strict = parsed
+        .certified_view(&Decider::default())
+        .and_then(|file| crate::consume::build_step_file(&mut model, &file, step));
+    let strict_refusal = match strict {
         Ok(bodies) => {
             return Ok(StepImport::Certified(Box::new(CertifiedImport {
                 model,
@@ -268,14 +291,14 @@ fn import_inner(
                 source_sha256: expected_sha256.to_owned(),
             })));
         }
-        Err(error) if cones::eligible(bytes, &error, dec)? => {
-            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
+        Err(error) if cones::eligible(parsed, &error, dec)? => {
+            return analytic::import(cap, parsed, error, options, recorded, dec);
         }
         Err(error @ ImportRefusal::NotSolid { .. }) if matches!(&error, ImportRefusal::NotSolid { detail } if detail.contains("exactly")) => {
             error
         }
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
+            return analytic::import(cap, parsed, error, options, recorded, dec);
         }
         Err(error) => return Err(error.into()),
     };
@@ -290,17 +313,9 @@ fn import_inner(
         )
         .into());
     }
-    let file = crate::read_step(bytes)?;
+    let file = parsed.certified_view(&Decider::default())?;
     if cones::in_file(&file, None, dec)? {
-        return analytic::import(
-            cap,
-            bytes,
-            expected_sha256,
-            strict_refusal,
-            options,
-            recorded,
-            dec,
-        );
+        return analytic::import(cap, parsed, strict_refusal, options, recorded, dec);
     }
     let imported = match crate::repair::apply_file(
         &mut Model::new(),
@@ -313,11 +328,11 @@ fn import_inner(
         None,
     ) {
         Ok(imported) => imported,
-        Err(error) if cones::eligible(bytes, &error, dec)? => {
-            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
+        Err(error) if cones::eligible(parsed, &error, dec)? => {
+            return analytic::import(cap, parsed, error, options, recorded, dec);
         }
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
+            return analytic::import(cap, parsed, error, options, recorded, dec);
         }
         Err(error) => return Err(error.into()),
     };

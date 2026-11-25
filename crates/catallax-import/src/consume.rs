@@ -34,8 +34,16 @@ pub fn import_step_bodies(
             actual,
         });
     }
+    build_step_file(model, &read_step(bytes)?, step)
+}
+
+pub(crate) fn build_step_file(
+    model: &mut Model,
+    file: &crate::StepFile,
+    step: &StepId,
+) -> Result<Vec<BodyId>, ImportRefusal> {
     let mut candidate = model.clone();
-    let bodies = build_file(&mut candidate, &read_step(bytes)?, Some(step))?;
+    let bodies = build_file(&mut candidate, file, Some(step))?;
     if catallax_numbers::current_operation_work().exhausted {
         return Err(ImportRefusal::ResourceLimit);
     }

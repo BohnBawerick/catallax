@@ -1741,6 +1741,7 @@ impl<'a> Exporter<'a> {
             references,
             pmi,
             &nominals,
+            self.dec,
         )
     }
 

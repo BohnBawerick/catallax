@@ -162,18 +162,25 @@ Every `ADVANCED_FACE` of a PMI file carries the name `face-<index>-<n>`, and
 | a thread | a user defined attribute `thread` with the designation, such as `M6x1 - 6H`, on the feature its diameter is on (`Size::thread`). AP242 edition 1 has no thread entity. Only a diameter is threaded, and the designation is plain text of at most 40 characters |
 | a geometric tolerance | the characteristic's entity. A characteristic that always has datums, such as perpendicularity, is a subtype of `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and stays a plain instance; position or a profile with datums, and any tolerance with a material condition, is a complex instance with `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and `GEOMETRIC_TOLERANCE_WITH_MODIFIERS`; one `DATUM_SYSTEM` per datum sequence; a diameter zone is a `TOLERANCE_ZONE` of form `cylindrical or circular` |
 | a surface texture | `SURFACE_TEXTURE_REPRESENTATION` with the parameter as a measure in micrometres, under a `surface_condition` property of the feature whose description is the process condition |
+| a surface texture's drawing | a `DRAUGHTING_CALLOUT` named after the item: polylines in a `GEOMETRIC_CURVE_SET` named `surface roughness` that draw a leader to a point on the faces, the ISO 1302 symbol of the process condition and the requirement, such as `Ra 1.6`, in stroked 3 mm text. Every callout lies in one `ANNOTATION_PLANE` facing the front (text along +x, up along +z) in one `DRAUGHTING_MODEL`. A `DRAUGHTING_MODEL_ITEM_ASSOCIATION` ties the callout to a `SHAPE_ASPECT` of its own on the texture's faces, not to the feature's shared aspect |
+| validation properties | `pmi validation property` properties (recommended practices, section 10). On the product definition shape: the number of semantic PMI elements, of dimensional locations, dimensional sizes, geometric tolerances, composite tolerances, datums, datum targets and annotations. On each `DATUM` and `DIMENSIONAL_LOCATION`: its equivalent Unicode string, such as `DTM\wA` or `DIM\w15±0.1`. On each callout, through a `CHARACTERIZED_ITEM_WITHIN_REPRESENTATION`: its equivalent Unicode string, such as `SRFMRRN\w\w\w\wRa 1.6`, its polyline curve length and its polyline centre point. AP242 edition 1, the edition the file declares, allows no property on a `DIMENSIONAL_SIZE` or a geometric tolerance, so those have none |
 | an item's name | `ID_ATTRIBUTE`, or the name of a geometric tolerance |
 | part notes | user defined attributes of the product definition named `general tolerance`, `material` and `note 1`, `note 2`, ... |
 
 A file with items also declares ISO 1101 as its dimensioning standard through an
 `APPLIED_DOCUMENT_REFERENCE`.
 
-The NIST STEP File Analyzer 5.54 reports no error on the P1 bracket file.
-OpenCASCADE 7.9 and 8.0 read its datums, dimensions and geometric tolerances and
-the part notes. They have no reader for `SURFACE_TEXTURE_REPRESENTATION`, so a
-surface texture does not reach an OpenCASCADE application. The recommended
-practices allow only `theoretical` and `auxiliary` as a dimension's note, so the
-texture is not repeated there.
+The NIST STEP File Analyzer 5.54 reported no error on the P1 bracket file before
+the callout and the validation properties were added. The file has not been
+through it since. OpenCASCADE 7.9 and 8.0 read its datums, dimensions and
+geometric tolerances and the part notes. They have no reader for
+`SURFACE_TEXTURE_REPRESENTATION`. OpenCASCADE 8.0 reads the texture's callout as
+a `DimensionPresentation` on the bore, with its lines and annotation plane, so
+the finish reaches an OpenCASCADE application as a drawing without a semantic
+value. With the callout on the bore's shared aspect, OpenCASCADE would merge it
+into the bore's diameter instead, so the callout has an aspect of its own. The
+recommended practices allow only `theoretical` and `auxiliary` as a dimension's
+note, so the texture is not repeated there.
 
 | Code | When |
 | --- | --- |

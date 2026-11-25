@@ -175,6 +175,24 @@ refusal. A valid but over-tolerance spline fit must still answer with its mark.
 `refusals.rs` separately checks unchanged upstream refusal details. The architect
 owns the corresponding piece-description changes.
 
+### Manufacturing information
+
+`tests/pmi.rs` writes the P1 bracket's fourteen items, expanded to 26 file
+items, with `write_step_with_pmi`. It reads them back with
+`catallax_import::read_step_pmi` on the same faces and checks that the geometry
+matches the plain writer's. It also checks the validation properties: the eight
+part counts, the equivalent Unicode strings of the datums and distances, and
+none on a size. It checks that the bore finish's callout hangs on an aspect of
+its own whose only use names the bore. The test asserts that the leader starts on
+the bore cylinder and that every line lies in one plane parallel to the front
+annotation plane. The stated polyline length and centre must match the written
+lines. Each of the three process conditions writes its own Unicode string and
+symbol, with a leader that ends on a vertex of the base. Set
+`CATALLAX_PMI_OUT` to keep the bracket file for another reader. OpenCASCADE 8.0
+reads that file's datums, dimensions, tolerances and notes on the same faces as
+before, plus the finish as a presentation on the bore. That check runs in
+SolidDraft's CI, not here.
+
 ## Exact oracles
 
 `verify_exact.py` uses Python's standard-library `fractions.Fraction` only. It independently checks the 170-entity count, the squared rounding-distance bound `1/30000000000`, the large-coordinate error `10^13/3`, a rational alternating-series enclosure of `atan(3/4)`, the two adjacent decimals around `sqrt(2)`, the named quaternion matrix and the intersection equations.

@@ -186,7 +186,7 @@ pub fn write_step<W: Write>(
     let answer = build_part(model, bodies, options, None, dec)?;
     let report = answer
         .value
-        .write(&options.product_name, options.seams, out)?;
+        .write(&options.product_name, options.seams, dec, out)?;
     Ok(catallax_numbers::Answer {
         value: report,
         marks: answer.marks,
@@ -217,7 +217,7 @@ pub fn write_step_with_pmi<W: Write>(
     let answer = build_part(model, &[body], options, Some(pmi), dec)?;
     let report = answer
         .value
-        .write(&options.product_name, options.seams, out)?;
+        .write(&options.product_name, options.seams, dec, out)?;
     Ok(catallax_numbers::Answer {
         value: report,
         marks: answer.marks,
@@ -401,7 +401,7 @@ pub fn write_stand_in_step<W: Write>(
     let answer = export::Exporter::new(model, options, dec).build_stand_in(envelope, bodies)?;
     let report = answer
         .value
-        .write(&options.product_name, options.seams, out)?;
+        .write(&options.product_name, options.seams, dec, out)?;
     Ok(catallax_numbers::Answer {
         value: report,
         marks: answer.marks,

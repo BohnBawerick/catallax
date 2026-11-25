@@ -1,12 +1,19 @@
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
-use catallax_features::{CertifiedBuilt, evaluate_certified};
-use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, StrictSign, with_operation_budget};
+use catallax_features::{CertifiedBuilt, evaluate, evaluate_certified};
+use catallax_numbers::{
+    Answered, Ball, Decider, Outcome, Rational, Real, StrictSign, TestDeadline, TestDeadlinePoint,
+    with_operation_budget,
+};
 use catallax_recipe::Recipe;
 use catallax_shapes::{BSplineCurve, BSplineSurface, Point3, Vector3};
 
 use super::{cartesian, entities, fields, q, references, step_real};
-use crate::{CertifiedSplineStepOptions, write_spline_prism_step};
+use crate::{
+    CertifiedSplineStepOptions, StepOptions, StepReport, write_spline_prism_step, write_step,
+};
 
 fn build(dec: &mut Decider) -> Result<CertifiedBuilt, Box<dyn std::error::Error>> {
     let recipe = Recipe::parse(
@@ -333,4 +340,63 @@ fn coarse_rounding_refuses_instead_of_widening_accuracy_or_publishing_partial_ge
     eprintln!("certified coarse STEP request: {work:?}");
     result.unwrap();
     assert!(!work.exhausted);
+}
+
+std::thread_local! {
+    static RENDER_DEADLINE: Cell<Option<Rc<TestDeadline>>> = const { Cell::new(None) };
+}
+
+pub(crate) fn expire_deadline_during_render() {
+    if let Some(clock) = RENDER_DEADLINE.take() {
+        clock.expire();
+    }
+}
+
+fn refuses_render_deadline(write: impl FnOnce(&mut Decider, &mut Vec<u8>) -> Answered<StepReport>) {
+    let clock = Rc::new(TestDeadline::after(TestDeadlinePoint::Work, usize::MAX));
+    let mut dec = Decider::default();
+    dec.set_deadline(Some(clock.instant()));
+    assert!(RENDER_DEADLINE.replace(Some(Rc::clone(&clock))).is_none());
+    let mut bytes = b"existing sink contents".to_vec();
+    let result = write(&mut dec, &mut bytes);
+    clock.assert_expired();
+    assert!(
+        bytes == b"existing sink contents",
+        "writer changed the sink"
+    );
+    let refusal = result.unwrap_err();
+    assert_eq!(refusal.code, "numbers.deadline");
+    assert_eq!(refusal.detail, "operation deadline passed");
+}
+
+#[test]
+fn spline_prism_refuses_render_deadline() {
+    let built = build(&mut Decider::default()).unwrap();
+    refuses_render_deadline(|dec, out| {
+        write_spline_prism_step(
+            &built.built().model,
+            built.built().result,
+            &CertifiedSplineStepOptions::default(),
+            dec,
+            out,
+        )
+    });
+}
+
+#[test]
+fn drafted_cylinder_refuses_render_deadline() {
+    let recipe = Recipe::parse(include_str!(
+        "../../../catallax-features/tests/fixtures/draft-oblique.json"
+    ))
+    .unwrap();
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    refuses_render_deadline(|dec, out| {
+        write_step(
+            &built.model,
+            &[built.result],
+            &StepOptions::default(),
+            dec,
+            out,
+        )
+    });
 }

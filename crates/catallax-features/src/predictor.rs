@@ -15,7 +15,7 @@
 //! 1% of the operation." The charge at which it is taken is a count of work
 //! units, the same on every machine and at every thread count.
 //!
-//! The design is `docs/research/cp2-grill/predictor-research.md`, design (e):
+//! The design is `docs/archive/research/cp2-grill/predictor-research.md`, design (e):
 //! a prediction sets the cap and a deterministic limit enforces it (Purohit,
 //! Svitkina and Kumar, "Improving online algorithms via ML predictions",
 //! NeurIPS 2018). No kernel read for that note predicts the cost of a whole

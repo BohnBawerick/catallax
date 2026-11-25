@@ -1,6 +1,0 @@
-## 2026-11-21: contour generators of curved faces
-
-Pieces: application (`catallax_app::views`).
-Change: new module `catallax_app::views` with `contour_generators` and `ApplicationBody::contour_generators`. For a direction toward the viewer they return `Contours`: an owned model and one `ContourArc` per trimmed generator, with its face, its exact carrier, its exact ends and every face it lies on. Cylinders, cones, spheres and elliptic cylinders answer exactly. Tori and spline faces refuse the whole query with `app.contour-surface`; a zero direction refuses with `app.contour-direction`.
-Why: milestone 3.1 needs silhouettes on curved solids. A quadric's contour generator under parallel projection is its section by the polar plane of the view direction, so each face's generators come from the exact surface-plane intersection, cut by the face's own boundary, instead of display triangles.
-Migration: none; the API is additive and `queries::silhouette` is unchanged. Arcs carry no visibility and are not split where they cross in projection. Hiding comes with the hidden-line view. An arc with more than one entry in `on_faces` runs along an existing edge, such as the tangent edge between a cylinder and a flat wall.

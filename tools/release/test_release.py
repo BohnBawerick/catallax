@@ -261,8 +261,8 @@ class ReleaseSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.1"\n')
-            (root / "docs/milestones").mkdir(parents=True)
-            (root / "docs/milestones/M1.md").write_text("# M1\n")
+            (root / "docs/archive/milestones").mkdir(parents=True)
+            (root / "docs/archive/milestones/M1.md").write_text("# M1\n")
 
             def git(*args):
                 subprocess.run(["git", *args], cwd=root, check=True,

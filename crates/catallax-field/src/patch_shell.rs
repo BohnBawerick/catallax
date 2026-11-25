@@ -16,7 +16,7 @@
 //!
 //! Imported rectangular trims are held as extracted whole patches.
 //!
-//! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
+//! [Checkpoint 2 decisions, section 4.6]: ../../../docs/archive/checkpoints/checkpoint-2-decisions.md
 
 use crate::spline_spine::exact;
 

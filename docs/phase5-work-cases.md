@@ -1,17 +1,15 @@
 # Phase-5 work cases
 
-The application allows 100M until phase 5; the target remains 20M. These completed
-edits exceed the target and retain their measured stage work for later speed work.
-No optimisation is part of their capability qualification.
+These are recorded measurements, most under a 100 million work-unit allowance. Use them as inputs to phase 5 profiling, not as current application limits. The [roadmap](../ROADMAP.md) keeps 20 million as a flag for slow edits and display.
 
 | Case | Result | Work used | Evidence |
 |---|---|---:|---|
-| M10-004 | builds at 100M, over the 20M target | 26,777,693 | [Stage work and raw STEP checks](phase1/spline-boolean-top-cuts/REPORT.md) |
-| M10-005 | builds at 100M, over the 20M target | 27,289,073 | [Stage work and raw STEP checks](phase1/spline-boolean-top-cuts/REPORT.md) |
-| M10-006 | builds at 100M, over the 20M target | 25,945,726 | [Stage work and raw STEP checks](phase1/spline-boolean-top-cuts/REPORT.md) |
+| M10-004 | builds at 100M, over the 20M target | 26,777,693 | [Stage work and raw STEP checks](archive/phase1/spline-boolean-top-cuts/REPORT.md) |
+| M10-005 | builds at 100M, over the 20M target | 27,289,073 | [Stage work and raw STEP checks](archive/phase1/spline-boolean-top-cuts/REPORT.md) |
+| M10-006 | builds at 100M, over the 20M target | 25,945,726 | [Stage work and raw STEP checks](archive/phase1/spline-boolean-top-cuts/REPORT.md) |
 | 2.3 spline sheet, trim, extension, +2/5 mm thickening and STEP | builds at 100M, over the 20M target | 29,145,161 | [Signed STEP and healing-off OCCT receipts](SURFACE-BODIES.md#reproduction-and-observed-proof) |
 | 2.3 same chain, -2/5 mm thickening | builds at 100M, over the 20M target | 29,142,981 | [Signed STEP and healing-off OCCT receipts](SURFACE-BODIES.md#reproduction-and-observed-proof) |
-| 3.3 relation: small torus turned 30 degrees in a large torus's hole | clear, 5.75 mm, at 100M, over the 20M target | 32,412,021 | Overlap Boolean 0.4M, closed-form gap search 26.0M, proven stationary pairs 6.0M; [3.3 step 3 results](milestones/3.3-clash-clearance.md#results-2) |
+| 3.3 relation: small torus turned 30 degrees in a large torus's hole | clear, 5.75 mm, at 100M, over the 20M target | 32,412,021 | Overlap Boolean 0.4M, closed-form gap search 26.0M, proven stationary pairs 6.0M; [3.3 step 3 results](archive/milestones/3.3-clash-clearance.md#results-2) |
 
 The 2.3 counts cover each complete construction/export request; individual stage
 counts were not profiled. Both signed solids pass raw OpenCASCADE validity with
@@ -57,7 +55,7 @@ The proxy's later edit was not attempted after its fillet refusal. The actual
 frozen curved-housing recipe is `tools/checkpoint/phase2/curved-housing.json`.
 The loft regression preserves the bounded-refusal contract. Successful edits
 must keep face, edge and vertex names and pass independent geometry checks.
-See the [numerical method and final-admission split](research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-body-and-raw-step).
+See the [numerical method and final-admission split](archive/research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-body-and-raw-step).
 
 Historical cases retained for phase 5: the 1e-4 mm carrier/cap-only request
 took 29,335,696 work, and exact offset proof across atlas seams on
@@ -490,7 +488,7 @@ STEP export, which re-admits the rounded decimals of every face, is over it.
 Since check once (roadmap 3.0A step 5) the export writes the numbers and does
 not admit them again: the R2 rim's export costs 363,114 work, and reopening
 its file 11,491,278 where it took 1,085,655,205. See
-[the check-once note](milestones/3.0A-check-once.md).
+[the check-once note](archive/milestones/3.0A-check-once.md).
 A box with all twelve edges rounded stays exact at 9,467 to 13,195 work.
 
 ## Round-wire helical sweeps
@@ -517,18 +515,16 @@ on the existing mesher. Their acceptance belongs to the 3.5 coil pin bump.
 
 ## Work carried from the v0.5.0 cut
 
-[Checkpoint 4](checkpoints/checkpoint-4.md#scoreboard-work-above-20m) lists every
+[Checkpoint 4](archive/checkpoints/checkpoint-4.md#scoreboard-work-above-20m) lists every
 measured scoreboard phase above 20M, with construction and edit kept separate.
-[Phase 5.1](../ROADMAP.md#display-mesher-work) carries the display work and
-size targets moved from 3.5. The recorded P6 print and spline fillet compares
-also belong to speed work.
+Use step 5.1 of the [roadmap](../ROADMAP.md) to profile display, including the P6 print and the spline fillet comparisons below.
 
 | Case | Charged work | Evidence |
 |---|---:|---|
-| P6 reference lattice STL at 0.01 mm | 80,742,140 | [Print, mesh and cavity checks](milestones/4.3-printing.md#p6-at-001-mm) |
-| M27 loft forward compare | 36,448,251 | [Field proof, B-rep fit and forward queries](M42A-FIELD-FILLETS.md#forward-display-comparison) |
-| Next M11 loft forward compare | 63,995,055 | [Field proof, B-rep fit and forward queries](M42A-FIELD-FILLETS.md#forward-display-comparison) |
-| M11 biquadratic carrier forward compare | 72,210,076 | [Field proof, B-rep fit and forward queries](M42A-FIELD-FILLETS.md#forward-display-comparison) |
+| P6 reference lattice STL at 0.01 mm | 80,742,140 | [Print, mesh and cavity checks](archive/milestones/4.3-printing.md#p6-at-001-mm) |
+| M27 loft forward compare | 36,448,251 | [Field proof, B-rep fit and forward queries](archive/M42A-FIELD-FILLETS.md#forward-display-comparison) |
+| Next M11 loft forward compare | 63,995,055 | [Field proof, B-rep fit and forward queries](archive/M42A-FIELD-FILLETS.md#forward-display-comparison) |
+| M11 biquadratic carrier forward compare | 72,210,076 | [Field proof, B-rep fit and forward queries](archive/M42A-FIELD-FILLETS.md#forward-display-comparison) |
 
 The three compare counts are historical and predate basis-table and cap-normal
 charging. They cover the recorded forward samples. The two loft whole-body

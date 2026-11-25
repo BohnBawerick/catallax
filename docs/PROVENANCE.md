@@ -23,4 +23,4 @@ Review the resolved dependency licences when distributing binaries or native tes
 
 ## Publication boundary
 
-The public export omits operational infrastructure and internal comparison/replay records. It keeps code, mathematical tests and their useful technical descriptions. Research notes are published separately under [research/](research/), retaining source links and uncertainty labels. A cited paper is linked rather than republished as extracted full text.
+The public export omits operational infrastructure and internal comparison/replay records. It keeps code, mathematical tests and their useful technical descriptions. Research notes are published separately under [research/](archive/research/), retaining source links and uncertainty labels. A cited paper is linked rather than republished as extracted full text.

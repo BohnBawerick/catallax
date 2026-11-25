@@ -7,6 +7,10 @@ description: Drive Catallax's deterministic CLI to verify questions, recipe buil
 
 Read [the feature map](references/features/README.md), then choose the relevant entry. The protocol is [VERIFY-INTERFACE.md](../../../docs/VERIFY-INTERFACE.md).
 
+Read the [shared roadmap](../../../ROADMAP.md) and [glossary](../../../docs/GLOSSARY.md) for the current plan and terms.
+
+Do not read `docs/archive/` unless asked for history.
+
 ## Launch
 
 From the repository root, run `cargo build --release -p catallax-cli --bins -j 2`. Use `nice -n 10` on a shared machine. The binary is `target/release/catallax-verify`. The executable driver is `.claude/skills/verify-catallax/scripts/control-catallax.py`; run it with `--help` and a subcommand's `--help` for the complete command reference. Python 3.11 or newer and Linux `taskset` are required for the documented timing workflow.

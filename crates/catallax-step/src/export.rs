@@ -2032,6 +2032,7 @@ impl<'a> Exporter<'a> {
             items: solids,
             description,
             report: self.report,
+            check_publish_deadline: false,
         });
         if self.approximate_pipe_ends {
             // The value is a category flag, not an invented distance bound.

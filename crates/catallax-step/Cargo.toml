@@ -19,6 +19,7 @@ catallax-boolean.workspace = true
 catallax-measure.workspace = true
 catallax-features.workspace = true
 catallax-import.workspace = true
+catallax-numbers = { workspace = true, features = ["test-deadline"] }
 serde_json = "1"
 
 [features]

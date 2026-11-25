@@ -446,6 +446,10 @@ How the bounds are proven is the creator's choice. A method that fits: bound the
 
 This piece counts its `Ball` work as piece 6 does: one operation at working precision `p` costs `ceil(p / 64)^2` units, and it never uses more than the `Decider` policy's `max_precision_bits` or `max_work` on one curve or surface. Exact values it rounds (vertex positions, irrational centres and radii) are enclosed through `Decider::enclose` and `GeomStore::enclose_point`, which refuse after the deadline. So after the deadline an export refuses with `numbers.deadline` at its first such call and writes nothing, and one that needs none may finish (ARCHITECTURE.md, "The time budget").
 
+The certified spline-prism and drafted-cylinder writers also check the deadline
+after rendering and before publishing. This last check does not charge the
+operation's work allowance.
+
 The export refuses with `step.budget-exhausted` and writes nothing when the budget allows no proven bound on something the file needs. Two examples are `atan(slope)` for a cone under `max_work = 0`, and a spline fit to a branch whose first bound needs more work than is left. It also refuses when an enclosure is too wide to write a number within one unit in its last written place. A spline fit whose proven bound misses `curve_tolerance` is not refused: it is written with the mark `step.tolerance-not-reached` (The deviation). The export never builds a `numbers.*` refusal of its own; those come only from piece 1's calls.
 
 ## Writing

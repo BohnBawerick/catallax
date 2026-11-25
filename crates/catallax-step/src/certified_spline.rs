@@ -638,7 +638,7 @@ pub fn write_spline_prism_step<W: Write>(
     )?;
     let report = answer
         .value
-        .write(&options.product_name, crate::Seams::Legacy, out)?;
+        .write(&options.product_name, crate::Seams::Legacy, dec, out)?;
     Ok(Answer {
         value: report,
         marks: answer.marks,
@@ -900,6 +900,7 @@ fn build_rounded(
         references: preamble.references,
         items,
         description: &["catallax export"],
+        check_publish_deadline: true,
         report: StepReport {
             max_deviation: hole.map_or(rounded.bound.clone(), |hole| {
                 rounded.bound.max(hole.rounded.bound)

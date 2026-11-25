@@ -14,6 +14,8 @@ use crate::{StepOptions, StepReport, write_step};
 mod certified_spline;
 mod reader_floor;
 
+pub(crate) use certified_spline::expire_deadline_during_render;
+
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }

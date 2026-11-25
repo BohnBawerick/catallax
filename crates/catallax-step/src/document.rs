@@ -1,6 +1,6 @@
 //! Shared AP242 product and representation declarations.
 
-use catallax_numbers::Refusal;
+use catallax_numbers::{Decider, Refusal};
 
 use crate::StepReport;
 use crate::graph::{Field, Graph, Id, Layout, refs, string, text};
@@ -263,6 +263,8 @@ pub(crate) fn render(graph: &Graph, layout: &Layout, name: &str, description: &[
         "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(({description}),'2;1');\nFILE_NAME({filename},'1970-01-01T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {{ 1 0 10303 442 1 1 4 }}'));\nENDSEC;\nDATA;\n"
     );
     let mut file = graph.write_layout(layout, header);
+    #[cfg(test)]
+    crate::tests::expire_deadline_during_render();
     file.push_str(FILE_END);
     file
 }
@@ -274,6 +276,7 @@ pub(crate) struct PartDocument {
     pub(crate) items: Vec<Id>,
     pub(crate) description: &'static [&'static str],
     pub(crate) report: StepReport,
+    pub(crate) check_publish_deadline: bool,
 }
 
 impl PartDocument {
@@ -285,11 +288,15 @@ impl PartDocument {
         self,
         name: &str,
         seams: crate::Seams,
+        dec: &Decider,
         out: &mut impl std::io::Write,
     ) -> Result<StepReport, Refusal> {
         let file = self.file(name);
         if seams == crate::Seams::Required {
             crate::seams::check(&file)?;
+        }
+        if self.check_publish_deadline {
+            dec.check_deadline_if_set()?;
         }
         out.write_all(file.as_bytes())
             .map_err(|error| Refusal::new("step.io-error", error.to_string()))?;

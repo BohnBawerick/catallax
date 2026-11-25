@@ -16,7 +16,9 @@
 mod measure;
 mod write;
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
@@ -473,137 +475,259 @@ fn positive(value: &Rational) -> bool {
     *value > Rational::zero()
 }
 
-/// A datum letter is one or two capital letters.
-pub(crate) fn datum_letter(letter: &str) -> bool {
-    (1..=2).contains(&letter.len()) && letter.bytes().all(|b| b.is_ascii_uppercase())
+/// Why one item did not pass validation. The caller supplies its name or
+/// source entity when reporting the error.
+#[derive(Debug)]
+pub enum ItemError<'a> {
+    /// The name already belongs to an item in this part.
+    DuplicateName,
+    /// The letter already belongs to an accepted datum.
+    DuplicateDatum(&'a str),
+    /// An accepted datum already names this set of faces.
+    DuplicateDatumFeature,
+    /// The tolerance references a letter that no accepted datum defines.
+    UndefinedDatum(&'a str),
+    /// Another item rule did not pass.
+    Rule(&'static str),
 }
 
-impl<F: Ord + Clone> Pmi<F> {
+impl fmt::Display for ItemError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateName => f.write_str("the name is used twice"),
+            Self::DuplicateDatum(letter) => write!(f, "datum {letter} is defined twice"),
+            Self::DuplicateDatumFeature => f.write_str("the feature already carries a datum"),
+            Self::UndefinedDatum(letter) => write!(f, "datum {letter} is not defined"),
+            Self::Rule(reason) => f.write_str(reason),
+        }
+    }
+}
+
+impl<F> Datum<F> {
+    /// An authored datum letter is one or two capital letters.
+    pub fn validate_letter(&self) -> Result<(), ItemError<'static>> {
+        if (1..=2).contains(&self.letter.len())
+            && self.letter.bytes().all(|b| b.is_ascii_uppercase())
+        {
+            Ok(())
+        } else {
+            Err(ItemError::Rule(
+                "a datum letter is one or two capital letters",
+            ))
+        }
+    }
+}
+
+/// Item validation against the names and datums accepted for one part.
+pub struct PartValidator<'a, F> {
+    names: BTreeSet<Cow<'a, str>>,
+    letters: BTreeSet<&'a str>,
+    datum_features: BTreeSet<Vec<&'a F>>,
+}
+
+impl<F> Default for PartValidator<'_, F> {
+    fn default() -> Self {
+        Self {
+            names: BTreeSet::new(),
+            letters: BTreeSet::new(),
+            datum_features: BTreeSet::new(),
+        }
+    }
+}
+
+impl<'a, F: Ord> PartValidator<'a, F> {
+    /// Gives an accepted import item a name, adding a suffix on collision.
+    pub fn assign_name(&mut self, base: String) -> String {
+        let name = if self.names.contains(base.as_str()) {
+            (2..)
+                .map(|copy| format!("{base} ({copy})"))
+                .find(|name| !self.names.contains(name.as_str()))
+                .expect("a finite part has an unused name")
+        } else {
+            base
+        };
+        self.names.insert(Cow::Owned(name.clone()));
+        name
+    }
+
+    /// Checks for conflicts with accepted datums. The letter and face set are
+    /// registered together or not at all. The caller checks the datum's local
+    /// rules first, since a reader can retain a letter the writer cannot emit.
+    pub fn accept_datum(&mut self, datum: &'a Datum<F>) -> Result<(), ItemError<'a>> {
+        let letter = datum.letter.as_str();
+        if self.contains_datum(letter) {
+            return Err(ItemError::DuplicateDatum(letter));
+        }
+        if !self.datum_features.insert(feature_key(&datum.feature)) {
+            return Err(ItemError::DuplicateDatumFeature);
+        }
+        self.letters.insert(letter);
+        Ok(())
+    }
+
+    /// Whether the part has accepted a datum with this letter.
+    pub fn contains_datum(&self, letter: &str) -> bool {
+        self.letters.contains(letter)
+    }
+
+    /// Checks an item's features and values against the accepted datums.
+    pub fn check_kind<'item>(&self, kind: &'item ItemKind<F>) -> Result<(), ItemError<'item>> {
+        check_features(kind)?;
+        self.check_values(kind)
+    }
+
+    fn check_values<'item>(&self, kind: &'item ItemKind<F>) -> Result<(), ItemError<'item>> {
+        use ItemError::Rule;
+        match kind {
+            ItemKind::Datum(_) => {}
+            ItemKind::Size(size) => {
+                if size.features.is_empty() {
+                    return Err(Rule("the size names no feature"));
+                }
+                if size.through && size.kind != SizeKind::Diameter {
+                    return Err(Rule("only a diameter goes through"));
+                }
+                if let Some(thread) = &size.thread {
+                    if size.kind != SizeKind::Diameter {
+                        return Err(Rule("only a diameter is threaded"));
+                    }
+                    // A designation such as `M6x1 - 6H`: plain text a STEP
+                    // string holds as it stands.
+                    let plain = !thread.trim().is_empty()
+                        && thread.len() <= 40
+                        && thread.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+                        && !thread.contains(['\'', '\\']);
+                    if !plain {
+                        return Err(Rule("the thread's designation is not plain text"));
+                    }
+                }
+                check_limits(size.limits.as_ref())?;
+            }
+            ItemKind::Location(location) => {
+                let from = &location.from.feature;
+                let to = &location.to.feature;
+                if location.from.at == location.to.at
+                    && from.len() == to.len()
+                    && (from == to || feature_key(from) == feature_key(to))
+                {
+                    return Err(Rule("the distance starts and ends on one feature"));
+                }
+                for anchor in [&location.from, &location.to] {
+                    if anchor.at == At::Middle && anchor.feature.len() != 2 {
+                        return Err(Rule("the middle is taken between two faces"));
+                    }
+                }
+                check_limits(location.limits.as_ref())?;
+            }
+            ItemKind::Tolerance(tolerance) => {
+                if tolerance.features.is_empty() {
+                    return Err(Rule("the tolerance names no feature"));
+                }
+                if !positive(&tolerance.value) {
+                    return Err(Rule("the tolerance value must be more than zero"));
+                }
+                if tolerance.datums.len() > 3 {
+                    return Err(Rule("a tolerance refers to at most three datums"));
+                }
+                for (index, letter) in tolerance.datums.iter().enumerate() {
+                    if tolerance.datums[..index].contains(letter) {
+                        return Err(Rule("a datum is referred to twice"));
+                    }
+                }
+                for letter in &tolerance.datums {
+                    if !self.contains_datum(letter) {
+                        return Err(ItemError::UndefinedDatum(letter));
+                    }
+                }
+                match (tolerance.characteristic.datum_use(), tolerance.datums.len()) {
+                    (DatumUse::None, 1..) => {
+                        return Err(Rule("a form tolerance refers to no datum"));
+                    }
+                    (DatumUse::Required, 0) => {
+                        return Err(Rule("the tolerance needs a datum"));
+                    }
+                    _ => {}
+                }
+            }
+            ItemKind::Texture(texture) => {
+                if texture.parameter.is_empty()
+                    || !texture.parameter.bytes().all(|b| b.is_ascii_alphanumeric())
+                {
+                    return Err(Rule("the roughness parameter is letters and digits"));
+                }
+                if !positive(&texture.value) {
+                    return Err(Rule("the roughness value must be more than zero"));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn feature_key<F: Ord>(faces: &[F]) -> Vec<&F> {
+    let mut key: Vec<_> = faces.iter().collect();
+    key.sort_unstable();
+    key
+}
+
+fn check_features<F: Ord>(kind: &ItemKind<F>) -> Result<(), ItemError<'static>> {
+    fn check<F: Ord>(feature: &Feature<F>) -> Result<(), ItemError<'static>> {
+        match feature.len() {
+            0 => Err(ItemError::Rule("a feature has no face")),
+            1 => Ok(()),
+            _ => {
+                let mut unique = BTreeSet::new();
+                if feature.iter().all(|face| unique.insert(face)) {
+                    Ok(())
+                } else {
+                    Err(ItemError::Rule("a feature names a face twice"))
+                }
+            }
+        }
+    }
+    match kind {
+        ItemKind::Datum(datum) => check(&datum.feature),
+        ItemKind::Size(size) => size.features.iter().try_for_each(check),
+        ItemKind::Location(location) => {
+            check(&location.from.feature)?;
+            check(&location.to.feature)
+        }
+        ItemKind::Tolerance(tolerance) => tolerance.features.iter().try_for_each(check),
+        ItemKind::Texture(texture) => check(&texture.feature),
+    }
+}
+
+impl<F: Ord> Pmi<F> {
     /// Checks that the information is consistent in itself, before any face
     /// is looked up: unique names and datum letters, no empty feature, every
     /// referenced datum defined, values in range. Refuses `step.pmi-invalid`
     /// with the item's name.
     pub fn validate(&self) -> Result<(), Refusal> {
-        let mut ids = BTreeSet::new();
-        let mut letters = BTreeSet::new();
-        let mut datum_features = BTreeSet::new();
+        let mut validator = PartValidator::default();
+        // Check names, features and datum declarations before item values.
+        // A tolerance can name a datum that appears later in the list.
         for item in &self.items {
             let id = item.id.as_str();
             if id.is_empty() {
                 return Err(refuse("an item", "has no name"));
             }
-            if !ids.insert(id) {
-                return Err(refuse(id, "the name is used twice"));
+            if !validator.names.insert(Cow::Borrowed(id)) {
+                return Err(refuse(id, ItemError::DuplicateName));
             }
-            for feature in item.kind.features() {
-                if feature.is_empty() {
-                    return Err(refuse(id, "a feature has no face"));
-                }
-                let unique: BTreeSet<&F> = feature.iter().collect();
-                if unique.len() != feature.len() {
-                    return Err(refuse(id, "a feature names a face twice"));
-                }
-            }
+            check_features(&item.kind).map_err(|reason| refuse(id, reason))?;
             if let ItemKind::Datum(datum) = &item.kind {
-                if !datum_letter(&datum.letter) {
-                    return Err(refuse(id, "a datum letter is one or two capital letters"));
-                }
-                if !letters.insert(datum.letter.as_str()) {
-                    return Err(refuse(
-                        id,
-                        format!("datum {} is defined twice", datum.letter),
-                    ));
-                }
-                let mut key = datum.feature.clone();
-                key.sort();
-                if !datum_features.insert(key) {
-                    return Err(refuse(id, "the feature already carries a datum"));
-                }
+                datum
+                    .validate_letter()
+                    .map_err(|reason| refuse(id, reason))?;
+                validator
+                    .accept_datum(datum)
+                    .map_err(|reason| refuse(id, reason))?;
             }
         }
         for item in &self.items {
-            let id = item.id.as_str();
-            match &item.kind {
-                ItemKind::Datum(_) => {}
-                ItemKind::Size(size) => {
-                    if size.features.is_empty() {
-                        return Err(refuse(id, "the size names no feature"));
-                    }
-                    if size.through && size.kind != SizeKind::Diameter {
-                        return Err(refuse(id, "only a diameter goes through"));
-                    }
-                    if let Some(thread) = &size.thread {
-                        if size.kind != SizeKind::Diameter {
-                            return Err(refuse(id, "only a diameter is threaded"));
-                        }
-                        // A designation such as `M6x1 - 6H`: plain text a STEP string
-                        // holds as it stands.
-                        let plain = !thread.trim().is_empty()
-                            && thread.len() <= 40
-                            && thread.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
-                            && !thread.contains(['\'', '\\']);
-                        if !plain {
-                            return Err(refuse(id, "the thread's designation is not plain text"));
-                        }
-                    }
-                    check_limits(id, size.limits.as_ref())?;
-                }
-                ItemKind::Location(location) => {
-                    let mut from = location.from.feature.clone();
-                    let mut to = location.to.feature.clone();
-                    from.sort();
-                    to.sort();
-                    if from == to && location.from.at == location.to.at {
-                        return Err(refuse(id, "the distance starts and ends on one feature"));
-                    }
-                    for anchor in [&location.from, &location.to] {
-                        if anchor.at == At::Middle && anchor.feature.len() != 2 {
-                            return Err(refuse(id, "the middle is taken between two faces"));
-                        }
-                    }
-                    check_limits(id, location.limits.as_ref())?;
-                }
-                ItemKind::Tolerance(tolerance) => {
-                    if tolerance.features.is_empty() {
-                        return Err(refuse(id, "the tolerance names no feature"));
-                    }
-                    if !positive(&tolerance.value) {
-                        return Err(refuse(id, "the tolerance value must be more than zero"));
-                    }
-                    if tolerance.datums.len() > 3 {
-                        return Err(refuse(id, "a tolerance refers to at most three datums"));
-                    }
-                    let distinct: BTreeSet<&str> =
-                        tolerance.datums.iter().map(String::as_str).collect();
-                    if distinct.len() != tolerance.datums.len() {
-                        return Err(refuse(id, "a datum is referred to twice"));
-                    }
-                    for letter in &tolerance.datums {
-                        if !letters.contains(letter.as_str()) {
-                            return Err(refuse(id, format!("datum {letter} is not defined")));
-                        }
-                    }
-                    match (tolerance.characteristic.datum_use(), tolerance.datums.len()) {
-                        (DatumUse::None, 1..) => {
-                            return Err(refuse(id, "a form tolerance refers to no datum"));
-                        }
-                        (DatumUse::Required, 0) => {
-                            return Err(refuse(id, "the tolerance needs a datum"));
-                        }
-                        _ => {}
-                    }
-                }
-                ItemKind::Texture(texture) => {
-                    if texture.parameter.is_empty()
-                        || !texture.parameter.bytes().all(|b| b.is_ascii_alphanumeric())
-                    {
-                        return Err(refuse(id, "the roughness parameter is letters and digits"));
-                    }
-                    if !positive(&texture.value) {
-                        return Err(refuse(id, "the roughness value must be more than zero"));
-                    }
-                }
-            }
+            validator
+                .check_values(&item.kind)
+                .map_err(|reason| refuse(&item.id, reason))?;
         }
         for (what, text) in self
             .part
@@ -621,15 +745,14 @@ impl<F: Ord + Clone> Pmi<F> {
     }
 }
 
-fn check_limits(id: &str, limits: Option<&Limits>) -> Result<(), Refusal> {
+fn check_limits(limits: Option<&Limits>) -> Result<(), ItemError<'static>> {
     match limits {
         None | Some(Limits::Basic) => Ok(()),
         Some(Limits::Deviations { upper, lower }) => {
             if upper > lower {
                 Ok(())
             } else {
-                Err(refuse(
-                    id,
+                Err(ItemError::Rule(
                     "the upper deviation must be above the lower one",
                 ))
             }
@@ -643,8 +766,7 @@ fn check_limits(id: &str, limits: Option<&Limits>) -> Result<(), Refusal> {
             if letters && digits {
                 Ok(())
             } else {
-                Err(refuse(
-                    id,
+                Err(ItemError::Rule(
                     "a tolerance class is one or two letters and a grade number",
                 ))
             }

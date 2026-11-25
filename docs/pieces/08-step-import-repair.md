@@ -168,6 +168,8 @@ Changed or renumbered sources require separate correspondence and never inherit 
 This storage API does not add geometry-reading families or assign body tiers.
 The existing certified and numerical import entry points retain their current behavior.
 
+The default open shares one immutable Part 21 document between checked and native admission. Its header, SHA-256 and entity numbers stay tied to the source graph. Each route uses its existing unit rule when converting a recorded tolerance to millimetres.
+
 ### Transactional source healing
 
 `tolerant::healing::heal` prepares a separate candidate from a `TolerantFile`.
@@ -315,8 +317,10 @@ dimension, a dimension along a path, a reference dimension or one with
 another modifier or note, a datum target or
 common datum, a tolerance with a modifier other than a material condition, a
 datum reference with a modifier, an item on geometry other than faces. A
-tolerance whose datum was skipped is skipped too. The only refusal is a file
-that is not readable Part 21 text.
+tolerance is skipped if no accepted datum defines the letter it refers to.
+A datum skipped because its faces already carry a datum does not reserve
+its letter. A later datum on a different feature can define that letter.
+The only refusal is a file that is not readable Part 21 text.
 
 `cargo run -p catallax-import --example step_pmi -- part.step` prints what a
 file reads as and every item left out.

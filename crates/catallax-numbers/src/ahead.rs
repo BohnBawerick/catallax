@@ -51,6 +51,8 @@ use std::{
     collections::{BTreeMap, HashMap},
     hash::{Hash, Hasher},
     num::NonZeroUsize,
+    ops::ControlFlow,
+    panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -1305,6 +1307,201 @@ impl Helpers {
         let mut dec = Decider::new(self.policy);
         dec.set_deadline(self.deadline);
         work(&mut dec)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scoped loops over borrowed inputs
+// ---------------------------------------------------------------------------
+
+/// Evaluates `0..count` and delivers each result on the calling thread in
+/// index order. `evaluate` may borrow inputs and return borrowed values. Each
+/// item must depend only on shared inputs and the numeric policy, not on what
+/// `consume` has done to the request. Only `consume` may publish results.
+///
+/// The calling thread adopts a helper's recorded work only when it reaches
+/// that item. It evaluates the item itself when there is no usable record,
+/// including when a helper unwinds. A `Break` stops delivery and discards
+/// later work without charging it. All helpers are joined before returning.
+pub fn scoped_in_order<T: Send, B>(
+    count: usize,
+    evaluate: impl Fn(usize, &mut Decider) -> T + Sync,
+    dec: &mut Decider,
+    mut consume: impl FnMut(usize, T, &mut Decider) -> ControlFlow<B>,
+) -> ControlFlow<B> {
+    let helpers = if count > 1 { Helpers::new(dec) } else { None };
+    let Some(helpers) = helpers else {
+        for index in 0..count {
+            let value = evaluate(index, dec);
+            consume(index, value, dec)?;
+        }
+        return ControlFlow::Continue(());
+    };
+    let board = ScopedBoard {
+        state: Mutex::new(ScopedState {
+            slots: (0..count).map(|_| ScopedSlot::Open).collect(),
+            next: 0,
+            active: 0,
+        }),
+        changed: Condvar::new(),
+    };
+    let wait = wait_for_workers();
+    std::thread::scope(|scope| {
+        struct Stop<'a>(&'a Helpers);
+        impl Drop for Stop<'_> {
+            fn drop(&mut self) {
+                self.0.stop();
+            }
+        }
+        let _stop = Stop(&helpers);
+        for _ in 0..helpers.count().min(count) {
+            let mut slot = ScopedWorker::enter(&board);
+            let (helpers, evaluate) = (&helpers, &evaluate);
+            let spawned = std::thread::Builder::new()
+                .name("catallax-ordered".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, move || {
+                    // Abandon the item and this helper's caches on unwind.
+                    // The writer retries the item with its own decider.
+                    let _ = catch_unwind(AssertUnwindSafe(|| {
+                        helpers.run(|dec| {
+                            while !helpers.stopped() {
+                                let Some(index) = slot.claim() else { break };
+                                let (value, charges) = record(|| evaluate(index, dec));
+                                slot.complete(charges.map(|charges| Box::new((value, charges))));
+                            }
+                        });
+                    }));
+                });
+            if spawned.is_err() {
+                break;
+            }
+        }
+        for index in 0..count {
+            let value = board.take(index, wait, dec, &evaluate);
+            consume(index, value, dec)?;
+        }
+        ControlFlow::Continue(())
+    })
+}
+
+/// Collects the results of [`scoped_in_order`], stopping at the first error in
+/// input order.
+pub fn scoped_try_collect<T: Send, E: Send>(
+    count: usize,
+    evaluate: impl Fn(usize, &mut Decider) -> Result<T, E> + Sync,
+    dec: &mut Decider,
+) -> Result<Vec<T>, E> {
+    let mut out = Vec::with_capacity(count);
+    match scoped_in_order(count, evaluate, dec, |_, result, _| match result {
+        Ok(value) => {
+            out.push(value);
+            ControlFlow::Continue(())
+        }
+        Err(error) => ControlFlow::Break(error),
+    }) {
+        ControlFlow::Continue(()) => Ok(out),
+        ControlFlow::Break(error) => Err(error),
+    }
+}
+
+enum ScopedSlot<T> {
+    Open,
+    Taken,
+    Recorded(Box<(T, Charges)>),
+    Retry,
+    Writer,
+}
+
+struct ScopedState<T> {
+    slots: Vec<ScopedSlot<T>>,
+    next: usize,
+    active: usize,
+}
+
+struct ScopedBoard<T> {
+    // Both readiness and worker exits change under the same mutex the
+    // writer waits on, so neither notification can be lost.
+    state: Mutex<ScopedState<T>>,
+    changed: Condvar,
+}
+
+impl<T> ScopedBoard<T> {
+    fn take(
+        &self,
+        index: usize,
+        wait: bool,
+        dec: &mut Decider,
+        evaluate: &impl Fn(usize, &mut Decider) -> T,
+    ) -> T {
+        let mut state = lock(&self.state);
+        while match state.slots[index] {
+            ScopedSlot::Taken => true,
+            ScopedSlot::Open => wait && state.active != 0,
+            _ => false,
+        } {
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        let slot = std::mem::replace(&mut state.slots[index], ScopedSlot::Writer);
+        drop(state);
+        if let ScopedSlot::Recorded(result) = slot {
+            let (value, charges) = *result;
+            if charges.adopt(dec) {
+                return value;
+            }
+        }
+        evaluate(index, dec)
+    }
+}
+
+struct ScopedWorker<'a, T> {
+    board: &'a ScopedBoard<T>,
+    taken: Option<usize>,
+}
+
+impl<'a, T> ScopedWorker<'a, T> {
+    fn enter(board: &'a ScopedBoard<T>) -> Self {
+        lock(&board.state).active += 1;
+        Self { board, taken: None }
+    }
+
+    fn claim(&mut self) -> Option<usize> {
+        let mut state = lock(&self.board.state);
+        while state.next < state.slots.len() {
+            let index = state.next;
+            state.next += 1;
+            if matches!(state.slots[index], ScopedSlot::Open) {
+                state.slots[index] = ScopedSlot::Taken;
+                self.taken = Some(index);
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    fn complete(&mut self, result: Option<Box<(T, Charges)>>) {
+        let index = self
+            .taken
+            .take()
+            .expect("a helper completes its claimed item");
+        lock(&self.board.state).slots[index] =
+            result.map_or(ScopedSlot::Retry, ScopedSlot::Recorded);
+        self.board.changed.notify_one();
+    }
+}
+
+impl<T> Drop for ScopedWorker<'_, T> {
+    fn drop(&mut self) {
+        let mut state = lock(&self.board.state);
+        state.active -= 1;
+        if let Some(index) = self.taken {
+            state.slots[index] = ScopedSlot::Retry;
+        }
+        drop(state);
+        self.board.changed.notify_one();
     }
 }
 

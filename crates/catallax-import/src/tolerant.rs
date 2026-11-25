@@ -22,7 +22,10 @@ pub mod healing;
 pub mod native;
 /// Per-body admission with retained surface representations on solid refusal.
 pub mod opened;
-use crate::{Curve, Face, FaceLoop, ImportRefusal, OrientedEdge, StepFile, Surface, Vertex};
+use crate::{
+    Curve, Face, FaceLoop, ImportRefusal, OrientedEdge, StepFile, Surface, Vertex,
+    geometry_source::ParsedStep,
+};
 use catallax_topology::numerical::tolerance::{self, EntityKind};
 
 /// Initial numerical uncertainty and the maximum healing tolerance, in mm.
@@ -740,6 +743,15 @@ fn read_inner(
     options: ToleranceOptions,
     dec: &mut Decider,
 ) -> Result<TolerantFile, Error> {
+    read_with_document(bytes, expected_sha256, options, dec).map(|(_, file)| file)
+}
+
+fn read_with_document(
+    bytes: &[u8],
+    expected_sha256: &str,
+    options: ToleranceOptions,
+    dec: &mut Decider,
+) -> Result<(ParsedStep, TolerantFile), Error> {
     dec.charge_work(bytes.len() as u64)?;
     let actual = crate::sha256_hex(bytes);
     if actual != expected_sha256 {
@@ -757,10 +769,23 @@ fn read_inner(
             "initial tolerance must be nonnegative and no greater than a positive cap",
         ));
     }
-    match crate::read_step_with_decider(bytes, dec) {
-        Ok(file) => from_file(file, expected_sha256, options, dec),
+    let parsed = ParsedStep::from_document(
+        crate::part21::parse_document(bytes)?,
+        actual,
+        bytes.len() as u64,
+        crate::recorded::written_tolerance(bytes),
+    );
+    let file = match parsed.certified_view(dec) {
+        Ok(file) => from_file(file, expected_sha256, options, dec)?,
         Err(ImportRefusal::Unsupported { .. }) => {
-            let parsed = crate::geometry_source::ParsedStep::read(bytes, dec)?;
+            // Preserve the retained-read allowance and deadline checks, without
+            // rereading or hashing the same source for the fallback.
+            dec.charge_work(parsed.byte_len())
+                .map_err(|_| ImportRefusal::ResourceLimit)?;
+            for _ in 0..2 {
+                dec.check_deadline()
+                    .map_err(|_| ImportRefusal::ResourceLimit)?;
+            }
             let definition = parsed.retained_definition(dec)?;
             let mut bodies = Vec::new();
             for source in definition.bodies {
@@ -770,15 +795,16 @@ fn read_inner(
                 }
                 bodies.push(body);
             }
-            Ok(TolerantFile {
+            TolerantFile {
                 source_sha256: expected_sha256.into(),
                 mm_per_unit: definition.scale,
                 options,
                 bodies,
-            })
+            }
         }
-        Err(error) => Err(error.into()),
-    }
+        Err(error) => return Err(error.into()),
+    };
+    Ok((parsed, file))
 }
 
 fn from_file(

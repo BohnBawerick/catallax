@@ -246,33 +246,6 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "exact_box",
         Kind::Guarded,
     ),
-    // One level's board in that search. A slot holds a helper's result with
-    // its recorded charges; the request's thread takes each slot once, in
-    // cell order, and adopts the charges or proves the cell itself. `next`
-    // only says which helper tries which cell. Neither changes a count.
-    (
-        "catallax-shapes/src/rational_patch/pair/run.rs",
-        "next",
-        Kind::Uncharged,
-    ),
-    (
-        "catallax-shapes/src/rational_patch/pair/run.rs",
-        "slots",
-        Kind::Uncharged,
-    ),
-    // The spline fillet's ordered proofs of nodes and spans use the same
-    // board: each slot is taken once, in task order, and its charges adopted
-    // or the task proved again; `next` only spreads tasks over helpers.
-    (
-        "catallax-shapes/src/spline_fillet/order.rs",
-        "next",
-        Kind::Uncharged,
-    ),
-    (
-        "catallax-shapes/src/spline_fillet/order.rs",
-        "slots",
-        Kind::Uncharged,
-    ),
     (
         "catallax-shapes/src/rolling_envelope.rs",
         "grid",

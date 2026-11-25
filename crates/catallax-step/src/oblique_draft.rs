@@ -3,13 +3,12 @@ use super::*;
 use catallax_shapes::ObliqueDraft;
 use catallax_topology::DraftedCylinder;
 
-pub(crate) fn write<W: Write>(
+pub(crate) fn build(
     model: &Model,
     body: BodyId,
     options: &CertifiedSplineStepOptions,
     dec: &mut Decider,
-    out: &mut W,
-) -> Answered<StepReport> {
+) -> Answered<PartDocument> {
     if options.file_tolerance.sign() == Sign::Negative {
         return Err(bad("negative file tolerance"));
     }
@@ -40,7 +39,7 @@ pub(crate) fn write<W: Write>(
     } else {
         None
     };
-    write_rounded(
+    build_rounded(
         model,
         view.faces(),
         rounded,
@@ -50,7 +49,6 @@ pub(crate) fn write<W: Write>(
         hole,
         options,
         dec,
-        out,
     )
 }
 

@@ -1011,16 +1011,14 @@ pub(super) fn build(
     let description = format!("{description}{}", stamp_extras(options));
     let record = recorded_stamp(&recorded);
     let uncertainty_text = crate::number::decimal(&recorded.text);
-    let mut file = w.graph.write(&[solid], |roots| {
-        file_header(
-            body,
-            options,
-            roots,
-            [&description, &record],
-            &uncertainty_text,
-        )
-    });
-    file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+    let file = render_file(
+        &mut w.graph,
+        body,
+        options,
+        solid,
+        [&description, &record],
+        &uncertainty_text,
+    );
     // The canonical projected vertex walk checks finite trim topology. Actual
     // independently rounded pcurves get their own distance enclosures, including
     // endpoints; no rounded parameter gap is silently snapped or called exact.

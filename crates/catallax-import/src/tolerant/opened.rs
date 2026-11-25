@@ -12,6 +12,7 @@ use std::sync::Arc;
 use super::{Error, ToleranceOptions, TolerantBody, TolerantFile, admission, healing};
 use crate::{
     ImportRefusal,
+    geometry_source::ParsedStep,
     numerical::{self, StepImport},
 };
 
@@ -315,13 +316,12 @@ pub fn open_step(
     let before = current_operation_work().used;
     let (parsed, source, angles) = admission::prepare(bytes, expected_sha256, options, dec)?;
     let read_work_used = current_operation_work().used.saturating_sub(before);
-    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
+    open_prepared(step, parsed, source, angles, read_work_used, dec)
 }
 
 fn open_prepared(
-    bytes: &[u8],
     step: &StepId,
-    parsed: Arc<crate::geometry_source::ParsedStep>,
+    parsed: Arc<ParsedStep>,
     source: Arc<TolerantFile>,
     angles: crate::geometry_source::AngleUnit,
     read_work_used: u64,
@@ -357,7 +357,7 @@ fn open_prepared(
     let before = current_operation_work().used;
     if operation_budget_active() {
         checked_admit(
-            bytes,
+            &parsed,
             step,
             &mut result,
             healing::IncidenceBounds::CapCertified,
@@ -367,7 +367,7 @@ fn open_prepared(
         let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
         reservation.run(|| {
             checked_admit(
-                bytes,
+                &parsed,
                 step,
                 &mut result,
                 healing::IncidenceBounds::CapCertified,
@@ -383,8 +383,7 @@ fn open_prepared(
     let before = current_operation_work().used;
     // Check once: a file that records its tolerance is taken with it, in
     // the file's own length unit.
-    let recorded = crate::recorded::written_tolerance(bytes)
-        .and_then(|written| written.in_millimetres(&result.source.mm_per_unit));
+    let recorded = parsed.recorded_tolerance(&result.source.mm_per_unit);
     let native = Arc::new(admission::admit(
         parsed,
         Arc::clone(&result.source),
@@ -519,7 +518,7 @@ pub fn open_checked_step(
         .0;
     }
     let before = current_operation_work().used;
-    let source = super::read_step(bytes, expected_sha256, options, dec)?;
+    let (parsed, source) = super::read_with_document(bytes, expected_sha256, options, dec)?;
     let read_work_used = current_operation_work().used.saturating_sub(before);
     // Reserve output slots before any optional admission can exhaust the query.
     dec.charge_work(source.bodies.len() as u64 + 1)?;
@@ -551,7 +550,7 @@ pub fn open_checked_step(
         checked_upgrade_work_used: 0,
     };
     checked_admit(
-        bytes,
+        &parsed,
         step,
         &mut result,
         healing::IncidenceBounds::Tight,
@@ -561,13 +560,13 @@ pub fn open_checked_step(
 }
 
 fn checked_admit(
-    bytes: &[u8],
+    parsed: &ParsedStep,
     step: &StepId,
     result: &mut OpenedStep,
     bounds: healing::IncidenceBounds,
     dec: &mut Decider,
 ) {
-    checked_admit_under(n::gap::EDGE_WORK, bytes, step, result, bounds, dec);
+    checked_admit_under(n::gap::EDGE_WORK, parsed, step, result, bounds, dec);
 }
 
 /// [`checked_admit`] with `edge_work` units for each edge's gap readings in
@@ -584,29 +583,22 @@ fn checked_admit(
 /// bodies go on.
 fn checked_admit_under(
     edge_work: u64,
-    bytes: &[u8],
+    parsed: &ParsedStep,
     step: &StepId,
     result: &mut OpenedStep,
     bounds: healing::IncidenceBounds,
     dec: &mut Decider,
 ) {
-    let expected_sha256 = result.source.source_sha256.as_str();
+    let expected_sha256 = parsed.source_sha256();
     let numerical_options = upgrade_options(&result.source.options.maximum_mm);
-    let recorded = crate::recorded::written_tolerance(bytes)
-        .and_then(|written| written.in_millimetres(&result.source.mm_per_unit));
+    let recorded = parsed.recorded_tolerance(&result.source.mm_per_unit);
     let before = current_operation_work().used;
     let mut cap = numerical::EdgeCap {
         work: edge_work,
         refused: None,
     };
-    let admission = numerical::import_step_under(
-        &mut cap,
-        bytes,
-        expected_sha256,
-        step,
-        &numerical_options,
-        dec,
-    );
+    let admission =
+        numerical::import_document_under(&mut cap, parsed, step, &numerical_options, dec);
     result.file_admission_work_used = current_operation_work().used.saturating_sub(before);
     match admission {
         Ok(admitted) => {
@@ -824,7 +816,7 @@ pub fn reopen(
         ));
     }
     let read_work_used = current_operation_work().used.saturating_sub(before);
-    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
+    open_prepared(step, parsed, source, angles, read_work_used, dec)
 }
 
 #[cfg(test)]
@@ -836,6 +828,30 @@ mod quarter_fixture;
 mod tests {
     use super::*;
     use catallax_numbers::{TestDeadline, TestDeadlinePoint};
+
+    #[test]
+    fn strict_open_parses_the_source_once_even_with_a_recorded_tolerance() {
+        use crate::incidence_features::common::{BoxFixture, box_step};
+        let source = box_step(BoxFixture::new(["2", "3", "4"]));
+        let recorded = source.replace(
+            "'synthetic'",
+            "'catallax numerical approximate;source_tolerance_mm=0.000001'",
+        );
+        for source in [source, recorded] {
+            let bytes = source.as_bytes();
+            let before = crate::part21::parse_count();
+            let opened = open_step(
+                bytes,
+                &crate::sha256_hex(bytes),
+                &StepId::new("source").unwrap(),
+                ToleranceOptions::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+            assert!(matches!(opened.body(0), Some(BodyView::Certified { .. })));
+            assert_eq!(crate::part21::parse_count() - before, 1);
+        }
+    }
 
     /// The quarter cylinder as a numerical export writes it, with one wall
     /// moved by a nanometre and the export's stamp taken off, so the file is
@@ -963,7 +979,7 @@ mod tests {
                         })
                         .collect(),
                     source,
-                    source_graph: Some(parsed),
+                    source_graph: Some(Arc::clone(&parsed)),
                     admission: None,
                     native_admission: None,
                     first_refusal: None,
@@ -974,7 +990,7 @@ mod tests {
                 };
                 checked_admit_under(
                     edge_work,
-                    &bytes,
+                    &parsed,
                     &step,
                     &mut result,
                     healing::IncidenceBounds::CapCertified,

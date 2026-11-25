@@ -19,15 +19,9 @@ use super::{
     Anchor, At, Feature, GeometricTolerance, ItemKind, Limits, MaterialCondition, Pmi, SizeKind,
     SurfaceTexture,
 };
+use crate::document::PartReferences;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
 use crate::number::decimal;
-
-/// The fixed entities of the file header the information hangs on.
-pub(crate) const PRODUCT_DEFINITION: &str = "#7";
-pub(crate) const PRODUCT_DEFINITION_SHAPE: &str = "#8";
-pub(crate) const MILLIMETRE: &str = "#10";
-pub(crate) const CONTEXT: &str = "#14";
-pub(crate) const REPRESENTATION: &str = "#16";
 
 /// The attribute of a hole feature that says how deep it goes.
 pub const HOLE_DEPTH: &str = "hole depth";
@@ -38,10 +32,6 @@ pub const THREAD: &str = "thread";
 
 fn quoted(value: &str) -> Field {
     text(string(value))
-}
-
-fn header(reference: &'static str) -> Field {
-    text(reference)
 }
 
 /// A terminating decimal as people write it, such as `0.05`.
@@ -62,6 +52,7 @@ struct Emitter<'a> {
     graph: &'a mut Graph,
     model: &'a Model,
     faces: &'a BTreeMap<FaceId, Vec<Id>>,
+    references: PartReferences,
     roots: Vec<Id>,
     aspects: BTreeMap<Vec<FaceId>, Id>,
     groups: BTreeMap<Vec<Vec<FaceId>>, Id>,
@@ -100,7 +91,7 @@ impl Emitter<'_> {
             text("''"),
             text("''"),
             aspect.into(),
-            header(REPRESENTATION),
+            self.references.product.representation.into(),
         ];
         if let [face] = written.as_slice() {
             let mut fields = common;
@@ -125,7 +116,7 @@ impl Emitter<'_> {
             vec![
                 text("''"),
                 text("''"),
-                header(PRODUCT_DEFINITION_SHAPE),
+                self.references.product.shape.into(),
                 boolean(true),
             ],
         );
@@ -140,7 +131,7 @@ impl Emitter<'_> {
             vec![
                 text("''"),
                 text("''"),
-                header(PRODUCT_DEFINITION_SHAPE),
+                self.references.product.shape.into(),
                 boolean(true),
             ],
         );
@@ -151,7 +142,7 @@ impl Emitter<'_> {
             vec![
                 text("''"),
                 text("''"),
-                header(PRODUCT_DEFINITION_SHAPE),
+                self.references.product.shape.into(),
                 boolean(false),
                 quoted(letter),
             ],
@@ -181,7 +172,7 @@ impl Emitter<'_> {
             vec![
                 text("''"),
                 text("'pattern of features'"),
-                header(PRODUCT_DEFINITION_SHAPE),
+                self.references.product.shape.into(),
                 boolean(true),
             ],
         );
@@ -210,7 +201,7 @@ impl Emitter<'_> {
             vec![
                 text("''"),
                 text("''"),
-                header(PRODUCT_DEFINITION_SHAPE),
+                self.references.product.shape.into(),
                 boolean(false),
             ],
         );
@@ -256,7 +247,7 @@ impl Emitter<'_> {
             "LENGTH_MEASURE_WITH_UNIT",
             vec![
                 text(format!("LENGTH_MEASURE({})", real(value, item)?)),
-                header(MILLIMETRE),
+                self.references.length_unit.into(),
             ],
         ))
     }
@@ -276,7 +267,7 @@ impl Emitter<'_> {
                 "MEASURE_WITH_UNIT",
                 vec![
                     text(format!("POSITIVE_LENGTH_MEASURE({nominal})")),
-                    header(MILLIMETRE),
+                    self.references.length_unit.into(),
                 ],
             ),
             ("REPRESENTATION_ITEM", vec![text("'nominal value'")]),
@@ -290,7 +281,7 @@ impl Emitter<'_> {
         }
         let representation = self.graph.add(
             "SHAPE_DIMENSION_REPRESENTATION",
-            vec![text("''"), refs(items), header(CONTEXT)],
+            vec![text("''"), refs(items), self.references.context.into()],
         );
         self.root(
             "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
@@ -340,7 +331,7 @@ impl Emitter<'_> {
                 vec![
                     text("''"),
                     text("$"),
-                    header(PRODUCT_DEFINITION_SHAPE),
+                    self.references.product.shape.into(),
                     boolean(false),
                     datum.into(),
                     text("$"),
@@ -352,7 +343,7 @@ impl Emitter<'_> {
             vec![
                 quoted(&letters.join("|")),
                 text("''"),
-                header(PRODUCT_DEFINITION_SHAPE),
+                self.references.product.shape.into(),
                 boolean(false),
                 refs(compartments),
             ],
@@ -416,7 +407,7 @@ impl Emitter<'_> {
                 vec![
                     text("''"),
                     text("''"),
-                    header(PRODUCT_DEFINITION_SHAPE),
+                    self.references.product.shape.into(),
                     boolean(false),
                     refs([id]),
                     form.into(),
@@ -462,7 +453,11 @@ impl Emitter<'_> {
         );
         let representation = self.graph.add(
             "SURFACE_TEXTURE_REPRESENTATION",
-            vec![text("''"), refs([measure, method]), header(CONTEXT)],
+            vec![
+                text("''"),
+                refs([measure, method]),
+                self.references.context.into(),
+            ],
         );
         self.root(
             "PROPERTY_DEFINITION_REPRESENTATION",
@@ -482,7 +477,7 @@ impl Emitter<'_> {
 
     /// A note on the whole part, as a user defined attribute.
     fn note(&mut self, name: &str, value: &str) {
-        self.attribute(name, value, header(PRODUCT_DEFINITION));
+        self.attribute(name, value, self.references.product.definition.into());
     }
 
     /// A user defined attribute of the part or of one of its features.
@@ -497,7 +492,7 @@ impl Emitter<'_> {
         );
         let representation = self.graph.add(
             "REPRESENTATION",
-            vec![text("''"), refs([item]), header(CONTEXT)],
+            vec![text("''"), refs([item]), self.references.context.into()],
         );
         self.root(
             "PROPERTY_DEFINITION_REPRESENTATION",
@@ -531,7 +526,11 @@ impl Emitter<'_> {
         );
         self.root(
             "PRODUCT_DEFINITION_CONTEXT_ASSOCIATION",
-            vec![header(PRODUCT_DEFINITION), context.into(), role.into()],
+            vec![
+                self.references.product.definition.into(),
+                context.into(),
+                role.into(),
+            ],
         );
         let kind = self.graph.add(
             "DOCUMENT_TYPE",
@@ -560,20 +559,21 @@ pub(crate) const NOTE: &str = "note";
 
 /// Adds the entities of `pmi` to `graph` and returns the ones nothing else
 /// refers to, for the writer to number after the solids. `faces` maps each
-/// model face to its written `ADVANCED_FACE` entities, and `nominals` holds
-/// the measured value of each dimension as STEP text, by item.
+/// model face to its written `ADVANCED_FACE` entities. The caller validates
+/// the part and measures its dimension nominals before calling this.
 pub(crate) fn emit(
     graph: &mut Graph,
     model: &Model,
     faces: &BTreeMap<FaceId, Vec<Id>>,
+    references: PartReferences,
     pmi: &Pmi<FaceId>,
     nominals: &[Option<String>],
 ) -> Result<Vec<Id>, Refusal> {
-    pmi.validate()?;
     let mut emitter = Emitter {
         graph,
         model,
         faces,
+        references,
         roots: Vec::new(),
         aspects: BTreeMap::new(),
         groups: BTreeMap::new(),

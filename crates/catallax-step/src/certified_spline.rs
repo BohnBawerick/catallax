@@ -12,6 +12,7 @@ use catallax_numbers::{
 use catallax_shapes::{Point3, Surface, Vector3, certify_convex_cubic_span};
 use catallax_topology::{BodyId, Model, Sense, SplinePrism};
 
+use crate::document::{BREP, MILLI, PartDocument, Preamble};
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
 use crate::{StepFaceRegion, StepReport};
 
@@ -624,7 +625,7 @@ pub fn write_spline_prism_step<W: Write>(
     let view = SplinePrism::check(model, body, dec)?;
     let rounded = round_geometry(&view, options, dec)?;
     let charts = open_charts(view.spline().carrier().knots()[0], 3)?;
-    write_rounded(
+    let answer = build_rounded(
         model,
         view.faces(),
         rounded,
@@ -634,12 +635,18 @@ pub fn write_spline_prism_step<W: Write>(
         None,
         options,
         dec,
-        out,
-    )
+    )?;
+    let report = answer
+        .value
+        .write(&options.product_name, crate::Seams::Legacy, out)?;
+    Ok(Answer {
+        value: report,
+        marks: answer.marks,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_rounded<W: Write>(
+fn build_rounded(
     model: &Model,
     faces: [catallax_topology::FaceId; 3],
     rounded: Rounded,
@@ -649,8 +656,7 @@ fn write_rounded<W: Write>(
     hole: Option<RoundedHole>,
     options: &CertifiedSplineStepOptions,
     dec: &mut Decider,
-    out: &mut W,
-) -> Answered<StepReport> {
+) -> Answered<PartDocument> {
     let mut graph = Graph::default();
     let mut controls: Vec<[Id; 2]> = Vec::with_capacity(rounded.controls.len());
     for (index, pair) in rounded.controls.iter().enumerate() {
@@ -876,24 +882,36 @@ fn write_rounded<W: Write>(
     let shell = graph.add("CLOSED_SHELL", vec![text("''"), Field::List(face_entities)]);
     let solid = graph.add("MANIFOLD_SOLID_BREP", vec![text("''"), shell.into()]);
     let uncertainty = crate::number::decimal(&options.file_tolerance.to_decimal_bounds(17).1);
-    let mut file = graph.write(&[solid], |roots| {
-        crate::export::header(&options.product_name, roots, &uncertainty)
-    });
-    file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+    let items = vec![solid];
+    let preamble = Preamble::add(
+        &mut graph,
+        &options.product_name,
+        BREP,
+        &items,
+        Some(&uncertainty),
+        MILLI,
+        false,
+    );
+    let layout = preamble.layout(&graph, &items, &[]);
     dec.check_deadline()?;
-    out.write_all(file.as_bytes())
-        .map_err(|error| Refusal::new("step.io-error", error.to_string()))?;
-    Ok(Answer::exact(StepReport {
-        max_deviation: hole.map_or(rounded.bound.clone(), |hole| {
-            rounded.bound.max(hole.rounded.bound)
-        }),
-        added_vertices: 4 * count,
-        added_edges: 4 * count,
-        solids: 1,
-        faces: 2 + 2 * count,
-        edges: 6 * count,
-        vertices: 4 * count,
-        face_map,
-        ..StepReport::default()
+    Ok(Answer::exact(PartDocument {
+        graph,
+        layout,
+        references: preamble.references,
+        items,
+        description: &["catallax export"],
+        report: StepReport {
+            max_deviation: hole.map_or(rounded.bound.clone(), |hole| {
+                rounded.bound.max(hole.rounded.bound)
+            }),
+            added_vertices: 4 * count,
+            added_edges: 4 * count,
+            solids: 1,
+            faces: 2 + 2 * count,
+            edges: 6 * count,
+            vertices: 4 * count,
+            face_map,
+            ..StepReport::default()
+        },
     }))
 }

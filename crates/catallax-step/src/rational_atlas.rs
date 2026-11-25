@@ -3,13 +3,12 @@
 use super::*;
 use std::collections::BTreeMap;
 
-pub(super) fn write<W: Write>(
+pub(super) fn build(
     model: &Model,
     bodies: &[BodyId],
     options: &StepOptions,
     dec: &mut Decider,
-    out: &mut W,
-) -> Answered<StepReport> {
+) -> Answered<document::PartDocument> {
     let mut expanded = Vec::with_capacity(bodies.len());
     let mut faces = BTreeMap::new();
     let mut edges = BTreeMap::new();
@@ -44,15 +43,16 @@ pub(super) fn write<W: Write>(
             expanded.push(*body);
         }
     }
-    let mut answer = write_prepared(&prepared, &expanded, options, dec, out, true, None)?;
-    answer.value.added_edges += added_edges;
-    answer.value.added_vertices += added_vertices;
-    for region in &mut answer.value.face_map {
+    let mut answer = build_prepared(&prepared, &expanded, options, dec, true, None)?;
+    let report = &mut answer.value.report;
+    report.added_edges += added_edges;
+    report.added_vertices += added_vertices;
+    for region in &mut report.face_map {
         if let Some(logical) = faces.get(&region.face) {
             region.face = *logical;
         }
     }
-    for repair in &mut answer.value.regularizations {
+    for repair in &mut report.regularizations {
         if let Some(logical) = faces.get(&repair.face) {
             repair.face = *logical;
         }

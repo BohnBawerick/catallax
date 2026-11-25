@@ -1126,6 +1126,7 @@ fn read_items<'a>(
     later.sort_by_key(|(_, item)| item.order);
     let mut validator = PartValidator::default();
     let mut conflicting_letters = BTreeSet::new();
+    let mut recovered_names = Vec::new();
     let mut invalid_datum = None;
     let mut datum_named_item = false;
     for (kind, item) in &mut datums {
@@ -1134,6 +1135,16 @@ fn read_items<'a>(
         };
         let name = item.name.take();
         let letter = datum.letter.as_str();
+        let follows_conflict = conflicting_letters.contains(letter);
+        let letter_error = datum.validate_letter().err();
+        if follows_conflict && letter_error.is_some() {
+            skip(
+                item.order,
+                kind,
+                ItemError::DuplicateDatum(letter).to_string(),
+            );
+            continue;
+        }
         if let Err(error) = validator.accept_datum(datum) {
             let reason = match error {
                 // Remember these letters for diagnostic precedence only.
@@ -1147,11 +1158,18 @@ fn read_items<'a>(
             skip(item.order, kind, reason);
             continue;
         }
-        let id = validator.assign_name(name.unwrap_or_else(|| format!("Datum {letter}")));
+        let base = name.unwrap_or_else(|| format!("Datum {letter}"));
+        if follows_conflict {
+            // The recovered datum can satisfy references now. Give it a
+            // name after the other items so it does not take an existing name.
+            recovered_names.push((&mut item.name, base));
+            continue;
+        }
+        let id = validator.assign_name(base);
         // Older imports kept such a datum, but its authoring error was the
         // first refusal for each later item. Keep that diagnostic here.
         if invalid_datum.is_none()
-            && let Err(error) = datum.validate_letter()
+            && let Some(error) = letter_error
         {
             invalid_datum = Some(if id == "item" {
                 error.to_string()
@@ -1190,6 +1208,9 @@ fn read_items<'a>(
         }
         let base = name.unwrap_or_else(|| format!("#{}", item.order));
         item.name = Some(validator.assign_name(base));
+    }
+    for (name, base) in recovered_names {
+        *name = Some(validator.assign_name(base));
     }
     drop(conflicting_letters);
     drop(validator);

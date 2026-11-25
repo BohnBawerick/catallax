@@ -631,6 +631,30 @@ fn a_conflicting_datum_does_not_reserve_its_letter() {
         .map(|skip| skip.reason.as_str())
         .collect();
     assert_eq!(reasons, ["datum B is not defined"]);
+
+    let malformed = file.replace(",'B');", ",'b');");
+    let read = read_step_pmi(malformed.as_bytes()).unwrap();
+    let reasons: Vec<_> = read
+        .skipped
+        .iter()
+        .map(|skip| skip.reason.as_str())
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            "its feature already carries a datum",
+            "datum b is defined twice",
+            "datum b is not defined",
+        ]
+    );
+
+    // A newly recovered datum must not recreate the old collision with the
+    // temporary name used to validate each later item.
+    let named_item = file.replacen("=ID_ATTRIBUTE('Datum B',", "=ID_ATTRIBUTE('item',", 1);
+    let read = read_step_pmi(named_item.as_bytes()).unwrap();
+    assert_eq!(read.skipped.len(), 1);
+    let names: Vec<_> = read.pmi.items.iter().map(|item| item.id.as_str()).collect();
+    assert_eq!(names, ["Datum A", "item", "Diameter", "Parallelism to B"]);
 }
 
 #[test]

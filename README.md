@@ -16,17 +16,26 @@ In design: general tolerance-policy composition, broader agreement checks betwee
 
 ## What works today
 
-The 0.2.0 source includes:
+Catallax 0.5.0 includes:
 
 - Exact blocks, cylinders, spheres, cones and tori; unite, subtract and intersect in supported geometric configurations.
 - Sketch extrusions and revolutions, holes, patterns, mirrors, sweeps, lofts, fillets, chamfers, offsets, shells, thicken and draft within their documented domains.
 - Proven bounds for supported measurements, display meshes and STEP AP242 exports. Analytic STEP import, planar repair and spline source previews have separate admission and proof limits.
 - A field evaluator, sampled two-kernel comparisons, cubic lattices and network gyroids with labelled print output.
 - An application entry used by SolidDraft, revision-bound construction display and deferred proof, plus a deterministic verification CLI with replay and worker-count checks.
+- Tolerant geometry beside exact geometry: an edge gap is admitted at a measured local tolerance or refused, and approximate results are labelled.
+- STEP assemblies with shared parts, placements, names, colours and supported PMI; clash, clearance and mass checks; and drawing curves for sections, silhouettes and hidden lines.
+- First builds of bend, twist, curvature-continuous fillets, mesh Booleans and mesh decimation.
 
-This is alpha software. Valid cases still refuse or take seconds. General fillets, curved sweeps, loft intersections, STEP import and tolerance-policy composition remain incomplete. The fourteen numbered spline STEP export requests and eight later-cut cases remain refusals in the 0.2.0 freeze. Complete acceptance of the canonical P1 bracket in SolidDraft remains open.
+This is alpha software. Valid cases still refuse or take seconds. Checkpoints 3 and 4 measured the 0.5.0 release against OpenCASCADE and SMLib:
 
-See the [0.2.0 release scope](https://github.com/BohnBawerick/catallax/blob/release/0.2.0/docs/milestones/M2.md), [implementation limits](docs/CAPABILITIES.md) and [target-part comparison](https://kernel.zigrawbohnbawerick.org/comparison.html).
+- Edit chains: Catallax finished 11 of 13 test parts and 9 of 10 census parts. OpenCASCADE finished 11 and 10, SMLib 7 and 8.
+- STEP census: 767 of 3,000 public files (25.57%) export as valid solids. OpenCASCADE's healed reference is 2,701 (90.03%).
+- Coverage: 31 of 61 reference-kernel lines (50.8%), with working evidence on every line and the full bar met on one.
+
+Catallax still refuses the general cone and torus intersections, all three phase-2 targets (the threaded boss, the lofted duct and the curved housing) and one census-part drill. Some answers cost more than the 20M work target.
+
+See [Checkpoint 3](docs/checkpoints/checkpoint-3.md), [Checkpoint 4](docs/checkpoints/checkpoint-4.md), the [coverage recount](docs/checkpoints/checkpoint-3-coverage.md), the [0.5.0 release scope](docs/milestones/M5.md#050-phase-4-alpha-release) and [implementation limits](docs/CAPABILITIES.md).
 
 ## Download or build
 

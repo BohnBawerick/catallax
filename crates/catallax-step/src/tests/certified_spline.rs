@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -341,17 +342,21 @@ fn coarse_rounding_refuses_instead_of_widening_accuracy_or_publishing_partial_ge
     assert!(!work.exhausted);
 }
 
+std::thread_local! {
+    static RENDER_DEADLINE: Cell<Option<Rc<TestDeadline>>> = const { Cell::new(None) };
+}
+
+pub(crate) fn expire_deadline_during_render() {
+    if let Some(clock) = RENDER_DEADLINE.take() {
+        clock.expire();
+    }
+}
+
 fn refuses_render_deadline(write: impl FnOnce(&mut Decider, &mut Vec<u8>) -> Answered<StepReport>) {
     let clock = Rc::new(TestDeadline::after(TestDeadlinePoint::Work, usize::MAX));
     let mut dec = Decider::default();
     dec.set_deadline(Some(clock.instant()));
-    crate::document::RENDER_HOOK.with(|hook| {
-        let clock = Rc::clone(&clock);
-        assert!(
-            hook.replace(Some(Box::new(move || clock.expire())))
-                .is_none()
-        );
-    });
+    assert!(RENDER_DEADLINE.replace(Some(Rc::clone(&clock))).is_none());
     let mut bytes = b"existing sink contents".to_vec();
     let result = write(&mut dec, &mut bytes);
     clock.assert_expired();

@@ -252,12 +252,6 @@ fn add_product(
     )
 }
 
-#[cfg(test)]
-std::thread_local! {
-    pub(crate) static RENDER_HOOK: std::cell::Cell<Option<Box<dyn FnOnce()>>> =
-        const { std::cell::Cell::new(None) };
-}
-
 pub(crate) fn render(graph: &Graph, layout: &Layout, name: &str, description: &[&str]) -> String {
     let description = description
         .iter()
@@ -270,12 +264,7 @@ pub(crate) fn render(graph: &Graph, layout: &Layout, name: &str, description: &[
     );
     let mut file = graph.write_layout(layout, header);
     #[cfg(test)]
-    RENDER_HOOK.with(|hook| {
-        let run = hook.take();
-        if let Some(run) = run {
-            run();
-        }
-    });
+    crate::tests::expire_deadline_during_render();
     file.push_str(FILE_END);
     file
 }

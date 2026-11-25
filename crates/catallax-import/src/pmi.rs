@@ -15,9 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::Rational;
 use catallax_step::pmi::{
-    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HOLE_DEPTH, Item, ItemKind,
-    Limits, Location, MaterialCondition, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture,
-    THREAD, THROUGH,
+    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HOLE_DEPTH, Item, ItemError,
+    ItemKind, Limits, Location, MaterialCondition, PartNotes, PartValidator, Pmi, Process, Size,
+    SizeKind, SurfaceTexture, THREAD, THROUGH,
 };
 
 use crate::ImportRefusal;
@@ -1092,7 +1092,8 @@ fn read_items<'a>(
     candidates: impl IntoIterator<Item = Candidate<'a>>,
     scope: Option<(u64, u64)>,
 ) -> StepPmi {
-    let mut found = Vec::new();
+    let mut datums = Vec::new();
+    let mut later = Vec::new();
     let mut skipped = Vec::new();
     let mut skip = |id: u64, kind: &str, reason: String| {
         skipped.push(SkippedPmi {
@@ -1115,106 +1116,100 @@ fn read_items<'a>(
         };
         let kind = entity.type_name();
         match read {
-            Ok(item) => found.push((kind.to_owned(), item)),
+            Ok(item) if matches!(item.kind, ItemKind::Datum(_)) => datums.push((kind, item)),
+            Ok(item) => later.push((kind, item)),
             Err(reason) => skip(id, kind, reason),
         }
     }
-    found.sort_by_key(|(_, item)| item.order);
-
     // A tolerance needs its datums, so datums are settled first.
-    let mut pmi = Pmi::<String> {
-        items: Vec::new(),
-        part: reader.part_notes(scope),
-    };
-    let mut names = BTreeSet::new();
-    let mut letters = BTreeSet::new();
-    let mut datum_features = BTreeSet::new();
-    let mut later = Vec::new();
-    let name_of = |found: &Found, names: &mut BTreeSet<String>| {
-        let base = found.name.clone().unwrap_or_else(|| match &found.kind {
-            ItemKind::Datum(datum) => format!("Datum {}", datum.letter),
-            _ => format!("#{}", found.order),
-        });
-        let mut name = base.clone();
-        let mut copy = 2;
-        while !names.insert(name.clone()) {
-            name = format!("{base} ({copy})");
-            copy += 1;
-        }
-        name
-    };
-    for (kind, item) in found {
+    datums.sort_by_key(|(_, item)| item.order);
+    later.sort_by_key(|(_, item)| item.order);
+    let mut validator = PartValidator::default();
+    let mut conflicting_letters = BTreeSet::new();
+    let mut invalid_datum = None;
+    let mut datum_named_item = false;
+    for (kind, item) in &mut datums {
         let ItemKind::Datum(datum) = &item.kind else {
-            later.push((kind, item));
-            continue;
+            unreachable!("datums were collected separately");
         };
-        let mut feature = datum.feature.clone();
-        feature.sort();
-        if !letters.insert(datum.letter.clone()) {
-            skip(
-                item.order,
-                &kind,
-                format!("datum {} is defined twice", datum.letter),
-            );
+        let name = item.name.take();
+        let letter = datum.letter.as_str();
+        if let Err(error) = validator.accept_datum(datum) {
+            let reason = match error {
+                // Remember these letters for diagnostic precedence only.
+                // A later datum can still claim the letter on a free feature.
+                ItemError::DuplicateDatumFeature if conflicting_letters.insert(letter) => {
+                    "its feature already carries a datum".into()
+                }
+                ItemError::DuplicateDatumFeature => ItemError::DuplicateDatum(letter).to_string(),
+                error => error.to_string(),
+            };
+            skip(item.order, kind, reason);
             continue;
         }
-        if !datum_features.insert(feature) {
-            skip(
-                item.order,
-                &kind,
-                "its feature already carries a datum".into(),
-            );
-            continue;
+        let id = validator.assign_name(name.unwrap_or_else(|| format!("Datum {letter}")));
+        // Older imports kept such a datum, but its authoring error was the
+        // first refusal for each later item. Keep that diagnostic here.
+        if invalid_datum.is_none()
+            && let Err(error) = datum.validate_letter()
+        {
+            invalid_datum = Some(if id == "item" {
+                error.to_string()
+            } else {
+                let name = id.strip_prefix("item: ").unwrap_or(&id);
+                format!("{name}: {error}")
+            });
         }
-        let id = name_of(&item, &mut names);
-        pmi.items.push(Item {
-            id,
-            kind: item.kind,
-        });
+        datum_named_item |= id == "item";
+        item.name = Some(id);
     }
-    for (kind, item) in later {
+    // A datum named `item` collided with the candidate's temporary name.
+    let datum_error =
+        invalid_datum.or_else(|| datum_named_item.then(|| ItemError::DuplicateName.to_string()));
+    for (kind, item) in &mut later {
+        let name = item.name.take();
         if let ItemKind::Tolerance(tolerance) = &item.kind
-            && let Some(letter) = tolerance.datums.iter().find(|l| !letters.contains(*l))
+            && let Some(letter) = tolerance.datums.iter().find(|letter| {
+                !validator.contains_datum(letter) && !conflicting_letters.contains(letter.as_str())
+            })
         {
             skip(
                 item.order,
-                &kind,
+                kind,
                 format!("it refers to datum {letter}, which was not read"),
             );
             continue;
         }
-        let order = item.order;
-        let candidate = Item {
-            id: "item".to_owned(),
-            kind: item.kind.clone(),
-        };
-        // Each item is checked on its own, with the datums already settled.
-        let mut alone = Pmi::<String> {
-            items: pmi
-                .items
-                .iter()
-                .filter(|existing| matches!(existing.kind, ItemKind::Datum(_)))
-                .cloned()
-                .collect(),
-            part: PartNotes::default(),
-        };
-        alone.items.push(candidate);
-        if let Err(refusal) = alone.validate() {
-            let reason = refusal
-                .detail
-                .strip_prefix("item: ")
-                .unwrap_or(&refusal.detail)
-                .to_owned();
-            skip(order, &kind, reason);
+        if let Some(reason) = &datum_error {
+            skip(item.order, kind, reason.clone());
             continue;
         }
-        let id = name_of(&item, &mut names);
-        pmi.items.push(Item {
-            id,
-            kind: item.kind,
-        });
+        if let Err(error) = validator.check_kind(&item.kind) {
+            skip(item.order, kind, error.to_string());
+            continue;
+        }
+        let base = name.unwrap_or_else(|| format!("#{}", item.order));
+        item.name = Some(validator.assign_name(base));
     }
-    StepPmi { pmi, skipped }
+    drop(conflicting_letters);
+    drop(validator);
+    let items = datums
+        .into_iter()
+        .chain(later)
+        .filter_map(|(_, item)| {
+            Some(Item {
+                id: item.name?,
+                kind: item.kind,
+            })
+        })
+        .collect();
+    StepPmi {
+        pmi: Pmi {
+            items,
+            part: reader.part_notes(scope),
+        },
+        skipped,
+    }
 }
 
 #[cfg(test)]

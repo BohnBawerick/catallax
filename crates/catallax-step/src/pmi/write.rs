@@ -560,8 +560,8 @@ pub(crate) const NOTE: &str = "note";
 
 /// Adds the entities of `pmi` to `graph` and returns the ones nothing else
 /// refers to, for the writer to number after the solids. `faces` maps each
-/// model face to its written `ADVANCED_FACE` entities, and `nominals` holds
-/// the measured value of each dimension as STEP text, by item.
+/// model face to its written `ADVANCED_FACE` entities. The caller validates
+/// the part and measures its dimension nominals before calling this.
 pub(crate) fn emit(
     graph: &mut Graph,
     model: &Model,
@@ -569,7 +569,6 @@ pub(crate) fn emit(
     pmi: &Pmi<FaceId>,
     nominals: &[Option<String>],
 ) -> Result<Vec<Id>, Refusal> {
-    pmi.validate()?;
     let mut emitter = Emitter {
         graph,
         model,

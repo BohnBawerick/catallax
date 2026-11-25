@@ -494,6 +494,7 @@ fn the_bracket_pmi_reads_back_on_the_same_faces() {
         }
     }
     assert_eq!(sorted(back), sorted(expected));
+    check_conflicting_datum(&part, &pmi, &file, &read.pmi);
 
     // The geometry is the file the plain writer makes, with the faces named.
     let mut plain = Vec::new();
@@ -511,6 +512,82 @@ fn the_bracket_pmi_reads_back_on_the_same_faces() {
         assert_eq!(count(&file, kind), count(&plain, kind), "{kind}");
     }
     assert_eq!(count(&plain, "SHAPE_ASPECT"), 0);
+}
+
+fn check_conflicting_datum(part: &Bracket, pmi: &Pmi<FaceId>, clean: &str, expected: &Pmi<String>) {
+    // Put a datum before the real B, then make it claim B's letter and A's faces.
+    let mut mixed = pmi.clone();
+    mixed.items.insert(
+        1,
+        item(
+            "Conflicting datum",
+            ItemKind::Datum(Datum {
+                letter: "X".into(),
+                feature: part.planes(2, "21"),
+            }),
+        ),
+    );
+    let (file, report) = write(part, &mixed);
+    let datum = |letter| {
+        let suffix = format!(",'{letter}');");
+        file.lines()
+            .filter_map(|line| line.split_once("=DATUM("))
+            .find(|(_, fields)| fields.ends_with(&suffix))
+            .unwrap()
+    };
+    let (a, _) = datum("A");
+    let (conflict, fields) = datum("X");
+    let (b, _) = datum("B");
+    let number = |id: &str| id[1..].parse::<u64>().unwrap();
+    assert!(number(a) < number(conflict) && number(conflict) < number(b));
+    let relationship = |datum| {
+        let suffix = format!(",{datum});");
+        file.lines()
+            .find(|line| line.contains("=SHAPE_ASPECT_RELATIONSHIP(") && line.ends_with(&suffix))
+            .unwrap()
+    };
+    let (_, a_relationship) = relationship(a).split_once('=').unwrap();
+    let (a_feature, _) = a_relationship.rsplit_once(',').unwrap();
+    let (link, _) = relationship(conflict).split_once('=').unwrap();
+    let file = file
+        .replacen(
+            &format!("{conflict}=DATUM({fields}"),
+            &format!("{conflict}=DATUM({}", fields.replace("'X'", "'B'")),
+            1,
+        )
+        .replacen(
+            relationship(conflict),
+            &format!("{link}={a_feature},{conflict});"),
+            1,
+        );
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert_eq!(
+        read.skipped,
+        [catallax_import::SkippedPmi {
+            entity: conflict.into(),
+            kind: "DATUM".into(),
+            reason: "its feature already carries a datum".into(),
+        }]
+    );
+    assert_eq!(&read.pmi, expected);
+    let faces = written_faces(&file, &report);
+    let retained = read
+        .pmi
+        .try_map(|_, face| faces.get(face).copied().ok_or_else(|| face.clone()))
+        .unwrap();
+    assert_eq!(write(part, &retained).0, clean);
+
+    // With no valid B, the conflicting datum still leaves both tolerances
+    // unresolved, with the same diagnostic as before.
+    let without_b = file.replacen(relationship(b), "", 1);
+    let read = read_step_pmi(without_b.as_bytes()).unwrap();
+    let reasons: Vec<_> = read
+        .skipped
+        .iter()
+        .filter(|skip| skip.kind == "GEOMETRIC_TOLERANCE")
+        .map(|skip| skip.reason.as_str())
+        .collect();
+    assert_eq!(reasons, ["datum B is not defined"; 2]);
 }
 
 #[test]

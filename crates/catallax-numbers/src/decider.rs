@@ -102,6 +102,15 @@ pub(crate) mod test_deadline {
             Instant::now()
         }
 
+        /// Pass the deadline at an explicit test checkpoint.
+        pub fn expire(&self) {
+            CLOCK.with(|slot| {
+                let mut clock = slot.get().unwrap();
+                clock.remaining = 0;
+                slot.set(Some(clock));
+            });
+        }
+
         /// Verify the selected inner loop reached expiry.
         pub fn assert_expired(&self) {
             CLOCK.with(|slot| assert_eq!(slot.get().unwrap().remaining, 0));
@@ -1408,9 +1417,9 @@ impl Decider {
         }
     }
 
-    /// Cancels a finite annotation pass without billing constructor work.
+    /// Checks the wall-clock deadline without charging operation work.
     #[cfg_attr(feature = "work-profile", track_caller)]
-    pub(crate) fn check_deadline_if_set(&self) -> Result<(), Refusal> {
+    pub fn check_deadline_if_set(&self) -> Result<(), Refusal> {
         let Some(limit) = self.deadline else {
             return Ok(());
         };

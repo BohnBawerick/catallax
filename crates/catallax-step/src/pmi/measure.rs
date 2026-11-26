@@ -10,7 +10,7 @@ use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, StrictSign};
 use catallax_shapes::{Point3, Surface, Vector3};
 use catallax_topology::{FaceId, Model};
 
-use super::{Anchor, At, Feature, ItemKind, Pmi, SizeKind};
+use super::{Anchor, At, Feature, HoleHead, ItemKind, Pmi, Size, SizeKind};
 use crate::number::sqrt_real;
 
 /// What a feature is for measuring.
@@ -35,6 +35,15 @@ fn is_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(_) => Ok(false),
         Outcome::ProvenCoincident(_) => Ok(true),
+        Outcome::Refused(refusal) => Err(refusal),
+        Outcome::NotExact(inexact) => Err(Refusal::from(inexact)),
+    }
+}
+
+fn is_positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    match dec.sign(value) {
+        Outcome::Proven(sign) => Ok(sign == StrictSign::Positive),
+        Outcome::ProvenCoincident(_) => Ok(false),
         Outcome::Refused(refusal) => Err(refusal),
         Outcome::NotExact(inexact) => Err(Refusal::from(inexact)),
     }
@@ -260,7 +269,7 @@ fn side(shape: &Shape, at: At) -> Option<Real> {
 
 fn size(
     model: &Model,
-    kind: SizeKind,
+    kind: &SizeKind,
     features: &[Feature<FaceId>],
     item: &str,
     dec: &mut Decider,
@@ -281,9 +290,108 @@ fn size(
     }
     let radius = sqrt_real(&common.ok_or_else(|| refuse(item, "the size names no feature"))?);
     Ok(match kind {
-        SizeKind::Diameter => &radius + &radius,
+        SizeKind::Diameter | SizeKind::Hole(_) => &radius + &radius,
         SizeKind::Radius => radius,
     })
+}
+
+fn hole_size(
+    model: &Model,
+    size: &Size<FaceId>,
+    head: Option<&HoleHead>,
+    item: &str,
+    dec: &mut Decider,
+) -> Result<Real, Refusal> {
+    let [pilot, heads @ ..] = size.features.as_slice() else {
+        return Err(refuse(item, "the hole names no pilot"));
+    };
+    let Shape::Axis {
+        point,
+        direction,
+        radius_sq,
+    } = feature_shape(model, pilot, item, dec)?
+    else {
+        return Err(refuse(item, "a hole's pilot belongs to a cylinder"));
+    };
+    let radius = sqrt_real(&radius_sq);
+    let diameter = &radius + &radius;
+    let (head, faces) = match (head, heads) {
+        (None, []) => return Ok(diameter),
+        (Some(head), [faces]) if !faces.is_empty() => (head, faces),
+        _ => return Err(refuse(item, "the hole's head has no unique face set")),
+    };
+    let nominal = match head {
+        HoleHead::Counterbore { diameter, .. } | HoleHead::Countersink { diameter, .. } => {
+            Real::from_rational(diameter.clone())
+        }
+    };
+    match dec.sign(&(&nominal - &diameter)) {
+        Outcome::Proven(StrictSign::Positive) => {}
+        Outcome::Refused(refusal) => return Err(refusal),
+        Outcome::NotExact(inexact) => return Err(Refusal::from(inexact)),
+        _ => {
+            return Err(refuse(
+                item,
+                "the head diameter must be larger than the pilot",
+            ));
+        }
+    }
+    if matches!(head, HoleHead::Counterbore { .. }) {
+        let Shape::Axis {
+            point: origin,
+            direction: axis,
+            radius_sq: head_radius,
+        } = feature_shape(model, faces, item, dec)?
+        else {
+            return Err(refuse(item, "the counterbore head is not cylindrical"));
+        };
+        if !is_zero_vector(&axis.cross(&direction), dec)?
+            || !is_zero_vector(&origin.minus(&point).cross(&direction), dec)?
+        {
+            return Err(refuse(
+                item,
+                "the counterbore head does not share the pilot axis",
+            ));
+        }
+        match dec.sign(&(&head_radius - &radius_sq)) {
+            Outcome::Proven(StrictSign::Positive) => {}
+            Outcome::Refused(refusal) => return Err(refusal),
+            Outcome::NotExact(inexact) => return Err(Refusal::from(inexact)),
+            _ => {
+                return Err(refuse(
+                    item,
+                    "the counterbore head is not wider than the pilot",
+                ));
+            }
+        }
+    } else {
+        let mut first = None;
+        for face in faces {
+            let Surface::Cone(cone) = model.geom().surface(model.face(*face).surface) else {
+                return Err(refuse(item, "the countersink head is not conical"));
+            };
+            if !is_zero_vector(&cone.axis.cross(&direction), dec)?
+                || !is_zero_vector(&cone.apex.minus(&point).cross(&direction), dec)?
+            {
+                return Err(refuse(
+                    item,
+                    "the countersink head does not share the pilot axis",
+                ));
+            }
+            if let Some(other) = first {
+                let other: &catallax_shapes::Cone = other;
+                if !is_zero_vector(&cone.apex.minus(&other.apex), dec)?
+                    || !is_positive(&cone.axis.dot(&other.axis), dec)?
+                    || !is_zero(&(&cone.slope - &other.slope), dec)?
+                {
+                    return Err(refuse(item, "the countersink head faces are not one cone"));
+                }
+            } else {
+                first = Some(cone);
+            }
+        }
+    }
+    Ok(diameter)
 }
 
 /// The nominal value of every dimension of `pmi` in millimetres, measured
@@ -302,9 +410,10 @@ pub fn nominals(
     for item in &pmi.items {
         let id = item.id.as_str();
         values.push(match &item.kind {
-            ItemKind::Size(dimension) => {
-                Some(size(model, dimension.kind, &dimension.features, id, dec)?)
-            }
+            ItemKind::Size(dimension) => Some(match &dimension.kind {
+                SizeKind::Hole(hole) => hole_size(model, dimension, hole.head.as_ref(), id, dec)?,
+                kind => size(model, kind, &dimension.features, id, dec)?,
+            }),
             ItemKind::Location(location) => {
                 let from = anchor_shape(model, &location.from, id, dec)?;
                 let to = anchor_shape(model, &location.to, id, dec)?;

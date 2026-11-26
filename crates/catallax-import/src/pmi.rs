@@ -14,10 +14,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::Rational;
+use catallax_shapes::{RPoint3, RVector3};
 use catallax_step::pmi::{
-    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HOLE_DEPTH, Item, ItemError,
-    ItemKind, Limits, Location, MaterialCondition, PartNotes, PartValidator, Pmi, Process, Size,
-    SizeKind, SurfaceTexture, THREAD, THROUGH,
+    Anchor, At, COUNTERBORE, COUNTERSINK, Characteristic, Datum, Feature, GeometricTolerance,
+    HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize, INCLUDED_ANGLE, Item,
+    ItemError, ItemKind, Limits, Location, MaterialCondition, PartNotes, PartValidator, Pmi,
+    Process, Size, SizeKind, SurfaceTexture, THREAD, THREAD_DEPTH, THROUGH,
 };
 
 use crate::ImportRefusal;
@@ -184,6 +186,22 @@ fn number(param: Option<&Param>) -> Option<Rational> {
         fixed
     };
     Rational::parse(&fixed).ok()
+}
+
+fn coordinates(param: Option<&Param>) -> Option<[Rational; 3]> {
+    let Some(Param::List(values)) = param else {
+        return None;
+    };
+    let [x, y, z] = values.as_slice() else {
+        return None;
+    };
+    Some([number(Some(x))?, number(Some(y))?, number(Some(z))?])
+}
+
+struct RoundSurface {
+    placement: u64,
+    radius: Rational,
+    angle: Option<Rational>,
 }
 
 struct Reader<'a> {
@@ -383,13 +401,97 @@ impl<'a> Reader<'a> {
         Ok(features.remove(0))
     }
 
-    fn round(&self, face: &str) -> bool {
+    fn face_surface(&self, face: &str) -> Option<u64> {
         face.strip_prefix('#')
             .and_then(|id| id.parse().ok())
             .and_then(|id| self.entity(id))
             .and_then(|face| reference(face.parts[0].1.get(2)))
+    }
+
+    fn round(&self, face: &str) -> bool {
+        self.face_surface(face)
             .and_then(|surface| self.entity(surface))
             .is_some_and(|surface| surface.type_name() == "CYLINDRICAL_SURFACE")
+    }
+
+    fn coaxial(&self, a: u64, b: u64) -> Option<bool> {
+        if a == b {
+            return Some(true);
+        }
+        let axis = |id| {
+            let placement = self.entity(id)?.part("AXIS2_PLACEMENT_3D")?;
+            let point = self
+                .entity(reference(placement.get(1))?)?
+                .part("CARTESIAN_POINT")?;
+            let [x, y, z] = coordinates(point.get(1))?;
+            let point = RPoint3::new(x, y, z);
+            let direction = match placement.get(2) {
+                Some(Param::Unset) => {
+                    RVector3::new(Rational::zero(), Rational::zero(), Rational::one())
+                }
+                param => {
+                    let dir = self.entity(reference(param)?)?.part("DIRECTION")?;
+                    let [x, y, z] = coordinates(dir.get(1))?;
+                    RVector3::new(x, y, z)
+                }
+            };
+            (!direction.is_zero()).then_some((point, direction))
+        };
+        let (point, direction) = axis(a)?;
+        let (other_point, other_direction) = axis(b)?;
+        Some(
+            direction.cross(&other_direction).is_zero()
+                && other_point.minus(&point).cross(&direction).is_zero(),
+        )
+    }
+
+    fn round_feature(&self, faces: &[String], cone: bool) -> Result<RoundSurface, String> {
+        let mut surfaces = faces.iter().map(|face| {
+            self.face_surface(face)
+                .ok_or("a size face has no readable surface")
+        });
+        let first = surfaces.next().ok_or("the size has no face")??;
+        let read = |id| {
+            let entity = self.entity(id)?;
+            let params = entity.part(if cone {
+                "CONICAL_SURFACE"
+            } else {
+                "CYLINDRICAL_SURFACE"
+            })?;
+            Some(RoundSurface {
+                placement: reference(params.get(1))?,
+                radius: number(params.get(2))?,
+                angle: if cone {
+                    Some(number(params.get(3))?)
+                } else {
+                    None
+                },
+            })
+        };
+        let bad_surface = if cone {
+            "the head is not conical"
+        } else {
+            "a size face is not cylindrical"
+        };
+        let shape = read(first).ok_or(bad_surface)?;
+        for surface in surfaces {
+            let surface = surface?;
+            if surface == first {
+                continue;
+            }
+            let other = read(surface).ok_or(bad_surface)?;
+            if shape.radius != other.radius
+                || shape.angle != other.angle
+                || (if cone {
+                    shape.placement != other.placement
+                } else {
+                    self.coaxial(shape.placement, other.placement) != Some(true)
+                })
+            {
+                return Err("the size groups non-equivalent faces".into());
+            }
+        }
+        Ok(shape)
     }
 
     /// A length in millimetres from a measure in any of its written forms,
@@ -603,27 +705,117 @@ impl<'a> Reader<'a> {
         Ok((nominal, limits))
     }
 
-    /// True when the feature carries the attribute of a hole that goes through.
-    fn through(&self, aspect: u64) -> bool {
-        self.sharing_at(aspect, "PROPERTY_DEFINITION", 2)
-            .into_iter()
-            .any(|(id, params)| {
-                string(params.first()).as_deref() == Some(HOLE_DEPTH)
-                    && string(params.get(1)).as_deref() == Some("user defined attribute")
-                    && self.attribute_text(id).as_deref() == Some(THROUGH)
-            })
+    fn hole_attribute(&self, aspect: u64, name: &str) -> Result<Option<u64>, String> {
+        let properties = self.sharing_at(aspect, "PROPERTY_DEFINITION", 2);
+        let mut matching = properties.into_iter().filter(|(_, params)| {
+            matches!(params.first(), Some(Param::Str(value)) if value == name)
+                && matches!(params.get(1), Some(Param::Str(value)) if value == "user defined attribute")
+        });
+        let Some((id, _)) = matching.next() else {
+            return Ok(None);
+        };
+        let links = self.sharing_at(id, "PROPERTY_DEFINITION_REPRESENTATION", 0);
+        if matching.next().is_none()
+            && let [(_, link)] = links.as_slice()
+            && let Some(rep) = reference(link.get(1)).and_then(|id| self.entity(id))
+            && let [item] = references(rep.parts[0].1.get(1)).as_slice()
+        {
+            return Ok(Some(*item));
+        }
+        Err(format!("the `{name}` attribute has no unique value"))
     }
 
-    /// The thread designation the feature carries, if it has one.
-    fn thread(&self, aspect: u64) -> Option<String> {
-        self.sharing_at(aspect, "PROPERTY_DEFINITION", 2)
-            .into_iter()
-            .find_map(|(id, params)| {
-                (string(params.first()).as_deref() == Some(THREAD)
-                    && string(params.get(1)).as_deref() == Some("user defined attribute"))
-                .then(|| self.attribute_text(id))
-                .flatten()
-            })
+    fn hole_text(&self, item: u64) -> Option<String> {
+        let params = self.entity(item)?.part("DESCRIPTIVE_REPRESENTATION_ITEM")?;
+        string(params.get(1))
+    }
+
+    fn hole_length(&self, item: u64, name: &str) -> Result<Rational, String> {
+        self.length(item)
+            .map(|(_, value)| value)
+            .ok_or_else(|| format!("the `{name}` attribute is not a length with a known unit"))
+    }
+
+    fn hole_angle(&self, item: u64) -> Option<Rational> {
+        let measure = self.entity(item)?;
+        measure.part("PLANE_ANGLE_MEASURE_WITH_UNIT")?;
+        let params = measure.part("MEASURE_WITH_UNIT")?;
+        let unit = self.entity(reference(params.get(1))?)?;
+        unit.part("PLANE_ANGLE_UNIT")?;
+        let conversion = unit.part("CONVERSION_BASED_UNIT")?;
+        if !matches!(conversion.first(), Some(Param::Str(name)) if name.eq_ignore_ascii_case("degree"))
+        {
+            return None;
+        }
+        let factor = self
+            .entity(reference(conversion.get(1))?)?
+            .part("PLANE_ANGLE_MEASURE_WITH_UNIT")?;
+        let radian = self.entity(reference(factor.get(1))?)?;
+        radian.part("PLANE_ANGLE_UNIT")?;
+        let si = radian.part("SI_UNIT")?;
+        if !matches!(si, [Param::Unset, Param::Enum(name)] if name == "RADIAN")
+            || number(factor.first())? != Rational::parse("0.017453292519943295").ok()?
+        {
+            return None;
+        }
+        match params.first() {
+            Some(Param::Typed(kind, values)) if kind == "PLANE_ANGLE_MEASURE" => {
+                number(values.first())
+            }
+            _ => None,
+        }
+    }
+
+    fn hole_head(
+        &self,
+        pilot: u64,
+        pilot_radius: &Rational,
+        head: Option<(&str, u64)>,
+    ) -> Result<Option<(HoleHead, Feature<String>)>, String> {
+        let diameter = self.hole_attribute(pilot, HEAD_DIAMETER)?;
+        let depth = self.hole_attribute(pilot, HEAD_DEPTH)?;
+        let angle = self.hole_attribute(pilot, INCLUDED_ANGLE)?;
+        let head = match (head, diameter, depth, angle) {
+            (Some((COUNTERBORE, aspect)), Some(diameter), Some(depth), None) => (
+                HoleHead::Counterbore {
+                    diameter: self.hole_length(diameter, HEAD_DIAMETER)?,
+                    depth: self.hole_length(depth, HEAD_DEPTH)?,
+                },
+                aspect,
+            ),
+            (Some((COUNTERSINK, aspect)), Some(diameter), None, Some(angle)) => (
+                HoleHead::Countersink {
+                    diameter: self.hole_length(diameter, HEAD_DIAMETER)?,
+                    included_angle: self
+                        .hole_angle(angle)
+                        .ok_or("the included angle is not in the supported degree unit")?,
+                },
+                aspect,
+            ),
+            (None, None, None, None) => return Ok(None),
+            _ => return Err("the hole has an unknown or incomplete head".into()),
+        };
+        if self
+            .aspect_params(head.1)
+            .and_then(|params| reference(params.get(2)))
+            != self
+                .aspect_params(pilot)
+                .and_then(|params| reference(params.get(2)))
+        {
+            return Err("the hole's head belongs to another part".into());
+        }
+        let faces = self
+            .used_faces(head.1)?
+            .ok_or("the hole head names no face")?;
+        let cone = matches!(&head.0, HoleHead::Countersink { .. });
+        let shape = self.round_feature(&faces, cone)?;
+        // The explicit relationship identifies the head. In a STEP export
+        // the two placements round independently, so exact coaxiality is
+        // checked against the model on export, not these written coordinates.
+        if !cone && shape.radius <= *pilot_radius {
+            return Err("the counterbore head is not wider than the pilot".into());
+        }
+        Ok(Some((head.0, faces)))
     }
 
     /// The text of a user defined attribute.
@@ -646,26 +838,101 @@ impl<'a> Reader<'a> {
     }
 
     fn size(&self, id: u64, params: &[Param]) -> Result<Found, String> {
-        let kind = match string(params.get(1)).unwrap_or_default().as_str() {
+        let mut kind = match string(params.get(1)).unwrap_or_default().as_str() {
             "diameter" => SizeKind::Diameter,
             "radius" => SizeKind::Radius,
             other => return Err(format!("a `{other}` size is not read")),
         };
         let aspect = reference(params.first()).ok_or("it names no feature")?;
         let (nominal, limits) = self.dimension_value(id)?;
+        let is_hole = self
+            .aspect_params(aspect)
+            .and_then(|params| string(params.first()))
+            .as_deref()
+            == Some(HOLE_PILOT);
+        let relationships = self.sharing_at(aspect, "SHAPE_ASPECT_RELATIONSHIP", 2);
+        let mut heads = relationships
+            .iter()
+            .filter_map(|(_, params)| match params.first() {
+                Some(Param::Str(kind)) if matches!(kind.as_str(), COUNTERBORE | COUNTERSINK) => {
+                    Some((kind.as_str(), reference(params.get(3))))
+                }
+                _ => None,
+            });
+        let depth = self.hole_attribute(aspect, HOLE_DEPTH)?;
+        let through = depth.is_some_and(|value| self.hole_text(value).as_deref() == Some(THROUGH));
+        let drill = depth.filter(|_| !through);
+        let thread = self
+            .hole_attribute(aspect, THREAD)?
+            .map(|value| {
+                self.hole_text(value)
+                    .ok_or("the thread designation is not text")
+            })
+            .transpose()?;
+        let thread_depth = self.hole_attribute(aspect, THREAD_DEPTH)?;
+        let mut features;
+        if is_hole {
+            if kind != SizeKind::Diameter || nominal.is_none() {
+                return Err("the hole has no readable pilot diameter".into());
+            }
+            let head = match (heads.next(), relationships.len()) {
+                (None, 0) => None,
+                (Some((kind, Some(id))), 1) => Some((kind, id)),
+                _ => return Err("the hole has an unknown or ambiguous head relationship".into()),
+            };
+            let pilot = self
+                .used_faces(aspect)?
+                .ok_or("the hole pilot names no face")?;
+            let shape = self.round_feature(&pilot, false)?;
+            let head = self.hole_head(aspect, &shape.radius, head)?;
+            if let Some((head, _)) = &head {
+                let diameter = match head {
+                    HoleHead::Counterbore { diameter, .. }
+                    | HoleHead::Countersink { diameter, .. } => diameter,
+                };
+                if nominal.as_ref().is_some_and(|pilot| diameter <= pilot) {
+                    return Err("the head diameter must be larger than the pilot".into());
+                }
+            }
+            features = vec![pilot];
+            let head = head.map(|(head, faces)| {
+                features.push(faces);
+                head
+            });
+            kind = SizeKind::Hole(Box::new(HoleSize {
+                head,
+                drill_depth: drill
+                    .map(|id| self.hole_length(id, HOLE_DEPTH))
+                    .transpose()?,
+                thread_depth: thread_depth
+                    .map(|id| self.hole_length(id, THREAD_DEPTH))
+                    .transpose()?,
+            }));
+        } else {
+            if heads.next().is_some() || drill.is_some() || thread_depth.is_some() {
+                return Err(
+                    "the size carries hole information without a supported pilot aspect".into(),
+                );
+            }
+            features = self.features(aspect, 0)?;
+            let mut radius = None;
+            for feature in &features {
+                let next = self.round_feature(feature, false)?.radius;
+                if radius.as_ref().is_some_and(|radius| *radius != next) {
+                    return Err("the size groups features of different diameters".into());
+                }
+                radius = Some(next);
+            }
+        }
         Ok(Found {
             order: id,
             name: self.id_attribute(id),
             kind: ItemKind::Size(Size {
                 kind,
-                features: self.features(aspect, 0)?,
+                features,
                 limits,
-                through: kind == SizeKind::Diameter && self.through(aspect),
-                thread: if kind == SizeKind::Diameter {
-                    self.thread(aspect)
-                } else {
-                    None
-                },
+                through,
+                thread,
                 nominal,
             }),
         })

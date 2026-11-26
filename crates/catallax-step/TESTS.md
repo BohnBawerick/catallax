@@ -180,9 +180,9 @@ owns the corresponding piece-description changes.
 `tests/pmi.rs` writes the P1 bracket's fourteen items, expanded to 26 file
 items, with `write_step_with_pmi`. It reads them back with
 `catallax_import::read_step_pmi` on the same faces and checks that the geometry
-matches the plain writer's. It also checks the validation properties: the eight
-part counts, the equivalent Unicode strings of the datums and distances, and
-none on a size. It checks that the bore finish's callout hangs on an aspect of
+matches the plain writer's. It checks that the eight part counts use STEP real
+literals and that datums and distances, but not sizes, carry equivalent Unicode
+strings. It checks that the bore finish's callout hangs on an aspect of
 its own whose only use names the bore. The test asserts that the leader starts on
 the bore cylinder and that every line lies in one plane parallel to the front
 annotation plane. The stated polyline length and centre must match the written

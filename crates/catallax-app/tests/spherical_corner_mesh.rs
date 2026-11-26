@@ -979,16 +979,17 @@ fn sphere_split_along_a_long_arc(model: &mut Model) -> BodyId {
 /// Captured from main 96ef134 before the convex corner admission.
 const NEIGHBOUR_BASELINE: &[(&str, &str)] = &[
     // Ordered chart insertion recomputes the complement aspect-ratio bound.
+    // The two Boolean trims have the same triangles and face handles three lower.
     (
         "complement certified",
-        "mesh 623fd7f364c29cd9 obj 4c0192c904056c49",
+        "mesh 8b59d13842557d5b obj e6a62f7a7b2f97ab",
     ),
-    ("complement preview", "preview 93f35bbe54053944"),
+    ("complement preview", "preview ffd6120c0138fa48"),
     (
         "concave certified",
-        "mesh 23363c3ee6b53ccc obj 75b53058bc18948a",
+        "mesh 905f448b0df8cc7f obj 32f263af67961b58",
     ),
-    ("concave preview", "preview 1a4343cd6b137998"),
+    ("concave preview", "preview 460b9c33cee2f50b"),
     (
         "long arc certified",
         "mesh 6a4f2ca239db69d4 obj a44477bcfff123e9",

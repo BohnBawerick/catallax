@@ -41,13 +41,15 @@ ORACLE = CONTRACT['property_oracle']
 EPSILONS = (1e-6, 1e-8, 1e-10, 1e-12)
 ROUNDOFF = Decimal('1e-35')
 # Accepted base geometry and certificate digests, after exact chart reassembly.
+# Filtering disjoint Boolean faces moves each result face handle down by six;
+# only certificate keys derived from those handles change.
 FINGERPRINTS = {
     'offset': ('30fd8b0c12cfeb0f123abf5affe1491c80cc3fbad43145f96186ff3502abd477',
-               '77259346ecb7cb4508c17d33842114850148a646e7e4fa03c8e5f45419f611c9'),
+               'f747159266abdba3a98b7d85d4cda02a54f9dbe82e9bda09e6d16914e4617120'),
     'second': ('a69cfe0f941f6ed11502316403d84c83d0c458097f047bb31040db1765883ea9',
-               '5aaf9c6ec621c994ebbb4377bec71b0b701ad320ee5292afdf433857701f6f3c'),
+               '24ca54e7bfb9915424d55aaa7dfac8465823f96f524252e2f97149296297580a'),
     'after_trim': ('ed1ec54082e4776bd689ebef58772649b79f22b18c5a5d2389af0d837a704f4f',
-                   '91c5409dce8e40add112b56ebb65968cc80286818e8b22a5f3cdbab97f050395'),
+                   'b5dea2bee2382f4fa5d5023bc35e9162701b5afd35f7cdabc856deba6ad5c52a'),
 }
 # Orthonormal frame of the sweep: n, then the ellipse's a=2 and b=8/5 axes.
 AXIS = (Fraction(3, 5), Fraction(0), Fraction(4, 5))

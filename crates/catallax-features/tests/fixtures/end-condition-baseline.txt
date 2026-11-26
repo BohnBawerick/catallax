@@ -1,6 +1,6 @@
 # Build work, face and STEP signatures or refusal codes from main before face starts.
 # The affine UV encodings approved under phase 5 D1 update only the STEP column.
-application-next 246101 0bd5413b0e5b6559ca62981c3e7c9183184d64df8517843dc79c3d02abee95de c9120b29047e92f31e580163b76e323106d58cd0d26639cb38290210df6ffa08
+application-next 174522 0bd5413b0e5b6559ca62981c3e7c9183184d64df8517843dc79c3d02abee95de c9120b29047e92f31e580163b76e323106d58cd0d26639cb38290210df6ffa08
 axial-cylinder-wall 5 refusal features.unsupported-curved-limit
 circular-sphere-limits/sphere-entry-next.json 56 53fcf54625e6494e0b2e6fff60fdf9f6acd34769fb898f42d9fb91794014e17d 6aae46d0bbd76fee8f55f9f6665a8d5502cb03a0d93cd4284b8fd4706f3b8e28
 circular-sphere-limits/sphere-entry-to.json 56 53fcf54625e6494e0b2e6fff60fdf9f6acd34769fb898f42d9fb91794014e17d 6aae46d0bbd76fee8f55f9f6665a8d5502cb03a0d93cd4284b8fd4706f3b8e28

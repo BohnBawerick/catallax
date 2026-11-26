@@ -1,0 +1,1 @@
+python3 tools/display-diff/check.py capture cap --threads 2; echo P5CAPEXIT $?; sed 's/^/P5CAP /' cap/2.jsonl

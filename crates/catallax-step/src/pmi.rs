@@ -25,7 +25,10 @@ use catallax_numbers::{Rational, Refusal};
 
 pub use measure::nominals;
 pub(crate) use write::emit;
-pub use write::{HOLE_DEPTH, THREAD, THROUGH};
+pub use write::{
+    COUNTERBORE, COUNTERSINK, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE,
+    THREAD, THREAD_DEPTH, THROUGH,
+};
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
 pub type Feature<F> = Vec<F>;
@@ -71,7 +74,7 @@ impl<F> Pmi<F> {
                     feature: feature(&datum.feature)?,
                 }),
                 ItemKind::Size(size) => ItemKind::Size(Size {
-                    kind: size.kind,
+                    kind: size.kind.clone(),
                     features: size
                         .features
                         .iter()
@@ -179,8 +182,8 @@ pub struct Datum<F> {
 pub struct Size<F> {
     /// Which size.
     pub kind: SizeKind,
-    /// The features it applies to. Several features are a pattern, such as
-    /// four equal holes, and the size applies to each of them.
+    /// For [`SizeKind::Hole`], the pilot followed by the head if present.
+    /// Otherwise each feature is an equal member of the dimension's pattern.
     pub features: Vec<Feature<F>>,
     /// The limits, or `None` for a size under the part's general tolerance.
     pub limits: Option<Limits>,
@@ -190,18 +193,51 @@ pub struct Size<F> {
     /// `M6x1 - 6H`. The diameter is then the thread's nominal diameter or the
     /// diameter of the hole it is cut in, whichever the faces have.
     pub thread: Option<String>,
-    /// The nominal value in millimetres a file states. `None` on the way
-    /// out: the writer measures it.
+    /// The nominal in millimetres a file states (the pilot diameter for a
+    /// hole). `None` on the way out: the writer measures it.
     pub nominal: Option<Rational>,
 }
 
 /// Which size of a feature a dimension gives.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum SizeKind {
     /// The diameter of a cylindrical feature.
     Diameter,
     /// The radius of a cylindrical feature.
     Radius,
+    /// A single hole with a compound head, a known drill depth or a known
+    /// usable thread depth. Simple diameters retain their existing encoding.
+    Hole(HoleSize),
+}
+
+/// Design intent not captured by the pilot diameter. Lengths are in millimetres.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct HoleSize {
+    /// The compound head, if the pilot has one.
+    pub head: Option<HoleHead>,
+    /// Axial depth from the entry to the specified drill bottom.
+    pub drill_depth: Option<Rational>,
+    /// Usable axial thread length, independent of the drill depth.
+    pub thread_depth: Option<Rational>,
+}
+
+/// The design size of a head attached to its own face set.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum HoleHead {
+    /// A cylindrical enlargement at the entry.
+    Counterbore {
+        /// The head diameter.
+        diameter: Rational,
+        /// The axial depth from the entry to the counterbore floor.
+        depth: Rational,
+    },
+    /// A conical enlargement at the entry.
+    Countersink {
+        /// The major diameter at the entry.
+        diameter: Rational,
+        /// The full included angle, in degrees.
+        included_angle: Rational,
+    },
 }
 
 /// The distance between two features.
@@ -585,11 +621,11 @@ impl<'a, F: Ord> PartValidator<'a, F> {
                 if size.features.is_empty() {
                     return Err(Rule("the size names no feature"));
                 }
-                if size.through && size.kind != SizeKind::Diameter {
+                if size.through && size.kind == SizeKind::Radius {
                     return Err(Rule("only a diameter goes through"));
                 }
                 if let Some(thread) = &size.thread {
-                    if size.kind != SizeKind::Diameter {
+                    if size.kind == SizeKind::Radius {
                         return Err(Rule("only a diameter is threaded"));
                     }
                     // A designation such as `M6x1 - 6H`: plain text a STEP
@@ -601,6 +637,9 @@ impl<'a, F: Ord> PartValidator<'a, F> {
                     if !plain {
                         return Err(Rule("the thread's designation is not plain text"));
                     }
+                }
+                if let SizeKind::Hole(hole) = &size.kind {
+                    check_hole(size, hole)?;
                 }
                 check_limits(size.limits.as_ref())?;
             }
@@ -743,6 +782,65 @@ impl<F: Ord> Pmi<F> {
             }
         }
         Ok(())
+    }
+}
+
+fn check_hole<F: Ord>(size: &Size<F>, hole: &HoleSize) -> Result<(), ItemError<'static>> {
+    use ItemError::Rule;
+
+    if size.features.len() != 1 + usize::from(hole.head.is_some()) {
+        return Err(Rule("a hole needs one pilot and, if compound, one head"));
+    }
+    if let [pilot, head] = size.features.as_slice()
+        && pilot.iter().any(|face| head.contains(face))
+    {
+        return Err(Rule("the pilot and head share a face"));
+    }
+    if hole.head.is_none() && hole.drill_depth.is_none() && hole.thread_depth.is_none() {
+        return Err(Rule("a hole needs a head, a drill depth or a thread depth"));
+    }
+    if let Some(depth) = &hole.drill_depth
+        && (size.through || !positive(depth))
+    {
+        return Err(Rule("a drill depth must be positive and cannot be through"));
+    }
+    if let Some(thread) = &hole.thread_depth
+        && (size.thread.is_none()
+            || !positive(thread)
+            || hole
+                .drill_depth
+                .as_ref()
+                .is_some_and(|drill| thread > drill))
+    {
+        return Err(Rule(
+            "a thread depth must be positive, designated and no longer than the drill depth",
+        ));
+    }
+    match &hole.head {
+        Some(HoleHead::Counterbore { diameter, depth })
+            if !positive(diameter)
+                || !positive(depth)
+                || hole
+                    .drill_depth
+                    .as_ref()
+                    .is_some_and(|drill| depth >= drill) =>
+        {
+            Err(Rule(
+                "the counterbore needs a positive diameter and a depth short of the drill bottom",
+            ))
+        }
+        Some(HoleHead::Countersink {
+            diameter,
+            included_angle,
+        }) if !positive(diameter)
+            || !positive(included_angle)
+            || *included_angle >= Rational::from_i64(180) =>
+        {
+            Err(Rule(
+                "the countersink needs a positive diameter and an included angle between 0 and 180 degrees",
+            ))
+        }
+        _ => Ok(()),
     }
 }
 

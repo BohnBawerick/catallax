@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use catallax_features::evaluate;
 use catallax_import::read_step_pmi;
 use catallax_numbers::{Decider, Rational};
-use catallax_recipe::Recipe;
+use catallax_recipe::{HolePart, Recipe, Role};
 use catallax_shapes::{Pose, Surface};
 use catallax_step::pmi::{
-    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, Item, ItemKind, Limits,
-    Location, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture, nominals,
+    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HoleHead, HoleSize, Item,
+    ItemKind, Limits, Location, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture, nominals,
 };
 use catallax_step::{StepOptions, write_step_with_pmi};
 use catallax_topology::{BodyId, FaceId, Loop, Model, cylinder};
@@ -1205,4 +1205,237 @@ fn a_threaded_hole_reads_back_with_its_designation() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, "step.pmi-invalid");
+}
+
+fn hole_fixture() -> (Bracket, Pmi<FaceId>) {
+    use serde_json::json;
+
+    let mut steps = vec![json!({
+        "id":"stock", "op":"block", "size":["40","20","12"],
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}
+    })];
+    let cases = [
+        (
+            "counterbore",
+            "5",
+            json!("through"),
+            Some((
+                json!({"counterbore":{"diameter":"7.5","depth":"2.25"}}),
+                HolePart::CounterboreWall,
+                HoleHead::Counterbore {
+                    diameter: q("7.5"),
+                    depth: q("2.25"),
+                },
+            )),
+            None,
+            None,
+        ),
+        (
+            "countersink",
+            "15",
+            json!("through"),
+            Some((
+                json!({"countersink":{"diameter":"6.25","angle":"90"}}),
+                HolePart::Countersink,
+                HoleHead::Countersink {
+                    diameter: q("6.25"),
+                    included_angle: q("90"),
+                },
+            )),
+            None,
+            None,
+        ),
+        (
+            "blind",
+            "25",
+            json!({"blind":"6.5"}),
+            None,
+            Some(q("6.5")),
+            None,
+        ),
+        (
+            "tapped",
+            "35",
+            json!({"blind":"8.25"}),
+            None,
+            Some(q("8.25")),
+            Some(q("5.5")),
+        ),
+    ];
+    let mut target = "stock";
+    for (id, x, depth, head, ..) in &cases {
+        let mut step = json!({
+            "id":id, "op":"hole", "target":target, "diameter":"2", "depth":depth, "tip":"flat",
+            "at":[{"id":"centre","point":[x,"10","0"],"direction":["0","0","1"]}]
+        });
+        if let Some((recipe, ..)) = head {
+            step["head"] = recipe.clone();
+        }
+        steps.push(step);
+        target = id;
+    }
+    let recipe = Recipe::parse(
+        &json!({"format":"catallax-recipe/3","name":"hole-pmi","steps":steps,"result":target})
+            .to_string(),
+    )
+    .unwrap();
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    let part = Bracket {
+        model: built.model,
+        body: built.result,
+    };
+    let faces = part.faces();
+    let named = |id: &str, part_kind: HolePart| {
+        let found: Feature<FaceId> = faces
+            .iter()
+            .copied()
+            .filter(|face| {
+                part.model.face_origins(*face).iter().any(|origin| {
+                    origin.step.as_str() == id
+                        && matches!(origin.role, Role::Hole { part, .. } if part == part_kind)
+                })
+            })
+            .collect();
+        assert!(!found.is_empty(), "{id}: missing {part_kind:?}");
+        found
+    };
+    let pmi = Pmi {
+        items: cases
+            .into_iter()
+            .map(|(id, _, _, head, drill_depth, thread_depth)| {
+                let mut features = vec![named(id, HolePart::Wall)];
+                let head = head.map(|(_, role, head)| {
+                    features.push(named(id, role));
+                    head
+                });
+                item(
+                    id,
+                    ItemKind::Size(Size {
+                        through: drill_depth.is_none(),
+                        thread: thread_depth.as_ref().map(|_| "M2.5x0.45 - 6H".to_owned()),
+                        kind: SizeKind::Hole(HoleSize {
+                            head,
+                            drill_depth,
+                            thread_depth,
+                        }),
+                        features,
+                        limits: None,
+                        nominal: None,
+                    }),
+                )
+            })
+            .collect(),
+        part: PartNotes::default(),
+    };
+    (part, pmi)
+}
+
+#[test]
+fn compound_and_blind_holes_keep_separate_faces_and_depths() {
+    let (part, pmi) = hole_fixture();
+    let (file, report) = write(&part, &pmi);
+    if let Ok(directory) = std::env::var("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("hole-pmi.step"),
+            &file,
+        )
+        .unwrap();
+    }
+    let read = |file: &str, report: &catallax_step::StepReport| {
+        let imported = read_step_pmi(file.as_bytes()).unwrap();
+        assert_eq!(imported.skipped, Vec::new());
+        let faces = written_faces(file, report);
+        sorted(
+            imported
+                .pmi
+                .try_map(|_, key| Ok::<_, ()>(faces[key]))
+                .unwrap(),
+        )
+    };
+    let mut expected = pmi;
+    for item in &mut expected.items {
+        let ItemKind::Size(size) = &mut item.kind else {
+            unreachable!()
+        };
+        size.nominal = Some(q("2"));
+    }
+    let expected = sorted(expected);
+    let imported = read(&file, &report);
+    assert_eq!(imported, expected);
+    let (exported, report) = write(&part, &imported);
+    assert_eq!(read(&exported, &report), expected);
+
+    let broken = file.replace("'counterbore','',#", "'unknown head','',#");
+    let imported = read_step_pmi(broken.as_bytes()).unwrap();
+    assert_eq!(imported.skipped.len(), 1, "{:?}", imported.skipped);
+    assert!(
+        imported.skipped[0].reason.contains("head relationship"),
+        "{:?}",
+        imported.skipped
+    );
+    assert_eq!(
+        imported
+            .pmi
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["countersink", "blind", "tapped"]
+    );
+}
+
+#[test]
+fn a_non_equivalent_group_is_not_a_simple_diameter() {
+    let (part, mut pmi) = hole_fixture();
+    let pilot = |index: usize| {
+        let ItemKind::Size(size) = &pmi.items[index].kind else {
+            unreachable!()
+        };
+        size.features[0].clone()
+    };
+    let features = vec![pilot(0), pilot(1)];
+    pmi.items.push(item(
+        "pattern",
+        ItemKind::Size(Size {
+            kind: SizeKind::Diameter,
+            features,
+            limits: None,
+            through: false,
+            thread: None,
+            nominal: None,
+        }),
+    ));
+    let (file, _) = write(&part, &pmi);
+    let all = entities(&file);
+    let group = all
+        .iter()
+        .find(|(_, (kind, _))| kind == "COMPOSITE_GROUP_SHAPE_ASPECT")
+        .unwrap()
+        .0;
+    let head = all
+        .values()
+        .find(|(kind, fields)| {
+            kind == "SHAPE_ASPECT_RELATIONSHIP" && fields.starts_with("'counterbore',")
+        })
+        .and_then(|(_, fields)| references(fields).pop())
+        .unwrap();
+    let (id, (_, fields)) = all
+        .iter()
+        .find(|(_, (kind, fields))| {
+            kind == "SHAPE_ASPECT_RELATIONSHIP" && references(fields).first() == Some(group)
+        })
+        .unwrap();
+    let bad = file.replace(
+        &format!("{id}=SHAPE_ASPECT_RELATIONSHIP({fields});"),
+        &format!("{id}=SHAPE_ASPECT_RELATIONSHIP('','',{group},{head});"),
+    );
+    let imported = read_step_pmi(bad.as_bytes()).unwrap();
+    assert_eq!(imported.skipped.len(), 1, "{:?}", imported.skipped);
+    assert!(
+        imported.skipped[0].reason.contains("different diameters"),
+        "{:?}",
+        imported.skipped
+    );
+    assert_eq!(imported.pmi.items.len(), 4);
+    assert!(!imported.pmi.items.iter().any(|item| item.id == "pattern"));
 }

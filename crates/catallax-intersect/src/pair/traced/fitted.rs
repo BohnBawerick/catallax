@@ -91,7 +91,7 @@ pub(in crate::pair) fn section(
         stage = "exact fitted-source embedding and complete parameter-chart cover";
         // Keep the original algebraic coefficients. Do not replace controls by
         // midpoints or attach the envelope's error bound to a different spline.
-        let mut atlases = RationalAtlas::partition(source.clone(), [false, false], dec)?;
+        let mut atlases = RationalAtlas::partition_rolling_envelope(envelope, dec)?;
         if atlases.len() != 1 {
             return Err(Refusal::new(
                 "intersect.trace-fitted-component-ownership",

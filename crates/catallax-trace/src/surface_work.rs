@@ -48,6 +48,10 @@ thread_local! {
     static ACTIVE: Cell<Option<State>> = const { Cell::new(None) };
 }
 
+pub(crate) fn active() -> bool {
+    ACTIVE.with(|active| active.get().is_some())
+}
+
 pub(crate) fn checkpoint(kind: Kind, units: u64) -> Result<(), Fault> {
     ACTIVE.with(|active| {
         let Some(mut state) = active.get() else {

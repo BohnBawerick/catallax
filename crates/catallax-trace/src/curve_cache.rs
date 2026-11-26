@@ -372,6 +372,26 @@ fn compute_constants(
     out.max_chord_height_squared = max_segment_chord;
     out.max_turning_angle_deg = total_angle * 180.0 / PI;
 
+    let steps = 20;
+    let approx_squared = approx_tolerance * approx_tolerance;
+    // The extrema search only selects samples for comparison; it never
+    // measures at the root it finds. If all sample pairs pass, no selection
+    // can fail. Keep the original checkpoints for metered intersections.
+    if !crate::surface_work::active()
+        && (1..=steps).all(|i| {
+            let parameter = interval.evaluate(f64::from(i) / f64::from(steps));
+            match (
+                bezier.evaluate_point(parameter),
+                original.evaluate_point(parameter),
+            ) {
+                (Ok(a), Ok(b)) => a.distance_squared(b) <= approx_squared,
+                _ => false,
+            }
+        })
+    {
+        return Ok(out);
+    }
+
     let tolerance = 10.0 * EFF_ZERO;
     let mut solver = LocalSolve1d::with_interval(
         CurveDistanceExtrema {
@@ -382,8 +402,6 @@ fn compute_constants(
         interval,
         false,
     );
-    let steps = 20;
-    let approx_squared = approx_tolerance * approx_tolerance;
     let (mut f, mut f1, mut found) = (0.0, 0.0, false);
     let mut previous_t = interval.min;
     let mut previous_f = 0.0;

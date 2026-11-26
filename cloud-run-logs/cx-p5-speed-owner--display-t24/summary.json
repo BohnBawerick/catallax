@@ -1,0 +1,34 @@
+{
+ "request_id": "cx-p5-speed-owner--display-t24",
+ "repo": "BohnBawerick/catallax",
+ "sha": "6182a6141dc4a50d419d035237a951622395587c",
+ "script_exit_code": 0,
+ "seconds": 7761,
+ "commands": [
+  {
+   "cmd": "python3 tools/display-diff/check.py capture cap --threads 24",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "echo P5CAPEXIT $?",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "sed 's/^/P5CAP /' cap/24.jsonl",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no cargo 'test result:' lines (check.py capture prints per-package JSON), so test counts are 0 by that rule. P5CAPEXIT 0 printed; 1227 P5CAP lines emitted. Requested --threads 24 on a 4 core VM. cargo fetch succeeded; rustc 1.100.0 stable was already current."
+}

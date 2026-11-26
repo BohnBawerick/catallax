@@ -1,0 +1,66 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s00",
+ "repo": "BohnBawerick/catallax",
+ "sha": "fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+ "script_exit_code": 1,
+ "seconds": 206,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s0",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<gzipped tar base64>' | base64 -d | tar -xzp -C \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" fe8beba50f716c1bcaf4176f680065b962e8fa2a 0 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "NOT-RUNNABLE in this VM: the final command (cloud-run.sh) stopped inside tools/p5/cloud_select.py with FileNotFoundError: [Errno 2] No such file or directory: 'bsdtar' (bsdtar is not installed; nothing was substituted). Before that, the 1.5 GB abc_0000_step_v00.7z downloaded and passed its checksum (OK) and a pip venv installed cadquery-ocp. No cargo build or test ran, so there are no test results. rustup stable was 1.100.0 (already installed); cargo fetch succeeded. /home/user/t9-scratch/s0/rows does not exist, so no rows were copied. No T9FAIL, T9COMPLETE or T9ROW lines in run.log. The per-command split inside cloud-run.sh is not visible in run.log beyond the pip install, the checksum line and the traceback."
+}

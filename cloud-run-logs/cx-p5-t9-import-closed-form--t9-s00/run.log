@@ -1,0 +1,85 @@
+total 28
+-rwxr-xr-x 1 root root 10352 Jan  1  1970 census-cloud.py
+-rwxr-xr-x 1 root root  2221 Jan  1  1970 cloud-run.sh
+-rwxr-xr-x 1 root root  2506 Jan  1  1970 compare-captures.py
+-rwxr-xr-x 1 root root   973 Jan  1  1970 profile-rustc
+-rw-r--r-- 1 root root  2057 Jan  1  1970 written-check.rs
+From https://github.com/BohnBawerick/catallax
+ * branch              9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 -> FETCH_HEAD
+ * branch              fe8beba50f716c1bcaf4176f680065b962e8fa2a -> FETCH_HEAD
+/home/user/t9-scratch/s0/abc_0000_step_v00.7z: OK
+Collecting cadquery-ocp==8.0.1.1.0
+  Downloading cadquery_ocp-8.0.1.1.0-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (831 bytes)
+Collecting cadquery-ocp-proxy==8.0.1.1.0 (from cadquery-ocp==8.0.1.1.0)
+  Downloading cadquery_ocp_proxy-8.0.1.1.0-py3-none-any.whl.metadata (4.7 kB)
+Collecting vtk==9.6.2 (from cadquery-ocp==8.0.1.1.0)
+  Downloading vtk-9.6.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.6 kB)
+Collecting matplotlib>=2.0.0 (from vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading matplotlib-3.11.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (80 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.3/80.3 kB 11.4 MB/s eta 0:00:00
+Collecting contourpy>=1.0.1 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (5.5 kB)
+Collecting cycler>=0.10 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading cycler-0.12.1-py3-none-any.whl.metadata (3.8 kB)
+Collecting fonttools>=4.28.2 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading fonttools-4.69.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (147 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 147.7/147.7 kB 32.9 MB/s eta 0:00:00
+Collecting kiwisolver>=1.3.1 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading kiwisolver-1.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.2 kB)
+Collecting numpy>=1.25 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading numpy-2.4.6-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+Collecting packaging>=20.0 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading packaging-26.4-py3-none-any.whl.metadata (3.5 kB)
+Collecting pillow>=9 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading pillow-13.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+Collecting pyparsing>=3 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading pyparsing-3.3.3-py3-none-any.whl.metadata (5.9 kB)
+Collecting python-dateutil>=2.7 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading python_dateutil-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+Collecting tzdata (from python-dateutil>=2.7->matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading tzdata-2026.6-py2.py3-none-any.whl.metadata (1.4 kB)
+Downloading cadquery_ocp-8.0.1.1.0-cp311-cp311-manylinux_2_28_x86_64.whl (67.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.0/67.0 MB 30.2 MB/s eta 0:00:00
+Downloading cadquery_ocp_proxy-8.0.1.1.0-py3-none-any.whl (3.2 kB)
+Downloading vtk-9.6.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (146.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 146.0/146.0 MB 15.2 MB/s eta 0:00:00
+Downloading matplotlib-3.11.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (9.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.9/9.9 MB 68.3 MB/s eta 0:00:00
+Downloading contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (355 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 355.2/355.2 kB 47.3 MB/s eta 0:00:00
+Downloading cycler-0.12.1-py3-none-any.whl (8.3 kB)
+Downloading fonttools-4.69.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (6.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.8/6.8 MB 53.6 MB/s eta 0:00:00
+Downloading kiwisolver-1.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (1.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 41.6 MB/s eta 0:00:00
+Downloading numpy-2.4.6-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.9/16.9 MB 38.3 MB/s eta 0:00:00
+Downloading packaging-26.4-py3-none-any.whl (140 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 140.0/140.0 kB 7.8 MB/s eta 0:00:00
+Downloading pillow-13.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (7.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.1/7.1 MB 50.8 MB/s eta 0:00:00
+Downloading pyparsing-3.3.3-py3-none-any.whl (126 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 126.4/126.4 kB 21.0 MB/s eta 0:00:00
+Downloading python_dateutil-4.0.0-py3-none-any.whl (92 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 92.9/92.9 kB 9.4 MB/s eta 0:00:00
+Downloading tzdata-2026.6-py2.py3-none-any.whl (348 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 348.2/348.2 kB 26.4 MB/s eta 0:00:00
+Installing collected packages: tzdata, pyparsing, pillow, packaging, numpy, kiwisolver, fonttools, cycler, cadquery-ocp-proxy, python-dateutil, contourpy, matplotlib, vtk, cadquery-ocp
+Successfully installed cadquery-ocp-8.0.1.1.0 cadquery-ocp-proxy-8.0.1.1.0 contourpy-1.3.3 cycler-0.12.1 fonttools-4.69.1 kiwisolver-1.5.1 matplotlib-3.11.2 numpy-2.4.6 packaging-26.4 pillow-13.0.0 pyparsing-3.3.3 python-dateutil-4.0.0 tzdata-2026.6 vtk-9.6.2
+
+[notice] A new release of pip is available: 24.0 -> 26.3
+[notice] To update, run: /home/user/t9-scratch/s0/venv/bin/python -m pip install --upgrade pip
+Traceback (most recent call last):
+  File "/tmp/tmp.I8RVoLptZu/owner/tools/p5/cloud_select.py", line 64, in <module>
+    main()
+  File "/tmp/tmp.I8RVoLptZu/owner/tools/p5/cloud_select.py", line 33, in main
+    names = subprocess.run(['bsdtar', '-tf', str(args.archive)], check=True, capture_output=True,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 548, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 1026, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/usr/lib/python3.11/subprocess.py", line 1955, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: 'bsdtar'

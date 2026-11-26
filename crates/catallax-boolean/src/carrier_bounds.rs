@@ -10,6 +10,14 @@ fn zero() -> Interval {
 fn point(p: &Point3) -> Box3 {
     [p.x.approx(), p.y.approx(), p.z.approx()]
 }
+
+/// A strict gap in one coordinate excludes the point from the whole carrier.
+pub(crate) fn excludes_point(bounds: &Box3, query: &Point3) -> bool {
+    bounds
+        .iter()
+        .zip(point(query))
+        .any(|(a, b)| a.hi() < b.lo() || b.hi() < a.lo())
+}
 fn vector(v: &Vector3) -> Box3 {
     [v.x.approx(), v.y.approx(), v.z.approx()]
 }

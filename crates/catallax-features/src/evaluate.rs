@@ -7,7 +7,7 @@ use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, Role, StepId, ThroughSide};
 use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
-use im::OrdMap;
+use im::{OrdMap, Vector};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
@@ -104,71 +104,149 @@ impl fmt::Display for BuildError {
 }
 impl std::error::Error for BuildError {}
 
-/// An immutable evaluated prefix. Cloning shares its state in constant time.
+/// An immutable exact evaluation with checkpoints for its earlier steps.
 ///
-/// Keep one per body for undo, branches and concurrent queries. Continuing a
-/// clone copies only modified store paths, leaving saved models unchanged.
-#[derive(Clone, Debug)]
-pub struct EvaluationCheckpoint {
-    built: Arc<Built>,
+/// Keep one per body for edits, undo and concurrent queries. Clones share the
+/// stored models; continuing a clone copies only the modified store paths.
+#[derive(Clone)]
+pub struct EvaluationCheckpoint(Arc<CheckpointData>);
+
+#[derive(Clone)]
+struct CheckpointData {
+    built: Built,
     profiles: OrdMap<StepId, Profile>,
     paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
     meshes: OrdMap<StepId, crate::mesh_ops::MeshValue>,
     policy: BudgetPolicy,
+    // Entry i is the state after i + 1 steps. `built` holds the final state.
+    history: Vector<Arc<StepCheckpoint>>,
+}
+
+impl fmt::Debug for EvaluationCheckpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let data = &self.0;
+        f.debug_struct("EvaluationCheckpoint")
+            .field("built", &data.built)
+            .field("profiles", &data.profiles)
+            .field("paths", &data.paths)
+            .field("bodies", &data.bodies)
+            .field("meshes", &data.meshes)
+            .field("policy", &data.policy)
+            .finish()
+    }
 }
 
 impl EvaluationCheckpoint {
     /// The exact body, intermediate bodies and definitions at this checkpoint.
     pub fn built(&self) -> &Built {
-        &self.built
+        &self.0.built
     }
 
     /// Takes the build, sharing model stores if other checkpoints still retain it.
     pub fn into_built(self) -> Built {
-        Arc::unwrap_or_clone(self.built)
+        match Arc::try_unwrap(self.0) {
+            Ok(data) => data.built,
+            Err(data) => data.built.clone(),
+        }
     }
 
     fn into_state(self) -> EvaluationState {
-        let built = Arc::unwrap_or_clone(self.built);
+        let CheckpointData {
+            built,
+            profiles,
+            paths,
+            bodies,
+            meshes,
+            history,
+            ..
+        } = Arc::unwrap_or_clone(self.0);
         EvaluationState {
-            model: built.model,
-            profiles: self.profiles,
-            paths: self.paths,
-            bodies: self.bodies,
-            meshes: self.meshes,
+            values: EvaluationValues {
+                model: built.model,
+                profiles,
+                paths,
+                bodies,
+                meshes,
+            },
             fillets: built.fillets,
             consumed: built.consumed,
             chamfers: built.chamfers,
             stand_ins: built.stand_ins,
             import_records: built.import_records,
             import_solids: built.import_solids,
+            history: Some(history),
         }
     }
 }
 
-#[derive(Default)]
-struct EvaluationState {
+#[derive(Clone, Default)]
+struct EvaluationValues {
     model: Model,
     profiles: OrdMap<StepId, Profile>,
     paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
     /// The exact triangles of every mesh step, RECIPE.md sections 4.19 to 4.22.
     meshes: OrdMap<StepId, crate::mesh_ops::MeshValue>,
+}
+
+#[derive(Clone)]
+struct StepCheckpoint {
+    values: EvaluationValues,
+    // The feature registries only append, so snapshots need only their lengths.
+    lengths: [usize; 4],
+}
+
+#[derive(Default)]
+struct EvaluationState {
+    values: EvaluationValues,
     fillets: Vec<crate::fillet::FilletDefinition>,
     consumed: Vec<crate::ConsumedFace>,
     chamfers: Vec<crate::chamfer::ChamferDefinition>,
     stand_ins: Vec<StandIn>,
     import_records: BTreeMap<StepId, catallax_import::RepairRecord>,
     import_solids: BTreeMap<StepId, Vec<crate::import_edit::ImportedSolid>>,
+    history: Option<Vector<Arc<StepCheckpoint>>>,
 }
 
 impl EvaluationState {
+    fn remember(&mut self) {
+        if let Some(history) = &mut self.history {
+            history.push_back(Arc::new(StepCheckpoint {
+                values: self.values.clone(),
+                lengths: [
+                    self.fillets.len(),
+                    self.consumed.len(),
+                    self.chamfers.len(),
+                    self.stand_ins.len(),
+                ],
+            }));
+        }
+    }
+
+    fn rewind(&mut self, steps: usize) {
+        let history = self.history.as_mut().expect("incremental evaluation");
+        history.truncate(steps);
+        // Make this the current state, not an earlier entry in its history.
+        let checkpoint = Arc::unwrap_or_clone(history.pop_back().expect("matching step"));
+        self.values = checkpoint.values;
+        let [fillets, consumed, chamfers, stand_ins] = checkpoint.lengths;
+        self.fillets.truncate(fillets);
+        self.consumed.truncate(consumed);
+        self.chamfers.truncate(chamfers);
+        self.stand_ins.truncate(stand_ins);
+        self.import_records
+            .retain(|id, _| self.values.bodies.contains_key(id));
+        self.import_solids
+            .retain(|id, _| self.values.bodies.contains_key(id));
+    }
+
     fn finish(self, definition: Arc<Recipe>) -> Built {
         Built {
-            result: self.bodies[&definition.result].body,
-            model: self.model,
+            result: self.values.bodies[&definition.result].body,
+            model: self.values.model,
             bodies: self
+                .values
                 .bodies
                 .into_iter()
                 .map(|(id, value)| (id, value.body))
@@ -430,7 +508,8 @@ fn numerical_hole_impl(
         dec,
     )?;
     let after_prefix = catallax_numbers::current_operation_work().used;
-    let source = &state.bodies[target];
+    let source = &state.values.bodies[target];
+    let model = &state.values.model;
     let geometry = |refusal| BuildError::Geometry {
         step: step.id.clone(),
         refusal,
@@ -464,14 +543,14 @@ fn numerical_hole_impl(
         let next = if let Some(previous) = previous {
             previous
                 .hole
-                .rebuild(&state.model, source.body, &key, &span, options, dec)
+                .rebuild(model, source.body, &key, &span, options, dec)
         } else {
-            crate::hole::build_numerical_hole(&state.model, source.body, &key, &span, options, dec)
+            crate::hole::build_numerical_hole(model, source.body, &key, &span, options, dec)
         }?;
         let Some(hole) = next else { return Ok(None) };
         let mut origins = BTreeMap::new();
         for (key, source) in hole.source_faces() {
-            origins.insert(key.clone(), state.model.face_origins(*source).to_vec());
+            origins.insert(key.clone(), model.face_origins(*source).to_vec());
         }
         let mut wall_origins: Vec<_> = span
             .bands
@@ -526,15 +605,14 @@ pub fn evaluate_with_files(
     .map(|state| state.finish(Arc::new(recipe.clone())))
 }
 
-/// Evaluates only the suffix after a matching checkpoint.
+/// Resumes from the longest unchanged leading sequence of steps, then evaluates
+/// the remaining steps in recipe order.
 ///
-/// Prefix equality includes step order, IDs and every operation parameter.
-/// A changed/removed prefix step, format or numeric policy discards the checkpoint
-/// and rebuilds from the start. Recipe metadata and result selection may change.
-/// Source-byte verification is charged on each call, including prefix sources.
-/// Only suffix geometry work is charged anew; cached prefix proofs were charged
-/// when that checkpoint was built. Certified builds are not
-/// accepted as checkpoints. Failures return no partial checkpoint.
+/// Equality includes order, IDs and every operation parameter. A different
+/// format or numeric policy excludes reuse. Recipe metadata and result selection
+/// may change. Source-byte verification is charged again, including prefix
+/// sources. Cached geometry proofs were charged when built. Certified builds
+/// are not accepted as checkpoints. Failures return no partial checkpoint.
 pub fn evaluate_incremental(
     recipe: &Recipe,
     prefix: Option<EvaluationCheckpoint>,
@@ -561,32 +639,49 @@ fn resume_state(
     prefix: Option<EvaluationCheckpoint>,
     dec: &Decider,
 ) -> (EvaluationState, usize) {
-    match prefix {
-        Some(prefix)
-            if prefix.policy == *dec.policy()
-                && prefix.built.recipe().format == recipe.format
-                && recipe.steps.starts_with(&prefix.built.recipe().steps) =>
-        {
-            let start = prefix.built.recipe().steps.len();
-            (prefix.into_state(), start)
+    if let Some(prefix) = prefix
+        && prefix.0.policy == *dec.policy()
+        && prefix.built().recipe().format == recipe.format
+    {
+        let old_steps = &prefix.built().recipe().steps;
+        let start = old_steps
+            .iter()
+            .zip(&recipe.steps)
+            .take_while(|(old, new)| old == new)
+            .count();
+        if start > 0 {
+            let rewind = start < old_steps.len();
+            let mut state = prefix.into_state();
+            if rewind {
+                state.rewind(start);
+            }
+            return (state, start);
         }
-        _ => (EvaluationState::default(), 0),
     }
+    (
+        EvaluationState {
+            history: Some(Vector::new()),
+            ..EvaluationState::default()
+        },
+        0,
+    )
 }
 
 fn checkpoint(mut state: EvaluationState, recipe: &Recipe, dec: &Decider) -> EvaluationCheckpoint {
-    let profiles = std::mem::take(&mut state.profiles);
-    let paths = std::mem::take(&mut state.paths);
-    let bodies = state.bodies.clone();
-    let meshes = state.meshes.clone();
-    EvaluationCheckpoint {
-        built: Arc::new(state.finish(Arc::new(recipe.clone()))),
+    let profiles = std::mem::take(&mut state.values.profiles);
+    let paths = std::mem::take(&mut state.values.paths);
+    let bodies = state.values.bodies.clone();
+    let meshes = std::mem::take(&mut state.values.meshes);
+    let history = state.history.take().expect("incremental evaluation");
+    EvaluationCheckpoint(Arc::new(CheckpointData {
+        built: state.finish(Arc::new(recipe.clone())),
         profiles,
         paths,
         bodies,
         meshes,
         policy: *dec.policy(),
-    }
+        history,
+    }))
 }
 
 /// Opts into the recorded 1 nm modelling policy and the first complete bounded
@@ -625,7 +720,7 @@ fn evaluate_impl(
     files: &ImportFiles<'_>,
     certification: Option<&mut crate::certified::CertificationContext<'_>>,
     numerical_sweep: Option<&mut crate::general_sweep::Context>,
-    state: EvaluationState,
+    mut state: EvaluationState,
     start: usize,
     numerical: Option<&mut numerical_fillet::Context>,
     dec: &mut Decider,
@@ -667,19 +762,6 @@ fn evaluate_impl(
             }));
         }
     }
-    let EvaluationState {
-        mut model,
-        mut profiles,
-        mut paths,
-        mut bodies,
-        mut meshes,
-        mut fillets,
-        mut consumed,
-        mut chamfers,
-        mut stand_ins,
-        mut import_records,
-        mut import_solids,
-    } = state;
     // Each step is a task. It waits for the steps it names as inputs and, when
     // it reads or extends the fillet, draft and chamfer registries carried from
     // step to step, for the last step that changed them. Everything else a step
@@ -703,7 +785,10 @@ fn evaluate_impl(
         numerical_sweep,
         numerical,
     };
-    for step in &recipe.steps[start..] {
+    for (offset, step) in recipe.steps[start..].iter().enumerate() {
+        if start + offset > 0 {
+            state.remember();
+        }
         let declared = step::Effects::of(&step.op);
         #[cfg(feature = "work-span")]
         let _task = tasks.task();
@@ -724,69 +809,66 @@ fn evaluate_impl(
                 }),
             )
         };
+        let values = &mut state.values;
         let inputs = step::Inputs {
-            profiles: &profiles,
-            paths: &paths,
-            bodies: &bodies,
-            meshes: &meshes,
-            records: step::Published::new(&fillets, &chamfers),
+            profiles: &values.profiles,
+            paths: &values.paths,
+            bodies: &values.bodies,
+            meshes: &values.meshes,
+            records: step::Published::new(&state.fillets, &state.chamfers),
         };
         let step::Outcome {
             value,
             changes,
             effects,
-        } = step::run(recipe, files, &mut modes, step, &inputs, &mut model, dec).map_err(
-            |refusal| BuildError::Geometry {
-                step: step.id.clone(),
-                refusal,
-            },
-        )?;
+        } = step::run(
+            recipe,
+            files,
+            &mut modes,
+            step,
+            &inputs,
+            &mut values.model,
+            dec,
+        )
+        .map_err(|refusal| BuildError::Geometry {
+            step: step.id.clone(),
+            refusal,
+        })?;
         debug_assert!(
             declared.covers(effects),
             "step {} touched {effects:?}, beyond its declared {declared:?}",
             step.id
         );
         // Publish in step order: the records first, then the step's value.
-        fillets.extend(changes.fillets);
-        consumed.extend(changes.consumed);
-        chamfers.extend(changes.chamfers);
-        stand_ins.extend(changes.stand_ins);
+        state.fillets.extend(changes.fillets);
+        state.consumed.extend(changes.consumed);
+        state.chamfers.extend(changes.chamfers);
+        state.stand_ins.extend(changes.stand_ins);
         let id = step.id.clone();
         match value {
-            step::Value::Nothing | step::Value::Numerical => {}
+            step::Value::Nothing => {}
+            step::Value::Numerical => state.history = None,
             step::Value::Profile(profile) => {
-                profiles.insert(id, profile);
+                values.profiles.insert(id, profile);
             }
             step::Value::Path(path) => {
-                paths.insert(id, path);
+                values.paths.insert(id, path);
             }
             step::Value::Body(body) => {
-                bodies.insert(id, body);
+                values.bodies.insert(id, body);
             }
             step::Value::Mesh(body, mesh) => {
-                meshes.insert(id.clone(), mesh);
-                bodies.insert(id, body);
+                values.meshes.insert(id.clone(), mesh);
+                values.bodies.insert(id, body);
             }
             step::Value::Import(body, record, solids) => {
-                import_solids.insert(id.clone(), solids);
-                import_records.insert(id.clone(), record);
-                bodies.insert(id, body);
+                state.import_solids.insert(id.clone(), solids);
+                state.import_records.insert(id.clone(), record);
+                values.bodies.insert(id, body);
             }
         }
     }
-    Ok(EvaluationState {
-        model,
-        profiles,
-        paths,
-        bodies,
-        meshes,
-        fillets,
-        consumed,
-        chamfers,
-        stand_ins,
-        import_records,
-        import_solids,
-    })
+    Ok(state)
 }
 
 pub(crate) fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
@@ -834,8 +916,8 @@ pub(crate) fn numerical_sweep_impl(
         None,
         dec,
     )?;
-    let body = state.bodies[&recipe.result].body;
-    Ok((state.model, body))
+    let body = state.values.bodies[&recipe.result].body;
+    Ok((state.values.model, body))
 }
 
 /// Evaluate the opt-in numerical source and its edits atomically. Every stage shares

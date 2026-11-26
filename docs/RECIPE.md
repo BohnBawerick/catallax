@@ -30,6 +30,8 @@ The recipe names one step as its `result`, which must make a body. Version 4 als
 - **Operations make new values and never edit their inputs.** The reason is that one definition per operation then reads as a function from inputs to output, and any step can be rebuilt or compared on its own. SolidDraft's kernel slot works the same way. The alternative is features that edit "the part" in place, such as an extrude that merges into whatever came before. Recipes get shorter, but every such feature hides a boolean whose naming must also be defined.
 - **A step reads only earlier steps.** The recipe is then a sequence a rebuild walks once, with no cycles to detect. The alternative is a graph whose order the reader works out. Steps could then be listed in any order, at the cost of a cycle check and a second order to keep stable.
 
+An incremental B-rep build reuses the checkpoints for the unchanged leading steps. It evaluates from the first changed step onwards. A format or numeric policy change prevents reuse, and the build still verifies every import source.
+
 ### 1.2 Ids
 
 Step ids, and element ids inside a step (sketch segments, path segments, hole placements), use the grammar of the exchange contract's step names: 1 to 64 characters from `a-z 0-9 _ -`.

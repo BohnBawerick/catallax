@@ -595,14 +595,14 @@ fn the_bracket_file_counts_its_items_and_states_their_strings() {
         .unwrap();
     let counts: Vec<(String, String)> = properties[&shape].clone();
     let expected = [
-        ("number of semantic pmi elements", "26."),
-        ("number of dimensional locations", "14."),
-        ("number of dimensional sizes", "4."),
-        ("number of geometric tolerances", "4."),
-        ("number of composite tolerances", "0."),
-        ("number of datums", "3."),
-        ("number of datum targets", "0."),
-        ("number of annotations", "1."),
+        ("number of semantic pmi elements", "26"),
+        ("number of dimensional locations", "14"),
+        ("number of dimensional sizes", "4"),
+        ("number of geometric tolerances", "4"),
+        ("number of composite tolerances", "0"),
+        ("number of datums", "3"),
+        ("number of datum targets", "0"),
+        ("number of annotations", "1"),
     ]
     .map(|(name, value)| {
         (

@@ -1,0 +1,123 @@
+name: display answers
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: display-answers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      affected: ${{ steps.paths.outputs.affected }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select display changes from the complete PR diff
+        id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          affected=$(git diff --name-only --no-renames -z "$BASE...$HEAD" -- | python3 -B tools/display-diff/check.py affected)
+          if [[ "$affected" == true ]]; then
+            git merge-base --is-ancestor 6182a6141dc4a50d419d035237a951622395587c "$BASE"
+          fi
+          echo "affected=$affected" >> "$GITHUB_OUTPUT"
+
+  capture:
+    needs: select
+    if: needs.select.outputs.affected == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - name: Start elapsed timer
+        id: started
+        run: |
+          echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/display-target" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: main
+          persist-credentials: false
+      - name: Exercise the display gate
+        working-directory: head
+        run: python3 -B -m unittest discover -s tools/display-diff -p test_check.py
+      - uses: ./head/.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+      - name: Identify the capture toolchain
+        id: toolchain
+        run: |
+          version=$(rustc -Vv | sha256sum)
+          echo "version=${version%% *}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: baseline
+        with:
+          path: ${{ runner.temp }}/display-main
+          key: display-main-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.version }}-${{ github.event.pull_request.base.sha }}-${{ hashFiles('head/tools/display-diff/check.py', 'head/tools/display-diff/ellipse-rim.json', 'head/tools/display-diff/cases/**') }}
+      - name: Capture main at 1 worker
+        if: steps.baseline.outputs.cache-hit != 'true'
+        working-directory: main
+        run: |
+          python3 -B ../head/tools/display-diff/check.py capture "$RUNNER_TEMP/display-main" --collector interface --threads 1
+          echo "Main capture: ${SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/cache/save@v4
+        if: steps.baseline.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/display-main
+          key: ${{ steps.baseline.outputs.cache-primary-key }}
+      - name: Capture the PR head at 1 and 4 workers
+        working-directory: head
+        run: |
+          python3 -B tools/display-diff/check.py capture "$RUNNER_TEMP/display-head" --collector interface --threads 1 --threads 4
+          echo "Head capture (both worker counts): ${SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+      - name: Require display answers to match
+        run: |
+          flags=()
+          if [[ -f head/tools/display-diff/exceptions.jsonl ]]; then
+            flags+=(--exceptions head/tools/display-diff/exceptions.jsonl)
+          fi
+          if [[ -f main/tools/display-diff/exceptions.jsonl ]]; then
+            flags+=(--baseline-exceptions main/tools/display-diff/exceptions.jsonl)
+          fi
+          python3 -B head/tools/display-diff/check.py compare "$RUNNER_TEMP/display-main" "$RUNNER_TEMP/display-head" --gate "${flags[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: display-captures
+          path: |
+            ${{ runner.temp }}/display-main/*.jsonl
+            ${{ runner.temp }}/display-head/*.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Record job elapsed time
+        if: ${{ always() && steps.started.outcome == 'success' }}
+        env:
+          STARTED: ${{ steps.started.outputs.epoch }}
+          CACHE_HIT: ${{ steps.baseline.outputs.cache-hit }}
+        run: |
+          echo "Display job: $(($(date +%s) - STARTED))s (baseline cache hit: ${CACHE_HIT:-false})." >> "$GITHUB_STEP_SUMMARY"

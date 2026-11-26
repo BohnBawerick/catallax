@@ -11,6 +11,9 @@ collector rewrites four function bodies and hashes `Debug` text; keep it for
 revisions that predate the interface. Compare captures from one collector
 only, and pin exceptions against that collector's rows. `migrate` checks that
 both collectors on one revision record the same calls, results and work.
+
+The CI gate is `compare --gate`: it compares interface digests with main
+and requires the candidate's 1- and 4-worker captures to match exactly.
 """
 import argparse
 import collections
@@ -31,6 +34,7 @@ PROBES = {
     "catallax-field/src/display.rs": ("mesh_plan_inner",),
 }
 THREAD_COUNTS = (1, 2, 4, 24)
+GATE_THREADS = (1, 4)
 # Cargo features that turn on the interface collector in each tested package.
 CAPTURE_FEATURES = {
     "catallax-mesh": "display-capture",
@@ -38,8 +42,8 @@ CAPTURE_FEATURES = {
     "catallax-app": "catallax-field/display-capture",
     "catallax-features": "catallax-field/display-capture",
 }
-# Record format written by catallax_mesh::capture::FORMAT.
-INTERFACE_FORMAT = 1
+# Formats 1 and 2 share a digest encoding; only 2 exposes the outcome.
+INTERFACE_FORMAT = 2
 SUITES = {
     "catallax-mesh": "native_boundaries preview_boundary",
     "catallax-app": (
@@ -74,6 +78,43 @@ SHARED_CASES = {
     "catallax-features/tests/variable_fillets.rs": "variable_fillets.rs",
     "catallax-field/tests/patch_shell.rs": "patch_shell.rs",
 }
+
+DISPLAY_PATHS = (
+    ".github/actions/rust-toolchain/",
+    ".github/workflows/display-diff.yml",
+    "tools/display-diff/",
+    "crates/catallax-mesh/",
+    "crates/catallax-app/Cargo.toml",
+    "crates/catallax-app/src/certified.rs",
+    "crates/catallax-app/src/lib.rs",
+    "crates/catallax-app/src/lifecycle.rs",
+    "crates/catallax-app/src/numerical_sweeps.rs",
+    "crates/catallax-app/src/preview.rs",
+    "crates/catallax-app/src/views.rs",
+    "crates/catallax-field/Cargo.toml",
+    "crates/catallax-field/src/display.rs",
+    "crates/catallax-field/src/display/",
+    "crates/catallax-field/src/mesh.rs",
+    "crates/catallax-field/src/patch_shell.rs",
+    "crates/catallax-field/src/patch_shell/",
+    "crates/catallax-field/src/unproved_batch.rs",
+    "crates/catallax-field/src/unproved_wgsl.rs",
+    "crates/catallax-field/src/workers.rs",
+)
+DISPLAY_TESTS = frozenset(
+    f"crates/{package}/tests/{name}.rs"
+    for package, suites in SUITES.items() for name in suites.split()
+)
+
+
+def affects_display(paths):
+    return any(
+        path in DISPLAY_TESTS or any(
+            path.startswith(rule) if rule.endswith("/") else path == rule
+            for rule in DISPLAY_PATHS
+        )
+        for path in paths
+    )
 
 RUST_PROBE = r'''
 fn differential_record(
@@ -291,11 +332,17 @@ def parse(line, collector):
         return {"call": [case, function, options], "carriers": tags,
                 "work": json.loads(work), "sha256": digest}
     if collector == "interface" and fields[0] == "displaycapture":
-        version, case, function, tags, options, work, digest = fields[1:]
-        if int(version) != INTERFACE_FORMAT:
-            raise ValueError(f"record format {version}, this tool reads {INTERFACE_FORMAT}")
-        return {"call": [case, function, options], "carriers": tags, "format": int(version),
-                "work": json.loads(work), "sha256": digest}
+        version, case, function, tags, options, work, digest, *status = fields[1:]
+        version = int(version)
+        if version not in (1, INTERFACE_FORMAT):
+            raise ValueError(f"unsupported display record format {version}")
+        row = {"call": [case, function, options], "carriers": tags, "format": version,
+               "work": json.loads(work), "sha256": digest}
+        if version == INTERFACE_FORMAT and status in (["ok"], ["refused"]):
+            row["refused"] = status == ["refused"]
+        elif version != 1 or status:
+            raise ValueError(f"invalid outcome for display record format {version}: {status}")
+        return row
     return None
 
 
@@ -374,6 +421,66 @@ def compare(baseline, candidate, exception_path=None):
     return bool(unexpected or exceptions)
 
 
+def gate_rows(path, versions):
+    rows = load(path)
+    version = collector(rows, path)
+    if version not in versions:
+        raise ValueError(f"{path}: expected interface record format {versions}, got {version}")
+    for key, row in rows.items():
+        if not re.fullmatch(r"[a-f0-9]{64}", row["sha256"]):
+            raise ValueError(f"{path}: invalid digest: {key}")
+        if version == INTERFACE_FORMAT and type(row.get("refused")) is not bool:
+            raise ValueError(f"{path}: missing or invalid refusal status: {key}")
+    return rows
+
+
+def compare_gate(baseline, candidate, exception_path, baseline_exception_path):
+    one, four = (candidate / f"{count}.jsonl" for count in GATE_THREADS)
+    main = gate_rows(baseline / one.name, (1, INTERFACE_FORMAT))
+    head = gate_rows(one, (INTERFACE_FORMAT,))
+    parallel = gate_rows(four, (INTERFACE_FORMAT,))
+    worker_differences = 0
+    for key in sorted(head.keys() | parallel.keys()):
+        if head.get(key) != parallel.get(key):
+            worker_differences += 1
+            print(json.dumps({"problem": "worker difference", "key": key,
+                              "1 worker": head.get(key), "4 workers": parallel.get(key)}))
+
+    exceptions = load_exceptions(exception_path) if exception_path else {}
+    old_exceptions = load_exceptions(baseline_exception_path) if baseline_exception_path else {}
+    exceptions = {key: pin for key, pin in exceptions.items() if pin != old_exceptions.get(key)}
+    exact = recorded = unexpected = 0
+    for key, before in sorted(main.items()):
+        after = head.get(key)
+        pin = exceptions.get(key)
+        if after is None:
+            problem = "missing display call"
+        elif before["sha256"] == after["sha256"]:
+            if before.get("refused", after["refused"]) == after["refused"]:
+                exact += 1
+                continue
+            problem = "inconsistent refusal status"
+        elif after["refused"] and not before.get("refused", False):
+            # Format 1 cannot prove that a different refusal already existed.
+            problem = "new refusal"
+        elif pin and (pin["main_sha256"], pin["candidate_sha256"]) == (
+            before["sha256"], after["sha256"]
+        ):
+            del exceptions[key]
+            recorded += 1
+            continue
+        else:
+            problem = "unlisted digest change"
+        unexpected += 1
+        print(json.dumps({"problem": problem, "key": key, "main": before, "candidate": after}))
+
+    for key in sorted(exceptions):
+        print(f"Stale or unused exception: {key}")
+    print(f"{exact} unchanged digests, {recorded} listed changes, {unexpected} unexpected changes, "
+          f"{len(head.keys() - main.keys())} new calls, {worker_differences} worker differences")
+    return bool(unexpected or exceptions or worker_differences)
+
+
 def migrate(probe_path, interface_path):
     """Match a probe capture with an interface capture of the same revision.
 
@@ -423,16 +530,24 @@ def main():
     run.add_argument("output", type=Path)
     run.add_argument("--collector", choices=("interface", "probe"), default="interface")
     run.add_argument("--threads", type=int, action="append", choices=THREAD_COUNTS,
-                     help="capture only these worker counts; compare needs all of them")
+                     help="capture only these worker counts; compare --gate uses 1 and 4")
     run.add_argument("--suite", action="append", choices=sorted(" ".join(SUITES.values()).split()))
     diff = commands.add_parser("compare")
     diff.add_argument("baseline", type=Path)
     diff.add_argument("candidate", type=Path)
     diff.add_argument("--exceptions", type=Path)
+    diff.add_argument("--gate", action="store_true", help="require CI interface and worker checks")
+    diff.add_argument("--baseline-exceptions", type=Path,
+                      help="with --gate, ignore exception records already on main")
+    commands.add_parser("affected", help="read NUL-delimited changed paths on stdin")
     match = commands.add_parser("migrate")
     match.add_argument("probe", type=Path)
     match.add_argument("interface", type=Path)
     args = parser.parse_args()
+
+    if args.command == "affected":
+        print(str(affects_display(os.fsdecode(sys.stdin.buffer.read()).split("\0"))).lower())
+        return 0
 
     if args.command == "capture":
         args.output.mkdir(parents=True, exist_ok=True)
@@ -460,6 +575,11 @@ def main():
             migrate(args.probe / f"{count}.jsonl", args.interface / f"{count}.jsonl")
             for count in THREAD_COUNTS
         ]))
+
+    if args.gate:
+        return int(compare_gate(args.baseline, args.candidate, args.exceptions, args.baseline_exceptions))
+    if args.baseline_exceptions:
+        parser.error("--baseline-exceptions requires --gate")
 
     first, *rest = (f"{count}.jsonl" for count in THREAD_COUNTS)
     failed = compare(args.baseline / first, args.candidate / first, args.exceptions)

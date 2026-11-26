@@ -3229,7 +3229,11 @@ pub(crate) fn build_preview(
             dec,
         };
         builder.boundary(&segments, definition.sense)?;
-        builder.grid()?;
+        // Planar interpolation is affine. Grid seeds add no resolution, and a
+        // rounded bounding-box corner can land just inside a shared chord.
+        if !matches!(chart.surface, Surface::Plane(_)) {
+            builder.grid()?;
+        }
         let triangles = builder.finish_preview(face, definition.sense)?;
         boundaries.mesh.positions = positions.into_local();
         let start = boundaries.mesh.triangles.len();

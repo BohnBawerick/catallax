@@ -1643,6 +1643,16 @@ The application checks topology and derives display from `checkpoint.built()`.
 It honors the same aggregate application work guard and caller-owned allowance
 as `build`; prefix reuse does not reset or enlarge either limit.
 
+When the previous display is still retained, call
+`previous.edit(&recipe, &mesh_options, &mut decider)` to reuse both the
+unchanged recipe steps and compatible certified face meshes. This requires the
+unmodified previous checkpoint and display. A face is rebuilt when its
+definition, sampled boundary, effective tolerance, or earlier shared chords
+change. `meshed_faces()` and `reused_faces()` count physical faces before
+rational chart cells are merged into logical picking faces. The revision
+controller uses its last confirmed result for this reuse, not an unproved
+preview or a failed edit.
+
 For edit rebuilds that do not need a certified mesh immediately,
 `catallax_app::build_incremental_without_display(&recipe, prefix, &mut decider)`
 returns `EvaluatedApplicationBody` with `checkpoint` and the same `names`.

@@ -130,6 +130,7 @@ fn validate(options: &PreviewOptions) -> Result<(), Refusal> {
 }
 
 /// Samples the retained B-rep for display, without certifying its triangles.
+/// Its topological edge polylines are sampled once for all incident faces.
 ///
 /// This synchronous call uses the caller's decider and active work allowance.
 /// It never starts, replaces, or enlarges an allowance and never calls
@@ -162,5 +163,5 @@ fn preview_checked(
     if crate::junction::present(model, body) {
         return crate::junction::preview(model, body, options, dec);
     }
-    crate::triangulate::build_preview(model, body, options, dec)
+    crate::triangulate::build_preview(model, body, options, None, dec)
 }

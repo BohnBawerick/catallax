@@ -4,7 +4,7 @@
 //! one line to standard error, with tab-separated fields:
 //!
 //! `displaycapture`, [`FORMAT`], thread name, function, spline carriers,
-//! options, work counters and the SHA-256 digest of the result.
+//! options, work counters, the SHA-256 digest of the result and its outcome.
 //!
 //! The digest covers an explicit encoding of what a caller can observe:
 //! coordinates as binary64 bits, indices, exact rationals in lowest terms,
@@ -23,31 +23,34 @@ use sha2::{Digest, Sha256};
 use crate::{DisplayMesh, Mesh, MeshControl, MeshOptions, PreviewMesh, PreviewOptions, Triangle};
 
 /// Version of the record line and of every result encoding.
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
 
 /// A running digest of one result.
-pub struct Encoder(Sha256);
+pub struct Encoder {
+    digest: Sha256,
+    refused: bool,
+}
 
 impl Encoder {
     /// Length-prefixed text.
     pub fn text(&mut self, text: &str) {
         self.count(text.len());
-        self.0.update(text.as_bytes());
+        self.digest.update(text.as_bytes());
     }
 
     /// A count, index or tag.
     pub fn count(&mut self, value: usize) {
-        self.0.update((value as u64).to_le_bytes());
+        self.digest.update((value as u64).to_le_bytes());
     }
 
     /// A topological handle index.
     pub fn id(&mut self, value: u32) {
-        self.0.update(u64::from(value).to_le_bytes());
+        self.digest.update(u64::from(value).to_le_bytes());
     }
 
     /// A coordinate, as its binary64 bits.
     pub fn float(&mut self, value: f64) {
-        self.0.update(value.to_bits().to_le_bytes());
+        self.digest.update(value.to_bits().to_le_bytes());
     }
 
     /// An exact rational in lowest terms.
@@ -119,6 +122,7 @@ impl Describe for PreviewOptions {
 
 impl Observable for Refusal {
     fn encode(&self, out: &mut Encoder) {
+        out.refused = true;
         out.text(self.code);
         out.text(&self.detail);
         out.count(usize::from(self.undecided().is_some()));
@@ -391,17 +395,21 @@ impl Call {
                 )
             },
         );
-        let mut out = Encoder(Sha256::new());
+        let mut out = Encoder {
+            digest: Sha256::new(),
+            refused: false,
+        };
         result.encode(&mut out);
+        let outcome = if out.refused { "refused" } else { "ok" };
         let digest: String = out
-            .0
+            .digest
             .finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
         let thread = std::thread::current();
         eprintln!(
-            "\ndisplaycapture\t{FORMAT}\t{}\t{}\t{}\t{}\t{work}\t{digest}",
+            "\ndisplaycapture\t{FORMAT}\t{}\t{}\t{}\t{}\t{work}\t{digest}\t{outcome}",
             thread.name().unwrap_or("unnamed"),
             self.function,
             self.carriers,

@@ -285,6 +285,13 @@ certified volume interval widened by imported face area x 1e-7 and integration
 spread. Other metadata changes still cannot authorize a new answer.
 Release correction rows and release qualification remain separate release work.
 
+Phase 5 decision D1 also permits `affine-step-pcurve` corrections. Replay
+authenticates both answers and checks that only degree-one replacements of
+degree-seven UV splines changed in the STEP graph. The knot limits and endpoint
+coordinates stay fixed. The only manifest field that may move is the STEP
+deviation bound, which must still be at most 1e-7 mm. The changed artifact must
+pass both OpenCASCADE readers. This does not alter any raw-invalid ruling.
+
 The captain's 29 October 2026 option-A ruling, "Go with the recomended",
 grandfathers exactly the inherited raw-invalid STEP files at indices 262 and
 431, with their exact hashes in `tools/checks/known-raw-invalid.json`. This is

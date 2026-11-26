@@ -594,6 +594,40 @@ class StepCorrectionTests(unittest.TestCase):
                 self.assertEqual(bool(errors), fails, errors)
 
 
+class AffinePcurveCorrectionTests(unittest.TestCase):
+    def test_affine_only_correction_cannot_change_another_artifact(self):
+        policy = checks.read(checks.ROOT / checks.RAW_POLICY)
+        before = {
+            'index': 0, 'request_sha256': 'a' * 64,
+            'accepted_answer_sha256': 'b' * 64,
+            'accepted_manifest_sha256': 'c' * 64,
+            'accepted_files': {'answer.step': 'd' * 64, 'display.obj': None}}
+        row = {
+            'index': 0, 'class': checks.AFFINE_PCURVE_CLASS,
+            'request_sha256': 'a' * 64, 'before_sha256': 'b' * 64,
+            'before_manifest_sha256': 'c' * 64, 'before_step_sha256': 'd' * 64,
+            'after_sha256': 'e' * 64, 'after_manifest_sha256': 'f' * 64,
+            'after_step_sha256': '1' * 64, 'unchanged_manifest_sha256': '2' * 64,
+            'manifest_fields': ['step.max_deviation']}
+        after = copy.deepcopy(before)
+        after.update(accepted_answer_sha256='e' * 64, accepted_manifest_sha256='f' * 64)
+        after['accepted_files']['answer.step'] = '1' * 64
+        corrections = {'format': 'catallax-replay-corrections/1', 'corrections': [row]}
+        self.assertEqual(checks.metadata_errors([before], [after], corrections, policy), [])
+        upgrades = {'format': checks.UPGRADE_FORMAT, 'upgrades': [
+            {'index': 0, 'class': checks.UPGRADE_CLASS, 'before_sha256': '4' * 64,
+             'after_sha256': before['accepted_answer_sha256']}]}
+        self.assertEqual(checks.metadata_errors([before], [after], corrections, policy, upgrades),
+                         [])
+        upgrades['upgrades'][0]['before_sha256'] = before['accepted_answer_sha256']
+        self.assertTrue(checks.metadata_errors([before], [after], corrections, policy, upgrades))
+        after['accepted_files']['display.obj'] = '3' * 64
+        self.assertTrue(checks.metadata_errors([before], [after], corrections, policy))
+        after['accepted_files']['display.obj'] = None
+        row['manifest_fields'] = ['properties.volume']
+        self.assertTrue(checks.metadata_errors([before], [after], corrections, policy))
+
+
 class StableLastDigitTests(unittest.TestCase):
     """A saved answer may move only in the final digit the writer states."""
 

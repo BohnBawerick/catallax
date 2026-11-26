@@ -109,8 +109,11 @@ impl std::error::Error for BuildError {}
 /// Keep one per body for edits, undo and concurrent queries. Clones share the
 /// stored models; continuing a clone copies only the modified store paths.
 #[derive(Clone)]
-pub struct EvaluationCheckpoint {
-    built: Arc<Built>,
+pub struct EvaluationCheckpoint(Arc<CheckpointData>);
+
+#[derive(Clone)]
+struct CheckpointData {
+    built: Built,
     profiles: OrdMap<StepId, Profile>,
     paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
@@ -122,13 +125,14 @@ pub struct EvaluationCheckpoint {
 
 impl fmt::Debug for EvaluationCheckpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let data = &self.0;
         f.debug_struct("EvaluationCheckpoint")
-            .field("built", &self.built)
-            .field("profiles", &self.profiles)
-            .field("paths", &self.paths)
-            .field("bodies", &self.bodies)
-            .field("meshes", &self.meshes)
-            .field("policy", &self.policy)
+            .field("built", &data.built)
+            .field("profiles", &data.profiles)
+            .field("paths", &data.paths)
+            .field("bodies", &data.bodies)
+            .field("meshes", &data.meshes)
+            .field("policy", &data.policy)
             .finish()
     }
 }
@@ -136,23 +140,34 @@ impl fmt::Debug for EvaluationCheckpoint {
 impl EvaluationCheckpoint {
     /// The exact body, intermediate bodies and definitions at this checkpoint.
     pub fn built(&self) -> &Built {
-        &self.built
+        &self.0.built
     }
 
     /// Takes the build, sharing model stores if other checkpoints still retain it.
     pub fn into_built(self) -> Built {
-        Arc::unwrap_or_clone(self.built)
+        match Arc::try_unwrap(self.0) {
+            Ok(data) => data.built,
+            Err(data) => data.built.clone(),
+        }
     }
 
     fn into_state(self) -> EvaluationState {
-        let built = Arc::unwrap_or_clone(self.built);
+        let CheckpointData {
+            built,
+            profiles,
+            paths,
+            bodies,
+            meshes,
+            history,
+            ..
+        } = Arc::unwrap_or_clone(self.0);
         EvaluationState {
             values: EvaluationValues {
                 model: built.model,
-                profiles: self.profiles,
-                paths: self.paths,
-                bodies: self.bodies,
-                meshes: self.meshes,
+                profiles,
+                paths,
+                bodies,
+                meshes,
             },
             fillets: built.fillets,
             consumed: built.consumed,
@@ -160,7 +175,7 @@ impl EvaluationCheckpoint {
             stand_ins: built.stand_ins,
             import_records: built.import_records,
             import_solids: built.import_solids,
-            history: Some(self.history),
+            history: Some(history),
         }
     }
 }
@@ -625,10 +640,10 @@ fn resume_state(
     dec: &Decider,
 ) -> (EvaluationState, usize) {
     if let Some(prefix) = prefix
-        && prefix.policy == *dec.policy()
-        && prefix.built.recipe().format == recipe.format
+        && prefix.0.policy == *dec.policy()
+        && prefix.built().recipe().format == recipe.format
     {
-        let old_steps = &prefix.built.recipe().steps;
+        let old_steps = &prefix.built().recipe().steps;
         let start = old_steps
             .iter()
             .zip(&recipe.steps)
@@ -658,15 +673,15 @@ fn checkpoint(mut state: EvaluationState, recipe: &Recipe, dec: &Decider) -> Eva
     let bodies = state.values.bodies.clone();
     let meshes = std::mem::take(&mut state.values.meshes);
     let history = state.history.take().expect("incremental evaluation");
-    EvaluationCheckpoint {
-        built: Arc::new(state.finish(Arc::new(recipe.clone()))),
+    EvaluationCheckpoint(Arc::new(CheckpointData {
+        built: state.finish(Arc::new(recipe.clone())),
         profiles,
         paths,
         bodies,
         meshes,
         policy: *dec.policy(),
         history,
-    }
+    }))
 }
 
 /// Opts into the recorded 1 nm modelling policy and the first complete bounded

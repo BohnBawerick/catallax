@@ -308,42 +308,104 @@ fn nested_step_assembly_round_trips_part_placement_and_pmi() {
     }
 }
 
+fn next_entity(source: &str) -> u64 {
+    source
+        .lines()
+        .filter_map(|line| line.strip_prefix('#')?.split_once('='))
+        .map(|(id, _)| id.parse::<u64>().unwrap())
+        .max()
+        .unwrap()
+        + 1
+}
+
+const BASE_STEP_NAME: &str = "'Base''s plate'";
+
+fn base_representation(source: &str) -> (&str, &str, &str, &str) {
+    let brep = format!("ADVANCED_BREP_SHAPE_REPRESENTATION({BASE_STEP_NAME},(");
+    source
+        .lines()
+        .find_map(|line| {
+            let (id, definition) = line.split_once('=')?;
+            let args = definition.strip_prefix(&brep)?.strip_suffix(");")?;
+            let (items, context) = args.split_once("),")?;
+            Some((line, id, items, context))
+        })
+        .expect("the base plate has a direct B-rep")
+}
+
 #[test]
 fn a_mapped_leaf_with_its_own_translation_is_refused() {
     let (first, _, _) = export_and_read(1);
     let source = String::from_utf8(first).unwrap();
-    let direct = "#36=ADVANCED_BREP_SHAPE_REPRESENTATION('Base''s plate',(#37,#41),#34);";
-    assert!(source.contains(direct));
+    let (direct, representation, items, context) = base_representation(&source);
+    let (frame, _) = items.split_once(',').unwrap();
+    let prototype = next_entity(&source);
+    let map = prototype + 1;
+    let origin = prototype + 2;
+    let transform = prototype + 3;
+    let mapped_item = prototype + 4;
     let mapped = source.replacen(
         direct,
-        concat!(
-            "#36=SHAPE_REPRESENTATION('Base''s plate',(#37,#414),#34);\n",
-            "#410=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#37,#41),#34);\n",
-            "#411=REPRESENTATION_MAP(#37,#410);\n",
-            "#412=CARTESIAN_POINT('',(100.,0.,0.));\n",
-            "#413=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',#40,$,#412,1.,#39);\n",
-            "#414=MAPPED_ITEM('',#411,#413);",
+        &format!(
+            "{representation}=SHAPE_REPRESENTATION({BASE_STEP_NAME},({frame},#{mapped_item}),{context});\n\
+             #{prototype}=ADVANCED_BREP_SHAPE_REPRESENTATION('',({items}),{context});\n\
+             #{map}=REPRESENTATION_MAP({frame},#{prototype});\n\
+             #{origin}=CARTESIAN_POINT('',(100.,0.,0.));\n\
+             #{transform}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',$,$,#{origin},1.,$);\n\
+             #{mapped_item}=MAPPED_ITEM('',#{map},#{transform});"
         ),
         1,
     );
     let refusal = read_step_assembly(mapped.as_bytes(), &mut Decider::default())
         .expect_err("the mapped leaf needs a transform this reader does not apply");
-    assert!(matches!(
-        refusal,
-        catallax_import::ImportRefusal::Unsupported { entity, type_name }
-            if entity == "#414" && type_name == "MAPPED_ITEM"
-    ));
+    assert!(
+        matches!(
+            &refusal,
+            catallax_import::ImportRefusal::Unsupported { entity, type_name }
+                if entity == &format!("#{mapped_item}") && type_name == "MAPPED_ITEM"
+        ),
+        "{refusal:?}"
+    );
 }
 
 #[test]
 fn solid_colours_must_agree_on_both_sides() {
     let (first, _, _) = export_and_read(1);
     let source = String::from_utf8(first).unwrap();
-    let style = "#220=SURFACE_STYLE_USAGE(.BOTH.,#219);";
-    let assignment = "#221=PRESENTATION_STYLE_ASSIGNMENT((#220));";
-    assert!(source.contains(style));
-    assert!(source.contains(assignment));
-    let one_side = source.replace(style, "#220=SURFACE_STYLE_USAGE(.POSITIVE.,#219);");
+    let (_, _, items, _) = base_representation(&source);
+    let (_, solid) = items.split_once(',').unwrap();
+    let styled_suffix = format!("),{solid});");
+    let assignment_id = source
+        .lines()
+        .find_map(|line| {
+            let (_, definition) = line.split_once('=')?;
+            definition
+                .strip_prefix("STYLED_ITEM('',(")?
+                .strip_suffix(&styled_suffix)
+        })
+        .expect("the base plate's solid has a style assignment");
+    let by_id = |id| {
+        source
+            .lines()
+            .find(|line| line.split_once('=').is_some_and(|(label, _)| label == id))
+            .unwrap()
+    };
+    let assignment = by_id(assignment_id);
+    let usage_id = assignment
+        .split_once("=PRESENTATION_STYLE_ASSIGNMENT((")
+        .unwrap()
+        .1
+        .strip_suffix("));")
+        .unwrap();
+    let style = by_id(usage_id);
+    let side = style
+        .split_once("=SURFACE_STYLE_USAGE(.BOTH.,")
+        .unwrap()
+        .1
+        .strip_suffix(");")
+        .unwrap();
+    let positive = format!("{usage_id}=SURFACE_STYLE_USAGE(.POSITIVE.,{side});");
+    let one_side = source.replacen(style, &positive, 1);
     let mut dec = Decider::default();
     let refusal = read_step_assembly(one_side.as_bytes(), &mut dec)
         .expect_err("a positive-side colour must not become a uniform part colour");
@@ -352,12 +414,14 @@ fn solid_colours_must_agree_on_both_sides() {
         if detail.contains("both sides"))
     );
 
-    let two_sides = one_side.replace(
+    let negative = next_entity(&one_side);
+    let two_sides = one_side.replacen(
         assignment,
-        concat!(
-            "#410=SURFACE_STYLE_USAGE(.NEGATIVE.,#219);\n",
-            "#221=PRESENTATION_STYLE_ASSIGNMENT((#220,#410));",
+        &format!(
+            "#{negative}=SURFACE_STYLE_USAGE(.NEGATIVE.,{side});\n\
+             {assignment_id}=PRESENTATION_STYLE_ASSIGNMENT(({usage_id},#{negative}));"
         ),
+        1,
     );
     let assembly = read_step_assembly(two_sides.as_bytes(), &mut Decider::default()).unwrap();
     let base = assembly

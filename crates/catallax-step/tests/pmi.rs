@@ -513,6 +513,320 @@ fn the_bracket_pmi_reads_back_on_the_same_faces() {
     assert_eq!(count(&plain, "SHAPE_ASPECT"), 0);
 }
 
+/// The entities of a written file by number: type and parameter text.
+fn entities(file: &str) -> BTreeMap<String, (String, String)> {
+    file.lines()
+        .filter_map(|line| {
+            let (id, rest) = line.split_once('=')?;
+            let rest = rest.strip_suffix(");")?;
+            let (kind, fields) = rest.split_once('(')?;
+            Some((id.to_owned(), (kind.to_owned(), fields.to_owned())))
+        })
+        .collect()
+}
+
+/// The entity references in a parameter text, in order.
+fn references(fields: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut rest = fields;
+    while let Some(at) = rest.find('#') {
+        let digits: String = rest[at + 1..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        found.push(format!("#{digits}"));
+        rest = &rest[at + 1 + digits.len()..];
+    }
+    found
+}
+
+/// The numbers of a parameter text such as `'',(30.,25.,7.5)`.
+fn numbers(fields: &str) -> Vec<f64> {
+    fields
+        .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'E'))
+        .filter(|text| text.chars().any(|c| c.is_ascii_digit()))
+        .map(|text| text.parse().unwrap())
+        .collect()
+}
+
+/// The `pmi validation property` items of each entity they are on.
+fn validation_items(file: &str) -> BTreeMap<String, Vec<(String, String)>> {
+    let all = entities(file);
+    let mut found = BTreeMap::<String, Vec<(String, String)>>::new();
+    for (kind, fields) in all.values() {
+        if kind != "PROPERTY_DEFINITION_REPRESENTATION" {
+            continue;
+        }
+        let linked = references(fields);
+        let [property, representation] = &linked[..] else {
+            continue;
+        };
+        let (_, property) = &all[property];
+        if !property.starts_with("'pmi validation property',''") {
+            continue;
+        }
+        let of = references(property).pop().unwrap();
+        // The representation's items, then its context.
+        let mut items = references(&all[representation].1);
+        items.pop();
+        for item in items {
+            found
+                .entry(of.clone())
+                .or_default()
+                .push(all[&item].clone());
+        }
+    }
+    found
+}
+
+#[test]
+fn the_bracket_file_counts_its_items_and_states_their_strings() {
+    let part = bracket();
+    let (pmi, _) = bracket_pmi(&part);
+    let (file, _) = write(&part, &pmi);
+    let all = entities(&file);
+    let properties = validation_items(&file);
+
+    // One property on the part counts every type of item, and the callout.
+    let shape = all
+        .iter()
+        .find(|(_, (kind, _))| kind == "PRODUCT_DEFINITION_SHAPE")
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let counts: Vec<(String, String)> = properties[&shape].clone();
+    let expected = [
+        ("number of semantic pmi elements", "26."),
+        ("number of dimensional locations", "14."),
+        ("number of dimensional sizes", "4."),
+        ("number of geometric tolerances", "4."),
+        ("number of composite tolerances", "0."),
+        ("number of datums", "3."),
+        ("number of datum targets", "0."),
+        ("number of annotations", "1."),
+    ]
+    .map(|(name, value)| {
+        (
+            "INTEGER_REPRESENTATION_ITEM".to_owned(),
+            format!("'{name}',{value}"),
+        )
+    });
+    assert_eq!(counts, expected);
+
+    // Each datum and distance states its text; edition 1 has no property on a
+    // size or a tolerance.
+    let strings: Vec<(String, String)> = properties
+        .iter()
+        .filter(|(of, _)| **of != shape)
+        .filter_map(|(of, items)| {
+            let [(kind, fields)] = &items[..] else {
+                return None;
+            };
+            assert_eq!(kind, "DESCRIPTIVE_REPRESENTATION_ITEM");
+            let text = fields.strip_prefix("'equivalent unicode string',")?;
+            Some((all[of].0.clone(), text.to_owned()))
+        })
+        .collect();
+    assert_eq!(strings.len(), 3 + 14);
+    for (kind, text) in [
+        ("DATUM", r"'DTM\\wA'"),
+        ("DATUM", r"'DTM\\wC'"),
+        ("DIMENSIONAL_LOCATION", r"'DIM\\w15\X2\00B1\X0\0.1'"),
+        ("DIMENSIONAL_LOCATION", r"'DIM\\w6\\u+0.1\\n0\\u'"),
+        ("DIMENSIONAL_LOCATION", r"'DIM\\w20\\u+0.1\\n0\\u'"),
+        ("DIMENSIONAL_LOCATION", r"'DIM\\w[25]'"),
+        ("DIMENSIONAL_LOCATION", r"'DIM\\w[50]'"),
+    ] {
+        assert!(
+            strings.contains(&(kind.to_owned(), text.to_owned())),
+            "{kind} {text} in {strings:?}"
+        );
+    }
+    assert!(
+        !all.values()
+            .any(|(kind, fields)| kind == "PROPERTY_DEFINITION"
+                && fields.starts_with("'pmi validation property'")
+                && references(fields)
+                    .iter()
+                    .any(|of| all[of].0 == "DIMENSIONAL_SIZE")),
+        "no property on a size"
+    );
+}
+
+#[test]
+fn the_bore_finish_is_drawn_on_the_bore() {
+    let part = bracket();
+    let (pmi, _) = bracket_pmi(&part);
+    let (file, report) = write(&part, &pmi);
+    let all = entities(&file);
+    let faces = written_faces(&file, &report);
+    let bore = part.round(2, "4", ["30", "25"]);
+
+    // The callout hangs on an aspect of its own whose only use names the bore.
+    let associations: Vec<&String> = all
+        .values()
+        .filter(|(kind, _)| kind == "DRAUGHTING_MODEL_ITEM_ASSOCIATION")
+        .map(|(_, fields)| fields)
+        .collect();
+    let [association] = associations[..] else {
+        panic!("one callout: {associations:?}");
+    };
+    assert!(association.starts_with("'Bore finish',''"));
+    let [aspect, model, callout] = &references(association)[..] else {
+        panic!("{association}");
+    };
+    assert_eq!(all[aspect].0, "SHAPE_ASPECT");
+    assert!(all[aspect].1.starts_with("'Bore finish',''"));
+    assert_eq!(all[model].0, "DRAUGHTING_MODEL");
+    assert_eq!(all[callout].0, "DRAUGHTING_CALLOUT");
+    let uses: Vec<&String> = all
+        .values()
+        .filter(|(kind, fields)| {
+            kind.ends_with("_USAGE") && references(fields).first() == Some(aspect)
+        })
+        .map(|(_, fields)| fields)
+        .collect();
+    let [usage] = uses[..] else {
+        panic!("{uses:?}");
+    };
+    let mut on: Vec<FaceId> = references(usage)[2..]
+        .iter()
+        .map(|face| faces[face])
+        .collect();
+    on.sort();
+    assert_eq!(on, bore);
+
+    // The callout is in the model's annotation plane, which faces the front.
+    let (plane, (_, fields)) = all
+        .iter()
+        .find(|(_, (kind, _))| kind == "ANNOTATION_PLANE")
+        .unwrap();
+    assert_eq!(references(fields).last(), Some(callout));
+    assert_eq!(&references(&all[model].1)[0], plane);
+
+    // Its lines: the leader starts on the bore, every point is in one plane
+    // parallel to the annotation plane, and the stated length and centre are
+    // those of the lines.
+    let occurrence = &references(&all[callout].1)[0];
+    let set = references(&all[occurrence].1).pop().unwrap();
+    assert!(all[&set].1.starts_with("'surface roughness'"));
+    let lines: Vec<Vec<[f64; 3]>> = references(&all[&set].1)
+        .iter()
+        .map(|line| {
+            references(&all[line].1)
+                .iter()
+                .map(|point| {
+                    let xyz = numbers(&all[point].1);
+                    [xyz[0], xyz[1], xyz[2]]
+                })
+                .collect()
+        })
+        .collect();
+    let tip = lines[0][0];
+    let off_axis = ((tip[0] - 30.0).powi(2) + (tip[1] - 25.0).powi(2)).sqrt();
+    assert!((off_axis - 4.0).abs() < 1e-6, "{tip:?}");
+    assert!((0.0..=20.0).contains(&tip[2]), "{tip:?}");
+    assert!(
+        lines
+            .iter()
+            .flatten()
+            .all(|point| (point[1] - tip[1]).abs() < 1e-9)
+    );
+    let mut length = 0.0;
+    let mut moment = [0.0; 3];
+    for line in &lines {
+        for pair in line.windows(2) {
+            let piece = (0..3)
+                .map(|i| (pair[1][i] - pair[0][i]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            length += piece;
+            for i in 0..3 {
+                moment[i] += piece * (pair[0][i] + pair[1][i]) / 2.0;
+            }
+        }
+    }
+    let properties = validation_items(&file);
+    let within = all
+        .iter()
+        .find(|(_, (kind, fields))| {
+            kind == "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION"
+                && references(fields) == [callout.clone(), model.clone()]
+        })
+        .map(|(id, _)| id)
+        .unwrap();
+    let items = &properties[within];
+    assert_eq!(
+        items[0],
+        (
+            "DESCRIPTIVE_REPRESENTATION_ITEM".to_owned(),
+            r"'equivalent unicode string','SRFMRRN\\w\\w\\w\\wRa 1.6'".to_owned()
+        )
+    );
+    assert_eq!(items[1].0, "MEASURE_REPRESENTATION_ITEM");
+    assert!(
+        items[1]
+            .1
+            .starts_with("'polyline curve length',POSITIVE_LENGTH_MEASURE(")
+    );
+    let stated = numbers(&items[1].1)[0];
+    assert!((stated - length).abs() < 1e-5, "{stated} {length}");
+    assert_eq!(items[2].0, "CARTESIAN_POINT");
+    assert!(items[2].1.starts_with("'polyline centre point'"));
+    let centre = numbers(&items[2].1);
+    for i in 0..3 {
+        assert!((centre[i] - moment[i] / length).abs() < 1e-5, "{centre:?}");
+    }
+
+    // Catallax still reads the bracket's fourteen items and nothing else.
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert_eq!(read.skipped, Vec::new());
+    assert_eq!(read.pmi.items.len(), pmi.items.len());
+}
+
+#[test]
+fn each_process_condition_draws_its_symbol() {
+    let part = bracket();
+    let a = part.planes(2, "0");
+    let strings = [Process::Any, Process::Removal, Process::NoRemoval].map(|process| {
+        let pmi = Pmi {
+            items: vec![item(
+                "Base finish",
+                ItemKind::Texture(SurfaceTexture {
+                    parameter: "Rz".into(),
+                    value: q("12.5"),
+                    process,
+                    feature: a.clone(),
+                }),
+            )],
+            part: PartNotes::default(),
+        };
+        let (file, _) = write(&part, &pmi);
+        let all = entities(&file);
+        let polylines = all.values().filter(|(kind, _)| kind == "POLYLINE").count();
+        // The leader ends on a corner of the base.
+        let tip = all
+            .values()
+            .filter(|(kind, _)| kind == "POLYLINE")
+            .map(|(_, fields)| numbers(&all[&references(fields)[0]].1))
+            .find(|xyz| xyz[2].abs() < 1e-9)
+            .expect("a leader on the base");
+        assert!(file.lines().any(|line| line.contains("=VERTEX_POINT(")
+            && numbers(&all[&references(line.split_once('=').unwrap().1)[0]].1) == tip));
+        let string = file
+            .lines()
+            .find_map(|line| line.split_once("'equivalent unicode string','SRF"))
+            .map(|(_, rest)| rest.split('\'').next().unwrap().to_owned())
+            .unwrap();
+        (string, polylines)
+    });
+    assert_eq!(strings[0].0, r"APAN\\w\\w\\w\\wRz 12.5");
+    assert_eq!(strings[1].0, r"MRRN\\w\\w\\w\\wRz 12.5");
+    assert_eq!(strings[2].0, r"NMRN\\w\\w\\w\\wRz 12.5");
+    // Removal adds a bar, no removal a circle.
+    assert_eq!(strings[1].1, strings[0].1 + 1);
+    assert_eq!(strings[2].1, strings[0].1 + 1);
+}
+
 #[test]
 fn a_conflicting_datum_does_not_reserve_its_letter() {
     let mut model = Model::new();

@@ -1,0 +1,26 @@
+{
+ "request_id": "cx-p5-speed-owner--census-c0",
+ "repo": "BohnBawerick/catallax",
+ "sha": "51fd44995c6b3dc4f96cdc616bd5009ebee75f3e",
+ "script_exit_code": 0,
+ "seconds": 608,
+ "commands": [
+  {
+   "cmd": "bash tools/p5/cloud-shard-control.sh 0 3",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test lines exist; the script is a census. run.log has 1000 P5ROW lines for shard 0/3 (1000 models found, 0 missing) and P5SUMMARY complete=true ran=1000 seconds=331 for the catallax census step. Release build took 1m58s. rustup update reported stable unchanged at rustc 1.100.0; cargo fetch succeeded. run.log is 855858 bytes."
+}

@@ -91,6 +91,23 @@ fn affine_spline_face_bound_covers_curved_trim() {
             );
         }
     }
+    // Use the authored disk to check facet-to-surface distance without
+    // relying on the spline evaluator or on the correctness of the rim.
+    for t in &mesh.triangles[mesh.faces[0].triangles.clone()] {
+        let [a, b, c] = t.vertices.map(|i| mesh.positions[i]);
+        for i in 0..=8 {
+            for j in 0..=8 - i {
+                let p: [f64; 3] = std::array::from_fn(|k| {
+                    (f64::from(i) * a[k] + f64::from(j) * b[k] + f64::from(8 - i - j) * c[k]) / 8.0
+                });
+                let distance = (p[0].hypot(p[1]) - 1.0).max(0.0).hypot(p[2]);
+                assert!(
+                    distance <= bound + 1e-12,
+                    "facet sample {p:?}: {distance} mm, face bound {bound} mm"
+                );
+            }
+        }
+    }
 }
 
 #[test]

@@ -1,0 +1,7 @@
+== ls-remote
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+ls-remote exit 128
+== clone (no checkout, blobless)
+Cloning into '/tmp/tmp.VArQcuBLZy/corpus'...
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+clone exit 128

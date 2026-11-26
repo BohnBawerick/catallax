@@ -68,11 +68,17 @@ impl Rational {
         // common factor is a power of two; do not run a general Euclidean GCD.
         let twos = denominator.0.trailing_zeros().unwrap();
         if denominator.0.bits() == twos + 1 {
+            let negative = denominator.0.is_negative();
+            let d = if negative {
+                -denominator.0
+            } else {
+                denominator.0
+            };
             let cancel = numerator.0.trailing_zeros().unwrap_or(twos).min(twos);
             let n = numerator.0 >> cancel;
             return Some(Self {
-                n: Integer(if denominator.0.is_negative() { -n } else { n }),
-                d: Integer(denominator.0.abs() >> cancel),
+                n: Integer(if negative { -n } else { n }),
+                d: Integer(d >> cancel),
             });
         }
         let mut g = gcd(&numerator.0, &denominator.0);
@@ -509,6 +515,16 @@ impl Rational {
     // double-word cross products, which is what the reduction cost before.
     fn sum_of_small(a: i64, b: i64, c: i64, d: i64) -> Self {
         let wide = i128::from;
+        if (b as u64).is_power_of_two() && (d as u64).is_power_of_two() {
+            let (b, d) = (b.trailing_zeros(), d.trailing_zeros());
+            let exponent = b.max(d);
+            let n = (wide(a) << (exponent - b)) + (wide(c) << (exponent - d));
+            let cancel = n.trailing_zeros().min(exponent);
+            return Self {
+                n: Integer(BigInt::from(n >> cancel)),
+                d: Integer(BigInt::from(1u64 << (exponent - cancel))),
+            };
+        }
         let g = word(b.unsigned_abs(), d.unsigned_abs()) as i64;
         let (n, d) = if g == 1 {
             (wide(a) * wide(d) + wide(c) * wide(b), wide(b) * wide(d))
@@ -544,18 +560,8 @@ impl Rational {
     // section of Knuth).
     fn product_of_small(a: i64, b: i64, c: i64, d: i64) -> Self {
         let wide = i128::from;
-        let first = word(a.unsigned_abs(), d.unsigned_abs()) as i64;
-        let second = word(c.unsigned_abs(), b.unsigned_abs()) as i64;
-        let (a, d) = if first == 1 {
-            (a, d)
-        } else {
-            (a / first, d / first)
-        };
-        let (c, b) = if second == 1 {
-            (c, b)
-        } else {
-            (c / second, b / second)
-        };
+        let (a, d) = cancel_small(a, d);
+        let (c, b) = cancel_small(c, b);
         Self {
             n: Integer(BigInt::from(wide(a) * wide(c))),
             d: Integer(BigInt::from(wide(b) * wide(d))),
@@ -610,6 +616,15 @@ impl Rational {
         }
     }
 }
+fn cancel_small(n: i64, d: i64) -> (i64, i64) {
+    if (d as u64).is_power_of_two() {
+        let shift = n.trailing_zeros().min(d.trailing_zeros());
+        return (n >> shift, d >> shift);
+    }
+    let g = word(n.unsigned_abs(), d as u64) as i64;
+    if g == 1 { (n, d) } else { (n / g, d / g) }
+}
+
 // Denominators are positive. Dyadic cancellation only needs trailing bits.
 fn cancel(n: &BigInt, d: &BigInt) -> (BigInt, BigInt) {
     let twos = d.trailing_zeros().unwrap();

@@ -545,7 +545,7 @@ impl BSplineCurve {
         let (span, mut basis) =
             basis_derivatives(&self.knots, self.degree, u, !from_left, derivatives)?;
         if self.is_rational() {
-            let mut denominator = [0.0; 5];
+            let mut denominator = vec![0.0; derivatives + 1];
             for k in 0..=derivatives {
                 for j in 0..=self.degree {
                     denominator[k] +=
@@ -555,10 +555,11 @@ impl BSplineCurve {
             if denominator[0] == 0.0 {
                 return Err(Fault::Degenerate);
             }
+            let ordinary = basis.clone();
             for i in 0..=self.degree {
                 let w = self.points[span - self.degree + i].coordinates[3];
                 for k in 0..=derivatives {
-                    let mut value = w * basis[k][i];
+                    let mut value = w * ordinary[k][i];
                     for j in 1..=k {
                         value -= binomial(k, j) * denominator[j] * basis[k - j][i];
                     }
@@ -1070,19 +1071,6 @@ pub(crate) fn basis_derivatives(
     from_left: bool,
     derivatives: usize,
 ) -> Result<(usize, Vec<Vec<f64>>), Fault> {
-    if degree < 9 {
-        return basis_derivatives_in::<9>(knots, degree, u, from_left, derivatives);
-    }
-    basis_derivatives_in::<32>(knots, degree, u, from_left, derivatives)
-}
-
-fn basis_derivatives_in<const N: usize>(
-    knots: &[f64],
-    degree: usize,
-    u: f64,
-    from_left: bool,
-    derivatives: usize,
-) -> Result<(usize, Vec<Vec<f64>>), Fault> {
     // Same-knot tolerance: see discussion by its first use, below.
     let d_knot_tol = 1e-24;
     let uk = knots;
@@ -1090,10 +1078,10 @@ fn basis_derivatives_in<const N: usize>(
     let der = derivatives as i64;
     let mut nd = vec![vec![0.0; degree + 1]; derivatives + 1];
 
-    let mut left = [0.0; N];
-    let mut right = [0.0; N];
-    let mut ndu = [[0.0; N]; N];
-    let mut a = [[0.0; N]; 2];
+    let mut left = [0.0f64; 32];
+    let mut right = [0.0f64; 32];
+    let mut ndu = [[0.0f64; 32]; 32];
+    let mut a = [[0.0f64; 32]; 32];
 
     // Find the knot span u is in
     let i = find_span(knots, p as usize, u, from_left) as i64;

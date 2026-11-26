@@ -180,14 +180,23 @@ fn save_export(out: &Path, name: &str, bytes: &[u8], mut record: Value) -> Resul
     Ok(record)
 }
 
+fn work_limit() -> u64 {
+    std::env::var("CATALLAX_OBSERVER_WORK")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(DEFAULT_WORK)
+}
+
 fn run(
     bytes: &[u8],
     expected: &str,
     out: &Path,
     retain: bool,
 ) -> Result<Value, Box<dyn std::error::Error>> {
+    let limit = work_limit();
+    let open_started = std::time::Instant::now();
     let actual = sha256_hex(bytes);
-    let (result, work) = with_operation_budget(DEFAULT_WORK, || {
+    let (result, work) = with_operation_budget(limit, || {
         opened::open_step(
             bytes,
             expected,
@@ -201,13 +210,14 @@ fn run(
         Err(refusal) => {
             return Ok(
                 json!({"stage":"open","outcome":"refused","source_sha256":actual,
-            "work_used":work.used,"work_exhausted":work.exhausted,"work_limit":DEFAULT_WORK,"refusal":error(&refusal)}),
+            "work_used":work.used,"work_exhausted":work.exhausted,"work_limit":limit,"refusal":error(&refusal)}),
             );
         }
     };
     let body_info = bodies(&opened);
-    let checkpoint = json!({"stage":"open","outcome":"opened","source_sha256":actual,
-        "bodies":body_info,"work_used":work.used,"work_exhausted":work.exhausted,"work_limit":DEFAULT_WORK,
+    let open_seconds = open_started.elapsed().as_secs_f64();
+    let checkpoint = json!({"stage":"open","outcome":"opened","source_sha256":actual,"open_seconds":open_seconds,
+        "bodies":body_info,"work_used":work.used,"work_exhausted":work.exhausted,"work_limit":limit,
         "read_work_used":opened.read_work_used(),"file_admission_work_used":opened.file_admission_work_used(),
         "native_admission_work_used":opened.native_admission_work_used(),
         "checked_upgrade_work_used":opened.checked_upgrade_work_used(),
@@ -223,7 +233,8 @@ fn run(
     }
     let mut files = Vec::new();
     let mut failed_body = None;
-    let (exported, export_work) = with_operation_budget(DEFAULT_WORK, || {
+    let export_started = std::time::Instant::now();
+    let (exported, export_work) = with_operation_budget(limit, || {
         let mut dec = Decider::default();
         if opened
             .bodies()
@@ -251,8 +262,8 @@ fn run(
         .map(|r| json!({"code":r.code,"detail":r.detail}));
     Ok(
         json!({"stage":"export","outcome":if refusal.is_none()&&!export_work.exhausted {"complete"} else {"refused"},
-        "source_sha256":actual,"open":checkpoint,"files":files,"failed_body":failed_body,"refusal":refusal,
-        "work_used":export_work.used,"work_exhausted":export_work.exhausted,"work_limit":DEFAULT_WORK,
+        "source_sha256":actual,"open":checkpoint,"files":files,"export_seconds":export_started.elapsed().as_secs_f64(),"failed_body":failed_body,"refusal":refusal,
+        "work_used":export_work.used,"work_exhausted":export_work.exhausted,"work_limit":limit,
         "diagnostics":diagnostics(&opened),
         "native_evidence":opened.tolerant_admission().map(|native|native.evidence()),
         "complete_source_body_bound_established":false}),

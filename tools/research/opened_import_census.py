@@ -450,7 +450,8 @@ def retain_opening_checkpoint(row, stdout, expected):
     return True
 
 
-def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
+def observe(binary, source, baseline, folder, retain, max_rss_mb=6144, timeout=60, work=WORK,
+            raw_timeout=None):
     key, expected = baseline["model_id"], baseline["source_sha256"]
     row = dict(
         model_id=key,
@@ -484,9 +485,9 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
                 command,
                 stdout=out,
                 stderr=err,
-                timeout=60,
+                timeout=timeout,
                 max_rss_mb=max_rss_mb,
-                env={**os.environ, "CATALLAX_THREADS": "1"},
+                env={**os.environ, "CATALLAX_THREADS": "1", "CATALLAX_OBSERVER_WORK": str(work)},
             )
         except (subprocess.TimeoutExpired, rss_guard.MemoryExceeded) as error:
             termination = "out_of_memory" if isinstance(error, rss_guard.MemoryExceeded) else "timeout"
@@ -507,7 +508,7 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
             row["export_validity"] = "process_error"
         return row | dict(cause="producer_process_or_missing_response")
     response = json.loads((capture / "response.json").read_text())
-    assert response["source_sha256"] == expected and response["work_limit"] == WORK
+    assert response["source_sha256"] == expected and response["work_limit"] == work
     if response["stage"] == "open":
         assert response["outcome"] == "refused"
         return row | dict(
@@ -542,7 +543,7 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
             else "export_refused"
         )
         return row
-    remaining = 60 - (time.monotonic() - start)
+    remaining = raw_timeout if raw_timeout is not None else timeout - (time.monotonic() - start)
     if remaining <= 0:
         return row | dict(export_validity="timeout", timeout_stage="raw_reader")
     with (folder / "raw.stdout").open("wb") as out, (folder / "raw.stderr").open("wb") as err:

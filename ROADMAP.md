@@ -36,6 +36,8 @@ Profile first. Reduce the work before adding cores. GPU display and the manufact
 | 5.6 Drawings and PMI | Close the drawing, product and manufacturing information (PMI), and model-based definition gaps below. Start the assistant tools alongside the speed work. | The bracket round trip passes the NIST analyzer in CI. The agreed drawing and PMI cases work, and the built-in assistant can call all six tools while rules still determine every PMI value. |
 | 5.7 Proof on demand | Add a low-priority proof button for one part. It does not hold the release. | A request runs a whole-edge proof and reports proof or "could not prove". It stores no proof request and runs no proof service. |
 
+The kernel entry is `catallax_app::prove_edge_gaps`. It takes a retained part, a gap limit, a work cap and a cancellation flag. Exact carrier incidence proves a zero bound; numerical trims need outward range bounds over the entire edge. A proof refusal does not change sampled admission or stored tolerances.
+
 ### Drawings and PMI build order
 
 1. Close the C1 semantic PMI round trip for the P1 bracket. Keep all 14 items and their attachments through exchange, save and reopen. Run the NIST analyzer in CI.

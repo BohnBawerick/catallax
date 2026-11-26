@@ -15,6 +15,10 @@ pub mod curves;
 pub mod handover;
 /// Revision-bound preview delivery and caller-scheduled proof.
 pub mod lifecycle;
+mod edge_proof;
+pub use edge_proof::{
+    EdgeProof, EdgeProofFailure, EdgeProofKey, EdgeProofOutcome, EdgeProofReport, prove_edge_gaps,
+};
 pub mod loops;
 mod outcome;
 /// Separate numerical admission and continuation, with finite trims and actual checks.

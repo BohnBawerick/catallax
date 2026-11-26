@@ -679,17 +679,26 @@ impl RationalSpan {
                 .unwrap_or([point(0.0); 4])
         };
         dec.charge_traversal(1)?;
-        if self.quadratic_hulls.get().is_none() {
+        let fill_hulls = |dec: &mut Decider| {
             let second = difference(&self.first[0], [degree - 1, 2], 0);
             dec.charge_work(4 * second.len() as u64)?;
             dec.charge_traversal(
                 (self.control.len() + self.first[0].len() + second.len() + 1) as u64,
             )?;
-            let bounds = [&self.control, &self.first[0], &second]
-                .map(|net| std::array::from_fn(|column| hull(net, column)));
+            Ok::<_, Refusal>(
+                [&self.control, &self.first[0], &second]
+                    .map(|net| std::array::from_fn(|column| hull(net, column))),
+            )
+        };
+        let [position, slope, acceleration] = if !catallax_numbers::shared_caches() {
+            fill_hulls(dec)?
+        } else if let Some(&bounds) = self.quadratic_hulls.get() {
+            bounds
+        } else {
+            let bounds = fill_hulls(dec)?;
             self.quadratic_hulls.set(bounds).expect("one hull per span");
-        }
-        let [position, slope, acceleration] = *self.quadratic_hulls.get().unwrap();
+            bounds
+        };
         let delta = u - point(u.mid());
         let centre_position: [[Interval; 4]; 3] =
             bernstein_row(&self.control, [degree, 2], u.mid(), dec)?

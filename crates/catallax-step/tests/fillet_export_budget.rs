@@ -210,7 +210,7 @@ fn the_fit_is_counted_alike_at_one_two_and_four_threads_and_never_charged() {
             .spawn(|| {
                 with_operation_budget(1_000_000, || {
                     let mut dec = Decider::default();
-                    let built = evaluate(&recipe("acute-5deg"), &mut dec).unwrap();
+                    let built = evaluate(&recipe("vertex-4-one"), &mut dec).unwrap();
                     let mut out = Vec::new();
                     write_step(
                         &built.model,

@@ -272,7 +272,7 @@ impl Exporter<'_> {
             "B_SPLINE_CURVE_WITH_KNOTS",
             vec![
                 text("''"),
-                text(fit::DEGREE.to_string()),
+                text(fit.degree().to_string()),
                 refs(points),
                 text(".UNSPECIFIED."),
                 boolean(ends[0] == ends[1]),
@@ -396,73 +396,6 @@ impl Exporter<'_> {
             };
             let start = self.uv_vertex(face, vertices[0], sides[0], &projection, topology)?;
             let end = self.uv_vertex(face, vertices[1], sides[1], &projection, topology)?;
-            let mut pieces = Vec::with_capacity(curves.len());
-            for (piece, curve) in curves.iter().enumerate() {
-                let range = match curve.span_range() {
-                    Some(range) => range.clone(),
-                    None => analytic_range.as_ref().unwrap().clone(),
-                };
-                let guide = if seam {
-                    if sides[0] != sides[1] || sides[0] == Side::Interior {
-                        return Err(unsupported());
-                    }
-                    pcurve::Guide::Fixed(if sides[0] == Side::Low {
-                        catallax_numbers::Ball::from_rational(&Rational::zero(), precision)
-                    } else {
-                        &projection.pi
-                            * &catallax_numbers::Ball::from_rational(
-                                &Rational::from_i64(2),
-                                precision,
-                            )
-                    })
-                } else if sides[0] == sides[1]
-                    && sides[0] != Side::Interior
-                    && matches!(
-                        input.geometry,
-                        Geometry::Analytic(analytic)
-                            if matches!(analytic.exact, CurveForm::Line { .. })
-                    )
-                {
-                    // A line between two points of the seam lies along it.
-                    pcurve::Guide::Fixed(if sides[0] == Side::Low {
-                        catallax_numbers::Ball::from_rational(&Rational::zero(), precision)
-                    } else {
-                        &projection.pi
-                            * &catallax_numbers::Ball::from_rational(
-                                &Rational::from_i64(2),
-                                precision,
-                            )
-                    })
-                } else {
-                    match input.geometry {
-                        Geometry::Analytic(analytic) => projection.analytic_guide(
-                            &analytic.exact,
-                            [&exact[0], &exact[1]],
-                            &range,
-                            self.dec,
-                        )?,
-                        Geometry::Spline { trace, spans, .. } => projection
-                            .trace_guide(&trace.pieces()[spans[piece].piece], &spans[piece]),
-                        Geometry::Exact(_) => projection.own_guide(curve),
-                        Geometry::Rail(_) => unreachable!("a rail has no pieces"),
-                    }
-                };
-                pieces.push(pcurve::Piece {
-                    latitude_speed: if coaxial_circles && !seam {
-                        projection.latitude_speed(curve)
-                    } else {
-                        None
-                    },
-                    curve: curve.local(&projection.written.placement, precision),
-                    guide,
-                    projection: &projection,
-                    range,
-                    endpoints: [
-                        (piece == 0).then(|| start.point.clone()),
-                        (piece + 1 == curves.len()).then(|| end.point.clone()),
-                    ],
-                });
-            }
             let global_metric = projection.metric(&bounds, None);
             let tolerance =
                 &self.options.curve_tolerance / &(&global_metric * &Rational::from_i64(16));
@@ -475,9 +408,113 @@ impl Exporter<'_> {
                 budget.precision, precision,
                 "changed chart working precision"
             );
-            let fit = match input.geometry {
-                Geometry::Rail(rail) => rail.fit([&start.point, &end.point], self.digits()),
-                _ => uv::fit(&pieces, self.digits(), &tolerance, budget, self.dec)?,
+            let ends = [&start.point, &end.point];
+            // Full turns keep the interval fit's refusal at singular charts.
+            // A torus already using the coaxial derivative proof can skip it.
+            let full_turn = vertices[0] == vertices[1]
+                || matches!(sides, [Side::Low, Side::High] | [Side::High, Side::Low]);
+            let keep_turn_fit = full_turn
+                && match projection.map {
+                    pcurve::SurfaceMap::Sphere => true,
+                    pcurve::SurfaceMap::Torus { .. } => !coaxial_circles || seam,
+                    _ => false,
+                };
+            // Touching wires may need local repairs to degree-seven controls.
+            let line = match input.geometry {
+                Geometry::Analytic(analytic)
+                    if !coupled
+                        && !keep_turn_fit
+                        && (!seam || (sides[0] == sides[1] && sides[0] != Side::Interior)) =>
+                {
+                    match projection.linear_pcurve(
+                        &analytic.exact,
+                        &analytic.written,
+                        analytic_range.as_ref().unwrap(),
+                        ends,
+                        &tolerance,
+                        self.dec,
+                    ) {
+                        Ok(line) => line,
+                        Err(error) if error.code == "step.budget-exhausted" => None,
+                        Err(error) => return Err(error),
+                    }
+                }
+                _ => None,
+            };
+            let fit = if let Some(line) = line {
+                line
+            } else {
+                let mut pieces = Vec::with_capacity(curves.len());
+                for (piece, curve) in curves.iter().enumerate() {
+                    let range = match curve.span_range() {
+                        Some(range) => range.clone(),
+                        None => analytic_range.as_ref().unwrap().clone(),
+                    };
+                    let guide = if seam {
+                        if sides[0] != sides[1] || sides[0] == Side::Interior {
+                            return Err(unsupported());
+                        }
+                        pcurve::Guide::Fixed(if sides[0] == Side::Low {
+                            catallax_numbers::Ball::from_rational(&Rational::zero(), precision)
+                        } else {
+                            &projection.pi
+                                * &catallax_numbers::Ball::from_rational(
+                                    &Rational::from_i64(2),
+                                    precision,
+                                )
+                        })
+                    } else if sides[0] == sides[1]
+                        && sides[0] != Side::Interior
+                        && matches!(
+                            input.geometry,
+                            Geometry::Analytic(analytic)
+                                if matches!(analytic.exact, CurveForm::Line { .. })
+                        )
+                    {
+                        // A line between two points of the seam lies along it.
+                        pcurve::Guide::Fixed(if sides[0] == Side::Low {
+                            catallax_numbers::Ball::from_rational(&Rational::zero(), precision)
+                        } else {
+                            &projection.pi
+                                * &catallax_numbers::Ball::from_rational(
+                                    &Rational::from_i64(2),
+                                    precision,
+                                )
+                        })
+                    } else {
+                        match input.geometry {
+                            Geometry::Analytic(analytic) => projection.analytic_guide(
+                                &analytic.exact,
+                                [&exact[0], &exact[1]],
+                                &range,
+                                self.dec,
+                            )?,
+                            Geometry::Spline { trace, spans, .. } => projection
+                                .trace_guide(&trace.pieces()[spans[piece].piece], &spans[piece]),
+                            Geometry::Exact(_) => projection.own_guide(curve),
+                            Geometry::Rail(_) => unreachable!("a rail has no pieces"),
+                        }
+                    };
+                    pieces.push(pcurve::Piece {
+                        latitude_speed: if coaxial_circles && !seam {
+                            projection.latitude_speed(curve)
+                        } else {
+                            None
+                        },
+                        curve: curve.local(&projection.written.placement, precision),
+                        guide,
+                        projection: &projection,
+                        range,
+                        endpoints: [
+                            (piece == 0).then(|| start.point.clone()),
+                            (piece + 1 == curves.len()).then(|| end.point.clone()),
+                        ],
+                    });
+                }
+                match input.geometry {
+                    Geometry::Rail(rail) => rail.fit(ends, self.digits()),
+                    _ => uv::fit(&pieces, self.digits(), &tolerance, budget, self.dec)?,
+                }
             };
             let geometry = &self.surfaces[&surface_id];
             let extent = (0..3).fold(Rational::zero(), |sum, i| {

@@ -3101,21 +3101,40 @@ fn constrain_lens_chord(
     Ok(())
 }
 
-/// Shares the chart and boundary machinery, but never runs facet certification.
+/// Builds preview data from shared charts, optionally with prepared junction rows.
 pub(crate) fn build_preview(
     model: &Model,
     body: BodyId,
     options: &crate::PreviewOptions,
+    junction: Option<crate::junction::Junction>,
     dec: &mut Decider,
 ) -> Result<crate::PreviewMesh, Refusal> {
     let visual = options;
     let options = MeshOptions {
         chord_tolerance: options.chord_tolerance.clone(),
-        angular_deviation: options.angular_deviation.clone(),
+        angular_deviation: if junction.is_some() {
+            None
+        } else {
+            options.angular_deviation.clone()
+        },
         max_vertices: options.max_vertices,
         max_edge_length: None,
         max_aspect_ratio: None,
     };
+    if junction.is_some() {
+        let (mesh, _) = build_junction(
+            model,
+            body,
+            Plan {
+                options: &options,
+                level: Level::Preview,
+            },
+            junction,
+            None,
+            dec,
+        )?;
+        return Ok(crate::PreviewMesh::from_mesh(mesh));
+    }
     let faces = model.faces_of_body(body);
     let mut charts = faces
         .iter()
@@ -3192,7 +3211,7 @@ pub(crate) fn build_preview(
         let bounds = std::array::from_fn(|i| {
             if chart.periodic[i] {
                 [0.0, 1.0]
-            } else if i == 1 && matches!(chart.surface, Surface::Sphere(_)) {
+            } else if i == 1 && chart.periodic[0] && matches!(chart.surface, Surface::Sphere(_)) {
                 [-0.25, 0.25]
             } else {
                 [
@@ -3239,7 +3258,11 @@ pub(crate) fn build_preview(
             dec,
         };
         builder.boundary(&segments, definition.sense)?;
-        builder.grid()?;
+        // Planar interpolation is affine. Grid seeds add no resolution, and a
+        // rounded bounding-box corner can land just inside a shared chord.
+        if !matches!(chart.surface, Surface::Plane(_)) {
+            builder.grid()?;
+        }
         let triangles = builder.finish_preview(face, definition.sense)?;
         boundaries.mesh.positions = positions.into_local();
         let start = boundaries.mesh.triangles.len();

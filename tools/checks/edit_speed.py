@@ -409,7 +409,7 @@ def compare_display(baseline, candidate, probes, targets):
 
 
 def compare_application(comparator, left, right, pins, *, verified_display=()):
-    assert left.name == right.name
+    assert not verified_display or left.name == right.name, "display proof belongs to a different scenario"
     verified_images = {f"{step}/viewport.png" for step in verified_display}
     for difference in comparator.problems(left, right, pins):
         if difference in verified_images:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit replay STEP solids directly, without TransferRoots or shape repair."""
+"""Audit raw replay STEP solids and the standard reader for affine UV changes."""
 from fractions import Fraction
 import json
 import math
@@ -17,8 +17,16 @@ from OCP.StepShape import StepShape_BrepWithVoids, StepShape_ManifoldSolidBrep
 from OCP.StepToTopoDS import StepToTopoDS_Builder
 from OCP.Transfer import Transfer_TransientProcess
 
-from checks import (CORRECTIONS, LAST_DIGIT_CLASS, RAW_POLICY, ROOT, UPGRADES, raw_step_errors,
-                    read, sha, indexed_replay_cases, upgrade_audit_errors, upgrade_rows)
+from checks import (AFFINE_PCURVE_CLASS, CORRECTIONS, LAST_DIGIT_CLASS, RAW_POLICY, ROOT, UPGRADES,
+                    raw_step_errors, read, sha, indexed_replay_cases, upgrade_audit_errors, upgrade_rows)
+
+
+def standard_valid(path):
+    reader = STEPControl_Reader()
+    if reader.ReadFile(str(path)) != IFSelect_RetDone or reader.TransferRoots() <= 0:
+        return False
+    shape = reader.OneShape()
+    return not shape.IsNull() and BRepCheck_Analyzer(shape).IsValid()
 
 
 def raw_shapes(path):
@@ -137,17 +145,20 @@ def main(report):
                         passed = valid(path)
                     except Exception:
                         passed = False
-                    observations.append({'index': index, 'step_sha256': sha(path), 'valid': passed})
+                    fingerprint = sha(path)
+                    observations.append({'index': index, 'step_sha256': fingerprint, 'valid': passed})
                     if index in corrections:
-                        # A last-digit correction may keep more than one lump;
-                        # the upgraded audit opens every raw solid.
-                        audit = (upgraded_properties_valid
-                                 if corrections[index].get('class') == LAST_DIGIT_CLASS
-                                 else corrected_properties_valid)
+                        correction = corrections[index]
                         try:
-                            checked_properties = (
-                                sha(path) == corrections[index]['after_step_sha256']
-                                and audit(path, case['response']['manifest']))
+                            checked_properties = fingerprint == correction['after_step_sha256']
+                            if checked_properties and correction.get('class') == AFFINE_PCURVE_CLASS:
+                                checked_properties = passed and standard_valid(path)
+                            elif checked_properties:
+                                # Last-digit corrections can keep more than one lump.
+                                audit = (upgraded_properties_valid
+                                         if correction.get('class') == LAST_DIGIT_CLASS
+                                         else corrected_properties_valid)
+                                checked_properties = audit(path, case['response']['manifest'])
                         except Exception:
                             checked_properties = False
                         property_checks.append({'index': index, 'passed': checked_properties})

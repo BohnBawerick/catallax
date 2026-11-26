@@ -213,9 +213,20 @@ class DefinitionBounds:
         compare_definition_bound(reference, definition, where)
 
 
+# D1 (26 Nov): the closed-form UV change to the fixed rounded-boss probe.
+# Both files passed the raw and standard OCCT readers and kernel reread.
+ROUNDED_STEP_TRANSITIONS = {
+    ('f7ceda8fb41ef67fdc0ab96af902a13feb4207c8b61efd252f384661093989f4',
+     '893edb825b027b53f338bbb9ea6058142a93c0a0b8bff2d37e88be9c46faf2a1'),
+}
+
+
 def compare_rounded_step(base, candidate):
-    assert (base / 'answer.step').read_bytes() == (candidate / 'answer.step').read_bytes(), \
-        f"STEP bytes changed: {candidate}"
+    old = (base / 'answer.step').read_bytes()
+    new = (candidate / 'answer.step').read_bytes()
+    if old != new:
+        transition = tuple(hashlib.sha256(data).hexdigest() for data in (old, new))
+        assert transition in ROUNDED_STEP_TRANSITIONS, f"STEP bytes changed: {candidate}"
     before, base_bound, base_definition = rounded_certificate(base / 'answer.txt')
     after, head_bound, head_definition = rounded_certificate(candidate / 'answer.txt')
     assert before == after, f"STEP report fields or marks changed: {candidate}"

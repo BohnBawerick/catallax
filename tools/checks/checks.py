@@ -38,6 +38,7 @@ EMPTY_CLASS = 'budget-refusal-to-empty'
 EMPTINESS_METHOD = 'contained-in-subtracted-block'
 BUDGET_REFUSAL = 'numbers.operation-budget'
 STEP_CLASS = 'invalid-to-valid-step'
+AFFINE_PCURVE_CLASS = 'affine-step-pcurve'
 STEP_CORRECTION_FIELDS = {
     'step.added_edges', 'step.added_vertices',
     'step.max_deviation', 'step.approximated_curves'}
@@ -289,12 +290,13 @@ def metadata_errors(base, candidate, corrections=None, base_policy=None, upgrade
     rows = upgrade_rows(upgrades)
     if rows is None or len(base) != len(candidate):
         return failure
-    # A listed upgrade settles its own row; every other change stays on the
-    # correction path, unchanged.
+    # An upgrade applies only while its before-answer is still accepted.
+    # A later correction uses the currently accepted answer as its base.
     remaining = []
     for before, after in zip(base, candidate):
-        if before != after and before['index'] in rows:
-            if upgrade_metadata_errors(before, after, rows[before['index']]):
+        index = before['index']
+        if before != after and pending_upgrade(before, rows):
+            if upgrade_metadata_errors(before, after, rows[index]):
                 return failure
         else:
             remaining.append((before, after))
@@ -312,6 +314,11 @@ def upgrade_rows(upgrades):
     if len({row.get('index') for row in rows}) != len(rows):
         return None
     return {row['index']: row for row in rows}
+
+
+def pending_upgrade(before, upgrades):
+    row = upgrades.get(before['index'])
+    return row is not None and row.get('before_sha256') == before['accepted_answer_sha256']
 
 
 def upgrade_metadata_errors(before, after, row):
@@ -531,6 +538,12 @@ def correction_metadata_errors(base, candidate, corrections, base_policy):
             if (not common or index not in base_policy['known_raw_invalid']
                     or correction.get('before_step_sha256') != approved.get(index)
                     or not set(fields or []) <= STEP_CORRECTION_FIELDS):
+                return failure
+        elif correction.get('class') == AFFINE_PCURVE_CLASS:
+            if (not common or index in base_policy['known_raw_invalid']
+                    or fields not in ([], ['step.max_deviation'])
+                    or not valid_digest(correction.get('before_step_sha256'))
+                    or correction['before_step_sha256'] == correction['after_step_sha256']):
                 return failure
         else:
             return failure
@@ -992,7 +1005,8 @@ def replay(args):
     if len(inputs) != len(metadata):
         raise ValueError('replay inputs must match the complete public inventory')
     base_manifests, base_directories = correction_bases(args, plan, driver, release, inputs, indices)
-    upgrade_indices = sorted(index for index in base_manifests if index in upgrades)
+    upgrade_indices = sorted(row['index'] for row in plan['correction_base_answers']
+                             if row['index'] in base_manifests and pending_upgrade(row, upgrades))
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
     normalized = Path(args.out) / 'replay-requests.jsonl'
@@ -1042,7 +1056,7 @@ def replay(args):
                            if (sha(directory / name) if (directory / name).exists() else None)
                            != accepted['accepted_files'][name]]
                 cause = 'STEP bytes' if changed == ['answer.step'] else 'output bytes'
-        if index in base_manifests and index in upgrades:
+        if index in upgrade_indices:
             written = [name for name in release.OUTPUTS if (directory / name).exists()]
             if upgrade_manifest_errors(manifest, base_manifests[index], upgrades[index],
                                        inputs[index].get('problem'), written):
@@ -1055,6 +1069,14 @@ def replay(args):
             if index not in base_directories or last_digit_errors(
                     base_directories[index], directory, driver):
                 cause = 'answer changed beyond its last stated digit'
+        if (cause is None and index in base_manifests
+                and corrections.get(index, {}).get('class') == AFFINE_PCURVE_CLASS):
+            from step_pcurve import affine_pcurves_only
+            bound = stated_tolerance(manifest)
+            if (bound is None or bound > Fraction(1, 10_000_000)
+                    or not affine_pcurves_only(base_directories[index] / 'answer.step',
+                                               directory / 'answer.step')):
+                cause = 'STEP changed outside its affine pcurves'
         if response['work']['used'] > 100_000_000:
             cause = 'above 100M work'
         if case['cache_hit'] or manifest.get('status') == 'internal-error':

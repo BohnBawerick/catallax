@@ -32,6 +32,7 @@ pub(crate) struct Positions<'a> {
     shared: &'a [[f64; 3]],
     base: usize,
     local: Vec<[f64; 3]>,
+    peak: usize,
 }
 
 impl<'a> Positions<'a> {
@@ -41,6 +42,7 @@ impl<'a> Positions<'a> {
             shared,
             base,
             local: Vec::new(),
+            peak: 0,
         }
     }
 
@@ -49,6 +51,7 @@ impl<'a> Positions<'a> {
         Positions {
             shared: &[],
             base: 0,
+            peak: 0,
             local,
         }
     }
@@ -69,6 +72,7 @@ impl<'a> Positions<'a> {
 
     /// Drops the face's own vertices from index `len` on.
     pub(crate) fn truncate(&mut self, len: usize) {
+        self.peak = self.peak.max(self.local.len());
         self.local.truncate(len.saturating_sub(self.base));
     }
 }
@@ -163,6 +167,8 @@ impl<'a> FaceDraft<'a> {
         Ok(FaceResult {
             face,
             base: positions.base,
+            peak: positions.peak.max(positions.local.len()),
+            uncompacted: positions.local.len(),
             positions: positions.local,
             triangles,
             report,
@@ -182,7 +188,11 @@ impl<'a> FaceDraft<'a> {
 pub(crate) struct FaceResult {
     pub(crate) face: FaceId,
     pub(crate) base: usize,
+    /// Maximum local storage before any discarded trial positions.
+    pub(crate) peak: usize,
     pub(crate) positions: Vec<[f64; 3]>,
+    /// Local storage still occupied when the face was placed.
+    pub(crate) uncompacted: usize,
     pub(crate) triangles: Vec<Triangle>,
     /// Chord, aspect and angular evidence for the face.
     pub(crate) report: FaceMesh,
@@ -322,6 +332,8 @@ mod tests {
         FaceResult {
             face,
             base,
+            peak: own.len(),
+            uncompacted: own.len(),
             positions: own.to_vec(),
             triangles: triangles
                 .iter()

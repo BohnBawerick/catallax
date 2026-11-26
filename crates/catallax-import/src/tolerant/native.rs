@@ -805,6 +805,33 @@ impl NativeSurface {
         seed: Option<NativeLocation>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
+        self.project_with(point_mm, seed, self.3.as_deref(), dec)
+    }
+
+    pub(super) fn project_for_trim(
+        &self,
+        point_mm: [f64; 3],
+        seed: Option<NativeLocation>,
+        closed: bool,
+        dec: &mut Decider,
+    ) -> Result<NativeProjection, Error> {
+        // A closed periodic trim publishes both fitted seam anchors. Picking
+        // the two inverses independently can snap their span to exactly one
+        // turn and change how a STEP reader matches that edge to the face.
+        let direct = self
+            .3
+            .as_deref()
+            .filter(|_| !closed || self.1.iter().all(Option::is_none));
+        self.project_with(point_mm, seed, direct, dec)
+    }
+
+    fn project_with(
+        &self,
+        point_mm: [f64; 3],
+        seed: Option<NativeLocation>,
+        direct: Option<&AnalyticProjection>,
+        dec: &mut Decider,
+    ) -> Result<NativeProjection, Error> {
         let canonical = seed
             .map(|location| {
                 let parameters = std::array::from_fn(|axis| {
@@ -815,9 +842,9 @@ impl NativeSurface {
                 self.0.location(parameters)
             })
             .transpose()?;
-        let mut projection =
-            self.0
-                .project(point_mm, canonical, self.2.as_ref(), self.3.as_deref(), dec)?;
+        let mut projection = self
+            .0
+            .project(point_mm, canonical, self.2.as_ref(), direct, dec)?;
         if let Some(seed) = seed {
             let parameters =
                 self.align_parameters(projection.location.parameters, Some(seed.parameters));

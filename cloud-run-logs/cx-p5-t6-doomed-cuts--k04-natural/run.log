@@ -1,0 +1,70 @@
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling typenum v1.20.1
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling generic-array v0.14.7
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling bitmaps v2.1.0
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling im v15.1.0
+   Compiling serde v1.0.229
+   Compiling rand_core v0.6.4
+   Compiling serde_json v1.0.154
+   Compiling rand_xoshiro v0.6.0
+   Compiling digest v0.10.7
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling syn v2.0.119
+   Compiling libm v0.2.16
+   Compiling memchr v2.8.3
+   Compiling serde_derive v1.0.229
+   Compiling cfg-if v1.0.5
+   Compiling itoa v1.0.18
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling catallax-transfer-derive v0.5.0 (/home/user/catallax/crates/catallax-transfer-derive)
+   Compiling num-bigint v0.4.8
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling catallax-trace v0.5.0 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-numbers v0.5.0 (/home/user/catallax/crates/catallax-numbers)
+   Compiling rayon-core v1.13.0
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling hashbrown v0.16.1
+   Compiling robust v1.2.0
+   Compiling smallvec v1.16.3
+   Compiling spade v2.15.1
+   Compiling either v1.19.0
+   Compiling catallax-cli v0.5.0 (/home/user/catallax/crates/catallax-cli)
+   Compiling rayon v1.12.0
+   Compiling catallax-shapes v0.5.0 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.5.0 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.5.0 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.5.0 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-iges v0.5.0 (/home/user/catallax/crates/catallax-iges)
+   Compiling catallax-boolean v0.5.0 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.5.0 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-step v0.5.0 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.5.0 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-mesh v0.5.0 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-field v0.5.0 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-compare v0.5.0 (/home/user/catallax/crates/catallax-compare)
+   Compiling catallax-app v0.5.0 (/home/user/catallax/crates/catallax-app)
+    Finished `release` profile [optimized] target(s) in 4m 22s
+Hardware instruction counter unavailable on this runner
+m8-k04-torus-pocket threads=1 pass=0 refused used=2290131154 123626 ms
+{"build":{"exhausted":false,"ms":123626.18917099999,"refunded":0,"refusal":"numbers.budget-exhausted","status":"refused","uncharged":123934119,"used":2290131154},"choices":[{"attempt_work":803500,"look":null,"operation_work":25495833,"path":"exact","step":"filleted"}],"export":null,"group":"phase-5","id":"m8-k04-torus-pocket","label":"cloud-uncapped","max_work":4611686018427387904,"operations":[{"id":"section","operation":"sketch","refusal":null,"used":596},{"id":"housing","operation":"revolve","refusal":null,"used":72},{"id":"drill","operation":"cylinder","refusal":null,"used":0},{"id":"sink","operation":"cone","refusal":null,"used":0},{"id":"countersink","operation":"boolean","refusal":null,"used":7111},{"id":"hole-pattern","operation":"pattern","refusal":null,"used":13638},{"id":"drilled","operation":"boolean","refusal":null,"used":238108},{"id":"filleted","operation":"fillet","refusal":null,"used":803500},{"id":"tool","operation":"cylinder","refusal":null,"used":0},{"id":"later-cut","operation":"boolean","refusal":"numbers.budget-exhausted","used":2289068129}],"pass":0,"threads":1}

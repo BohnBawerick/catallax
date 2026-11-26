@@ -487,6 +487,7 @@ fn uncertain_bore_trim_fans_stay_near_the_boundary_and_keep_both_caps() {
             ..Options::default()
         };
         let mesh = mesh_plan(&plan, &options, &mut Decider::default()).unwrap();
+        assert_bore_distance_sampled_in_both_directions(&mesh);
         for &[x, y, z] in &mesh.positions {
             let rho = ((x - 7.0 / 3.0).powi(2) + (y - 5.0 / 3.0).powi(2)).sqrt();
             assert!((-1e-10..=4.0 + 1e-10).contains(&x));
@@ -529,6 +530,106 @@ fn uncertain_bore_trim_fans_stay_near_the_boundary_and_keep_both_caps() {
             );
         }
     }
+}
+
+fn assert_bore_distance_sampled_in_both_directions(mesh: &catallax_field::display::Mesh) {
+    use std::f64::consts::TAU;
+
+    let [cx, cy] = [7.0 / 3.0, 5.0 / 3.0];
+    let bound = mesh.max_deviation.to_f64_nearest() + 1e-10;
+    let triangles: Vec<_> = mesh
+        .triangles
+        .iter()
+        .map(|t| t.vertices.map(|i| mesh.positions[i]))
+        .collect();
+    let check = |p: [f64; 3]| {
+        assert!(
+            triangles.iter().any(|t| (0..3).all(|i| {
+                !t.iter().all(|v| v[i] < p[i] - bound) && !t.iter().all(|v| v[i] > p[i] + bound)
+            }) && triangle_distance_sq(p, *t) <= bound * bound),
+            "authored bore boundary sample {p:?} exceeds the display bound {bound} mm"
+        );
+    };
+    for i in 0..=32 {
+        for j in 0..=32 {
+            let x = f64::from(i) / 8.0;
+            let y = f64::from(j) / 8.0;
+            for side in [0.0, 4.0] {
+                check([x, side, y / 2.0]);
+                check([side, x, y / 2.0]);
+            }
+            if (x - cx).hypot(y - cy) >= 1.0 {
+                check([x, y, 0.0]);
+                check([x, y, 2.0]);
+            }
+        }
+    }
+    for i in 0..128 {
+        let (s, c) = (TAU * f64::from(i) / 128.0).sin_cos();
+        for j in 0..=32 {
+            check([cx + c, cy + s, f64::from(j) / 16.0]);
+        }
+    }
+
+    // Clamp independently to each of the six trimmed planes and the bore.
+    // A projection into a cap's hole has its closest point on the bore rim.
+    for [a, b, c] in triangles {
+        for i in 0..=4 {
+            for j in 0..=4 - i {
+                let [x, y, z] = std::array::from_fn(|k| {
+                    (f64::from(i) * a[k] + f64::from(j) * b[k] + f64::from(4 - i - j) * c[k]) / 4.0
+                });
+                let px = x.clamp(0.0, 4.0);
+                let py = y.clamp(0.0, 4.0);
+                let pz = z.clamp(0.0, 2.0);
+                let rho = (x - cx).hypot(y - cy);
+                let cap_offset = (x - px).hypot(y - py).max((1.0 - rho).max(0.0));
+                let distance = [
+                    x.abs().min((4.0 - x).abs()).hypot((y - py).hypot(z - pz)),
+                    y.abs().min((4.0 - y).abs()).hypot((x - px).hypot(z - pz)),
+                    z.abs().min((2.0 - z).abs()).hypot(cap_offset),
+                    (rho - 1.0).abs().hypot(z - pz),
+                ]
+                .into_iter()
+                .fold(f64::INFINITY, f64::min);
+                assert!(
+                    distance <= bound,
+                    "facet sample {:?}: {distance} mm > {bound} mm",
+                    [x, y, z]
+                );
+            }
+        }
+    }
+}
+
+fn triangle_distance_sq(p: [f64; 3], [a, b, c]: [[f64; 3]; 3]) -> f64 {
+    let sub = |a: [f64; 3], b: [f64; 3]| std::array::from_fn(|i| a[i] - b[i]);
+    let dot = |a: [f64; 3], b: [f64; 3]| a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let (u, v, d) = (sub(b, a), sub(c, a), sub(p, a));
+    let (uu, uv, vv, du, dv) = (dot(u, u), dot(u, v), dot(v, v), dot(d, u), dot(d, v));
+    let det = uu * vv - uv * uv;
+    if det > 0.0 {
+        let s = (vv * du - uv * dv) / det;
+        let t = (uu * dv - uv * du) / det;
+        if s >= 0.0 && t >= 0.0 && s + t <= 1.0 {
+            let offset = std::array::from_fn(|i| d[i] - s * u[i] - t * v[i]);
+            return dot(offset, offset);
+        }
+    }
+    [(a, b), (b, c), (c, a)]
+        .into_iter()
+        .map(|(a, b)| {
+            let (u, d) = (sub(b, a), sub(p, a));
+            let squared = dot(u, u);
+            let t = if squared > 0.0 {
+                (dot(u, d) / squared).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let offset = std::array::from_fn(|i| d[i] - t * u[i]);
+            dot(offset, offset)
+        })
+        .fold(f64::INFINITY, f64::min)
 }
 
 #[test]

@@ -435,7 +435,7 @@ class RepeatedDefinitionBoundTests(unittest.TestCase):
                             bounds.compare(key, 'candidate', definition, 'pair 3 candidate')
 
 
-class BracketViewportTests(unittest.TestCase):
+class LiveViewportTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -458,12 +458,12 @@ class BracketViewportTests(unittest.TestCase):
             "params": {"chord_height": chord}, "meshes": [mesh], "provisional": None}))
 
     def compare(self):
-        return edit_speed.compare_bracket_display(self.base, self.head, self.probes, (27,))
+        return edit_speed.compare_display(self.base, self.head, self.probes, (27,))
 
     def test_stale_post_edit_scene_fails_even_if_capture_is_repeatable(self):
         self.capture(self.head, 27, (0, 120), image=b"looks changed")
         with mock.patch("edit_speed.subprocess.run", return_value=mock.Mock(stdout="")):
-            with self.assertRaisesRegex(AssertionError, "wrong live extent"):
+            with self.assertRaisesRegex(AssertionError, "wrong live edit observation"):
                 self.compare()
 
     def test_fixed_scene_renderer_and_chord_settings_stay_exact(self):
@@ -497,6 +497,38 @@ class BracketViewportTests(unittest.TestCase):
                                                         "output": out}) for out in ("old", "new"))
             with self.subTest(changed=changed), self.assertRaisesRegex(AssertionError, re.escape(changed)):
                 edit_speed.compare_application(comparator, self.base, self.head, (), verified_display=verified)
+
+    def test_drawing_checks_the_local_plate_top_not_the_world_extent(self):
+        base, head = (p.with_name("drawing") for p in (self.base, self.head))
+
+        def capture(root, number, height, *, reverse=False):
+            path = root / "commands" / f"{number:04}"
+            path.mkdir(parents=True, exist_ok=True)
+            # The tall triangle misses the probe, and its height never changes.
+            mesh = {"positions": [[30, 10, height], [65, 10, height], [30, 40, height],
+                                  [3, 10, 60], [6, 10, 60], [3, 40, 60]],
+                    "indices": ([2, 1, 0] if reverse else [0, 1, 2]) + [3, 4, 5]}
+            (path / "viewport.png").write_bytes(b"fresh" if reverse else b"reference")
+            (path / "viewport.mesh.json").write_text(json.dumps({
+                "params": {"chord_height": 0.01}, "meshes": [mesh], "provisional": None}))
+
+        for root in (base, head):
+            capture(root, 2, 10)
+            capture(root, 23, 10)
+            capture(root, 24, 12)
+        probes = {path: self.probes[self.base] for path in (base, head)}
+        capture(head, 24, 10, reverse=True)
+        with mock.patch("edit_speed.subprocess.run", return_value=mock.Mock(stdout="")):
+            with self.assertRaisesRegex(AssertionError, "wrong live edit observation"):
+                edit_speed.compare_display(base, head, probes, (24,))
+            capture(head, 24, 12, reverse=True)
+            verified = edit_speed.compare_display(base, head, probes, (24,))
+        comparator = mock.Mock()
+        comparator.problems.return_value = ["0024/viewport.png"]
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit_speed.compare_application(comparator, base, head, (), verified_display=verified)
+            with self.assertRaisesRegex(AssertionError, "0024/viewport.png"):
+                edit_speed.compare_application(comparator, base, head, ())
 
 
 class PerfLookupTests(unittest.TestCase):

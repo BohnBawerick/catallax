@@ -190,8 +190,14 @@ pub(crate) fn draw<F>(
         Some(anchor) => {
             // A leader up and to the right, with an open arrow on the face.
             let reach = Rational::from_i64(7);
-            let symbol = [&anchor[0] + &reach, anchor[1].clone(), &anchor[2] + &reach];
-            let back = |u: Rational, v: Rational| [&zero - &reach + u, &zero - &reach + v];
+            let symbol = [
+                &anchor[0] + &reach,
+                anchor[1].clone(),
+                &(&anchor[2] + &reach) + &offset,
+            ];
+            let back = |u: Rational, v: Rational| {
+                [&zero - &reach + u, &zero - &reach - offset.clone() + v]
+            };
             let tip = back(zero.clone(), zero.clone());
             // Arrow wings 2.5 mm long at 15 degrees either side of the leader.
             let wings = [
@@ -309,5 +315,53 @@ impl Drawing {
         }
         let centre = moment.map(|m| if length.is_zero() { m } else { &m / &length });
         (length, centre)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texture() -> SurfaceTexture<()> {
+        SurfaceTexture {
+            parameter: "Ra".to_owned(),
+            value: Rational::from_i64(16),
+            process: Process::NoRemoval,
+            feature: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn no_removal_circle_has_no_repeated_adjacent_points() {
+        let drawing = draw(&texture(), "1.6", None, 0);
+        let circle = drawing
+            .polylines
+            .iter()
+            .find(|line| line.first() == line.last())
+            .unwrap();
+        assert_eq!(circle.first(), circle.last());
+        assert!(
+            circle.windows(2).all(|pair| pair[0] != pair[1]),
+            "circle contains a zero-length segment"
+        );
+    }
+
+    #[test]
+    fn anchored_callout_slots_separate_same_face_textures() {
+        let anchor = [
+            Rational::from_i64(3),
+            Rational::zero(),
+            Rational::from_i64(5),
+        ];
+        let first = draw(&texture(), "1.6", Some(&anchor), 0);
+        let mut second_texture = texture();
+        second_texture.parameter = "Rz".to_owned();
+        let second = draw(&second_texture, "6.3", Some(&anchor), 1);
+        let second_again = draw(&second_texture, "6.3", Some(&anchor), 1);
+
+        assert_eq!(first.polylines[0][0], anchor);
+        assert_eq!(second.polylines[0][0], anchor);
+        assert_ne!(first.polylines[2], second.polylines[2]);
+        assert_eq!(second.polylines, second_again.polylines);
     }
 }

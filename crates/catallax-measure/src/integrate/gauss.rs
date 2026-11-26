@@ -62,7 +62,7 @@ fn polynomial(x: &Rational, work: &mut Work) -> Checked<Sign> {
         denominator = &denominator * x_den;
         charge_exact(work, limbs(&numerator, &denominator) + SMALL)?;
         if coefficient != 0 {
-            numerator = numerator + Integer::from_i64(coefficient) * &denominator;
+            numerator = numerator + &Integer::from_i64(coefficient) * &denominator;
         }
     }
     Ok(numerator.sign())

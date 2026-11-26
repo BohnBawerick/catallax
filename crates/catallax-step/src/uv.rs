@@ -61,6 +61,13 @@ impl<const N: usize> Jet<N> {
         result
     }
 
+    /// Add a constant at the jet's working precision, leaving its tail alone.
+    pub fn add_constant(mut self, value: &Ball) -> Self {
+        debug_assert_eq!(self.coefficients[0].precision(), value.precision());
+        self.coefficients[0] = &self.coefficients[0] + value;
+        self
+    }
+
     pub fn sub(&self, other: &Self) -> Self {
         let mut result = Self::constant(scalar(0, self.coefficients[0].precision()));
         result.degree = self.degree.max(other.degree);
@@ -211,6 +218,8 @@ impl<const N: usize> Jet<N> {
     }
 }
 
+pub(crate) type SpanCoefficients = ([[Ball; 2]; fit::DEGREE + 1], [Ball; 2]);
+
 /// A local curve has an actual STEP parameter interval. Unlike the existing
 /// space-curve fit, UV refinement must never reparameterize its Bezier spans.
 pub(crate) trait Parametric {
@@ -218,10 +227,17 @@ pub(crate) trait Parametric {
     fn reuse_endpoints(&self) -> bool {
         false
     }
-    /// `false` requests interval subdivision before evaluating derivatives;
-    /// arithmetic refusals still propagate without being swallowed or retried.
-    fn regular(&self, _parameter: &Ball, _dec: &Decider) -> Result<bool, Refusal> {
-        Ok(true)
+    /// Point Taylor controls and the highest enclosing derivative over the
+    /// span. `None` requests subdivision before evaluating derivatives.
+    fn span_coefficients(
+        &self,
+        center: &Ball,
+        domain: &Ball,
+        dec: &Decider,
+    ) -> Result<Option<SpanCoefficients>, Refusal> {
+        let controls = self.coefficients::<{ fit::DEGREE + 1 }>(center, true, dec)?;
+        let [.., remainder] = self.coefficients::<{ fit::DEGREE + 2 }>(domain, false, dec)?;
+        Ok(Some((controls, remainder)))
     }
     fn coefficients<const N: usize>(
         &self,
@@ -242,6 +258,7 @@ pub(crate) trait Parametric {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Fit {
     pub points: Vec<[Number; 2]>,
     pub knots: Vec<Rational>,
@@ -393,14 +410,14 @@ fn core<P: Parametric>(
 ) -> Result<Option<Core>, Refusal> {
     let [lo, hi] = range;
     let domain = Ball::from_rational(lo, precision).hull(&Ball::from_rational(hi, precision));
-    if !piece.regular(&domain, dec)? {
-        return Ok(None);
-    }
-    let width = hi - lo;
     let center = Ball::from_rational(&(lo + hi).mul_pow2(-1), precision);
-    let coefficients = piece.coefficients::<{ fit::DEGREE + 1 }>(&center, true, dec)?;
-    let remainder_coefficient = piece.coefficients::<{ fit::DEGREE + 2 }>(&domain, false, dec)?;
-    let remainder = remainder_coefficient[fit::DEGREE + 1]
+    let Some((coefficients, remainder_coefficient)) =
+        piece.span_coefficients(&center, &domain, dec)?
+    else {
+        return Ok(None);
+    };
+    let width = hi - lo;
+    let remainder = remainder_coefficient
         .iter()
         .fold(Rational::zero(), |sum, value| {
             sum + number::magnitude(value)
@@ -587,7 +604,9 @@ fn with_helpers<P: Parametric + Sync, T>(
             let spawned = std::thread::Builder::new()
                 .name("catallax-uv-fit".into())
                 .stack_size(helpers.stack_size())
-                .spawn_scoped(scope, || helpers.run(|dec| ahead.explore(dec)));
+                .spawn_scoped(scope, || {
+                    Ball::with_series_reciprocals(|| helpers.run(|dec| ahead.explore(dec)))
+                });
             if spawned.is_err() {
                 break;
             }
@@ -1155,10 +1174,15 @@ mod tests {
         fn range(&self) -> [Rational; 2] {
             [Rational::zero(), Rational::one()]
         }
-        fn regular(&self, _parameter: &Ball, dec: &Decider) -> Result<bool, Refusal> {
+        fn span_coefficients(
+            &self,
+            _center: &Ball,
+            _domain: &Ball,
+            dec: &Decider,
+        ) -> Result<Option<SpanCoefficients>, Refusal> {
             dec.check_deadline()?;
             assert!(!self.panics, "the stub's computation fails");
-            Ok(false)
+            Ok(None)
         }
         fn coefficients<const N: usize>(
             &self,

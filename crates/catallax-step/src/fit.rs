@@ -10,7 +10,7 @@
 //! counted.
 
 use catallax_intersect::{CurveTrace, TracePiece};
-use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
 
 use crate::StepOptions;
 use crate::number::{self, Point};
@@ -386,7 +386,12 @@ pub(crate) fn taylor_controls<const N: usize>(
             power = &power * width;
         }
         for (cell, ball) in row.iter_mut().zip(coefficient) {
-            *cell = [&ball.lo() * &power, &ball.hi() * &power];
+            if !ball.is_exact_zero() {
+                *cell = [&ball.lo() * &power, &ball.hi() * &power];
+                if power.sign() == Sign::Negative {
+                    cell.swap(0, 1);
+                }
+            }
         }
     }
     let mut controls = zeros();
@@ -394,16 +399,16 @@ pub(crate) fn taylor_controls<const N: usize>(
         let mut parts: [[[Rational; 2]; N]; 2] =
             std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]));
         for (k, (coefficient, weight)) in scaled.iter().zip(weights).enumerate() {
-            if weight.is_zero() {
-                continue;
-            }
-            for i in 0..N {
-                let a = &coefficient[i][0] * weight;
-                let b = &coefficient[i][1] * weight;
-                let (lower, upper) = if a <= b { (a, b) } else { (b, a) };
-                let interval = &mut parts[k % 2][i];
-                interval[0] = &interval[0] + &lower;
-                interval[1] = &interval[1] + &upper;
+            let [lo, hi] = match weight.sign() {
+                Sign::Zero => continue,
+                Sign::Positive => [0, 1],
+                Sign::Negative => [1, 0],
+            };
+            for (interval, coefficient) in parts[k % 2].iter_mut().zip(coefficient) {
+                if !coefficient[0].is_zero() || !coefficient[1].is_zero() {
+                    interval[0] = &interval[0] + &(&coefficient[lo] * weight);
+                    interval[1] = &interval[1] + &(&coefficient[hi] * weight);
+                }
             }
         }
         for i in 0..N {

@@ -416,6 +416,7 @@ impl LocalCurve {
     pub fn coefficients<const N: usize>(
         &self,
         t: &Ball,
+        ellipse: Option<&[Ball; 2]>,
         dec: &Decider,
     ) -> Result<[Jet<N>; 3], Refusal> {
         dec.check_deadline()?;
@@ -427,7 +428,15 @@ impl LocalCurve {
                 })
             }
             Self::Ellipse { center, x, y } => {
-                let (sin, cos) = sin_cos(t, dec)?;
+                let local;
+                let basis = match ellipse {
+                    Some(basis) => basis,
+                    None => {
+                        local = ellipse_basis(t, dec)?;
+                        &local
+                    }
+                };
+                let (sin, cos) = ellipse_jets(basis);
                 std::array::from_fn(|i| {
                     Jet::constant(center[i].clone())
                         .add(&cos.scale(&x[i]))
@@ -458,15 +467,7 @@ impl LocalCurve {
                 let parameter = Jet::variable(t.clone())
                     .sub(&Jet::constant(ball(&range[0], t.precision())))
                     .scale(&inverse);
-                std::array::from_fn(|axis| {
-                    let mut value = Jet::constant(powers[fit::DEGREE][axis].clone());
-                    for k in (0..fit::DEGREE).rev() {
-                        value = value
-                            .mul(&parameter)
-                            .add(&Jet::constant(powers[k][axis].clone()));
-                    }
-                    value
-                })
+                std::array::from_fn(|axis| horner(powers.iter().map(|p| &p[axis]), &parameter))
             }
             Self::Rational {
                 points,
@@ -479,17 +480,9 @@ impl LocalCurve {
                 let parameter = Jet::variable(t.clone())
                     .sub(&Jet::constant(ball(&range[0], t.precision())))
                     .scale(&inverse);
-                let horner = |values: &mut dyn Iterator<Item = &Ball>| {
-                    let values: Vec<&Ball> = values.collect();
-                    let mut value = Jet::constant(values[values.len() - 1].clone());
-                    for k in (0..values.len() - 1).rev() {
-                        value = value.mul(&parameter).add(&Jet::constant(values[k].clone()));
-                    }
-                    value
-                };
-                let weight = horner(&mut weights.iter());
+                let weight = horner(weights.iter(), &parameter);
                 let [x, y, z] =
-                    std::array::from_fn(|axis| horner(&mut points.iter().map(|p| &p[axis])));
+                    std::array::from_fn(|axis| horner(points.iter().map(|p| &p[axis]), &parameter));
                 [x.div(&weight)?, y.div(&weight)?, z.div(&weight)?]
             }
         };
@@ -498,14 +491,28 @@ impl LocalCurve {
     }
 }
 
-fn sin_cos<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), Refusal> {
+fn horner<'a, const N: usize>(
+    mut values: impl DoubleEndedIterator<Item = &'a Ball>,
+    parameter: &Jet<N>,
+) -> Jet<N> {
+    let leading = values.next_back().expect("nonempty curve polynomial");
+    values.rev().fold(Jet::constant(leading.clone()), |jet, value| {
+        jet.mul(parameter).add_constant(value)
+    })
+}
+
+fn ellipse_basis(t: &Ball, dec: &Decider) -> Result<[Ball; 2], Refusal> {
     dec.check_deadline()?;
-    let sin = t.sin();
-    let cos = t.cos();
+    let pair = [t.sin(), t.cos()];
     dec.check_deadline()?;
+    Ok(pair)
+}
+
+fn ellipse_jets<const N: usize>([sin, cos]: &[Ball; 2]) -> (Jet<N>, Jet<N>) {
+    let precision = sin.precision();
     let mut factor = Rational::one();
-    let mut s = std::array::from_fn(|_| scalar(0, t.precision()));
-    let mut c = std::array::from_fn(|_| scalar(0, t.precision()));
+    let mut s = std::array::from_fn(|_| scalar(0, precision));
+    let mut c = std::array::from_fn(|_| scalar(0, precision));
     for n in 0..N {
         if n != 0 {
             factor = factor / Rational::from_i64(n as i64);
@@ -516,11 +523,11 @@ fn sin_cos<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), 
             2 => (-sin.clone(), -cos.clone()),
             _ => (-cos.clone(), sin.clone()),
         };
-        let scale = ball(&factor, t.precision());
+        let scale = ball(&factor, precision);
         s[n] = &sine * &scale;
         c[n] = &cosine * &scale;
     }
-    Ok((Jet::from_coefficients(s), Jet::from_coefficients(c)))
+    (Jet::from_coefficients(s), Jet::from_coefficients(c))
 }
 
 fn sinh_cosh<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), Refusal> {
@@ -673,8 +680,10 @@ impl SurfaceMap {
                 Jet::angle(z, &offset, constant)?
             }
         };
-        Ok(std::array::from_fn(|i| {
-            [u.coefficients[i].clone(), v.coefficients[i].clone()]
+        let mut pairs = u.coefficients.into_iter().zip(v.coefficients);
+        Ok(std::array::from_fn(|_| {
+            let (u, v) = pairs.next().unwrap();
+            [u, v]
         }))
     }
 }
@@ -1433,17 +1442,42 @@ impl uv::Parametric for Piece<'_> {
         self.range.clone()
     }
 
-    fn regular(&self, parameter: &Ball, dec: &Decider) -> Result<bool, Refusal> {
+    fn span_coefficients(
+        &self,
+        center: &Ball,
+        domain: &Ball,
+        dec: &Decider,
+    ) -> Result<Option<uv::SpanCoefficients>, Refusal> {
         if self.latitude_speed.is_some() {
-            return Ok(true);
+            let controls = self.coefficients(center, true, dec)?;
+            let zero = scalar(0, domain.precision());
+            return Ok(Some((controls, [zero.clone(), zero])));
         }
-        if !self.curve.weight_separated(parameter) {
-            return Ok(false);
+        if !self.curve.weight_separated(domain) {
+            return Ok(None);
         }
-        Ok(self
-            .projection
-            .map
-            .regular(&self.curve.coefficients::<1>(parameter, dec)?))
+        // The center and domain are different balls. Share only the domain's
+        // sine and cosine between the regularity screen and interval jet.
+        let ellipse = matches!(self.curve, LocalCurve::Ellipse { .. })
+            .then(|| ellipse_basis(domain, dec))
+            .transpose()?;
+        let coordinates = self.curve.coefficients::<1>(domain, ellipse.as_ref(), dec)?;
+        if !self.projection.map.regular(&coordinates) {
+            return Ok(None);
+        }
+        let controls = self.coefficients(center, true, dec)?;
+        let coordinates = self
+            .curve
+            .coefficients::<{ fit::DEGREE + 2 }>(domain, ellipse.as_ref(), dec)?;
+        let [.., remainder] = self.projection.map.inverse(
+            &coordinates,
+            scalar(0, domain.precision()),
+            &self.projection.pi,
+            false,
+            self.projection.atan,
+            dec,
+        )?;
+        Ok(Some((controls, remainder)))
     }
 
     fn coefficients<const N: usize>(
@@ -1456,7 +1490,7 @@ impl uv::Parametric for Piece<'_> {
             let p = parameter.precision();
             let mut coefficients = std::array::from_fn(|_| [scalar(0, p), scalar(0, p)]);
             if constants {
-                let xyz = self.curve.coefficients::<1>(parameter, dec)?;
+                let xyz = self.curve.coefficients::<1>(parameter, None, dec)?;
                 let u = self.guide.lift(
                     parameter,
                     &self.range,
@@ -1479,7 +1513,7 @@ impl uv::Parametric for Piece<'_> {
             }
             return Ok(coefficients);
         }
-        let xyz = self.curve.coefficients::<N>(parameter, dec)?;
+        let xyz = self.curve.coefficients::<N>(parameter, None, dec)?;
         let u = if constants {
             self.guide.lift(
                 parameter,

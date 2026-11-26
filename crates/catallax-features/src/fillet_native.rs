@@ -1980,13 +1980,15 @@ pub(crate) fn build(
             "the native strip network is not a closed body: {faults:?}"
         )));
     }
-    let (definition, trims) = crate::numerical_embedding::definition_from_exact_model(
-        &scratch_model,
-        rounded,
-        name,
-        tolerance,
-        dec,
-    )
+    let (definition, trims) = catallax_numbers::Ball::with_series_reciprocals(|| {
+        crate::numerical_embedding::definition_from_exact_model(
+            &scratch_model,
+            rounded,
+            name,
+            tolerance,
+            dec,
+        )
+    })
     .map_err(|error| at_stage("native strip embedding", error))?;
     let admitted =
         catallax_topology::numerical::build_with_native_trims(definition, trims, cap.clone(), dec)

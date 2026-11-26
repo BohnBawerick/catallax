@@ -95,6 +95,20 @@ Among the public fixtures, the files that break it are general cone trims,
 elliptic extrusions and files that one uncovered face keeps on the legacy
 encoding; every other written file meets it. See [the interface note](../archive/interface-changes/2026-11-11-step-seam-contract.md).
 
+### Affine chart boundaries
+
+When the written axis and curve frame make the inverse chart affine, the
+periodic-chart encoder writes a clamped degree-one pcurve on the original edge
+parameter interval. This covers cylinder and cone generators and coaxial circles
+on cylinders, cones, spheres and tori. Both endpoints still use the shared
+rounded chart vertices. The largest endpoint error bounds the whole segment;
+the same surface metric turns that UV error into a spatial bound.
+
+Unproved incidence and touching wires that may need local repair retain the
+fitting path. So do full-turn spherical parallels and full-turn torus parallels
+without the existing coaxial derivative proof. These keep the interval fit's
+refusals at singular charts. Neither the exact model nor the 3D curve changes.
+
 ## Torus band beside a cone
 
 A body whose complete rings include a torus band and a cone band has no chart

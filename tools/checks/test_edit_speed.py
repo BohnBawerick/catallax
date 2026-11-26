@@ -531,6 +531,23 @@ class LiveViewportTests(unittest.TestCase):
                 edit_speed.compare_application(comparator, base, head, ())
 
 
+class ApplicationComparisonTests(unittest.TestCase):
+    def test_exact_comparison_accepts_different_bundle_directory_names(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            before, after = (Path(directory) / name for name in ("before", "after"))
+            comparator = mock.Mock()
+            comparator.problems.return_value = []
+            edit_speed.compare_application(comparator, before, after, ())
+
+            comparator.problems.return_value = ["protocol.json"]
+            with self.assertRaisesRegex(AssertionError, "protocol.json"):
+                edit_speed.compare_application(comparator, before, after, ())
+
+            comparator.problems.return_value = ["0001/viewport.png"]
+            with self.assertRaisesRegex(AssertionError, "display proof belongs to a different scenario"):
+                edit_speed.compare_application(comparator, before, after, (), verified_display={"0001"})
+
+
 class PerfLookupTests(unittest.TestCase):
     def test_kernel_tools_win_over_the_path_wrapper(self):
         with tempfile.TemporaryDirectory() as root:

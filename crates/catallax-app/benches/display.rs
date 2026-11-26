@@ -237,13 +237,16 @@ fn edit_rebuilds(
         let mut before_obj = Vec::new();
         before.display.value.write_obj(&mut before_obj)?;
         let start = Instant::now();
-        let body = catallax_app::build_incremental(
-            recipe,
-            Some(before.checkpoint.clone()),
-            options,
-            &mut Decider::default(),
-        )?;
+        let (body, edit_work) =
+            catallax_numbers::with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+                before.edit(recipe, options, &mut Decider::default())
+            });
         let edit_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let body = body?;
+        assert!(
+            !edit_work.exhausted,
+            "edited display exhausted its work allowance"
+        );
         let mut edited_obj = Vec::new();
         body.display.value.write_obj(&mut edited_obj)?;
         let fresh = catallax_app::build(recipe, options, &mut Decider::default())?;
@@ -253,18 +256,19 @@ fn edit_rebuilds(
             edited_obj, fresh_obj,
             "edited display differs from fresh build"
         );
+        assert_eq!(body.display.value, fresh.display.value);
+        assert_eq!(body.display.marks, fresh.display.marks);
         assert_eq!(body.names.faces.len(), fresh.names.faces.len());
-        let retained = catallax_app::build_incremental(
-            previous,
-            Some(before.checkpoint),
-            options,
-            &mut Decider::default(),
-        )?;
+        let retained = before.edit(previous, options, &mut Decider::default())?;
         let mut retained_obj = Vec::new();
         retained.display.value.write_obj(&mut retained_obj)?;
         assert_eq!(before_obj, retained_obj, "edit changed retained display");
         rows.push(serde_json::json!({
             "iteration":iteration,"edit_ms":edit_ms,
+            "edit_work":edit_work.used,
+            "physical_faces_meshed":body.meshed_faces(),
+            "physical_faces_reused":body.reused_faces(),
+            "unchanged_physical_faces_reused":retained.reused_faces(),
             "faces":body.names.faces.len(),
             "triangles":body.display.value.triangles.len(),
             "chord_tolerance_mm":options.chord_tolerance.to_string(),

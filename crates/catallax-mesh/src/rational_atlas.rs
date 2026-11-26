@@ -9,6 +9,7 @@ pub(super) fn build(
     source: BodyId,
     expansion: &ChartExpansion,
     options: &MeshOptions,
+    mut edit: Option<reuse::Edit<'_, '_>>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     catallax_numbers::reuse_operation_enclosures();
@@ -16,7 +17,24 @@ pub(super) fn build(
     let (mesh_model, body) = prepared
         .as_ref()
         .map_or((model, expansion.body()), |(model, body)| (model, *body));
-    let mut answer = mesh_body(mesh_model, body, options, dec)?;
+    let inner = edit.as_mut().map(|edit| reuse::Edit {
+        previous: edit.previous.filter(|input| input.records.is_some()),
+        capture: edit.capture.as_deref_mut(),
+    });
+    let mut answer = mesh_body_impl(mesh_model, body, options, inner, dec)?;
+    if let Some(capture) = edit.and_then(|edit| edit.capture)
+        && capture.expanded.is_none()
+    {
+        // Remapping does not modify positions. Keep only the original physical
+        // topology, before logical names merge distinct chart cells.
+        capture.expanded = Some(Mesh {
+            positions: Vec::new(),
+            triangles: answer.value.triangles.clone(),
+            faces: answer.value.faces.clone(),
+            edges: answer.value.edges.clone(),
+            unavailable_controls: answer.value.unavailable_controls.clone(),
+        });
+    }
     remap(model, expansion, &mut answer.value)?;
     Ok(answer)
 }

@@ -261,26 +261,30 @@ fn shared_rows_sew_even_with_degree_changes_and_nonlinear_parameters() {
         Roof::JoinedNonlinear,
     ] {
         let fixture = solid(kind);
-        let mesh = catallax_mesh::mesh_body(
+        let (mesh, cache) = catallax_mesh::mesh_body_cached(
             &fixture.model,
             fixture.body,
             &options,
+            None,
             &mut Decider::default(),
         )
-        .unwrap_or_else(|error| panic!("{kind:?}: {error:?}"))
-        .value;
-        let reused = catallax_mesh::mesh_body_reusing(
+        .unwrap_or_else(|error| panic!("{kind:?}: {error:?}"));
+        let (reused, edit_cache) = catallax_mesh::mesh_body_cached(
             &fixture.model,
             fixture.body,
             &options,
-            &fixture.model,
-            &options,
-            &mesh,
+            Some((&fixture.model, &mesh.value, &cache)),
             &mut Decider::default(),
         )
-        .unwrap_or_else(|error| panic!("{kind:?}: {error:?}"))
-        .value;
-        assert_eq!(reused, mesh, "{kind:?}: unchanged structured junction grid");
+        .unwrap_or_else(|error| panic!("{kind:?}: {error:?}"));
+        assert_eq!(
+            reused.value, mesh.value,
+            "{kind:?}: unchanged structured junction grid"
+        );
+        assert_eq!(reused.marks, mesh.marks);
+        assert_eq!(edit_cache.reused_faces(), cache.meshed_faces(), "{kind:?}");
+        assert_eq!(edit_cache.meshed_faces(), 0, "{kind:?}");
+        let mesh = mesh.value;
         let expected: BTreeSet<_> = fixture
             .model
             .faces_of_body(fixture.body)

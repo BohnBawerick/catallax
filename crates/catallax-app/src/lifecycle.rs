@@ -13,7 +13,7 @@ use catallax_topology::{EdgeId, FaceId, VertexId};
 
 use crate::{
     ConstructionDisplay, Error, IncrementalApplicationBody, PreviewDisplay, construction_preview,
-    display_and_names, preview_body,
+    preview_body,
 };
 
 /// Explicit caps for construction plus preview, and for subsequent proof.
@@ -420,26 +420,13 @@ impl Revision {
                 proof: None,
             },
         };
-        let prefix = {
-            let state = self.controller.0.lock().unwrap();
-            state
-                .last_proved
-                .as_ref()
-                .and_then(|proved| match proved.status() {
-                    Status::Confirmed(body) => Some(body.checkpoint.clone()),
-                    Status::Unproved | Status::Failed(_) => None,
-                })
-        };
         if !self.publish(snapshot.clone()) {
             return Ok(None);
         }
         Ok(Some(ProofJob {
             revision: self,
             snapshot,
-            source: ProofSource::Definition {
-                recipe: Arc::new(recipe.clone()),
-                prefix,
-            },
+            source: ProofSource::Definition(Arc::new(recipe.clone())),
             options: proof_options.clone(),
             allowance: proof_allowance,
         }))
@@ -492,6 +479,14 @@ impl Revision {
             allowance: proof_allowance,
         }))
     }
+
+    fn previous(&self) -> Option<Arc<IncrementalApplicationBody>> {
+        let state = self.controller.0.lock().unwrap();
+        match state.last_proved.as_ref()?.status() {
+            Status::Confirmed(body) => Some(body.clone()),
+            Status::Unproved | Status::Failed(_) => None,
+        }
+    }
     fn is_current(&self) -> bool {
         self.controller
             .0
@@ -520,10 +515,7 @@ impl Revision {
 
 enum ProofSource {
     Retained(EvaluationCheckpoint),
-    Definition {
-        recipe: Arc<Recipe>,
-        prefix: Option<EvaluationCheckpoint>,
-    },
+    Definition(Arc<Recipe>),
 }
 
 /// Owned immutable construction and reserved proof work. Dropping it postpones
@@ -556,7 +548,7 @@ impl RefinementJob {
         if !proof.revision.is_current() {
             return Ok(None);
         }
-        let ProofSource::Definition { recipe, .. } = &proof.source else {
+        let ProofSource::Definition(recipe) = &proof.source else {
             unreachable!("only construction previews have a refinement job")
         };
         let (answer, work) = allowance.run(|| construction_preview(recipe, &options, decider));
@@ -599,18 +591,18 @@ impl ProofJob {
                 snapshot: None,
             };
         }
+        let previous = revision.previous();
         let (answer, work) = allowance.run(|| match source {
-            ProofSource::Definition { recipe, prefix } => {
-                crate::build_incremental(&recipe, prefix, &options, decider)
-            }
-            ProofSource::Retained(checkpoint) => {
-                let (display, names) = display_and_names(checkpoint.built(), &options, decider)?;
-                Ok(IncrementalApplicationBody {
-                    checkpoint,
-                    display,
-                    names,
-                })
-            }
+            ProofSource::Definition(recipe) => match previous.as_deref() {
+                Some(previous) => previous.edit(&recipe, &options, decider),
+                None => crate::build_incremental(&recipe, None, &options, decider),
+            },
+            ProofSource::Retained(checkpoint) => IncrementalApplicationBody::from_checkpoint(
+                checkpoint,
+                previous.as_deref(),
+                &options,
+                decider,
+            ),
         });
         snapshot.work.proof = Some(work);
         snapshot.status = match answer {

@@ -4,11 +4,16 @@
 //! Every truncation includes an explicit Taylor or geometric tail bound.
 
 use crate::{Decider, Integer, Interval, Rational, Refusal, Sign, StrictSign};
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, collections::HashMap};
 
 mod binary;
 mod pi_constant;
 use binary::Binary;
+
+thread_local! {
+    static SERIES_RECIPROCALS: RefCell<Option<HashMap<(u32, u64), Ball>>> =
+        const { RefCell::new(None) };
+}
 
 /// Binary midpoint-radius enclosure with a working precision in bits.
 #[derive(Clone, Debug, catallax_numbers::Transfer)]
@@ -225,6 +230,57 @@ impl Ball {
     /// Quotient, or `None` if the divisor contains zero.
     pub fn checked_div(&self, other: &Self) -> Option<Self> {
         Some(self * &other.recip()?)
+    }
+
+    /// Reuses the exact rounded reciprocals of Taylor series divisors for
+    /// repeated trig evaluations on this thread. Does not skip any series
+    /// term or any work reservation.
+    pub fn with_series_reciprocals<T>(run: impl FnOnce() -> T) -> T {
+        let outermost = SERIES_RECIPROCALS.with_borrow_mut(|slot| {
+            if slot.is_some() {
+                false
+            } else {
+                *slot = Some(HashMap::new());
+                true
+            }
+        });
+        struct Scope(bool);
+        impl Drop for Scope {
+            fn drop(&mut self) {
+                if self.0 {
+                    SERIES_RECIPROCALS.with_borrow_mut(|slot| *slot = None);
+                }
+            }
+        }
+        let _scope = Scope(outermost);
+        run()
+    }
+
+    fn divide_series_term(&self, divisor: u64, reuse: bool) -> Self {
+        let reciprocal = || {
+            let integer = Rational::from_integer(Integer::from_u64(divisor));
+            Self::from_rational(&integer, self.precision)
+                .recip()
+                .unwrap()
+        };
+        if !reuse {
+            return self * &reciprocal();
+        }
+        SERIES_RECIPROCALS.with_borrow_mut(|slot| {
+            let cache = slot.as_mut().expect("active series reciprocal scope");
+            let key = (self.precision, divisor);
+            if let Some(reciprocal) = cache.get(&key) {
+                return self * reciprocal;
+            }
+            // Bound the scratch space even when a fit visits many precisions.
+            if cache.len() >= 4096 {
+                return self * &reciprocal();
+            }
+            let cached = crate::operation::uncounted_memo(reciprocal);
+            let product = self * &cached;
+            cache.insert(key, cached);
+            product
+        })
     }
     /// Non-negative integer power.
     pub fn pow_u32(&self, mut exp: u32) -> Self {
@@ -506,11 +562,10 @@ impl Ball {
         let mut sum = term.clone();
         let mut k = 1u64;
         let eps = epsilon(g);
+        let reuse = SERIES_RECIPROCALS.with_borrow(Option::is_some);
         loop {
             let a = if cosine { 2 * k - 1 } else { 2 * k };
-            let divisor =
-                Self::from_rational(&Rational::from_integer(Integer::from_u64(a * (a + 1))), g);
-            term = (&term * &square).checked_div(&divisor).unwrap();
+            term = (&term * &square).divide_series_term(a * (a + 1), reuse);
             let error = term.magnitude();
             if a > 4 && error <= eps {
                 return sum.inflate(&error).with_precision(p);
@@ -634,14 +689,15 @@ fn atan_series(x: &Rational, p: u32, dec: Option<&Decider>) -> Result<Ball, Refu
     let square = -b.square();
     let mut power = b.clone();
     let mut sum = b;
-    let mut k = 1i64;
+    let mut k = 1u64;
     let threshold = epsilon(p);
+    let reuse = SERIES_RECIPROCALS.with_borrow(Option::is_some);
     loop {
         if let Some(dec) = dec {
             dec.check_deadline()?;
         }
         power = &power * &square;
-        let term = power.checked_div(&scalar(2 * k + 1, p)).unwrap();
+        let term = power.divide_series_term(2 * k + 1, reuse);
         let error = term.magnitude();
         if error <= threshold {
             return Ok(sum.inflate(&error));

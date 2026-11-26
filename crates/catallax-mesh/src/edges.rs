@@ -639,12 +639,14 @@ fn plan_collar_rail(
     Ok((indices, error))
 }
 
+type CheckedRail<'a> = (&'a [RailSpan], &'a SplineChart, usize);
+
 fn checked_rail<'a>(
     model: &Model,
     edge_id: EdgeId,
     incident: &[IncidentChart<'a>],
     dec: &mut Decider,
-) -> Result<Option<(&'a [RailSpan], &'a SplineChart, usize)>, Refusal> {
+) -> Result<Option<CheckedRail<'a>>, Refusal> {
     let edge = model.edge(edge_id);
     // A topological seam vertex can lie inside a source knot span. Leave
     // partial arcs and rails on planar faces on their generic trace.

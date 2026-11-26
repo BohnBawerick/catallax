@@ -85,6 +85,19 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Phase 5 profiling: a wall-clock cut-off for each build and each export, in
+/// milliseconds; zero means none.
+static CUTOFF_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn decider() -> Decider {
+    let mut dec = Decider::default();
+    let ms = CUTOFF_MS.load(std::sync::atomic::Ordering::Relaxed);
+    if ms > 0 {
+        dec.set_deadline(Some(Instant::now() + std::time::Duration::from_millis(ms)));
+    }
+    dec
+}
+
 /// A private source a row imports: its SHA-256 and its bytes.
 type Source = (String, Vec<u8>);
 
@@ -185,7 +198,7 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
                     &recipe,
                     None,
                     &files,
-                    &mut Decider::default(),
+                    &mut decider(),
                 )
             })
         })
@@ -195,7 +208,7 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
         .iter()
         .map(|entry| {
             json!({"id": entry.id, "operation": entry.operation,
-                "used": entry.work_after - entry.work_before,
+                "used": entry.work_after - entry.work_before, "ms": entry.wall_ms,
                 "refusal": entry.refusal.as_ref().map(|refusal| refusal.code)})
         })
         .collect();
@@ -241,7 +254,7 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
                         &built.model,
                         &[built.result],
                         &options,
-                        &mut Decider::default(),
+                        &mut decider(),
                         &mut bytes,
                     )
                 });
@@ -258,7 +271,7 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
                     catallax_step::numerical::build(
                         body.body(),
                         &Default::default(),
-                        &mut Decider::default(),
+                        &mut decider(),
                     )
                 });
                 let bytes = step.as_ref().map_or(&[][..], |step| step.bytes());
@@ -336,7 +349,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("{id}: skipped, its private source was not given");
             continue;
         };
-        let max_work = row["max_work"].as_u64().unwrap_or(DEFAULT_BUILD_WORK);
+        let max_work = match flag(args, "--max-work") {
+            Some(value) => value.parse()?,
+            None => row["max_work"].as_u64().unwrap_or(DEFAULT_BUILD_WORK),
+        };
+        if let Some(seconds) = flag(args, "--cutoff-seconds") {
+            let seconds: f64 = seconds.parse()?;
+            CUTOFF_MS.store((seconds * 1000.0) as u64, std::sync::atomic::Ordering::Relaxed);
+        }
         for &count in &threads {
             catallax_numbers::set_threads(NonZeroUsize::new(count));
             for pass in 0..repeat {

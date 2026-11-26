@@ -11,11 +11,11 @@
 pub mod assembly;
 mod certified;
 pub mod curves;
+mod edge_proof;
 /// Versioned body transfer between independent kernels.
 pub mod handover;
 /// Revision-bound preview delivery and caller-scheduled proof.
 pub mod lifecycle;
-mod edge_proof;
 pub use edge_proof::{
     EdgeProof, EdgeProofFailure, EdgeProofKey, EdgeProofOutcome, EdgeProofReport, prove_edge_gaps,
 };

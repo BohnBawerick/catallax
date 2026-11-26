@@ -306,10 +306,12 @@ enum ParameterMap<'a> {
         slope: [Rational; 2],
     },
     Native(&'a BSplineCurve),
-    Projected {
-        origin: [Ball; 3],
-        normal: [Ball; 3],
-    },
+    Projected(&'a PlaneProjection),
+}
+
+struct PlaneProjection {
+    origin: [Ball; 3],
+    normal: [Ball; 3],
 }
 
 impl ParameterMap<'_> {
@@ -327,7 +329,7 @@ impl ParameterMap<'_> {
                 let [u, v, _] = spline.evaluate_box(t, BITS, dec)?;
                 [[u.lo(), u.hi()], [v.lo(), v.hi()]]
             }
-            Self::Projected { .. } => unreachable!(),
+            Self::Projected(_) => unreachable!(),
         })
     }
 
@@ -338,7 +340,7 @@ impl ParameterMap<'_> {
                 let [u, v, _] = spline.jet_box(t, BITS, dec)?.first;
                 [u, v]
             }
-            Self::Projected { .. } => unreachable!(),
+            Self::Projected(_) => unreachable!(),
         })
     }
 }
@@ -359,9 +361,9 @@ fn normal_residual(vector: &[Ball; 3], normal: &[Ball; 3]) -> [Ball; 3] {
 impl Copies<'_> {
     fn residual(&self, t: [&Rational; 2]) -> Result<[Ball; 3], Refusal> {
         let c = position(self.curve, t, self.dec)?;
-        if let ParameterMap::Projected { origin, normal } = &self.map {
+        if let ParameterMap::Projected(plane) = &self.map {
             // For the plane's orthogonal projection the residual is the signed normal distance.
-            return Ok(normal_residual(&delta(&c, origin), normal));
+            return Ok(normal_residual(&delta(&c, &plane.origin), &plane.normal));
         }
         let uv = self.map.uv(t, self.dec)?;
         Ok(delta(&c, &chart(self.surface, &uv, self.dec)?))
@@ -373,8 +375,8 @@ impl Copies<'_> {
             Curve::BSpline(spline) => spline.jet_box(t, BITS, self.dec)?.first,
             _ => return Ok(None),
         };
-        if let ParameterMap::Projected { normal, .. } = &self.map {
-            return Ok(Some(normal_residual(&tangent, normal)));
+        if let ParameterMap::Projected(plane) = &self.map {
+            return Ok(Some(normal_residual(&tangent, &plane.normal)));
         }
         let uv = self.map.uv(t, self.dec)?;
         let [u, v] = self.map.slope(t, self.dec)?;
@@ -412,6 +414,7 @@ fn prove_use(
     }
     let [first, last] = traversal(trim, edge);
     let mut upper = Rational::zero();
+    let projection;
     let map = match face_copy(face, trim, edge, native) {
         FaceCopyRef::Linear(uv) => {
             let span = last - first;
@@ -457,11 +460,12 @@ fn prove_use(
                 .ok()
                 .and_then(|b| b.recip())
                 .ok_or(EdgeProofFailure::Unresolved)?;
-            ParameterMap::Projected {
+            projection = PlaneProjection {
                 origin: vector([&origin.x, &origin.y, &origin.z], dec)
                     .map_err(|_| EdgeProofFailure::Unresolved)?,
                 normal: components.map(|c| &c * &length),
-            }
+            };
+            ParameterMap::Projected(&projection)
         }
     };
     let copies = Copies {

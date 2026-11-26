@@ -1,3 +1,5 @@
+//! Whole-edge proof requests for exact and fitted application parts.
+
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -230,7 +230,7 @@ pub(crate) fn sqrt_real(value: &Real) -> Real {
         .map_or_else(|| value.sqrt(), |q| sqrt(&q))
 }
 
-fn integer_sqrt(value: &Integer) -> Integer {
+pub(crate) fn integer_sqrt(value: &Integer) -> Integer {
     if value.is_zero() {
         return Integer::zero();
     }

@@ -1,6 +1,6 @@
 //! Prefix reuse must keep full-rebuild topology, origins and STEP bytes.
 use catallax_features::{Built, EvaluationCheckpoint, evaluate, evaluate_incremental};
-use catallax_numbers::{BudgetPolicy, Decider, with_operation_budget};
+use catallax_numbers::{BudgetPolicy, Decider, with_operation_budget, with_operation_log};
 use catallax_recipe::{Recipe, StepId};
 use serde_json::json;
 
@@ -107,6 +107,30 @@ fn append_result_change_and_earlier_edits_match_fresh_builds() {
     edited.description = "A new description does not change geometry".into();
     edited.result = StepId::new("stock").unwrap();
     assert_same(&edited, checkpoint);
+}
+
+#[test]
+fn editing_a_step_replaces_its_suffix_and_keeps_the_old_branch() {
+    let original = recipe();
+    let checkpoint = evaluate_incremental(&original, None, &mut Decider::default()).unwrap();
+    let mut edited = original.clone();
+    let catallax_recipe::Operation::Cylinder { radius, .. } = &mut edited.steps[1].op else {
+        panic!("tool cylinder");
+    };
+    *radius = catallax_recipe::Number::new(catallax_numbers::Rational::from_ratio(3, 2).unwrap());
+    let (resumed, log) = with_operation_log(|| {
+        evaluate_incremental(&edited, Some(checkpoint.clone()), &mut Decider::default()).unwrap()
+    });
+    assert_eq!(
+        log.iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        ["tool", "cut"]
+    );
+    let full = evaluate(&edited, &mut Decider::default()).unwrap();
+    assert_eq!(export(resumed.built()), export(&full));
+    assert_ne!(export(checkpoint.built()), export(&full));
+    assert_same(&original, resumed);
 }
 
 #[test]
@@ -230,7 +254,7 @@ fn undo_and_independent_branches_keep_names_facts_definitions_and_step_bytes() {
 
 // Pattern and mirror copy the fillet and chamfer records of their source. A
 // suffix that resumes after those records were made copies them as a fresh
-// build does; an earlier edit discards the checkpoint, refusal included.
+// build does; an edit invalidates the records from that step onwards.
 #[test]
 fn copies_of_checkpointed_fillets_and_chamfers_match_fresh_builds() {
     let wall = json!({"step":"base","role":{"side":{"segment":"wall"}}});

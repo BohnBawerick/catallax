@@ -4,7 +4,7 @@ use catallax_app::{
     build_incremental_without_display,
 };
 use catallax_mesh::{MeshOptions, mesh_body};
-use catallax_numbers::{Decider, with_operation_budget};
+use catallax_numbers::{Decider, with_operation_budget, with_operation_log};
 use catallax_recipe::Recipe;
 use serde_json::{Value, json};
 
@@ -76,6 +76,56 @@ fn bracket_suffix_builds_do_not_spend_unrequested_display_work() {
         .unwrap()
         .names
     );
+}
+
+#[test]
+fn changing_an_extrusion_reuses_the_checkpoint_after_its_sketch() {
+    let mut recipe = bracket_calls()
+        .into_iter()
+        .find(|r| r.steps.len() == 5)
+        .unwrap();
+    let build = |recipe: &Recipe, prefix| {
+        let outcome = build_incremental_with_files_without_display(
+            recipe,
+            prefix,
+            &Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let EvaluatedApplicationOutcome::Exact(body) = outcome else {
+            panic!("bracket build should remain exact");
+        };
+        body
+    };
+    let previous = build(&recipe, None);
+    let catallax_recipe::Operation::Extrude { distance, .. } = &mut recipe.steps[3].op else {
+        panic!("flange extrusion");
+    };
+    *distance = catallax_recipe::Number::new(74.into());
+
+    let (resumed, log) = with_operation_log(|| build(&recipe, Some(previous.checkpoint)));
+    assert_eq!(
+        log.iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        ["op_499", "op_527"]
+    );
+    let full = build(&recipe, None);
+    assert_eq!(resumed.names, full.names);
+    let export = |body: &catallax_app::EvaluatedApplicationBody| {
+        let built = body.checkpoint.built();
+        let mut bytes = Vec::new();
+        catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &Default::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+        .unwrap();
+        bytes
+    };
+    assert!(export(&resumed) == export(&full), "STEP bytes differ");
 }
 
 fn assert_display_identity(

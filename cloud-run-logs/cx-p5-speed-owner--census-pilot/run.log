@@ -1,0 +1,6 @@
+P5HOST cores=4 cpu=Intel(R) Xeon(R) Processor @ 2.10GHz mem_mb=16087 kernel=Linux 6.18.44-fc-v880 revision=9e7de3b589ae6500270f7a874eec7769d44f8696 shard=0/300 limit=0
+P5STEP tools at 02:34:10
+P5OCP 8.0.1.1
+P5STEP archive at 02:34:28
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+P5FAIL corpus clone

@@ -1,4 +1,4 @@
-//! Verify the live analytic bracket mesh against its edited exact definition.
+//! Verify a released edit's live analytic mesh against its exact definition.
 use catallax_mesh::{MeshOptions, PreviewMesh, PreviewOptions, preview_mesh_body};
 use catallax_numbers::{Decider, Interval, Rational, Real, with_operation_budget};
 use catallax_shapes::Surface;

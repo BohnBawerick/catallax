@@ -21,9 +21,14 @@ FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
          "names.txt", "operations.txt")
 MEASURED_PAIRS = 9
 
-# Independent live scene witnesses for the released bracket edits: width and height
-# change by millimetres, not merely the body id, triangulation or document revision.
-BRACKET_EDITS = {27: (0, (0, 120), (-10, 130)), 43: (2, (0, 70), (0, 76.2))}
+# Released edit witnesses: integer probes measure an axis extent; (x, y) probes
+# measure the topmost intersection at an interior point, away from trim edges.
+# The plate's top moves from 10 to 12 mm; the larger boss covers (83.5, 45.25).
+DISPLAY_EDITS = {
+    "bracket": {27: (0, (0, 120), (-10, 130)), 43: (2, (0, 70), (0, 76.2))},
+    "drawing": {24: ((41.25, 19.5), (10,), (12,))},
+    "references": {17: ((41.25, 19.5), (10,), (12,)), 18: ((83.5, 45.25), (12,), (32,))},
+}
 
 CAPTURE_ANCHOR = '        image::save_buffer(png, &picture.pixels, 960, 720, image::ColorType::Rgba8)?;'
 CAPTURE_SCENE = '''        if std::env::var_os("CATALLAX_EDIT_DISPLAY_EVIDENCE").is_some() {
@@ -339,8 +344,32 @@ def capture_scene(root):
     return images, meshes
 
 
-def compare_bracket_display(baseline, candidate, probes, targets):
+def observe_mesh(mesh, probe):
+    positions, indices = mesh["positions"], mesh["indices"]
+    if isinstance(probe, int):
+        values = [positions[i][probe] for i in indices]
+        return min(values), max(values)
+
+    x, y = probe
+
+    def side(a, b):
+        return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
+
+    top = None
+    vertices = (positions[i] for i in indices)
+    for a, b, c in zip(vertices, vertices, vertices, strict=True):
+        area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        weights = side(b, c), side(c, a), side(a, b)
+        if area and all(w / area >= -1e-12 for w in weights):
+            z = sum(w * p[2] for w, p in zip(weights, (a, b, c))) / area
+            top = z if top is None else max(top, z)
+    assert top is not None, f"no live surface at {(x, y)}"
+    return (top,)
+
+
+def compare_display(baseline, candidate, probes, targets):
     """Validate the post-edit viewport once; later repetitions must match it."""
+    assert baseline.name == candidate.name
     (base_images, base_meshes), (head_images, head_meshes) = map(capture_scene, (baseline, candidate))
     assert base_meshes.keys() == head_meshes.keys(), f"missing viewport capture: {candidate}"
     def geometry(data):
@@ -362,23 +391,25 @@ def compare_bracket_display(baseline, candidate, probes, targets):
         assert base_images[step] == head_images[step], f"renderer changed for identical scene: {candidate}/{step}"
     proved = changed | {f"{s:04}" for n in targets for s in (n - 1, n)}
     for root, meshes in ((baseline, base_meshes), (candidate, head_meshes)):
+        witnesses = {}
         for n in targets:
-            axis, pre, post = BRACKET_EDITS[n]
+            probe, pre, post = DISPLAY_EDITS[root.name][n]
             for s, expected in ((n - 1, pre), (n, post)):
                 mesh, = json.loads(meshes[f"{s:04}"])["meshes"]
-                values = [mesh["positions"][i][axis] for i in mesh["indices"]]
-                actual = (min(values), max(values))
-                assert all(abs(a - b) <= 0.001 for a, b in zip(actual, expected)), \
-                    f"wrong live extent at {root}/{s}: {actual} != {expected}"
+                actual = observe_mesh(mesh, probe)
+                assert all(abs(a - b) <= 0.001 for a, b in zip(actual, expected, strict=True)), \
+                    f"wrong live edit observation at {root}/{s}: {actual} != {expected}"
+                witnesses[f"{n:04}:{s:04}"] = dict(probe=probe, actual=actual, expected=expected)
         folders = [root / "commands" / step for step in sorted(proved)]
         proof = subprocess.run([str(probes[root]), *map(str, folders)], check=True,
                                text=True, stdout=subprocess.PIPE)
-        (root.parent / "display-proof.jsonl").write_text(proof.stdout)
+        (root.parent / f"{root.name}-display-proof.jsonl").write_text(proof.stdout)
+        (root.parent / f"{root.name}-display-witnesses.json").write_text(json.dumps(witnesses, indent=2) + "\n")
     return changed
 
 
 def compare_application(comparator, left, right, pins, *, verified_display=()):
-    assert not verified_display or left.name == right.name == "bracket"
+    assert left.name == right.name
     verified_images = {f"{step}/viewport.png" for step in verified_display}
     for difference in comparator.problems(left, right, pins):
         if difference in verified_images:
@@ -406,11 +437,12 @@ def run(args):
     comparator = load(args.app / "ci/compare-scenario-bundles.py", "compare_bundles")
     pins = os.environ["BASE_SHA"], os.environ["HEAD_SHA"]
     samples, references, native_references = [], {}, {}
-    bracket_runs, verified_display = {}, set()
+    display_runs, verified_display = {}, {}
     definition_bounds = DefinitionBounds()
     scenarios = args.out / "inputs"
     scenarios.mkdir()
     for name, targets in TARGETS.items():
+        assert targets.keys() == DISPLAY_EDITS[name].keys(), f"missing live edit witness: {name}"
         source = json.loads((args.app / f"ci/scenarios/{name}.json").read_text())
         for number, tool in targets.items():
             assert source["steps"][number - 1]["tool"] == tool, f"wrong edit target: {name} {number}"
@@ -435,30 +467,29 @@ def run(args):
                            "--soliddraft", str(args.binaries / revision),
                            "--catallax-verify", str(root / "target/release/catallax-verify")]
                 dest.parent.mkdir(exist_ok=True)
-                env = dict(os.environ)
-                if name == "bracket":
-                    env["CATALLAX_EDIT_DISPLAY_EVIDENCE"] = "1"
-                    env["CATALLAX_THREADS"] = "4" if pair == 0 else "1"
+                env = {**os.environ, "CATALLAX_EDIT_DISPLAY_EVIDENCE": "1",
+                       "CATALLAX_THREADS": "4" if pair == 0 else "1"}
                 with (dest.parent / f"{name}.log").open("w") as log:
                     result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=env)
                 assert result.returncode == 0, f"scenario failed: {dest.parent / (name + '.log')}"
                 report = json.loads((dest / "result.json").read_text())
                 assert report["pass"], f"incomplete or failed scenario: {dest}"
-                if name == "bracket":
-                    if pair == 0:
-                        bracket_runs[revision] = dest
-                        if revision == "candidate":
-                            base = bracket_runs["baseline"]
-                            probes = {out: kernel / "target/release/examples/edit_display"
-                                      for out, kernel in ((base, args.baseline), (dest, args.candidate))}
-                            verified_display = compare_bracket_display(base, dest, probes, targets)
-                            print(f"verified bracket display changes: {', '.join(sorted(verified_display))}", flush=True)
-                    else:
-                        assert capture_scene(bracket_runs[revision]) == capture_scene(dest), \
-                            f"live meshes or renderer differ across thread counts: {dest}"
+                key = name, revision
+                if pair == 0:
+                    display_runs[key] = dest
+                    if revision == "candidate":
+                        base = display_runs[name, "baseline"]
+                        probes = {out: kernel / "target/release/examples/edit_display"
+                                  for out, kernel in ((base, args.baseline), (dest, args.candidate))}
+                        changes = compare_display(base, dest, probes, targets)
+                        verified_display[name] = changes
+                        print(f"verified {name} display changes: {', '.join(sorted(changes))}", flush=True)
+                else:
+                    assert capture_scene(display_runs[key]) == capture_scene(dest), \
+                        f"live meshes or renderer differ across thread counts: {dest}"
                 if name in references:
                     compare_application(comparator, references[name], dest, pins,
-                                        verified_display=verified_display if revision == "candidate" and name == "bracket" else ())
+                                        verified_display=verified_display[name] if revision == "candidate" else ())
                 else:
                     references[name] = dest
                 for number in targets:
@@ -522,9 +553,9 @@ def run(args):
                   binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
                                             for r in ("baseline", "candidate")},
                   comparison=("exact native STEP, certified mesh, kernel and command answers; "
-                              "live bracket mesh checked against the edited reference; "
+                              "live meshes checked against their edited references; "
                               "definition bound and accepted work never increase"),
-                  changed_bracket_viewports=sorted(verified_display),
+                  changed_viewports={name: sorted(steps) for name, steps in verified_display.items()},
                   medians=medians, samples=samples)
     (args.out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

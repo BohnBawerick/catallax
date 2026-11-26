@@ -1,0 +1,62 @@
+{
+ "request_id": "cx-p5-t2-measure--p1-cap-safe",
+ "repo": "BohnBawerick/catallax",
+ "sha": "2f718681ea760c24f7d5896e1d599ae8d55a5060",
+ "script_exit_code": 0,
+ "seconds": 2653,
+ "commands": [
+  {
+   "cmd": "set -eu",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v valgrind >/dev/null || { sudo apt-get update && sudo apt-get install -y valgrind; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$(git rev-parse --show-toplevel); t=$(mktemp -d); trap 'rm -rf \"$t\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "unpack() { printf '%s' \"$1\" | base64 -d | gzip -dc > \"$t/$2\"; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "unpack <gz-base64> Cargo.toml; unpack ... main.rs; unpack ... build.rs; unpack ... callgrind.c; unpack ... p1.json",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "sed -i \"s|/home/bohn/.treehouse/catallax-82d7d7/32/catallax|$root|g\" \"$t/Cargo.toml\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "for pair in baseline:6e4b5f89... candidate:2f718681...; do git checkout --detach; cargo build --release; native run; val",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cmp \"$t/baseline.answer\" \"$t/candidate.answer\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf 'P1 exact answers match\\n'",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "awk '/^totals:/ { if (++n == 1) b=$2; else if ($2 >= b) exit 1 }' baseline.cg candidate.cg",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test run; script is a callgrind measurement. Baseline 6e4b5f89 totals 172663034892, candidate 2f718681 totals 171762744427 (candidate lower, awk check passed). Both answers sha256 0c81facd...dc579, identical. work=32976744 both. Native wall_ms ~21090 baseline, ~20636 candidate. Valgrind notes a brk segment overflow message, not an error. valgrind was already installed. Script ended with HEAD at 2f718681 (last checkout). cargo fetch succeeded; stable rustc 1.100.0 already installed."
+}

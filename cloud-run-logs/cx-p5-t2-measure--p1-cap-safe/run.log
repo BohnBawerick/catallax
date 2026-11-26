@@ -1,0 +1,108 @@
+Warning: you are leaving 3 commits behind, not connected to
+any of your branches:
+
+  2f71868 Preserve operation caps on warm spline measurements
+  599bd13 Fix mixed-ownership Gauss integer product
+  8034c02 Reuse certified measurement work
+
+If you want to keep them by creating a new branch, this may be a good time
+to do so with:
+
+ git branch <new-branch-name> 2f71868
+
+HEAD is now at 6e4b5f8 Batch bohnbawerick / 13 (#764)
+    Updating crates.io index
+     Locking 44 packages to highest Rust 1.100.0 compatible versions
+      Adding generic-array v0.14.7 (available: v0.14.9)
+ Downloading crates ...
+  Downloaded itoa v1.0.19
+  Downloaded syn v3.0.10
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling generic-array v0.14.7
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.229
+   Compiling num-traits v0.2.19
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.10
+   Compiling bitmaps v2.1.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling im v15.1.0
+   Compiling serde v1.0.229
+   Compiling rand_core v0.6.4
+   Compiling serde_json v1.0.154
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling digest v0.10.7
+   Compiling syn v2.0.119
+   Compiling libm v0.2.16
+   Compiling memchr v2.8.3
+   Compiling serde_derive v1.0.229
+   Compiling cfg-if v1.0.5
+   Compiling itoa v1.0.19
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling num-bigint v0.4.8
+   Compiling catallax-transfer-derive v0.5.0 (/home/user/catallax/crates/catallax-transfer-derive)
+   Compiling catallax-trace v0.5.0 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-numbers v0.5.0 (/home/user/catallax/crates/catallax-numbers)
+   Compiling measure-profile v0.0.0 (/tmp/tmp.BwYrvRp7JQ)
+   Compiling catallax-shapes v0.5.0 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.5.0 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.5.0 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.5.0 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.5.0 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.5.0 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-step v0.5.0 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.5.0 (/home/user/catallax/crates/catallax-features)
+    Finished `release` profile [optimized + debuginfo] target(s) in 3m 26s
+work=32976744 wall_ms=21090.090
+==1563== Callgrind, a call-graph generating cache profiler
+==1563== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==1563== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==1563== Command: /tmp/tmp.BwYrvRp7JQ/target/release/measure-profile mass /tmp/tmp.BwYrvRp7JQ/p1.json 1
+==1563== 
+==1563== For interactive control, run 'callgrind_control -h'.
+==1563== brk segment overflow in thread #1: can't grow to 0x483e000
+==1563== (see section Limitations in user manual)
+==1563== NOTE: further instances of this message will not be shown
+work=32976744 wall_ms=1149080.550
+==1563== 
+==1563== Events    : Ir
+==1563== Collected : 172663034892
+==1563== 
+==1563== I   refs:      172,663,034,892
+baseline totals: 172663034892
+0c81facdcc786849802e6c3cd801a078467030f18fc5f588680fa8a3dacdc579  /tmp/tmp.BwYrvRp7JQ/baseline.answer
+Previous HEAD position was 6e4b5f8 Batch bohnbawerick / 13 (#764)
+HEAD is now at 2f71868 Preserve operation caps on warm spline measurements
+   Compiling catallax-measure v0.5.0 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.5.0 (/home/user/catallax/crates/catallax-features)
+   Compiling measure-profile v0.0.0 (/tmp/tmp.BwYrvRp7JQ)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 26s
+work=32976744 wall_ms=20635.561
+==2090== Callgrind, a call-graph generating cache profiler
+==2090== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==2090== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==2090== Command: /tmp/tmp.BwYrvRp7JQ/target/release/measure-profile mass /tmp/tmp.BwYrvRp7JQ/p1.json 1
+==2090== 
+==2090== For interactive control, run 'callgrind_control -h'.
+==2090== brk segment overflow in thread #1: can't grow to 0x483c000
+==2090== (see section Limitations in user manual)
+==2090== NOTE: further instances of this message will not be shown
+work=32976744 wall_ms=1120912.601
+==2090== 
+==2090== Events    : Ir
+==2090== Collected : 171762744427
+==2090== 
+==2090== I   refs:      171,762,744,427
+candidate totals: 171762744427
+0c81facdcc786849802e6c3cd801a078467030f18fc5f588680fa8a3dacdc579  /tmp/tmp.BwYrvRp7JQ/candidate.answer
+P1 exact answers match

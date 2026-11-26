@@ -435,6 +435,70 @@ class RepeatedDefinitionBoundTests(unittest.TestCase):
                             bounds.compare(key, 'candidate', definition, 'pair 3 candidate')
 
 
+class BracketViewportTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.base = root / "baseline/bracket"
+        self.head = root / "candidate/bracket"
+        self.probes = {path: root / "edit_display" for path in (self.base, self.head)}
+        for path in (self.base, self.head):
+            self.capture(path, 2, (0, 120))
+            self.capture(path, 26, (0, 120))
+            self.capture(path, 27, (-10, 130))
+
+    def capture(self, root, step, extent, *, image=b"pinned renderer", chord=0.01, points=()):
+        path = root / "commands" / f"{step:04}"
+        path.mkdir(parents=True, exist_ok=True)
+        positions = [[x, 0, 0] for x in extent] + list(points)
+        mesh = {"positions": positions, "indices": list(range(len(positions)))}
+        (path / "viewport.png").write_bytes(image)
+        (path / "viewport.mesh.json").write_text(json.dumps({
+            "params": {"chord_height": chord}, "meshes": [mesh], "provisional": None}))
+
+    def compare(self):
+        return edit_speed.compare_bracket_display(self.base, self.head, self.probes, (27,))
+
+    def test_stale_post_edit_scene_fails_even_if_capture_is_repeatable(self):
+        self.capture(self.head, 27, (0, 120), image=b"looks changed")
+        with mock.patch("edit_speed.subprocess.run", return_value=mock.Mock(stdout="")):
+            with self.assertRaisesRegex(AssertionError, "wrong live extent"):
+                self.compare()
+
+    def test_fixed_scene_renderer_and_chord_settings_stay_exact(self):
+        self.capture(self.head, 2, (0, 120), image=b"changed renderer output")
+        with self.assertRaisesRegex(AssertionError, "renderer changed for identical scene"):
+            self.compare()
+        self.capture(self.head, 2, (0, 120))
+        self.capture(self.head, 27, (-10, 130), chord=0.02)
+        with self.assertRaisesRegex(AssertionError, "viewport controls changed"):
+            self.compare()
+
+    def test_missing_live_capture_never_qualifies(self):
+        (self.head / "commands/0027/viewport.mesh.json").unlink()
+        with self.assertRaisesRegex(AssertionError, "missing live mesh or image"):
+            self.compare()
+
+    def test_mesh_change_requires_native_proof_and_only_allows_its_image(self):
+        self.capture(self.head, 27, (-10, 130), image=b"new preview", points=([0, 1, 0],))
+        with mock.patch("edit_speed.subprocess.run", side_effect=subprocess.CalledProcessError(1, [])):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.compare()
+        with mock.patch("edit_speed.subprocess.run", return_value=mock.Mock(stdout="")):
+            verified = self.compare()
+        comparator = mock.Mock()
+        comparator.problems.return_value = ["0027/viewport.png"]
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit_speed.compare_application(comparator, self.base, self.head, (), verified_display=verified)
+        for changed in ("0027/answer.step", "0027/command.json", "0027/display.json", "0002/viewport.png"):
+            comparator.problems.return_value = ["0027/viewport.png", changed]
+            comparator.text.side_effect = (json.dumps({"rebuild": {"background_meshes_rebuilt": 3},
+                                                        "output": out}) for out in ("old", "new"))
+            with self.subTest(changed=changed), self.assertRaisesRegex(AssertionError, re.escape(changed)):
+                edit_speed.compare_application(comparator, self.base, self.head, (), verified_display=verified)
+
+
 class PerfLookupTests(unittest.TestCase):
     def test_kernel_tools_win_over_the_path_wrapper(self):
         with tempfile.TemporaryDirectory() as root:

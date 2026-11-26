@@ -1,6 +1,4 @@
 //! Unproved rectangular analytic bands; other trims use the shared chart CDT.
-use std::collections::BTreeMap;
-
 use catallax_numbers::{Decider, Refusal};
 use catallax_shapes::Surface;
 use catallax_topology::{FaceId, Loop, Model, Sense};
@@ -8,7 +6,7 @@ use catallax_topology::{FaceId, Loop, Model, Sense};
 use super::edges::Boundaries;
 use crate::{
     PreviewFace, PreviewOptions, Triangle,
-    chart::{self, Chart, Uv, align},
+    chart::{Chart, Uv, align},
     failure,
 };
 
@@ -38,8 +36,60 @@ fn chain(
     result
 }
 
+// A consistently oriented, closed lift of a single trim selects a disk,
+// not the complementary region. Don't tile the empty part of the carrier.
+fn restrict_disk(chart: &mut Chart, ring: &[Sample], sense: Sense) {
+    let Some(&(first, origin)) = ring.first() else {
+        return;
+    };
+    if ring.len() < 4
+        || ring.last() != Some(&(first, origin))
+        || ring.iter().any(|(_, uv)| uv.iter().any(|v| !v.is_finite()))
+    {
+        return;
+    }
+    let mut bounds = origin.map(|v| [v, v]);
+    let mut area = catallax_numbers::Interval::point(0.0).unwrap();
+    let origin = origin.map(|v| catallax_numbers::Interval::point(v).unwrap());
+    for pair in ring.windows(2) {
+        let [a, b] = [pair[0], pair[1]].map(|(_, uv)| {
+            std::array::from_fn::<_, 2, _>(|i| {
+                catallax_numbers::Interval::point(uv[i]).unwrap() - origin[i]
+            })
+        });
+        area = area + a[0] * b[1] - a[1] * b[0];
+        for (i, [lo, hi]) in bounds.iter_mut().enumerate() {
+            *lo = lo.min(pair[1].1[i]);
+            *hi = hi.max(pair[1].1[i]);
+        }
+    }
+    if (sense == Sense::Same && area.lo() <= 0.0)
+        || (sense == Sense::Reversed && area.hi() >= 0.0)
+        || bounds.iter().any(|[lo, hi]| hi - lo >= 1.0 || hi <= lo)
+    {
+        return;
+    }
+    for (i, [lo, hi]) in bounds.into_iter().enumerate() {
+        if chart.periodic[i] {
+            chart.restrict(i, lo.midpoint(hi));
+        }
+    }
+}
+
 pub(crate) fn restrict(model: &Model, face: FaceId, chart: &mut Chart, boundaries: &Boundaries) {
-    if !matches!(chart.surface, Surface::Torus(_)) || model.face(face).loops.len() != 2 {
+    let definition = model.face(face);
+    if matches!(chart.surface, Surface::Sphere(_) | Surface::Torus(_))
+        && let [boundary] = definition.loops.as_slice()
+        && let Loop::Coedges(coedges) = model.loop_(*boundary)
+    {
+        restrict_disk(
+            chart,
+            &chain(model, coedges, chart, boundaries),
+            definition.sense,
+        );
+        return;
+    }
+    if !matches!(chart.surface, Surface::Torus(_)) || definition.loops.len() != 2 {
         return;
     }
     let mut means = [0.0; 2];
@@ -70,6 +120,41 @@ pub(crate) fn restrict(model: &Model, face: FaceId, chart: &mut Chart, boundarie
     chart.restrict(1, (means[0] + means[1]) * 0.5);
 }
 
+// Advance one rail at a time: a station on one rail never inserts a
+// vertex into a shared boundary on its neighbour.
+fn stitch(
+    lower: &[Sample],
+    upper: &[Sample],
+    face: FaceId,
+    sense: Sense,
+    triangles: &mut Vec<Triangle>,
+    dec: &Decider,
+) -> Result<(), Refusal> {
+    let (mut i, mut j) = (0, 0);
+    while i + 1 < lower.len() || j + 1 < upper.len() {
+        dec.check_deadline()?;
+        let mut vertices = if j + 1 == upper.len()
+            || i + 1 < lower.len() && lower[i + 1].1[0] < upper[j + 1].1[0]
+        {
+            i += 1;
+            [lower[i - 1].0, lower[i].0, upper[j].0]
+        } else {
+            j += 1;
+            [lower[i].0, upper[j].0, upper[j - 1].0]
+        };
+        if vertices[0] == vertices[1] || vertices[1] == vertices[2] || vertices[0] == vertices[2] {
+            continue;
+        }
+        if sense == Sense::Reversed {
+            vertices.swap(1, 2);
+        }
+        let first = (0..3).min_by_key(|&k| vertices[k]).unwrap();
+        vertices.rotate_left(first);
+        triangles.push(Triangle { vertices, face });
+    }
+    Ok(())
+}
+
 pub(crate) fn build(
     model: &Model,
     face: FaceId,
@@ -78,7 +163,10 @@ pub(crate) fn build(
     options: &PreviewOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
+    // A disk's short sides are sampled edges too; the ring strip only
+    // takes boundary rows, not side columns.
     if chart.periodic[1]
+        || matches!(chart.surface, Surface::Torus(_)) && !chart.periodic[0]
         || !matches!(
             chart.surface,
             Surface::Cylinder(_)
@@ -117,6 +205,23 @@ pub(crate) fn build(
         let Some(ruling) = curved.iter().position(|curved| !curved) else {
             return Ok(false);
         };
+        let mut sides = coedges.iter().zip(&curved).filter(|(_, curved)| !**curved);
+        for _ in 0..2 {
+            let Some((&side, _)) = sides.next() else {
+                return Ok(false);
+            };
+            let edge = model.coedge(side).edge;
+            if boundaries.mesh.edges[boundaries.edges[&edge]]
+                .vertices
+                .len()
+                != 2
+            {
+                return Ok(false);
+            }
+        }
+        if sides.next().is_some() {
+            return Ok(false);
+        }
         let mut run = Vec::new();
         for i in 1..=coedges.len() {
             let index = (ruling + i) % coedges.len();
@@ -156,12 +261,21 @@ pub(crate) fn build(
         return Ok(false);
     }
     let closed = rails.iter().all(|r| r[0].0 == r.last().unwrap().0);
-    let mut columns = Vec::new();
     if closed {
-        for rail in &rails {
-            columns.extend(rail.iter().map(|p| p.1[0] - libm::floor(p.1[0])));
+        for rail in &mut rails {
+            if (rail.last().unwrap().1[0] - rail[0].1[0] - 1.0).abs() > 1e-12 {
+                return Ok(false);
+            }
+            rail.pop();
+            let first_turn = libm::floor(rail[0].1[0]);
+            let seam = rail.partition_point(|p| p.1[0] < first_turn + 1.0);
+            for (_, uv) in rail.iter_mut() {
+                uv[0] -= libm::floor(uv[0]);
+            }
+            rail.rotate_left(seam);
+            let (index, [u, v]) = rail[0];
+            rail.push((index, [u + 1.0, v]));
         }
-        columns.extend([0.0, 1.0]);
     } else {
         let shift = libm::round(rails[0][0].1[0] - rails[1][0].1[0]);
         for p in &mut rails[1] {
@@ -172,12 +286,7 @@ pub(crate) fn build(
         {
             return Ok(false);
         }
-        for rail in &rails {
-            columns.extend(rail.iter().map(|p| p.1[0]));
-        }
     }
-    columns.sort_unstable_by(f64::total_cmp);
-    columns.dedup_by(|a, b| (*a - *b).abs() <= 16.0 / 281_474_976_710_656.0);
     let rows = if matches!(chart.surface, Surface::Torus(_)) {
         let h = chart.hessian(lo.abs().max(hi.abs()), dec)?[2].to_f64_nearest();
         let chord_step = (2.0 * options.chord_tolerance.to_f64_nearest() / h).sqrt();
@@ -195,76 +304,62 @@ pub(crate) fn build(
     } else {
         1
     };
-    if columns
-        .len()
-        .saturating_mul(rows + 1)
-        .saturating_add(boundaries.mesh.positions.len())
-        > options.max_vertices
-    {
-        return Err(failure("preview band exceeds max_vertices"));
-    }
-    let mut indices = BTreeMap::new();
-    for rail in &rails {
-        for &(index, uv) in rail {
-            indices.insert(chart::key(chart.canonical(uv)), index);
-        }
-    }
     let start = boundaries.mesh.triangles.len();
-    let mut previous: Vec<usize> = Vec::new();
-    let mut current = Vec::with_capacity(columns.len());
-    for row in 0..=rows {
-        current.clear();
-        for &u in &columns {
-            dec.check_deadline()?;
-            let v_at = |rail: &[Sample]| {
-                let mut u = u;
-                if closed {
-                    u += libm::round((rail[0].1[0] + rail.last().unwrap().1[0]) * 0.5 - u);
-                }
-                let next = rail
-                    .partition_point(|p| p.1[0] < u)
-                    .clamp(1, rail.len() - 1);
-                let a = rail[next - 1].1;
-                let b = rail[next].1;
-                let t = ((u - a[0]) / (b[0] - a[0])).clamp(0.0, 1.0);
-                a[1] + (b[1] - a[1]) * t
-            };
-            let lower = v_at(&rails[0]);
-            let upper = v_at(&rails[1]);
-            let v = lower + (upper - lower) * row as f64 / rows as f64;
-            let uv = chart.canonical([u, v]);
-            let key = chart::key(uv);
-            let index = if let Some(&index) = indices.get(&key) {
-                index
-            } else {
-                let point = chart.preview_position(uv, dec)?;
+    let mut previous = Vec::new();
+    if rows > 1 {
+        let mut columns = Vec::new();
+        for rail in &rails {
+            columns.extend(
+                rail[..rail.len() - usize::from(closed)]
+                    .iter()
+                    .map(|p| p.1[0]),
+            );
+        }
+        columns.sort_unstable_by(f64::total_cmp);
+        columns.dedup_by(|a, b| (*a - *b).abs() <= 16.0 / 281_474_976_710_656.0);
+        if columns
+            .len()
+            .saturating_mul(rows - 1)
+            .saturating_add(boundaries.mesh.positions.len())
+            > options.max_vertices
+        {
+            return Err(failure("preview band exceeds max_vertices"));
+        }
+        let mut current = Vec::with_capacity(columns.len() + usize::from(closed));
+        for row in 1..rows {
+            let v = lo + (hi - lo) * row as f64 / rows as f64;
+            for &u in &columns {
+                let point = chart.preview_position(chart.canonical([u, v]), dec)?;
                 let index = boundaries.mesh.positions.len();
                 boundaries.mesh.positions.push(point);
-                indices.insert(key, index);
-                index
-            };
-            current.push(index);
-        }
-        if row > 0 {
-            for (a, b) in previous.windows(2).zip(current.windows(2)) {
-                for mut vertices in [[a[0], a[1], b[1]], [a[0], b[1], b[0]]] {
-                    if vertices[0] == vertices[1]
-                        || vertices[1] == vertices[2]
-                        || vertices[0] == vertices[2]
-                    {
-                        continue;
-                    }
-                    if definition.sense == Sense::Reversed {
-                        vertices.swap(1, 2);
-                    }
-                    let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
-                    vertices.rotate_left(first);
-                    boundaries.mesh.triangles.push(Triangle { vertices, face });
-                }
+                current.push((index, [u, v]));
             }
+            if closed {
+                let (index, [u, v]) = current[0];
+                current.push((index, [u + 1.0, v]));
+            }
+            let lower = if row == 1 { &rails[0] } else { &previous };
+            stitch(
+                lower,
+                &current,
+                face,
+                definition.sense,
+                &mut boundaries.mesh.triangles,
+                dec,
+            )?;
+            std::mem::swap(&mut previous, &mut current);
+            current.clear();
         }
-        std::mem::swap(&mut previous, &mut current);
     }
+    let lower = if rows == 1 { &rails[0] } else { &previous };
+    stitch(
+        lower,
+        &rails[1],
+        face,
+        definition.sense,
+        &mut boundaries.mesh.triangles,
+        dec,
+    )?;
     boundaries.mesh.triangles[start..].sort_unstable_by_key(|t| t.vertices);
     boundaries.mesh.faces.push(PreviewFace {
         face,

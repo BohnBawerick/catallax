@@ -1237,7 +1237,7 @@ mod tests {
                         .unwrap();
                 let centre = span.centre.map(|v| Rational::from_f64_exact(v).unwrap());
                 let controls: Vec<_> = carrier
-                    .span_bezier_controls(indices[index], &mut dec)
+                    .span_bezier_controls(indices[index], &dec)
                     .unwrap()
                     .into_iter()
                     .map(|h| {

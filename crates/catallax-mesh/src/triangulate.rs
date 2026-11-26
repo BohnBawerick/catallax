@@ -3131,6 +3131,7 @@ pub(crate) fn build_preview(
             },
             junction,
             None,
+            None,
             dec,
         )?;
         return Ok(crate::PreviewMesh::from_mesh(mesh));

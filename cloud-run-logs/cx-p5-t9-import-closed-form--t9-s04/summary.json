@@ -1,0 +1,74 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s04",
+ "repo": "BohnBawerick/catallax",
+ "sha": "fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+ "script_exit_code": 1,
+ "seconds": 1701,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s4",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 kit>' | base64 -d | tar -xzp -C \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" fe8beba50f716c1bcaf4176f680065b962e8fa2a 4 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Inside cloud-run.sh the release build and census ran; run.log has 10 T9ROW lines and one T9FAIL line (the last line). The T9FAIL row is model 00000644 with status changed_outcome_or_refusal: before outcome was timeout at stage open with no files, after outcome was complete at stage export with first_refusal edge_surface_incidence. The script printed no 'test result:' lines, so test counts are 0. libarchive-tools (bsdtar) was missing and the script installed it itself via sudo apt-get. Substeps inside cloud-run.sh are not separate top-level commands; run.log does not name the exit-1 source other than the T9FAIL line. rustc 1.100.0, cargo fetch exit 0."
+}

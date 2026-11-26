@@ -70,5 +70,5 @@
   "nproc": 4,
   "mem_total_gb": 15
  },
- "notes": "Script exit 0 (set -e, so every command succeeded). run.log has no 'test result:' lines; the script is a census runner that prints T9KIT, 62 T9ROW rows, T9UNRESOLVED and T9COMPLETE 62 lines, so test counts are all zero. Two rows show outcome timeout at stage open (before and after). Row content is in run.log, not interpreted here. cargo fetch succeeded. Toolchain rustc 1.100.0."
+ "notes": "Script exit 0 (set -e, so every command succeeded). run.log has no 'test result:' lines; the script is a census runner that prints T9KIT, 61 T9ROW rows, one T9UNRESOLVED line and a final T9COMPLETE 62 line, so test counts are all zero. Two rows show outcome timeout at stage open (before and after). Row content is in run.log, not interpreted here. cargo fetch succeeded. Toolchain rustc 1.100.0."
 }

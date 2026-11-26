@@ -239,11 +239,19 @@ impl RationalPatch {
     /// Controls stay unchanged and no sample supplies the embedding proof.
     /// Patches without a proved global projection retain a typed refusal.
     pub fn new(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, None, dec)
+        Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, None, false, dec)
     }
 
     pub(crate) fn new_cell(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::certified(carrier, 0, 1, None, dec)
+        Self::certified(carrier, 0, 1, None, false, dec)
+    }
+
+    // The owning rolling envelope proves regularity on every source span.
+    pub(crate) fn new_regular_cell(
+        carrier: BSplineSurface,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Self::certified(carrier, 0, 1, None, true, dec)
     }
 
     pub(crate) fn new_cell_with_polynomial_bounds(
@@ -251,7 +259,7 @@ impl RationalPatch {
         bounds: &PolynomialBounds,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        Self::certified(carrier, 0, 1, Some(bounds), dec)
+        Self::certified(carrier, 0, 1, Some(bounds), false, dec)
     }
 
     fn certified(
@@ -259,6 +267,7 @@ impl RationalPatch {
         max_depth: u32,
         max_cells: usize,
         polynomial: Option<&PolynomialBounds>,
+        regular: bool,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         dec.check_deadline()?;
@@ -298,7 +307,7 @@ impl RationalPatch {
         let bb = b.norm_squared();
         let ab = a.dot(&b);
         let determinant = &aa * &bb - ab.square();
-        if exact_sign(&determinant, dec)? != Sign::Positive {
+        if !regular && exact_sign(&determinant, dec)? != Sign::Positive {
             return Err(unproven(
                 "centre tangents do not provide an independent projection",
             ));

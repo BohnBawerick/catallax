@@ -312,7 +312,7 @@ pub(super) fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&
 /// The face copy of one edge use: the retained native curve where there is
 /// one, the projection for a circle or spline on a plane, and the straight
 /// u/v segment otherwise.
-fn face_copy<'a>(
+pub(super) fn face_copy<'a>(
     face: &NumericalFace,
     trim: &'a NumericalTrim,
     edge: &NumericalEdge,

@@ -1,0 +1,11 @@
+{"request_id":"cx-p5-t2-measure--p1-callgrind","repo":"BohnBawerick/catallax","sha":"599bd13051eda41c6ea6dcca816784e75ac05986","script_exit_code":0,"seconds":2300,"commands":[
+{"cmd":"set -eu; command -v valgrind >/dev/null || { sudo apt-get update && sudo apt-get install -y valgrind; }","status":"exit 0"},
+{"cmd":"root=$(git rev-parse --show-toplevel); t=$(mktemp -d); trap 'rm -rf \"$t\"' EXIT; unpack() {...}","status":"exit 0"},
+{"cmd":"unpack <gz base64> Cargo.toml / main.rs / build.rs / callgrind.c / p1.json","status":"exit 0"},
+{"cmd":"sed -i \"s|/home/bohn/.treehouse/catallax-82d7d7/32/catallax|$root|g\" \"$t/Cargo.toml\"","status":"exit 0"},
+{"cmd":"for pair in baseline:6e4b5f89... candidate:599bd130...; do checkout, cargo build --release, native run, callgrind run, cmp, totals, sha256sum; done","status":"exit 0"},
+{"cmd":"cmp \"$t/baseline.answer\" \"$t/candidate.answer\"; printf 'P1 exact answers match\\n'","status":"exit 0"},
+{"cmd":"awk '/^totals:/ { if (++n == 1) b=$2; else if ($2 >= b) exit 1 }' baseline.cg candidate.cg","status":"exit 0"}],
+"test_counts":{"passed":0,"failed":0,"ignored":0,"filtered_out":0},"failed_tests":[],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"No cargo tests; measurement script. baseline 6e4b5f8 callgrind totals 172661579266, candidate 599bd13 totals 171765297841 (candidate lower). Answers matched (sha256 0c81facd...). work=32976744 both. Native wall_ms 17705.8 baseline, 17509.4 candidate. rustc 1.100.0. Script checked out baseline then candidate; HEAD ended at 599bd13."}

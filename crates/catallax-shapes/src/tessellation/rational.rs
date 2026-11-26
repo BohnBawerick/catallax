@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{OnceCell, RefCell},
     ops::{Add, Div, Mul, Sub},
 };
 
@@ -8,6 +8,7 @@ use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use crate::BSplineSurface;
 
 type Net<T> = Vec<[T; 4]>;
+type NormalRow = [[Interval; 3]; 5];
 
 /// A knot rectangle whose homogeneous Bézier net uses local unit coordinates.
 pub struct RationalSpan {
@@ -27,6 +28,7 @@ pub struct RationalSpan {
     coordinate_bounds: [Interval; 3],
     position_row: RefCell<Option<PositionRow>>,
     derivative_rows: [RefCell<Option<PositionRow>>; 2],
+    quadratic_hulls: OnceCell<[[[Interval; 4]; 3]; 3]>,
 }
 
 struct PositionRow {
@@ -393,6 +395,7 @@ impl RationalSpan {
             coordinate_bounds,
             position_row: RefCell::default(),
             derivative_rows: Default::default(),
+            quadratic_hulls: OnceCell::new(),
         })
     }
 
@@ -651,7 +654,15 @@ impl RationalSpan {
         &self,
         u: Interval,
         dec: &mut Decider,
-    ) -> Result<Option<[[Interval; 3]; 5]>, Refusal> {
+    ) -> Result<Option<NormalRow>, Refusal> {
+        Ok(self.quadratic_normal_rows(u, dec)?.map(|(_, row)| row))
+    }
+
+    fn quadratic_normal_rows(
+        &self,
+        u: Interval,
+        dec: &mut Decider,
+    ) -> Result<Option<(NormalRow, NormalRow)>, Refusal> {
         let [degree, order] = self.degree;
         if order != 2 || degree == 0 {
             return Ok(None);
@@ -667,30 +678,52 @@ impl RationalSpan {
                 .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
                 .unwrap_or([point(0.0); 4])
         };
+        dec.charge_traversal(1)?;
+        if self.quadratic_hulls.get().is_none() {
+            let second = difference(&self.first[0], [degree - 1, 2], 0);
+            dec.charge_work(4 * second.len() as u64)?;
+            dec.charge_traversal(
+                (self.control.len() + self.first[0].len() + second.len() + 1) as u64,
+            )?;
+            let bounds = [&self.control, &self.first[0], &second]
+                .map(|net| std::array::from_fn(|column| hull(net, column)));
+            self.quadratic_hulls.set(bounds).expect("one hull per span");
+        }
+        let [position, slope, acceleration] = *self.quadratic_hulls.get().unwrap();
         let delta = u - point(u.mid());
-        let bound_row = |net: &[[Interval; 4]],
-                         degree: usize,
-                         derivative: &[[Interval; 4]],
-                         dec: &mut Decider|
-         -> Result<[[Interval; 4]; 3], Refusal> {
-            let bounds = std::array::from_fn(|column| hull(net, column));
-            if u == Interval::new(0.0, 1.0).unwrap() {
-                return Ok(bounds);
-            }
-            let at = bernstein_row(net, [degree, 2], u.mid(), dec)?;
-            dec.charge_work(12)?;
-            Ok(std::array::from_fn(|column| {
-                let slopes = hull(derivative, column);
+        let centre_position: [[Interval; 4]; 3] =
+            bernstein_row(&self.control, [degree, 2], u.mid(), dec)?
+                .try_into()
+                .expect("quadratic position row");
+        let centre_slope: [[Interval; 4]; 3] =
+            bernstein_row(&self.first[0], [degree - 1, 2], u.mid(), dec)?
+                .try_into()
+                .expect("quadratic derivative row");
+        let expand = |centre: [[Interval; 4]; 3],
+                      bounds: [[Interval; 4]; 3],
+                      derivative: [[Interval; 4]; 3]| {
+            std::array::from_fn(|j| {
                 intersect_hull(
-                    std::array::from_fn(|i| at[column][i] + delta * slopes[i]),
-                    bounds[column],
+                    std::array::from_fn(|i| centre[j][i] + delta * derivative[j][i]),
+                    bounds[j],
                 )
-            }))
+            })
         };
-        let second = difference(&self.first[0], [degree - 1, 2], 0);
-        dec.charge_work(4 * second.len() as u64)?;
-        let [a, b, c] = bound_row(&self.control, degree, &self.first[0], dec)?;
-        let slopes = bound_row(&self.first[0], degree - 1, &second, dec)?;
+        let whole = u == Interval::new(0.0, 1.0).unwrap();
+        dec.charge_work(if whole { 12 } else { 36 })?;
+        let slopes = if whole {
+            slope
+        } else {
+            expand(centre_slope, slope, acceleration)
+        };
+        let strip = expand(centre_position, position, slopes);
+        let factor_positions = if whole {
+            position
+        } else {
+            expand(centre_position, position, slope)
+        };
+        // The wedge of a quadratic and its derivative is itself quadratic.
+        // Its controls are 2 a∧b, a∧c, 2 b∧c.
         let xyz = |h: [Interval; 4]| [h[0], h[1], h[2]];
         let cross = |a: [Interval; 3], b: [Interval; 3]| -> [Interval; 3] {
             std::array::from_fn(|i| {
@@ -699,28 +732,77 @@ impl RationalSpan {
                 a[j] * b[k] - a[k] * b[j]
             })
         };
-        // The wedge of a quadratic and its derivative is itself quadratic.
-        // Its controls are 2 a∧b, a∧c, 2 b∧c.
-        dec.charge_work(3 * (12 + 6) + 9 * (6 + 3 + 3))?;
-        let wedges = [(a, b, 2.0), (a, c, 1.0), (b, c, 2.0)].map(|(a, b, scale)| {
-            let delta = std::array::from_fn(|i| point(scale) * (a[3] * b[i] - b[3] * a[i]));
-            let moment = cross(xyz(a), xyz(b)).map(|x| point(scale) * x);
-            (delta, moment)
-        });
-        let mut normal = [[point(0.0); 3]; 5];
+        let pairs = [(0_usize, 1_usize, 2.0), (0, 2, 1.0), (1, 2, 2.0)];
+        let wedges = |row: [[Interval; 4]; 3]| {
+            pairs.map(|(i, j, scale)| {
+                let (a, b, scale) = (row[i], row[j], point(scale));
+                let delta = std::array::from_fn(|k| scale * (a[3] * b[k] - b[3] * a[k]));
+                let moment = cross(xyz(a), xyz(b)).map(|x| scale * x);
+                (delta, moment)
+            })
+        };
         let quadratic = [1.0, 2.0, 1.0];
         let quartic = [1.0, 4.0, 6.0, 4.0, 1.0];
-        for (i, slope) in slopes.into_iter().enumerate() {
-            for (j, (delta, moment)) in wedges.into_iter().enumerate() {
-                let cross = cross(xyz(slope), delta);
-                let weight = point(quadratic[i] * quadratic[j]) / point(quartic[i + j]);
-                for component in 0..3 {
-                    let value = cross[component] - slope[3] * moment[component];
-                    normal[i + j][component] = normal[i + j][component] + weight * value;
+        dec.charge_work(9)?;
+        let weights: [[Interval; 3]; 3] = std::array::from_fn(|i| {
+            std::array::from_fn(|j| point(quadratic[i] * quadratic[j]) / point(quartic[i + j]))
+        });
+        let combine = |terms: &dyn Fn(usize, usize) -> [Interval; 3]| {
+            let mut row = [[point(0.0); 3]; 5];
+            for (i, weights) in weights.iter().enumerate() {
+                for (j, &weight) in weights.iter().enumerate() {
+                    let value = terms(i, j);
+                    for (entry, term) in row[i + j].iter_mut().zip(value) {
+                        *entry = *entry + weight * term;
+                    }
                 }
             }
-        }
-        Ok(Some(normal))
+            row
+        };
+        let apply = |q: [Interval; 4], (delta, moment): ([Interval; 3], [Interval; 3])| {
+            let turned = cross(xyz(q), delta);
+            std::array::from_fn(|k| turned[k] - q[3] * moment[k])
+        };
+        let mut normal = |position, slope: [[Interval; 4]; 3]| {
+            dec.charge_work(3 * (12 + 6) + 9 * (6 + 3 + 3))?;
+            let wedges = wedges(position);
+            Ok::<_, Refusal>(combine(&|i, j| apply(slope[i], wedges[j])))
+        };
+        let factor = normal(factor_positions, slopes)?;
+        let value = normal(centre_position, centre_slope)?;
+
+        // Expand each composite coefficient N at the strip centre. Its
+        // derivative keeps the product-rule terms together before the expansion.
+        dec.charge_work(3 * (12 + 6) + 3 * (24 + 12) + 9 * (2 * (6 + 3) + 3) + 2 * 15)?;
+        let strip_wedges = wedges(strip);
+        let derivative_wedges = pairs.map(|(i, j, scale)| {
+            let (a, b, da, db, scale) = (strip[i], strip[j], slopes[i], slopes[j], point(scale));
+            let delta = std::array::from_fn(|k| {
+                scale * (da[3] * b[k] + a[3] * db[k] - db[3] * a[k] - b[3] * da[k])
+            });
+            let first = cross(xyz(da), xyz(b));
+            let second = cross(xyz(a), xyz(db));
+            (
+                delta,
+                std::array::from_fn(|k| scale * (first[k] + second[k])),
+            )
+        });
+        let derivative = combine(&|i, j| {
+            let first = apply(acceleration[i], strip_wedges[j]);
+            let second = apply(slopes[i], derivative_wedges[j]);
+            std::array::from_fn(|k| first[k] + second[k])
+        });
+        let row = std::array::from_fn(|j| {
+            std::array::from_fn(|k| {
+                let expanded = value[j][k] + delta * derivative[j][k];
+                Interval::new(
+                    expanded.lo().max(factor[j][k].lo()),
+                    expanded.hi().min(factor[j][k].hi()),
+                )
+                .unwrap_or(factor[j][k])
+            })
+        });
+        Ok(Some((factor, row)))
     }
 
     /// Projects from a neighbouring sample's local parameter, or the centre
@@ -1046,6 +1128,155 @@ fn intersect_hull(evaluated: [Interval; 4], hull: [Interval; 4]) -> [Interval; 4
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn exact_normal_row(control: &[[Rational; 4]], u: &Rational) -> [[Rational; 3]; 5] {
+        let degree = control.len() / 3 - 1;
+        let scale = Rational::from_i64(degree as i64);
+        let complement = &Rational::one() - u;
+        let contract = |mut row: Vec<[Rational; 4]>| {
+            while row.len() > 1 {
+                for i in 0..row.len() - 1 {
+                    row[i] = std::array::from_fn(|k| &complement * &row[i][k] + u * &row[i + 1][k]);
+                }
+                row.pop();
+            }
+            row.pop().unwrap()
+        };
+        let columns: [_; 3] = std::array::from_fn(|j| {
+            control
+                .iter()
+                .skip(j)
+                .step_by(3)
+                .cloned()
+                .collect::<Vec<_>>()
+        });
+        let slopes = columns.each_ref().map(|column| {
+            contract(
+                column
+                    .windows(2)
+                    .map(|pair| std::array::from_fn(|k| &scale * &(&pair[1][k] - &pair[0][k])))
+                    .collect(),
+            )
+        });
+        let positions = columns.map(contract);
+        let cross = |a: &[Rational; 4], b: &[Rational; 4]| -> [Rational; 3] {
+            std::array::from_fn(|i| {
+                let j = (i + 1) % 3;
+                let k = (i + 2) % 3;
+                &a[j] * &b[k] - &a[k] * &b[j]
+            })
+        };
+        let mut row =
+            std::array::from_fn(|_| [Rational::zero(), Rational::zero(), Rational::zero()]);
+        let quadratic = [1, 2, 1];
+        let quartic = [1, 4, 6, 4, 1];
+        for (j, (a, b, scale)) in [(0, 1, 2), (0, 2, 1), (1, 2, 2)].into_iter().enumerate() {
+            let (a, b) = (&positions[a], &positions[b]);
+            let delta = std::array::from_fn(|k| {
+                if k == 3 {
+                    Rational::zero()
+                } else {
+                    &a[3] * &b[k] - &b[3] * &a[k]
+                }
+            });
+            let moment = cross(a, b);
+            for (i, slope) in slopes.iter().enumerate() {
+                let turned = cross(slope, &delta);
+                let weight =
+                    Rational::from_ratio(scale * quadratic[i] * quadratic[j], quartic[i + j])
+                        .unwrap();
+                for k in 0..3 {
+                    row[i + j][k] =
+                        &row[i + j][k] + &(&weight * &(&turned[k] - &(&slope[3] * &moment[k])));
+                }
+            }
+        }
+        row
+    }
+
+    #[test]
+    fn taylor_normal_rows_enclose_exact_ring_and_loop_rows_and_tighten_the_factor_bounds() {
+        use crate::{BallSide, Cylinder, Point3, RollingSaddle, RollingSaddleDefinition, Vector3};
+        use catallax_numbers::Real;
+
+        let real = Real::from_i64;
+        let vector = |x, y, z| Vector3::new(real(x), real(y), real(z));
+        let origin = |x| Point3::new(real(x), real(0), real(0));
+        let wide = Cylinder {
+            origin: origin(0),
+            axis: vector(0, 1, 0),
+            radius_sq: real(100),
+            ref_dir: vector(1, 0, 0),
+        };
+        let mut dec = Decider::default();
+        for gap in [1, 8] {
+            let narrow = Cylinder {
+                origin: origin(gap),
+                axis: vector(0, 0, 1),
+                radius_sq: real(16),
+                ref_dir: vector(1, 0, 0),
+            };
+            let radius = real(1);
+            let sides = [BallSide::Outside; 2];
+            let definition = if gap == 1 {
+                RollingSaddleDefinition::new(&wide, &narrow, &radius, sides, true, &mut dec)
+            } else {
+                RollingSaddleDefinition::overlapping(&wide, &narrow, &radius, sides, &mut dec)
+            }
+            .unwrap();
+            let saddle = RollingSaddle::fit(definition, &mut dec).unwrap();
+            let carrier = saddle.carrier();
+            let indices: Vec<_> = carrier.span_indices().collect();
+            let mut tightened = false;
+            for index in [0, indices.len() / 3, indices.len() - 1] {
+                let [span]: [RationalSpan; 1] =
+                    rational_span_range(carrier, index..=index, &mut dec)
+                        .unwrap()
+                        .try_into()
+                        .ok()
+                        .unwrap();
+                let centre = span.centre.map(|v| Rational::from_f64_exact(v).unwrap());
+                let controls: Vec<_> = carrier
+                    .span_bezier_controls(indices[index], &mut dec)
+                    .unwrap()
+                    .into_iter()
+                    .map(|h| {
+                        let h = h.map(|v| v.rational_ref().unwrap().clone());
+                        std::array::from_fn(|i| {
+                            if i == 3 {
+                                h[i].clone()
+                            } else {
+                                &h[i] - &(&centre[i] * &h[3])
+                            }
+                        })
+                    })
+                    .collect();
+                for (lo, hi) in [(0.0, 1.0), (0.0, 0.25), (0.25, 0.5), (0.75, 1.0)] {
+                    let strip = Interval::new(lo, hi).unwrap();
+                    let (factor, row) = span
+                        .quadratic_normal_rows(strip, &mut dec)
+                        .unwrap()
+                        .unwrap();
+                    for (old, new) in factor.into_iter().flatten().zip(row.into_iter().flatten()) {
+                        assert!(old.lo() <= new.lo() && new.hi() <= old.hi());
+                        tightened |= old.lo() < new.lo() || new.hi() < old.hi();
+                    }
+                    for u in [lo, strip.mid(), hi] {
+                        let exact =
+                            exact_normal_row(&controls, &Rational::from_f64_exact(u).unwrap());
+                        for (value, bounds) in
+                            exact.into_iter().flatten().zip(row.into_iter().flatten())
+                        {
+                            let lo = Rational::from_f64_exact(bounds.lo()).unwrap();
+                            let hi = Rational::from_f64_exact(bounds.hi()).unwrap();
+                            assert!(lo <= value && value <= hi, "gap {gap}, span {index}, u {u}");
+                        }
+                    }
+                }
+            }
+            assert!(tightened, "gap {gap}");
+        }
+    }
 
     #[test]
     fn bernstein_basis_encloses_cubic_weights_from_both_ends() {

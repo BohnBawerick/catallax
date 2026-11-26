@@ -1020,9 +1020,9 @@ impl FaceBuilder<'_, '_> {
                     self.chart.surface,
                     Surface::BSpline(SplineSupport::RollingPipe(_))
                 );
-            // The radial normal proof guides angular pipe refinement from the
-            // full-chord grid. Every resulting facet is checked against both limits.
-            let chord = if spline.patch_sampling() || angular_pipe {
+            // Saddle bands and angular pipes certify each facet from a grid
+            // seeded at the requested tolerance.
+            let chord = if spline.patch_sampling() || angular_pipe || self.protects_band() {
                 self.options.chord_tolerance.clone()
             } else {
                 self.options.chord_tolerance.mul_pow2(-1)
@@ -1034,7 +1034,12 @@ impl FaceBuilder<'_, '_> {
                     .max_vertices
                     .saturating_sub(self.positions.len())
             };
-            let mut grid = spline.seed_grid(&chord, remaining, self.dec)?;
+            let mut grid = spline.seed_grid(
+                &chord,
+                self.options.angular_deviation.as_ref(),
+                remaining,
+                self.dec,
+            )?;
             for uv in &mut grid {
                 *uv = self.chart.canonical(*uv);
                 if let Some(band) = self.band {

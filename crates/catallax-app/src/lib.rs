@@ -125,7 +125,7 @@ pub struct ApplicationBody {
 /// An application body whose exact evaluation can be consumed by the next edit.
 #[derive(Clone, Debug)]
 pub struct IncrementalApplicationBody {
-    /// Owned prefix. Read its exact result through [`EvaluationCheckpoint::built`].
+    /// Exact evaluation retained for edits. Read its result through [`EvaluationCheckpoint::built`].
     pub checkpoint: EvaluationCheckpoint,
     /// Display approximation of that result.
     pub display: Answer<Mesh>,
@@ -136,7 +136,7 @@ pub struct IncrementalApplicationBody {
 /// A checked exact result and picking names, without an unrequested display mesh.
 #[derive(Clone, Debug)]
 pub struct EvaluatedApplicationBody {
-    /// Owned prefix, reusable by either incremental application entry.
+    /// Exact evaluation retained for edits, reusable by either incremental application entry.
     pub checkpoint: EvaluationCheckpoint,
     /// Picking names of the exact result, independent of display.
     pub names: Names,
@@ -199,7 +199,7 @@ fn rendering_result(
     ))
 }
 
-/// Builds an exact checkpoint and rendering answer within one shared 100M allowance.
+/// Resumes the unchanged steps and builds the exact result and rendering within one 100M allowance.
 /// Certified callers can continue using [`build_incremental`] unchanged.
 pub fn build_incremental_with_display_result(
     recipe: &Recipe,
@@ -384,8 +384,8 @@ fn build_inner(
     })
 }
 
-/// Resumes an unchanged prefix, then checks and meshes only the requested result.
-/// A prefix mismatch rebuilds from the start, as in [`evaluate_incremental`].
+/// Resumes from the steps before the first change, then checks and meshes
+/// only the requested result. See [`evaluate_incremental`].
 pub fn build_incremental(
     recipe: &Recipe,
     prefix: Option<EvaluationCheckpoint>,
@@ -403,7 +403,7 @@ pub fn build_incremental(
     })
 }
 
-/// Builds an exact checkpoint, display and names with immutable STEP source bytes.
+/// Reuses the unchanged steps, then builds the exact result, display and names.
 ///
 /// Sources are keyed by the SHA-256 in each import step. Every source must be
 /// supplied even for a reused prefix; missing or changed bytes are recipe errors.
@@ -426,7 +426,7 @@ pub fn build_incremental_with_files(
     })
 }
 
-/// Resumes an unchanged prefix and checks the exact result without meshing it.
+/// Resumes from the steps before the first change and checks the exact result without meshing it.
 ///
 /// Names and continuation semantics match [`build_incremental`]. Request display
 /// separately through [`EvaluatedApplicationBody::display`] only when needed.
@@ -453,7 +453,7 @@ pub fn build_incremental_without_display(
 /// A fillet the exact builders finish stays exact. A fillet only the
 /// rolling-ball construction builds returns numerical geometry with its own
 /// tolerance, origins and history, never an exact continuation checkpoint.
-/// Source bytes are verified even when the matching exact prefix is reused.
+/// The unchanged exact steps are reused, but their source bytes are still verified.
 /// Build and separately requested display honor the active caller allowance.
 pub fn build_incremental_with_files_without_display(
     recipe: &Recipe,

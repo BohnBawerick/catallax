@@ -161,6 +161,13 @@ class RoundedCertificateTests(unittest.TestCase):
                 self.report(self.head, numerator, denominator)
                 edit_speed.compare_rounded_step(self.base, self.head)
 
+    def test_unapproved_step_transition_is_still_rejected(self):
+        self.report(self.base, 1, 10)
+        self.report(self.head, 1, 11)
+        (self.head / 'answer.step').write_bytes(b'a different STEP answer')
+        with self.assertRaisesRegex(AssertionError, 'STEP bytes changed'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
     def test_a_single_rational_unit_of_regression_cannot_round_away(self):
         denominator = 10 ** 200
         numerator = 6 * 10 ** 190

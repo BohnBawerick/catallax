@@ -888,8 +888,116 @@ impl Projection {
         })
     }
 
-    /// In the written frames, a coaxial circle has u' = +/-1 and constant
-    /// v = atan2(height, radius - major). No interval trigonometric dependency.
+    /// Hand back the two limits of an affine inverse on the written carrier.
+    /// Test incidence in the rational STEP frames, not in approximately
+    /// orthogonal interval frames or on the unrounded model.
+    pub fn linear_pcurve(
+        &self,
+        form: &catallax_intersect::CurveForm,
+        curve: &Curve,
+        range: &[Rational; 2],
+        ends: [&[Rational; 2]; 2],
+        tolerance: &Rational,
+        dec: &Decider,
+    ) -> Result<Option<uv::Fit>, Refusal> {
+        use catallax_intersect::CurveForm;
+        let p = self.pi.precision();
+        let surface = &self.written.placement;
+        let inverse = |xyz: B3, u: Ball| {
+            Ok::<_, Refusal>(
+                self.map.inverse(
+                    &xyz.map(Jet::<1>::constant),
+                    u,
+                    &self.pi,
+                    true,
+                    self.atan,
+                    dec,
+                )?[0]
+                    .clone(),
+            )
+        };
+        let target = ball(&ends[0][0], p);
+        let ideal = match (form, curve, &self.map) {
+            (
+                CurveForm::Line { .. },
+                Curve::Line { origin, direction },
+                SurfaceMap::Cylinder | SurfaceMap::Cone { .. },
+            ) => {
+                let delta = std::array::from_fn(|i| &origin[i] - &surface.origin[i]);
+                let [x, y] = [0, 1].map(|i| dot(&delta, &surface.basis[i]));
+                let [dx, dy] = [0, 1].map(|i| dot(direction, &surface.basis[i]));
+                if !match self.map {
+                    SurfaceMap::Cylinder => dx.is_zero() && dy.is_zero(),
+                    SurfaceMap::Cone { .. } => &x * &dy == &y * &dx,
+                    _ => unreachable!(),
+                } {
+                    return Ok(None);
+                }
+                let origin = surface.point(origin, p);
+                let direction = surface.unit_vector(direction, p);
+                let xyz = range.each_ref().map(|t| {
+                    let t = ball(t, p);
+                    std::array::from_fn(|i| &origin[i] + &(&direction[i] * &t))
+                });
+                // The radial vector must stay on one nonzero half-ray.
+                // In particular, a line through the cone apex cannot change nappe.
+                let separated = (0..2).any(|i| {
+                    xyz.iter().all(|xyz| xyz[i].lo() > Rational::zero())
+                        || xyz.iter().all(|xyz| xyz[i].hi() < Rational::zero())
+                });
+                if !separated {
+                    return Ok(None);
+                }
+                let [start, end] = xyz;
+                let u = lift(&start[1], &start[0], &target, &self.pi, self.atan, dec)?;
+                [inverse(start, u.clone())?, inverse(end, u)?]
+            }
+            (
+                CurveForm::Circle { .. },
+                Curve::Ellipse {
+                    placement,
+                    major: radius,
+                    minor,
+                },
+                SurfaceMap::Cylinder
+                | SurfaceMap::Cone { .. }
+                | SurfaceMap::Sphere
+                | SurfaceMap::Torus { .. },
+            ) if radius == minor && radius.sign() == Sign::Positive => {
+                let Some((direction, height)) = self.coaxial(placement) else {
+                    return Ok(None);
+                };
+                if let SurfaceParameters::Torus { major, .. } = &self.written.parameters
+                    && height.is_zero()
+                    && major == radius
+                {
+                    return Ok(None);
+                }
+                let speed = scalar(direction, p);
+                let x = surface.basis_vector(placement, 0, p);
+                let phase = uv::angle(&x[1], &x[0], &self.pi, self.atan, dec)?;
+                let u = &phase + &(&speed * &ball(&range[0], p));
+                let Some(u) = shifted_angle(&u, &target, &self.pi) else {
+                    return Ok(None);
+                };
+                let end_u = &u + &(&speed * &ball(&(&range[1] - &range[0]), p));
+                let [_, v] = inverse(
+                    [
+                        ball(radius, p),
+                        scalar(0, p),
+                        normalized(&height, &surface.norms[2], p),
+                    ],
+                    scalar(0, p),
+                )?;
+                [[u, v.clone()], [end_u, v]]
+            }
+            _ => return Ok(None),
+        };
+        Ok(uv::Fit::line(ends, range, ideal, tolerance))
+    }
+
+    /// In the written frames, a coaxial torus circle has u' = +/-1 and
+    /// constant v = atan2(height, radius - major).
     pub fn latitude_speed(&self, curve: &Curve) -> Option<i64> {
         let SurfaceParameters::Torus { major: core, .. } = &self.written.parameters else {
             return None;
@@ -905,6 +1013,11 @@ impl Projection {
         if major != minor || major.sign() != Sign::Positive {
             return None;
         }
+        let (speed, height) = self.coaxial(placement)?;
+        (!height.is_zero() || major != core).then_some(speed)
+    }
+
+    fn coaxial(&self, placement: &Placement) -> Option<(i64, Rational)> {
         let surface = &self.written.placement;
         if cross(&placement.basis[2], &surface.basis[2])
             .iter()
@@ -913,19 +1026,15 @@ impl Projection {
             return None;
         }
         let delta = std::array::from_fn(|i| &placement.origin[i] - &surface.origin[i]);
-        if !dot(&delta, &surface.basis[0]).is_zero()
-            || !dot(&delta, &surface.basis[1]).is_zero()
-            || (dot(&delta, &surface.basis[2]).is_zero() && major == core)
-        {
+        if !dot(&delta, &surface.basis[0]).is_zero() || !dot(&delta, &surface.basis[1]).is_zero() {
             return None;
         }
-        Some(
-            if dot(&placement.basis[2], &surface.basis[2]).sign() == Sign::Positive {
-                1
-            } else {
-                -1
-            },
-        )
+        let speed = if dot(&placement.basis[2], &surface.basis[2]).sign() == Sign::Positive {
+            1
+        } else {
+            -1
+        };
+        Some((speed, dot(&delta, &surface.basis[2])))
     }
 
     pub fn metric(&self, bounds: &[[Rational; 2]; 3], fitted: Option<&uv::Fit>) -> Rational {

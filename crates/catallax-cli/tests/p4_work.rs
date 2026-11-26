@@ -1,9 +1,9 @@
-//! Complete P4 export keeps its proven bytes as its work cost falls.
+//! Complete P4 export keeps its checked STEP encoding within the work limit.
 use catallax_cli::verification::{Request, answer};
 use sha2::{Digest, Sha256};
 
 #[test]
-fn shelled_tray_preserves_step_with_less_work() {
+fn shelled_tray_preserves_the_checked_step_with_less_work() {
     let out = std::env::temp_dir().join(format!("catallax-p4-work-{}", std::process::id()));
     let response = answer(&Request {
         format: "catallax-request/1".into(),
@@ -21,6 +21,6 @@ fn shelled_tray_preserves_step_with_less_work() {
     assert!(response["work"]["used"].as_u64().unwrap() <= 1_366_808);
     assert_eq!(
         format!("{:x}", Sha256::digest(&bytes)),
-        "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381"
+        "7abbc3af564fcf807e54a0e31234e3c0d19b7925c1874d62efb4ca1af34afc44"
     );
 }

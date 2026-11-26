@@ -15,11 +15,11 @@ from test_loopless_faces import raw_solid, unique
 import test_partial_periodic_trims as periodic
 
 FIXTURES = Path(__file__).resolve().parents[2] / 'crates/catallax-cli/tests/fixtures'
-# SHA-256 of these raw-valid exports at e7f307b, before this repair existed:
-# the same brackets drawn with exact frames, and PR 212's two collapsed ribbons.
-UNCHANGED = {
-    'soliddraft-flush-bracket': '3e6e36dd5e86120af59038cf41d7cc587404195cb04ffacbd133d4a315225207',
-    'soliddraft-flush-minimal': 'a06109a6e3aed30bb7c469d8b51278e445c833c24b31b3cdbe29f469f0691656',
+# Raw-valid reference exports: the flush pair has D1 affine pcurves;
+# the two narrow fixtures keep the bytes from before wedge repair.
+STEP_DIGESTS = {
+    'soliddraft-flush-bracket': '0b55cbe20a72cddbcb21ef2bbf08e3f2015694f8dea9ffc9a73a9ce3506bb38b',
+    'soliddraft-flush-minimal': '3eb51bbf163dea71f31412503046914f8515e2990e3dc5121b10591856740a33',
     'soliddraft-narrow': 'b052c2ab1a8b8825081880b9126c21ebe7ae124d4cc2eb7253ed7b51c2dc653e',
     'soliddraft-narrow-just-under':
         'e2597e2cc18ec5c3a63ec8af0f9139b62a3c59a8f0df3346e39b13acc4ce428e',
@@ -83,8 +83,8 @@ class WedgeSteps(unittest.TestCase):
         recipe['result'] = 'op_61'
         self.assert_collapse(recipe, 11, 8, 168000.0)
 
-    def test_raw_valid_files_keep_their_bytes(self):
-        for name, digest in UNCHANGED.items():
+    def test_raw_valid_files_match_the_checked_export(self):
+        for name, digest in STEP_DIGESTS.items():
             with self.subTest(name=name):
                 directory, _ = self.answer(self.recipe(name))
                 self.assertEqual(hashlib.sha256((directory / 'answer.step').read_bytes()).hexdigest(),

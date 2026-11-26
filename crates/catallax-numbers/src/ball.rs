@@ -59,7 +59,9 @@ impl Ball {
         let mid = numerator.div_rounded(&denominator, p, false);
         // |n/d - mid| = |n - mid*d| / d. Keep that residual dyadic;
         // normalizing a new rational would only add redundant GCDs.
-        let error = (&numerator - &(&mid * &denominator)).into_abs();
+        let error = numerator
+            .add_sub_owned(&mid * &denominator, true)
+            .into_abs();
         let rad = error.div_rounded(&denominator, p, true);
         Self {
             mid,
@@ -130,11 +132,11 @@ impl Ball {
     }
     /// Exact lower bound.
     pub fn lo(&self) -> Rational {
-        self.lower().to_rational()
+        self.lower().into_rational()
     }
     /// Exact upper bound.
     pub fn hi(&self) -> Rational {
-        self.upper().to_rational()
+        self.upper().into_rational()
     }
     fn lower(&self) -> Binary {
         &self.mid - &self.rad
@@ -189,15 +191,10 @@ impl Ball {
         let hi = self.upper();
         let a = &lo * &lo;
         let b = &hi * &hi;
-        Self::bounds_binary(
-            if self.contains_zero() {
-                Binary::zero()
-            } else {
-                a.clone().min(b.clone())
-            },
-            a.max(b),
-            self.precision,
-        )
+        let contains_zero = self.contains_zero();
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        let lo = if contains_zero { Binary::zero() } else { lo };
+        Self::bounds_binary(lo, hi, self.precision)
     }
     /// Square root of the non-negative part; `None` only when entirely negative.
     pub fn sqrt(&self) -> Option<Self> {
@@ -221,7 +218,7 @@ impl Ball {
         if self.contains_zero() {
             return None;
         }
-        let denominator = &(&self.mid * &self.mid) - &(&self.rad * &self.rad);
+        let denominator = (&self.mid * &self.mid).add_sub_owned(&self.rad * &self.rad, true);
         let mid = self.mid.div_rounded(&denominator, self.precision, false);
         let error = (&self.mid - &(&mid * &denominator)).into_abs();
         let rad = (&self.rad + &error).div_rounded(&denominator, self.precision, true);
@@ -444,7 +441,11 @@ impl Ball {
         } else {
             let mid = center.rounded(p, false);
             let error = (&*center - &mid).into_abs();
-            (mid, Cow::Owned(&*radius + &error))
+            let radius = match radius {
+                Cow::Owned(radius) => radius.add_sub_owned(error, false),
+                Cow::Borrowed(radius) => radius + &error,
+            };
+            (mid, Cow::Owned(radius))
         };
         let rad = if radius.fits_precision(p) {
             radius.into_owned()
@@ -458,7 +459,7 @@ impl Ball {
         }
     }
     pub(crate) fn magnitude(&self) -> Rational {
-        (&self.mid.abs() + &self.rad).to_rational()
+        (&self.mid.abs() + &self.rad).into_rational()
     }
     fn inflate(&self, error: &Rational) -> Self {
         Self::bounds(&self.lo() - error, &self.hi() + error, self.precision)
@@ -469,6 +470,15 @@ impl Ball {
             &self.mid + &rhs.mid,
             &self.rad + &rhs.rad,
             self.precision.max(rhs.precision),
+        )
+    }
+    fn add_owned(self, rhs: Self) -> Self {
+        let precision = self.precision.max(rhs.precision);
+        let _whole = counted(precision, false);
+        Self::centered(
+            self.mid.add_sub_owned(rhs.mid, false),
+            self.rad.add_sub_owned(rhs.rad, false),
+            precision,
         )
     }
     fn sub(&self, rhs: &Self) -> Self {
@@ -506,14 +516,12 @@ impl Ball {
                 // The exact extremal products have center mn +/- rs and
                 // radius |m|s + |n|r. Form these before the same final rounding,
                 // without expanding four much wider dyadic endpoints.
-                let product = &self.mid * &rhs.mid;
-                let cross = &self.rad * &rhs.rad;
-                let center = if self.mid.sign() == rhs.mid.sign() {
-                    &product + &cross
-                } else {
-                    &product - &cross
-                };
-                let radius = &self.mid.abs_product(&rhs.rad) + &rhs.mid.abs_product(&self.rad);
+                let center = (&self.mid * &rhs.mid)
+                    .add_sub_owned(&self.rad * &rhs.rad, self.mid.sign() != rhs.mid.sign());
+                let radius = self
+                    .mid
+                    .abs_product(&rhs.rad)
+                    .add_sub_owned(rhs.mid.abs_product(&self.rad), false);
                 Self::centered(center, radius, precision)
             }
             (true, false) | (false, true) => {
@@ -716,7 +724,7 @@ fn atan_series(x: &Rational, p: u32, dec: Option<&Decider>) -> Result<Ball, Refu
         if error <= threshold {
             return Ok(sum.inflate(&error));
         }
-        sum = &sum + &term;
+        sum = sum.add_owned(term);
         k += 1;
     }
 }

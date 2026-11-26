@@ -25,6 +25,18 @@ fn area(wire: &[Curve<'_>]) -> Rational {
     let mut area = Rational::zero();
     for curve in wire {
         let mut contribution = Rational::zero();
+        if curve.fit.degree() == 1 {
+            let [a, b] = curve.fit.points.as_slice() else {
+                unreachable!("one affine span");
+            };
+            let cross = &a[0].value * &b[1].value - &a[1].value * &b[0].value;
+            area = if curve.forward {
+                area + cross
+            } else {
+                area - cross
+            };
+            continue;
+        }
         for points in curve
             .fit
             .points
@@ -65,10 +77,41 @@ fn split(mut points: Controls) -> (Controls, Controls) {
     (left, right)
 }
 
-/// Returns `None` when a span endpoint is the query point itself.
+fn line_winding(points: &[[number::Number; 2]], query: &Point) -> Option<i64> {
+    let [a, b] = points else {
+        unreachable!("one affine span");
+    };
+    let [ax, ay] = std::array::from_fn(|i| &a[i].value - &query[i]);
+    let [bx, by] = std::array::from_fn(|i| &b[i].value - &query[i]);
+    let side = (&ax * &by - &ay * &bx).sign();
+    let brackets_zero =
+        |a: &Rational, b: &Rational| a.is_zero() || b.is_zero() || a.sign() != b.sign();
+    if side == Sign::Zero && brackets_zero(&ax, &bx) && brackets_zero(&ay, &by) {
+        return None;
+    }
+    let crossing = i64::from(by.sign() == Sign::Positive) - i64::from(ay.sign() == Sign::Positive);
+    Some(match (side, crossing) {
+        (Sign::Positive, 1) | (Sign::Negative, -1) => crossing,
+        _ => 0,
+    })
+}
+
+/// Returns `None` when the query is on a straight segment or a span endpoint.
 fn winding(wire: &[Curve<'_>], query: &Point, dec: &Decider) -> Result<Option<i64>, Refusal> {
     let mut winding = 0i64;
     for curve in wire {
+        if curve.fit.degree() == 1 {
+            let contribution = match line_winding(&curve.fit.points, query) {
+                Some(contribution) => contribution,
+                None => return Ok(None),
+            };
+            winding += if curve.forward {
+                contribution
+            } else {
+                -contribution
+            };
+            continue;
+        }
         let mut contribution = 0i64;
         for points in curve
             .fit
@@ -147,9 +190,10 @@ pub(crate) fn groups(wires: &[Vec<Curve<'_>>], dec: &Decider) -> Result<Vec<Grou
         // until one lies on no outer boundary.
         let mut queries = wires[hole].iter().flat_map(|curve| {
             let points = &curve.fit.points;
-            let count = points.len() / fit::DEGREE;
+            let degree = curve.fit.degree();
+            let count = (points.len() - 1) / degree;
             (0..count).map(move |span| {
-                let index = span * fit::DEGREE;
+                let index = span * degree;
                 points[if curve.forward {
                     index
                 } else {

@@ -346,6 +346,49 @@ fn failed_edit_restores_last_proved_display_but_cannot_export_it_as_current() {
 }
 
 #[test]
+fn proof_reuses_the_last_confirmed_faces_not_a_failed_edit() {
+    let controller = Controller::default();
+    let options = MeshOptions::default();
+    let prove = |width, caps| {
+        assert!(
+            start(&controller, width, caps, &options)
+                .prove(&mut Decider::default())
+                .publish()
+        );
+    };
+    prove(4, allocation());
+    let first = controller.confirmed().unwrap();
+    prove(
+        8,
+        WorkAllocation {
+            preview: allocation().preview,
+            proof: 0,
+        },
+    );
+    assert!(controller.confirmed().is_none());
+
+    prove(4, allocation());
+    let retained = controller.confirmed().unwrap();
+    assert_eq!(retained.reused_faces(), first.display.value.faces.len());
+    assert_eq!(retained.meshed_faces(), 0);
+    assert_eq!(retained.display.value, first.display.value);
+    assert_eq!(retained.display.marks, first.display.marks);
+
+    let finer = MeshOptions {
+        chord_tolerance: options.chord_tolerance.mul_pow2(-1),
+        ..options
+    };
+    assert!(
+        start(&controller, 4, allocation(), &finer)
+            .prove(&mut Decider::default())
+            .publish()
+    );
+    let refined = controller.confirmed().unwrap();
+    assert_eq!(refined.reused_faces(), 0);
+    assert_eq!(refined.meshed_faces(), first.display.value.faces.len());
+}
+
+#[test]
 fn cancellation_rejects_queued_success_and_failure_without_losing_last_proof() {
     for fail in [false, true] {
         let controller = Controller::default();

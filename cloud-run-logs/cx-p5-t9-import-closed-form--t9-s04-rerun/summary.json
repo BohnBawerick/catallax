@@ -1,0 +1,74 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s04-rerun",
+ "repo": "BohnBawerick/catallax",
+ "sha": "fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+ "script_exit_code": 1,
+ "seconds": 2619,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s4",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<gzipped base64 kit>' | base64 -d | tar -xzp -C \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" fe8beba50f716c1bcaf4176f680065b962e8fa2a 4 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no 'test result:' lines (script runs no cargo test). The last command, cloud-run.sh, ended with exit 1 after the census-cloud.py step printed a T9FAIL line (run.log line 180, status changed_outcome_or_refusal, model 00000482) following 10 earlier T9ROW lines; run.log does not show an explicit error message or which internal step of cloud-run.sh set the exit code. Within cloud-run.sh the downloads, corpus select, pip install and the three cargo builds completed (Finished lines in log). apt-get update printed a 504 warning for security.ubuntu.com but libarchive-tools installed. cargo fetch and rustup (stable 1.100.0) ok."
+}

@@ -1,0 +1,258 @@
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling generic-array v0.14.7
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling serde_json v1.0.154
+   Compiling libm v0.2.16
+   Compiling serde v1.0.229
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling digest v0.10.7
+   Compiling syn v2.0.119
+   Compiling memchr v2.8.3
+   Compiling cfg-if v1.0.5
+   Compiling itoa v1.0.18
+   Compiling serde_derive v1.0.229
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling num-bigint v0.4.8
+   Compiling catallax-transfer-derive v0.5.0 (/home/user/catallax/crates/catallax-transfer-derive)
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling catallax-trace v0.5.0 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-numbers v0.5.0 (/home/user/catallax/crates/catallax-numbers)
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling hashbrown v0.16.1
+   Compiling smallvec v1.16.3
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling robust v1.2.0
+   Compiling libc v0.2.191
+   Compiling spade v2.15.1
+   Compiling catallax-shapes v0.5.0 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.5.0 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.5.0 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.5.0 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.5.0 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.5.0 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-step v0.5.0 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling rug v1.30.0
+   Compiling az v1.3.0
+   Compiling catallax-features v0.5.0 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-mesh v0.5.0 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-field v0.5.0 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-app v0.5.0 (/home/user/catallax/crates/catallax-app)
+    Finished `release` profile [optimized] target(s) in 5m 21s
+     Running unittests src/lib.rs (target/release/build/catallax-measure/07b690700139f132/out/catallax_measure-07b690700139f132)
+
+running 95 tests
+test bounds::spline::tests::insufficient_measurement_work_never_publishes_an_unconverged_hull ... ok
+test bounds::spline::tests::positive_rational_weights_bound_the_quotient_extremum ... ok
+test bounds::spline::tests::cubic_interior_extremum_converges_beyond_its_control_hull ... ok
+test bounds::spline::tests::repeated_knots_split_both_one_sided_extrema_and_negative_coordinates ... ok
+test bounds::undecided_evidence::extrema_nonzero_keeps_the_decision ... ok
+test distance::tests::cap_point_with_an_irrational_rim_witness_is_enclosed_without_subdivision ... ok
+test distance::tests::closed_planar_trims_have_complete_distances_for_reentrant_faces_and_holes ... ok
+test distance::tests::cap_pair_minimum_distance_and_cylinder_height_boundary_are_certified ... ok
+test distance::tests::circular_arc_planar_trims_keep_the_closed_authored_sweep ... ok
+test distance::tests::conical::conical_collapsed_boundary_inventory_must_be_the_single_exact_apex ... ok
+test distance::tests::conical::conical_irrational_azimuths_match_independent_directed_mpfr_enclosures ... ok
+test distance::tests::conical::conical_narrow_width_uses_the_same_complete_fallback_and_cell_cap ... ok
+test distance::tests::complementary_caps_and_effective_senses_keep_opposite_regions ... ok
+test distance::tests::conical::conical_nonunit_algebraic_frame_and_slope_keep_the_euclidean_metric ... ok
+test distance::tests::conical::stock_tips_growing_and_shrinking_frusta_have_direct_admitted_distances ... ok
+test distance::tests::coplanar_named_face_pairs_keep_the_finite_gap_between_disjoint_solids ... ok
+test distance::tests::cylinder_arc_trims_exclude_the_nearest_untrimmed_support_point ... ok
+test distance::tests::finite_band_is_not_its_infinite_support ... ok
+test distance::tests::insufficient_direct_width_retains_the_original_fallback_controls ... ok
+test distance::tests::irrational_spherical_witnesses_match_independent_mpfr_oracles ... ok
+test distance::tests::parallel_planar_gap_keeps_an_irrational_root_bounded ... ok
+test distance::tests::placed_caps_match_independent_distances_including_the_rim_tie ... ok
+test distance::tests::placed_cylinder_band_matches_independent_distances_for_every_nearest_case ... ok
+test distance::tests::spherical_arc_trims_keep_the_complete_search_and_admitted_witnesses ... ok
+test distance::tests::spherical_cap_does_not_use_the_removed_south_pole ... ok
+test distance::tests::conical::conical_excluded_angular_sector_cannot_supply_a_witness_and_keeps_fallback ... ok
+test distance::tests::wall_point_with_an_irrational_witness_is_enclosed_without_subdivision ... ok
+test distance::tests::spherical_caps_and_bands_match_independent_oracles_under_pose_and_scale ... ok
+test entity::tests::a_rotated_bar_has_an_enclosed_angle ... ok
+test entity::tests::blind_holes_whose_nearest_points_lie_on_their_rims ... ok
+test entity::tests::frustum_wall_against_plane_and_spheres ... ok
+test engine::native_scope_tests::conic_scope_restores_after_failure_and_unwinding ... ok
+test entity::tests::hole_wall_against_planes_and_edges ... ok
+test entity::tests::offset_parallel_hole_walls_enclose_an_irrational_gap ... ok
+test entity::tests::skew_hole_walls_meet_along_the_common_perpendicular ... ok
+test entity::tests::stacked_coaxial_tori ... ok
+test entity::tests::straight_edges_answer_exact_oblique_angles_and_clamped_gaps ... ok
+test entity::tests::sphere_cylinder_and_their_caps ... ok
+test entity::tests::torus_against_plane_sphere_and_coaxial_cylinder ... ok
+test entity::tests::two_parallel_hole_walls_from_the_real_use_pass ... ok
+test entity::tests::trimmed_wall_breaking_out_of_a_side_is_measured_on_its_trim ... ok
+test entity::tests::uncovered_pairs_refuse_with_a_type ... ok
+test entity::undecided_evidence::measure_sign_keeps_the_decision ... ok
+test integrate::analytic::endpoints::tests::algebraic_circle_endpoints_keep_the_complementary_long_sweep ... ok
+test integrate::analytic::tests::circle_basis_can_replace_an_irrational_length_reference ... ok
+test integrate::analytic::tests::zero_meridian_form_never_erases_a_gauge_pole_on_the_arc ... ok
+test integrate::gauss::tensor::tests::product_rule_bounds_a_nonzero_remainder_in_both_directions ... ok
+test integrate::gauss::tests::certified_rule_integrates_monomials_and_its_first_remainder ... ok
+test integrate::gauss::tests::integer_root_sign_keeps_the_rational_budget_at_generated_brackets ... ok
+test integrate::gauss::tests::turning_rule_includes_the_signed_remainder ... ok
+test integrate::tests::an_angle_from_its_cosine_and_sine_is_the_angle ... ok
+test integrate::tests::polynomial_square_and_positive_root_preserve_zero_coefficients ... ok
+test integrate::tests::selected_coefficients_preserve_recurrence_and_constant_division ... ok
+test integrate::tests::selected_remainders_do_not_erase_undefined_low_orders ... ok
+test integrate::tests::sparse_products_keep_convolution_order_and_budget ... ok
+test integrate::tests::symmetric_panel_retains_the_signed_order_twenty_remainder ... ok
+test integrate::analytic::tests::circular_sweeps_preserve_long_arcs_across_reference_seams ... ok
+test distance::tests::elliptic_cylinder_preserves_euclidean_distance_and_oblique_circle_trims ... ok
+test junction::carrier_area_accounting::carrier_work_is_charged_whatever_the_thread_count ... ok
+test junction::undecided_evidence::an_undecided_ring_coordinate_keeps_its_decision ... ok
+test pair::tests::finite_edge_pairs_and_points_have_proven_bounds ... ok
+test pair::tests::parallel_face_distance_respects_trims_and_completion ... ok
+test pair::tests::query_domains_and_work_are_explicit ... ok
+test junction::carrier_unwind::a_panicking_carrier_helper_leaves_the_writer_a_terminal_outcome ... ok
+test saddle::reflection_tests::reflected_crossing_keys_map_the_exact_centre_ellipse ... ok
+test tests::boolean_union_inertia_equals_parts_with_parallel_axis_shift ... ok
+test tests::branch_bounds_keep_curved_extrema_and_refuse_exhausted_work ... ok
+test tests::centroid_separation_ignores_the_absolute_floor ... ok
+test tests::conical_properties_preserve_exact_coaxiality_behind_algebraic_coordinates ... ok
+test tests::conical_ring_does_not_round_a_small_axis_offset_to_coincidence ... ok
+test tests::coplanar_curved_subdivisions_preserve_rational_exactness ... ok
+test tests::edge_queries_and_boxes_use_exact_carriers ... ok
+test tests::face_centroids_match_analytic_primitives ... ok
+test tests::face_heights_follow_the_face_in_any_placement ... ok
+test tests::fresh_deciders_and_threads_produce_identical_enclosures ... ok
+test junction::carrier_unwind::the_writer_waits_for_carrier_after_carrier_on_one_lock ... ok
+test tests::hemisphere_and_cap_include_the_pole ... ok
+test distance::tests::conical::conical_exact_and_mpfr_enclosures_survive_pose_scale_axis_and_all_effective_senses ... ok
+test tests::integer_periodic_lifts_keep_the_whole_surface_in_the_enclosure ... ok
+test tests::limited_precision_marks_property_widths_in_order ... ok
+test tests::primitive_closed_forms ... ok
+test tests::quarter_arcs_seam_boundaries_and_ellipses ... ok
+test tests::rational_blocks_and_empty_need_no_budget ... ok
+test tests::rotated_translated_block_inertia_has_signed_products_and_exact_covariance ... ok
+test tests::tight_accuracy_enclosures_reach_requested_width ... ok
+test tests::torus_meridians_need_the_noncontractible_loop_term ... ok
+test tests::trimmed_boxes_include_only_exactly_admitted_axis_extrema ... ok
+test saddle::loops::tests::crossing_densities_have_the_required_reflection_parities ... ok
+test tests::zero_work_refuses_transcendental_properties ... ok
+test tests::holes_and_void_shells_are_measured_as_built ... ok
+test torus::rectangle::tests::torus_rectangle_reversal_keeps_the_complement_and_material_sense ... ok
+test torus::tests::trigonometric_primitives_differentiate_to_every_flux_monomial ... ok
+test torus::rectangle::tests::rectangular_torus_sectors_preserve_long_arcs_and_posed_inertia ... ok
+test tests::trimmed_face_centroids_and_arc_midpoints_follow_area_and_arc_length ... ok
+test tests::grouped_properties_reuse_failed_sphere_gauges_before_centroid ... ok
+
+test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.10s
+
+     Running tests/fixtures.rs (target/release/build/catallax-measure/8bdea1fd5b975a66/out/fixtures-8bdea1fd5b975a66)
+
+running 2 tests
+test oracle_directed_rounding_handles_cancellation_division_and_negative_values ... ok
+test fixtures_have_valid_incidence_and_intended_topology_before_measurement_exists ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/measurement.rs (target/release/build/catallax-measure/dac58929160cc6bd/out/measurement-dac58929160cc6bd)
+
+running 11 tests
+test body_marks_stay_on_body_and_do_not_inflate_measurement ... ok
+test budget_marks_use_actual_width_and_centroid_maximum_in_property_order ... ok
+test case_21_boolean_results_against_closed_forms ... ignored, comparison 06: Steinmetz prerequisite refuses boolean.imprint-ambiguous before measurement
+test case_20_expired_deadline_preserves_default_answer_or_exact_code ... ok
+test case_17_budget_marks_bounds_and_zero_work ... ok
+test cases_1_to_14_primitives_hand_bodies_and_every_face ... ok
+test default_accuracy_controls_actual_measurements ... ok
+test enclosure_closed_endpoints_width_and_exactness ... ok
+test centroid_separation_ignores_absolute_floor_or_refuses_by_named_code ... ok
+test case_16_accuracy_ladder_including_zero_and_signed_coordinates ... ok
+test cases_18_19_scaled_placed_and_threaded_math_enclosures ... ok
+
+test result: ok. 10 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 18.07s
+
+     Running tests/solid_gap.rs (target/release/build/catallax-measure/f2a9d139427ad4de/out/solid_gap-f2a9d139427ad4de)
+
+running 6 tests
+test faces_far_from_the_minimum_need_no_closed_form ... ok
+test an_edge_parallel_to_a_rim_plane_meets_the_rim_in_closed_form ... ok
+test turned_parallel_faces_answer_from_their_edges ... ok
+test proven_stationary_pairs_answer_the_same_at_every_thread_count ... ok
+test rims_at_non_parallel_normals_settle_by_proven_stationary_pairs ... ok
+test cone_and_torus_pairs_settle_by_proven_stationary_pairs ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.14s
+
+     Running tests/spline_bounds.rs (target/release/build/catallax-measure/00a17b4a748f8194/out/spline_bounds-00a17b4a748f8194)
+
+running 11 tests
+test body_bounds_accept_two_valid_prisms_sharing_a_cap_ring ... ok
+test body_scope_cannot_borrow_a_missing_cap_from_another_prism ... ok
+test certified_application_body_and_all_finite_faces_answer_bounds ... ok
+test body_scope_reads_shared_loop_uses_in_every_face_order ... ok
+test reflected_raw_copy_retains_the_complete_prism_checker_refusal ... ok
+test independent_cubic_oracle_covers_caps_and_the_represented_sweep ... ok
+test exact_rotations_and_negative_coordinates_retain_interior_extrema ... ok
+test unproved_spline_face_trims_refuse_and_zero_work_preserves_the_body ... ok
+test a_face_outside_the_complete_prism_cannot_inherit_its_membership ... ok
+test shared_body_queries_keep_accuracy_caches_and_model_immutable ... ok
+test scale_offset_edit_and_shorter_axial_trim_are_remeasured ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.11s
+
+   Doc-tests catallax_measure
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-app v0.5.0 (/home/user/catallax/crates/catallax-app)
+    Finished `release` profile [optimized] target(s) in 4.06s
+     Running tests/rational_lofts.rs (target/release/build/catallax-app/160414976af16f5a/out/rational_lofts-160414976af16f5a)
+
+running 16 tests
+test legacy_arc_length_lofts_are_not_reinterpreted_as_rational_charts ... ok
+test coplanar_sections_regularize_to_empty_without_sheet_handles ... ok
+test later_segment_splits_add_no_names_edges_or_vertices ... ok
+test first_section_collinear_ids_survive_on_maximal_logical_faces ... ok
+test nonaffine_parallel_sections_use_a_whole_polar_embedding_proof ... ok
+test nonparallel_affine_sections_keep_the_spatial_volume_map ... ok
+test nested_holes_and_islands_remain_separate_material_lumps ... ok
+test quadratic_and_cubic_profiles_keep_exact_volume_and_area_centroid ... ok
+test reversed_correspondence_is_a_typed_refusal_not_a_twisted_approximation ... ok
+test three_section_smooth_rendering_keeps_the_definition_and_shared_allowance ... ok
+test rendering_preserves_a_proved_circle_loft_and_its_full_allowance ... ok
+test two_section_ruled_and_smooth_frustums_have_exact_mass_and_physical_topology ... ok
+test natural_three_square_loft_builds_inside_the_default_allowance ... ok
+test two_circles_with_different_radii_build_inside_the_default_allowance ... ok
+test natural_three_circle_loft_builds_inside_the_default_allowance ... ok
+test unequally_spaced_natural_circles_build_inside_the_default_allowance has been running for over 60 seconds
+test unequally_spaced_natural_circles_build_inside_the_default_allowance ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 80.92s
+

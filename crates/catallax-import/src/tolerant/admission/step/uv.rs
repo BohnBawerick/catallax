@@ -5,7 +5,7 @@ use super::*;
 use crate::geometry_source::{Curve, Geometry};
 
 fn distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
-    (0..3).fold(0.0, |distance, axis| distance.hypot(a[axis] - b[axis]))
+    (0..3).fold(0.0, |distance, axis| libm::hypot(distance, a[axis] - b[axis]))
 }
 fn number(value: f64) -> Result<Param, Error> {
     let value = Rational::from_f64_exact(value).ok_or_else(|| {

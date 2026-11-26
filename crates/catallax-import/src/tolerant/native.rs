@@ -8,7 +8,8 @@ use catallax_numbers::{Decider, Rational, Refusal};
 use serde::Serialize;
 
 use crate::geometry_source::{
-    AngleUnit, Binary64Chart, CoordinateSpace, EntityId, MappingError, ParameterChart, ParsedStep,
+    AnalyticProjection, AngleUnit, Binary64Chart, CoordinateSpace, EntityId, MappingError,
+    ParameterChart, ParsedStep,
 };
 
 use super::Error;
@@ -100,6 +101,10 @@ fn difference(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 
 fn same_location(a: &NativeLocation, b: &NativeLocation) -> bool {
     a.chart == b.chart && a.parameters.map(f64::to_bits) == b.parameters.map(f64::to_bits)
+}
+
+fn projection_stopping(target: [f64; 3]) -> f64 {
+    1e-7 + 32.0 * f64::EPSILON * target.iter().map(|x| x.abs()).fold(1.0, f64::max)
 }
 
 impl Carrier {
@@ -341,13 +346,13 @@ impl Carrier {
             }
         }
         let chart = &self.charts[chart];
-        let point = chart
-            .evaluate_box(
-                bounds,
-                SAMPLE_BITS.min(dec.policy().max_precision_bits),
-                dec,
-            )
-            .map_err(mapped)?;
+        let bits = SAMPLE_BITS.min(dec.policy().max_precision_bits);
+        let point = if self.display.is_some() {
+            chart.evaluate_box(bounds, bits, dec)
+        } else {
+            chart.sample_box(bounds, bits, dec)
+        }
+        .map_err(mapped)?;
         let point_mm = point.each_ref().map(|value| value.mid().to_f64_nearest());
         let mut uncertainty_mm: f64 = 0.0;
         for (axis, value) in point.iter().enumerate() {
@@ -424,28 +429,46 @@ impl Carrier {
         Ok(Some(derivatives))
     }
 
+    fn initial_projection(
+        &self,
+        target: [f64; 3],
+        location: NativeLocation,
+        dec: &mut Decider,
+    ) -> Result<Option<NativeProjection>, Error> {
+        let location = self.clamp(location);
+        let Some(sample) = self.try_sample(location, dec)? else {
+            return Ok(None);
+        };
+        let residual_mm = distance(sample.point_mm, target) + sample.uncertainty_mm;
+        Ok(Some(NativeProjection {
+            location,
+            residual_mm,
+            sample,
+            iterations: 0,
+            converged: residual_mm <= projection_stopping(target),
+        }))
+    }
+
     fn refine(
         &self,
         target: [f64; 3],
         location: NativeLocation,
         dec: &mut Decider,
     ) -> Result<Option<NativeProjection>, Error> {
-        let mut location = self.clamp(location);
-        let Some(sample) = self.try_sample(location, dec)? else {
-            return Ok(None);
-        };
-        let mut best = NativeProjection {
-            location,
-            residual_mm: distance(sample.point_mm, target) + sample.uncertainty_mm,
-            sample,
-            iterations: 0,
-            converged: false,
-        };
-        let stopping =
-            1e-7 + 32.0 * f64::EPSILON * target.iter().map(|x| x.abs()).fold(1.0, f64::max);
+        self.initial_projection(target, location, dec)?
+            .map(|initial| self.refine_from(target, initial, dec))
+            .transpose()
+    }
+
+    fn refine_from(
+        &self,
+        target: [f64; 3],
+        mut best: NativeProjection,
+        dec: &mut Decider,
+    ) -> Result<NativeProjection, Error> {
+        let stopping = projection_stopping(target);
         for iteration in 0..NEWTON_STEPS {
-            if best.residual_mm <= stopping {
-                best.converged = true;
+            if best.converged {
                 break;
             }
             let Some(jacobian) = self.jacobian(best.location, dec)? else {
@@ -485,7 +508,7 @@ impl Carrier {
             let mut improved = false;
             for reduction in 0..8 {
                 let scale = 2.0f64.powi(-reduction);
-                location = best.location;
+                let mut location = best.location;
                 for axis in 0..self.dimension {
                     location.parameters[axis] += scale * delta[axis];
                 }
@@ -515,7 +538,7 @@ impl Carrier {
                 break;
             }
         }
-        Ok(Some(best))
+        Ok(best)
     }
 
     fn project(
@@ -523,15 +546,34 @@ impl Carrier {
         target: [f64; 3],
         seed: Option<NativeLocation>,
         family: Option<&FamilySeeds>,
+        analytic: Option<&AnalyticProjection>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
         if target.iter().any(|value| !value.is_finite()) {
             return Err(broken("projection target is not finite"));
         }
-        let mut best = None;
-        if let Some(seed) = seed.filter(|seed| seed.chart < self.charts.len())
-            && let Some(candidate) = self.refine(target, seed, dec)?
+        let initial = match seed.filter(|seed| seed.chart < self.charts.len()) {
+            Some(seed) => self.initial_projection(target, seed, dec)?,
+            None => None,
+        };
+        if let Some(initial) = initial
+            && initial.converged
         {
+            return Ok(initial);
+        }
+        // A direct inverse still needs the same enclosed residual test as a
+        // Newton iterate. Keep the original search for ambiguous or off-surface points.
+        if let Some(parameters) = analytic.and_then(|chart| chart.parameters(target, self.period))
+            && let Ok(location) = self.location(parameters)
+            && initial.is_none_or(|old| !same_location(&old.location, &location))
+            && let Some(candidate) = self.initial_projection(target, location, dec)?
+            && candidate.converged
+        {
+            return Ok(candidate);
+        }
+        let mut best = None;
+        if let Some(initial) = initial {
+            let candidate = self.refine_from(target, initial, dec)?;
             if candidate.converged {
                 return Ok(candidate);
             }
@@ -634,7 +676,12 @@ impl Carrier {
 
 /// A physical source surface with sampled UV fitting, not an embedding proof.
 #[derive(Debug)]
-pub struct NativeSurface(Carrier, [Option<f64>; 2], Option<FamilySeeds>);
+pub struct NativeSurface(
+    Carrier,
+    [Option<f64>; 2],
+    Option<FamilySeeds>,
+    Option<Box<AnalyticProjection>>,
+);
 impl NativeSurface {
     /// Compile source charts without any whole-domain topology admission.
     pub fn from_source(
@@ -652,7 +699,11 @@ impl NativeSurface {
         let periods = periodic.map(|periodic| periodic.then_some(carrier.period));
         let family =
             FamilySeeds::from_source(source, entity, length_mm, &angles, dec).map_err(mapped)?;
-        Ok(Self(carrier, periods, family))
+        let analytic = carrier.charts[0]
+            .analytic_projection(SAMPLE_BITS.min(dec.policy().max_precision_bits), dec)
+            .map_err(mapped)?
+            .map(Box::new);
+        Ok(Self(carrier, periods, family, analytic))
     }
     /// This surface for display. See [`DisplaySurface`].
     pub fn for_display(&self, dec: &mut Decider) -> Result<DisplaySurface, Error> {
@@ -660,6 +711,7 @@ impl NativeSurface {
             self.0.for_display(dec)?,
             self.1,
             self.2.clone(),
+            None,
         )))
     }
     /// Original source surface identity.
@@ -763,7 +815,9 @@ impl NativeSurface {
                 self.0.location(parameters)
             })
             .transpose()?;
-        let mut projection = self.0.project(point_mm, canonical, self.2.as_ref(), dec)?;
+        let mut projection =
+            self.0
+                .project(point_mm, canonical, self.2.as_ref(), self.3.as_deref(), dec)?;
         if let Some(seed) = seed {
             let parameters =
                 self.align_parameters(projection.location.parameters, Some(seed.parameters));
@@ -965,7 +1019,7 @@ impl NativeCurve {
         seed: Option<NativeLocation>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
-        self.0.project(point_mm, seed, None, dec)
+        self.0.project(point_mm, seed, None, None, dec)
     }
 }
 

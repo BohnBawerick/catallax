@@ -1015,14 +1015,16 @@ impl FaceBuilder<'_, '_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
-            let angular_pipe = self.options.angular_deviation.is_some()
+            let angular = self.options.angular_deviation.is_some();
+            let angular_band = angular && self.protects_band();
+            let angular_pipe = angular
                 && matches!(
                     self.chart.surface,
                     Surface::BSpline(SplineSupport::RollingPipe(_))
                 );
-            // Saddle bands and angular pipes certify each facet from a grid
-            // seeded at the requested tolerance.
-            let chord = if spline.patch_sampling() || angular_pipe || self.protects_band() {
+            // Angular bands can use the split chord proof during refinement.
+            // Without it, leave room for triangles spanning the fixed collar.
+            let chord = if spline.patch_sampling() || angular_pipe || angular_band {
                 self.options.chord_tolerance.clone()
             } else {
                 self.options.chord_tolerance.mul_pow2(-1)

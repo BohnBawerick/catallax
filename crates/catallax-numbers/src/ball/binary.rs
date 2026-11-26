@@ -58,6 +58,17 @@ impl Binary {
         }
     }
 
+    pub(super) fn into_rational(self) -> Rational {
+        if self.exponent >= 0 {
+            Rational::from_integer(Integer(self.mantissa.0 << self.exponent as u64))
+        } else {
+            Rational {
+                n: self.mantissa,
+                d: Integer::one().mul_pow2(self.exponent.unsigned_abs()),
+            }
+        }
+    }
+
     pub(super) fn zero() -> Self {
         Self {
             mantissa: Integer::zero(),
@@ -154,9 +165,14 @@ impl Binary {
         }
         let shift = i64::from(precision) - power - 1;
         let divide = |numerator: &Integer, denominator: &Integer| {
-            let (mut quotient, remainder) = numerator.div_rem_floor(denominator).unwrap();
-            if !remainder.is_zero() && (upwards || remainder.mul_pow2(1) >= *denominator) {
-                quotient.0 += 1u32;
+            let (mut quotient, mut remainder) = numerator.div_rem_floor(denominator).unwrap();
+            if !remainder.is_zero() {
+                if !upwards {
+                    remainder.0 <<= 1u32;
+                }
+                if upwards || remainder >= *denominator {
+                    quotient.0 += 1u32;
+                }
             }
             quotient
         };
@@ -236,6 +252,27 @@ impl Binary {
                 }
             }
         };
+        Self::new(Integer(mantissa), exponent)
+    }
+
+    pub(super) fn add_sub_owned(self, mut other: Self, subtract: bool) -> Self {
+        if other.is_zero() {
+            return self;
+        }
+        if self.is_zero() {
+            if subtract {
+                other.mantissa.0 = -other.mantissa.0;
+            }
+            return other;
+        }
+        let exponent = self.exponent.min(other.exponent);
+        let (mut left, mut right) = (self.mantissa.0, other.mantissa.0);
+        match self.exponent.cmp(&other.exponent) {
+            Ordering::Less => right <<= (other.exponent - exponent) as u64,
+            Ordering::Greater => left <<= (self.exponent - exponent) as u64,
+            Ordering::Equal => {}
+        }
+        let mantissa = if subtract { left - right } else { left + right };
         Self::new(Integer(mantissa), exponent)
     }
 }

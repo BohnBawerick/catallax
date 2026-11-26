@@ -1,0 +1,82 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s12-thread-cap-unresolved",
+ "repo": "BohnBawerick/catallax",
+ "sha": "ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+ "script_exit_code": 0,
+ "seconds": 4266,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s12",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' 'H4sIAAAAAAAA/+09a3PjNpLzWb8CYbwTakPRkp8zmigpj0fZzGYydtme7F05PhZFQhJjiuACoG3F8X+/6saDICU/stlN7qrMD2MRBBqNRqP",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "echo \"f9e0ec97be92885c495f4a746fd9a2b60cea1bb619fd45fa4355d19fef03d1e7  $work/kit.tar.gz\" | sha256sum -c",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "tar -xzp -C \"$KIT\" -f \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 12 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exit 0; T9COMPLETE 63; no T9FAIL lines; T9ROW=62, T9IMPROVED=0, T9UNRESOLVED=1. run.log has no 'test result:' lines so test counts are 0 (script is not a cargo test run). Script needed apt install of libarchive-tools (done by script itself). Rows copied from /home/user/t9-scratch/s12/rows (49M total, no file above 50 MB). run.log 366307 bytes. Commands listed are the script's lines in order; exit 0 under set -e means all ran, but the log does not mark individual commands. Kit matching-thread-cap-unresolved-v3 sha256 f9e0ec97 verified OK."
+}

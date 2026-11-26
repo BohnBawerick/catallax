@@ -1,0 +1,18 @@
+P5HOST cores=4 cpu=Intel(R) Xeon(R) Processor @ 2.10GHz mem_mb=16087 kernel=Linux 6.18.44-fc-v880 revision=03e8a6d3b548beeb4e6b7607933d0e77561174ca shard=3/12 limit=0
+P5STEP tools at 01:16:29
+P5OCP 8.0.1.1
+P5STEP archive at 01:16:43
+curl: (22) The requested URL returned error: 403
+P5STEP archive attempt 1 broke
+curl: (22) The requested URL returned error: 403
+P5STEP archive attempt 2 broke
+curl: (22) The requested URL returned error: 403
+P5STEP archive attempt 3 broke
+curl: (22) The requested URL returned error: 403
+P5STEP archive attempt 4 broke
+curl: (22) The requested URL returned error: 403
+P5STEP archive attempt 5 broke
+curl: (22) The requested URL returned error: 403
+P5STEP archive attempt 6 broke
+stat: cannot statx '/tmp/p5-census/abc_0000_step_v00.7z': No such file or directory
+P5FAIL archive size

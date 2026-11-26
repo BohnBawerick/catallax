@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::BTreeMap};
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::{
-    BSplineSurface, RollingPipe,
+    BSplineCurve, BSplineSurface, RollingPipe,
     tessellation::{
         RationalSpan, chord_bound_interval, rational_spans, triangle_chord_bound_interval,
     },
@@ -39,6 +39,7 @@ pub(crate) enum NormalProof {
 
 pub(crate) struct SplineChart {
     spans: Vec<Span>,
+    rail_spans: Vec<RailSpan>,
     seams: Vec<Seam>,
     periodic: [bool; 2],
     source_domain: [[f64; 2]; 2],
@@ -49,6 +50,53 @@ pub(crate) struct SplineChart {
     // A chart lives for one mesh request. The edge plan uses a projection
     // goal at least as strict as the face that consumes it.
     edge_projections: RefCell<BTreeMap<[u64; 3], EdgeProjection>>,
+}
+
+pub(crate) struct RailSpan {
+    domain: [Rational; 2],
+    knots: [f64; 3],
+    curves: [RationalSpan; 2],
+}
+
+pub(crate) struct RailSample {
+    pub(crate) xyz: [Interval; 3],
+    uv: Uv,
+    chart_offset: Interval,
+}
+
+impl RailSpan {
+    pub(crate) fn curve(&self, row: usize) -> &RationalSpan {
+        &self.curves[row]
+    }
+
+    pub(crate) fn sample(
+        &self,
+        row: usize,
+        parameter: Interval,
+        dec: &mut Decider,
+    ) -> Result<RailSample, Refusal> {
+        let curve = self.curve(row);
+        let xyz = curve.evaluate_box([parameter, point(0.0)], dec)?;
+        let [lo, mid, hi] = self.knots.map(point);
+        dec.charge_work(4)?;
+        let u = quantize_turn((lo + parameter * (hi - lo)).mid()).clamp(lo.lo(), hi.hi());
+        let u = point(u);
+        // The chart rounds each knot independently, including the bisection.
+        // Bound the displacement between the rail parameter and the chart UV.
+        let on_curve = if u.hi() <= mid.lo() {
+            ((u - lo) / (mid - lo)) * point(0.5)
+        } else {
+            point(0.5) + ((u - mid) / (hi - mid)) * point(0.5)
+        };
+        let delta = on_curve - parameter;
+        let chart_offset =
+            point(delta.lo().abs().max(delta.hi().abs())) * curve.first_derivative_bounds()[0];
+        Ok(RailSample {
+            xyz,
+            uv: [u.mid(), row as f64],
+            chart_offset,
+        })
+    }
 }
 
 struct EdgeProjection {
@@ -500,10 +548,30 @@ impl SplineChart {
             SplineNormals::Pipe(pipe) => Some(PipeNormal::new(pipe, dec)?),
             _ => None,
         };
+        let mut rail_spans = Vec::new();
         let pieces = if saddle {
             let mut pieces = Vec::new();
             for span in rational_spans(surface, dec)? {
-                for half in span.bisect(0, dec)? {
+                let halves = span.bisect(0, dec)?;
+                if span.domain()[1].each_ref() == source_domain[1] {
+                    let [lo, hi] = source_domain[0];
+                    let knots = [
+                        &span.domain()[0][0],
+                        &halves[0].domain()[0][1],
+                        &span.domain()[0][1],
+                    ]
+                    .map(|end| quantize_turn(((end - lo) / (hi - lo)).to_f64_nearest()));
+                    dec.charge_traversal(1)?;
+                    rail_spans.push(RailSpan {
+                        domain: span.domain()[0].clone(),
+                        knots,
+                        curves: [
+                            span.boundary_curve(false, dec)?,
+                            span.boundary_curve(true, dec)?,
+                        ],
+                    });
+                }
+                for half in halves {
                     pieces.extend(half.bisect(1, dec)?);
                 }
             }
@@ -568,6 +636,7 @@ impl SplineChart {
         }
         Ok(Self {
             spans,
+            rail_spans,
             seams,
             periodic,
             source_domain: source_domain.map(|bounds| bounds.map(Rational::to_f64_nearest)),
@@ -581,6 +650,49 @@ impl SplineChart {
             },
             edge_projections: RefCell::default(),
         })
+    }
+
+    pub(crate) fn checked_rail_spans(
+        &self,
+        curve: &BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Option<&[RailSpan]>, Refusal> {
+        if self.rail_spans.is_empty() {
+            return Ok(None);
+        }
+        let mut spans = self.rail_spans.iter();
+        for (_, knots) in curve.spans() {
+            dec.charge_traversal(1)?;
+            if spans
+                .next()
+                .is_none_or(|span| span.domain.each_ref() != knots)
+            {
+                return Ok(None);
+            }
+        }
+        Ok(spans.next().is_none().then_some(&self.rail_spans))
+    }
+
+    pub(crate) fn admit_rail_sample(
+        &self,
+        sample: &RailSample,
+        position: [f64; 3],
+        goal: f64,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        dec.charge_work(3)?;
+        let residual = vertex_residual(position, sample.xyz) + sample.chart_offset;
+        if residual.hi() <= goal {
+            dec.charge_traversal(1)?;
+            self.edge_projections.borrow_mut().insert(
+                position.map(f64::to_bits),
+                EdgeProjection {
+                    uv: [sample.uv[0].rem_euclid(1.0), sample.uv[1]],
+                    residual: Some(residual),
+                },
+            );
+        }
+        Ok(())
     }
 
     fn lifts(&self, bounds: [[f64; 2]; 2]) -> impl Iterator<Item = Uv> + use<> {

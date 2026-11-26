@@ -14,7 +14,7 @@ use crate::failure;
 
 mod spline;
 use spline::SplineNormals;
-pub(crate) use spline::{CollarBridge, NormalProof, SplineChart};
+pub(crate) use spline::{CollarBridge, NormalProof, RailSample, RailSpan, SplineChart};
 
 pub(crate) const BITS: u32 = 128;
 pub(crate) type Uv = [f64; 2];

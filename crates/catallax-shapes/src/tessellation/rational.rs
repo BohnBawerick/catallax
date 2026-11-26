@@ -269,6 +269,20 @@ pub(crate) fn rational_span_range(
 }
 
 impl RationalSpan {
+    /// Extracts a longitudinal boundary curve in this span's unit coordinates.
+    pub fn boundary_curve(&self, upper: bool, dec: &mut Decider) -> Result<Self, Refusal> {
+        let column = if upper { self.degree[1] } else { 0 };
+        let stride = self.degree[1] + 1;
+        let mut control = Vec::with_capacity(self.degree[0] + 1);
+        dec.charge_traversal(control.capacity() as u64)?;
+        for h in self.control.iter().skip(column).step_by(stride) {
+            dec.charge_work(3)?;
+            let [x, y, z] = std::array::from_fn(|i| h[i] + point(self.centre[i]) * h[3]);
+            control.push([x, y, z, h[3]]);
+        }
+        Self::from_curve(control, dec)
+    }
+
     /// Prepares a normalized rational Bézier curve as a one-parameter chart.
     pub fn from_curve(controls: Vec<[Interval; 4]>, dec: &mut Decider) -> Result<Self, Refusal> {
         let degree = controls

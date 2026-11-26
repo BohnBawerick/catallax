@@ -1,0 +1,74 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-resolved-validity",
+ "repo": "BohnBawerick/catallax",
+ "sha": "fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+ "script_exit_code": 1,
+ "seconds": 5453,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-resolved-validity",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 kit>' | base64 -d | tar -xzp -C \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-resolved-validity.sh\" fe8beba50f716c1bcaf4176f680065b962e8fa2a \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test lines in run.log (test_counts are zero because the script runs no cargo test). The last command is a nested script (cloud-resolved-validity.sh); run.log ends with T9BASELINECOMPLETE 4 of 4 then T9LONGPAIRCOMPLETE 3 of 4. T9LONGPAIR for model 00000640 reported status changed_outcome_or_refusal: after-change outcome was timeout at stage open (before-change outcome was complete). Models 00000497, 00000482, 00000644 reported status pass. run.log does not print which line inside the nested script returned exit 1; the nonzero exit follows the 3 of 4 completion line. Toolchain rustc 1.100.0. cargo fetch succeeded. bsdtar was installed via apt by the script."
+}

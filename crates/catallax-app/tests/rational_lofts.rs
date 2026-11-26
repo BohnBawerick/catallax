@@ -357,6 +357,45 @@ fn quadratic_and_cubic_profiles_keep_exact_volume_and_area_centroid() {
 }
 
 #[test]
+fn warm_spline_face_keeps_the_operation_budget_refusal() {
+    let app = build(&definition(
+        vec![json!([spline("a", false)]), json!([spline("b", false)])],
+        &["0", "3"],
+        "ruled",
+    ));
+    let model = &app.built.model;
+    let face = model
+        .faces_of_body(app.built.result)
+        .into_iter()
+        .find(|&face| {
+            matches!(
+                model.geom().surface(model.face(face).surface),
+                catallax_shapes::Surface::BSpline(_)
+            )
+        })
+        .unwrap();
+    let measure = |cap, deadline| {
+        let mut dec = Decider::default();
+        dec.set_deadline(deadline);
+        catallax_numbers::with_operation_budget(cap, || {
+            catallax_measure::face_area(model, face, &accuracy(), &mut dec)
+        })
+    };
+    let warm = measure(u64::MAX, None).0.unwrap();
+    // A deadline disables contribution reuse but leaves the work cap in
+    // force. Set it well beyond any runtime for this test.
+    let deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(3600));
+    let (cold, work) = measure(u64::MAX, deadline);
+    assert_eq!(warm.value, cold.unwrap().value);
+    let cap = work.used - 1;
+    let (cold, cold_work) = measure(cap, deadline);
+    let (warm, warm_work) = measure(cap, None);
+    assert!(cold_work.exhausted && warm_work.exhausted);
+    assert_eq!(warm.unwrap_err().code, cold.unwrap_err().code);
+    assert_eq!(warm_work.used, cold_work.used);
+}
+
+#[test]
 fn later_segment_splits_add_no_names_edges_or_vertices() {
     let top = polygon(
         "b",

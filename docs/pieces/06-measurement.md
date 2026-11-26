@@ -379,6 +379,17 @@ The architect checked these closed forms with `sympy` and 30-digit decimals in a
 
 ## Speed: measured, never gated
 
+Gauss root certification uses integer Horner evaluation after the normalized
+first product. It retains the original brackets, bisection and arithmetic
+allowance. Taylor products visit only nonzero terms, in the original
+rounding and charge order.
+
+Complete rational patches can reuse a face's quadrature contribution
+when its carrier, sense, integration frame, property and refinement match.
+The current face still passes its domain checks. Reuse replays both the
+refinement allowance debit and the operation's cancellation checkpoints
+before the contribution is added to the body sum.
+
 No test fails for speed. A benchmark target measures and prints:
 
 1. time of each property against requested accuracy (`10^-6` to `10^-30`) for each primitive and the bodies of cases 7 to 13;

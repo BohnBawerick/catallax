@@ -1,7 +1,7 @@
 //! Eight-point Gauss integration with certified roots, weights and remainder.
 
 use super::{Ball, Checked, Coefficients, Program, Rational, Refusal, Stop, Work, turning};
-use catallax_numbers::Sign;
+use catallax_numbers::{Integer, Sign};
 
 mod tensor;
 pub(crate) use tensor::NativeArea;
@@ -25,40 +25,47 @@ fn certificate() -> Stop {
     ))
 }
 
-fn charge_exact(work: &mut Work, a: &Rational, b: &Rational, multiply: bool) -> Checked<()> {
-    let limbs = |value: &Rational| {
-        value
-            .numerator()
-            .bit_length()
-            .div_ceil(64)
-            .max(1)
-            .saturating_add(value.denominator().bit_length().div_ceil(64).max(1))
-    };
-    let (a, b) = (limbs(a), limbs(b));
-    let cost = if multiply {
-        a.saturating_mul(b)
-    } else {
-        a.saturating_add(b)
-    };
+fn limbs(numerator: &Integer, denominator: &Integer) -> u64 {
+    numerator.bit_length().div_ceil(64).max(1) + denominator.bit_length().div_ceil(64).max(1)
+}
+
+fn charge_exact(work: &mut Work, cost: u64) -> Checked<()> {
     let unit = u64::from(work.precision.div_ceil(64)).pow(2);
-    // Root certificates use larger exact rationals than the quadrature balls.
-    // Reserve their limb cost in the same work units as the surrounding panel.
+    // Keep the original price of each exact rational operation.
     for _ in 0..cost.div_ceil(unit).max(1) {
         work.charge()?;
     }
     Ok(())
 }
 
-fn polynomial(x: &Rational, work: &mut Work) -> Checked<Rational> {
-    let mut result = Rational::zero();
-    for coefficient in POLYNOMIAL {
-        charge_exact(work, &result, x, true)?;
-        result = &result * x;
-        let coefficient = Rational::from_i64(coefficient);
-        charge_exact(work, &result, &coefficient, false)?;
-        result = result + coefficient;
+fn polynomial(x: &Rational, work: &mut Work) -> Checked<Sign> {
+    const SMALL: u64 = 2; // Two one-limb integers, including zero's numerator.
+    let x_num = x.numerator();
+    let x_den = x.denominator();
+    let x_limbs = limbs(x_num, x_den);
+    charge_exact(work, SMALL * x_limbs)?;
+    charge_exact(work, SMALL + SMALL)?;
+    charge_exact(work, SMALL * x_limbs)?;
+    let first = &Rational::from_i64(POLYNOMIAL[0]) * x;
+    charge_exact(work, limbs(first.numerator(), first.denominator()) + SMALL)?;
+
+    // Brackets and their midpoints have only 2 and 5 in the denominator.
+    // The leading coefficient has one factor of 5, and the next coefficient
+    // is zero. After the first product its numerator is coprime to x_den.
+    // The remaining Horner denominators include x_den, so adding an integer
+    // cannot introduce a common factor. There is nothing left to reduce.
+    let mut numerator = first.numerator().clone();
+    let mut denominator = first.denominator().clone();
+    for coefficient in POLYNOMIAL.into_iter().skip(2) {
+        charge_exact(work, limbs(&numerator, &denominator) * x_limbs)?;
+        numerator = &numerator * x_num;
+        denominator = &denominator * x_den;
+        charge_exact(work, limbs(&numerator, &denominator) + SMALL)?;
+        if coefficient != 0 {
+            numerator = numerator + Integer::from_i64(coefficient) * &denominator;
+        }
     }
-    Ok(result)
+    Ok(numerator.sign())
 }
 
 impl Rule {
@@ -90,14 +97,14 @@ impl Rule {
                 return Err(certificate());
             }
             previous = high.clone();
-            let lower_sign = polynomial(&low, work)?.sign();
-            let upper_sign = polynomial(&high, work)?.sign();
+            let lower_sign = polynomial(&low, work)?;
+            let upper_sign = polynomial(&high, work)?;
             if lower_sign == Sign::Zero || upper_sign == Sign::Zero || lower_sign == upper_sign {
                 return Err(certificate());
             }
             while &high - &low > threshold {
                 let middle = (&low + &high).mul_pow2(-1);
-                let sign = polynomial(&middle, work)?.sign();
+                let sign = polynomial(&middle, work)?;
                 if sign == Sign::Zero {
                     low = middle.clone();
                     high = middle;
@@ -191,6 +198,35 @@ mod tests {
     use super::*;
     use crate::integrate::Builder;
     use catallax_numbers::{Decider, with_operation_budget};
+
+    #[test]
+    fn integer_root_sign_keeps_the_rational_budget_at_generated_brackets() {
+        let dec = Decider::default();
+        let policy = *dec.policy();
+        for (lo, hi) in super::super::gauss_nodes::NODE_INTERVALS {
+            let lo = Rational::parse(lo).unwrap();
+            let hi = Rational::parse(hi).unwrap();
+            for x in [&lo, &hi, &(&lo + &hi).mul_pow2(-1)] {
+                let mut old = Work::new(&policy, 128, policy.max_work, &dec).unwrap();
+                let mut new = Work::new(&policy, 128, policy.max_work, &dec).unwrap();
+                let mut value = Rational::zero();
+                for c in POLYNOMIAL {
+                    let x_limbs = limbs(x.numerator(), x.denominator());
+                    charge_exact(
+                        &mut old,
+                        limbs(value.numerator(), value.denominator()) * x_limbs,
+                    )
+                    .unwrap();
+                    value = &value * x;
+                    charge_exact(&mut old, limbs(value.numerator(), value.denominator()) + 2)
+                        .unwrap();
+                    value = value + Rational::from_i64(c);
+                }
+                assert_eq!(polynomial(x, &mut new).unwrap(), value.sign());
+                assert_eq!(new.remaining(), old.remaining());
+            }
+        }
+    }
 
     #[test]
     fn certified_rule_integrates_monomials_and_its_first_remainder() {

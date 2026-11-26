@@ -3,14 +3,73 @@
 use crate::integrate::{Builder, Expr, NativeArea, Program, Stop, Work};
 use crate::surface::Property;
 use catallax_numbers::{Ball, Decider, Integer, Rational, Real, RealPoly, Refusal};
-use catallax_shapes::RPoint3;
+use catallax_shapes::{RPoint3, RationalPatch};
 use catallax_topology::{FaceId, Model, RationalPatchFace, Sense};
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 
 pub(crate) struct Band {
     spans: Vec<PatchProgram>,
     fitted: bool,
-    best: Option<Vec<Ball>>,
+    best: Option<Arc<[Ball]>>,
+    cache: Option<FaceKey>,
+}
+
+#[derive(Clone)]
+struct FaceKey {
+    patch: RationalPatch,
+    anchor: RPoint3,
+    property: Property,
+    sense: Sense,
+}
+
+struct Contribution {
+    face: FaceKey,
+    precision: u32,
+    depth: u32,
+    cost: u64,
+    values: Arc<[Ball]>,
+}
+
+const CACHE_CAPACITY: usize = 64;
+
+thread_local! {
+    static CONTRIBUTIONS: RefCell<VecDeque<Contribution>> = const { RefCell::new(VecDeque::new()) };
+}
+
+impl FaceKey {
+    fn lookup(&self, depth: u32, work: &mut Work) -> Result<Option<Arc<[Ball]>>, Stop> {
+        CONTRIBUTIONS.with_borrow(|cache| {
+            let Some(entry) = cache.iter().rev().find(|entry| {
+                entry.precision == work.precision
+                    && entry.depth == depth
+                    && self.property == entry.face.property
+                    && self.sense == entry.face.sense
+                    && self.patch.shares_definition_nodes(&entry.face.patch)
+                    && self.anchor == entry.face.anchor
+            }) else {
+                return Ok(None);
+            };
+            work.charge_reused(entry.cost)?;
+            Ok(Some(entry.values.clone()))
+        })
+    }
+
+    fn remember(&self, depth: u32, precision: u32, cost: u64, values: Arc<[Ball]>) {
+        CONTRIBUTIONS.with_borrow_mut(|cache| {
+            if cache.len() == CACHE_CAPACITY {
+                cache.pop_front();
+            }
+            cache.push_back(Contribution {
+                face: self.clone(),
+                precision,
+                depth,
+                cost,
+                values,
+            });
+        });
+    }
 }
 
 enum PatchProgram {
@@ -290,6 +349,7 @@ impl Marginals {
             spans,
             fitted: true,
             best: None,
+            cache: None,
         })
     }
 }
@@ -349,13 +409,22 @@ pub(crate) fn prepare(
     let columns = degrees[1] + 1;
     // Bounded polynomial degrees keep a binary64 panel's working set small.
     let native_supported = degrees.iter().all(|&degree| degree <= 3);
+    let sense = model.face(face).sense;
+    // These forms have only rational constants and no budgeted external
+    // decisions. Check the complete face domain even on a cache hit.
+    let cache =
+        (!fitted && checked.support().carrier().has_rational_definition()).then(|| FaceKey {
+            patch: checked.support().clone(),
+            anchor: anchor.clone(),
+            property,
+            sense,
+        });
     let anchor = [&anchor.x, &anchor.y, &anchor.z].map(|value| Real::from_rational(value.clone()));
     let spans: Vec<_> = checked
         .support()
         .bezier_spans(dec)?
         .filter_map(|(_, controls)| {
             let coordinates = unit_equations(controls, columns, &anchor, fitted);
-            let sense = model.face(face).sense;
             if fitted {
                 fitted_forms(&coordinates, property, sense, marginals, native_supported)
             } else {
@@ -370,6 +439,7 @@ pub(crate) fn prepare(
         spans,
         fitted,
         best: None,
+        cache,
     }))
 }
 
@@ -394,7 +464,7 @@ impl Band {
                 (own.hi() - own.lo()) * Rational::from_i64(8) <= other.hi() - other.lo()
             })
         {
-            return Ok(best.clone());
+            return Ok(best.to_vec());
         }
         let marginal = self
             .spans
@@ -428,6 +498,19 @@ impl Band {
         } else {
             Some(work.gauss_rule()?)
         };
+        // Obtain the rule even on a hit: its proof and its charge belong to
+        // this attempt and it may be needed by other faces in the same sum.
+        let cache = self.cache.as_ref().filter(|_| {
+            !rectangle && work.dec.deadline().is_none() && catallax_numbers::shared_caches()
+        });
+        if let Some(face) = cache
+            && let Some(values) = face.lookup(depth, work)?
+        {
+            let result = values.to_vec();
+            self.best = Some(values);
+            return Ok(result);
+        }
+        let remaining = work.remaining();
         let axis = |index| -> Vec<_> {
             (0..=counts[index])
                 .map(|i| {
@@ -473,7 +556,16 @@ impl Band {
         }
         let sums = sums.ok_or(Stop::Budget)?;
         if !self.fitted && !rectangle {
-            self.best = Some(sums.clone());
+            let values = Arc::from(sums.as_slice());
+            if let Some(face) = cache {
+                face.remember(
+                    depth,
+                    work.precision,
+                    remaining - work.remaining(),
+                    Arc::clone(&values),
+                );
+            }
+            self.best = Some(values);
         }
         Ok(sums)
     }

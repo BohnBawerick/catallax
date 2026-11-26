@@ -81,6 +81,13 @@ impl<'a> Work<'a> {
         self.remaining
     }
 
+    /// Debit a reused pure calculation without changing the refinement budget.
+    pub(crate) fn charge_reused(&mut self, cost: u64) -> Checked<()> {
+        self.dec.check_deadline()?;
+        self.remaining = self.remaining.checked_sub(cost).ok_or(Stop::Budget)?;
+        Ok(())
+    }
+
     pub(crate) fn gauss_rule(&mut self) -> Checked<Arc<GaussRule>> {
         if let Some(rule) = &self.gauss {
             return Ok(rule.clone());
@@ -142,6 +149,11 @@ impl<'a> Work<'a> {
         if a.is_exact_zero() || b.is_exact_zero() {
             return Ok(self.zero.clone());
         }
+        self.mul_nonzero(a, b)
+    }
+
+    #[inline]
+    fn mul_nonzero(&mut self, a: &Ball, b: &Ball) -> Checked<Ball> {
         self.charge()?;
         Ok(a * b)
     }
@@ -182,6 +194,12 @@ impl<'a> Work<'a> {
     fn zeros<const N: usize>(&self) -> [Ball; N] {
         std::array::from_fn(|_| self.zero.clone())
     }
+}
+
+fn support(jet: &[Ball]) -> u32 {
+    jet.iter().enumerate().fold(0, |bits, (k, value)| {
+        bits | (u32::from(!value.is_exact_zero()) << k)
+    })
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -622,27 +640,21 @@ impl Program {
                     }
                 }
                 Node::Mul(a, b) if a == b && N > 1 => {
-                    let order = values[*a]
-                        .iter()
-                        .rposition(|b| !b.is_exact_zero())
-                        .unwrap_or(0);
+                    let left = support(&values[*a]);
+                    let right = left.reverse_bits();
                     let mut products: [Option<Ball>; N] = std::array::from_fn(|_| None);
-                    for (k, coefficient) in
-                        value.iter_mut().enumerate().take((2 * order + 1).min(N))
-                    {
+                    for (k, coefficient) in value.iter_mut().enumerate() {
                         if !needed(k) {
                             continue;
                         }
-                        for j in k.saturating_sub(order)..=k.min(order) {
+                        let mut terms = left & (right >> (31 - k));
+                        while terms != 0 {
+                            let j = terms.trailing_zeros() as usize;
+                            terms &= terms - 1;
                             let index = j.min(k - j);
                             if j == index {
-                                products[index] = if !values[*a][j].is_exact_zero()
-                                    && !values[*a][k - j].is_exact_zero()
-                                {
-                                    Some(work.mul(&values[*a][j], &values[*a][k - j])?)
-                                } else {
-                                    None
-                                };
+                                products[index] =
+                                    Some(work.mul_nonzero(&values[*a][j], &values[*a][k - j])?);
                             }
                             // Reuse products without reordering rounded additions.
                             if let Some(product) = &products[index] {
@@ -651,29 +663,30 @@ impl Program {
                         }
                     }
                 }
+                Node::Mul(a, b) if N == 1 => {
+                    if needed(0) {
+                        value[0] = work.mul(&values[*a][0], &values[*b][0])?;
+                    }
+                }
                 Node::Mul(a, b) => {
-                    let a_order = values[*a]
-                        .iter()
-                        .rposition(|b| !b.is_exact_zero())
-                        .unwrap_or(0);
-                    let b_order = values[*b]
-                        .iter()
-                        .rposition(|b| !b.is_exact_zero())
-                        .unwrap_or(0);
-                    for (k, coefficient) in value
-                        .iter_mut()
-                        .enumerate()
-                        .take((a_order + b_order + 1).min(N))
-                    {
+                    let left = support(&values[*a]);
+                    let right = support(&values[*b]).reverse_bits();
+                    for (k, coefficient) in value.iter_mut().enumerate() {
                         if !needed(k) {
                             continue;
                         }
-                        for j in k.saturating_sub(b_order)..=k.min(a_order) {
-                            if !values[*a][j].is_exact_zero() && !values[*b][k - j].is_exact_zero()
-                            {
-                                let product = work.mul(&values[*a][j], &values[*b][k - j])?;
-                                *coefficient = work.add(coefficient, &product)?;
-                            }
+                        // Bit j is set exactly when both factors of the j-th
+                        // term are nonzero. Visit them in the original order.
+                        let mut terms = left & (right >> (31 - k));
+                        while terms != 0 {
+                            let j = terms.trailing_zeros() as usize;
+                            terms &= terms - 1;
+                            let product = work.mul_nonzero(&values[*a][j], &values[*b][k - j])?;
+                            *coefficient = if coefficient.is_exact_zero() {
+                                product
+                            } else {
+                                work.add(coefficient, &product)?
+                            };
                         }
                     }
                 }
@@ -701,7 +714,8 @@ impl Program {
                             let mut numerator = values[*a][k].clone();
                             for j in 1..=k.min(order) {
                                 if !values[*b][j].is_exact_zero() && !value[k - j].is_exact_zero() {
-                                    let product = work.mul(&values[*b][j], &value[k - j])?;
+                                    let product =
+                                        work.mul_nonzero(&values[*b][j], &value[k - j])?;
                                     numerator = work.sub(&numerator, &product)?;
                                 }
                             }
@@ -731,7 +745,7 @@ impl Program {
                                     products[index] = if !value[j].is_exact_zero()
                                         && !value[k - j].is_exact_zero()
                                     {
-                                        Some(work.mul(&value[j], &value[k - j])?)
+                                        Some(work.mul_nonzero(&value[j], &value[k - j])?)
                                     } else {
                                         None
                                     };
@@ -1128,6 +1142,31 @@ mod tests {
                 assert!(actual[row][k].contains(&Rational::from_i64(*coefficient)));
             }
         }
+    }
+
+    #[test]
+    fn sparse_products_keep_convolution_order_and_budget() {
+        let policy = BudgetPolicy::default();
+        let dec = Decider::new(policy);
+        let mut work = Work::new(&policy, 12, policy.max_work, &dec).unwrap();
+        let mut reference = Work::new(&policy, 12, policy.max_work, &dec).unwrap();
+        let builder = Builder::default();
+        let (a, b) = (builder.input(0), builder.input(1));
+        let program = builder.finish(&[a * b]);
+        let inputs = [[1, 1, 0, -17, 0, 41, 0], [1, 0, 31, 0, -5, 0, 1]]
+            .map(|row| row.map(|n| Ball::from_rational(&Rational::from_ratio(n, 13).unwrap(), 12)));
+        let actual = program
+            .evaluate(&inputs, Coefficients::All, &mut work)
+            .unwrap();
+        for (k, value) in actual[0].iter().enumerate() {
+            let mut expected = reference.rational(&Rational::zero()).unwrap();
+            for j in 0..=k {
+                let product = reference.mul(&inputs[0][j], &inputs[1][k - j]).unwrap();
+                expected = reference.add(&expected, &product).unwrap();
+            }
+            assert_eq!((value.mid(), value.rad()), (expected.mid(), expected.rad()));
+        }
+        assert_eq!(work.remaining(), reference.remaining());
     }
 
     #[test]

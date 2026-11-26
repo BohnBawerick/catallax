@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 pub(crate) struct Band {
     spans: Vec<PatchProgram>,
+    marginal: bool,
     fitted: bool,
     best: Option<Arc<[Ball]>>,
     cache: Option<FaceKey>,
@@ -39,10 +40,28 @@ thread_local! {
     static CONTRIBUTIONS: RefCell<VecDeque<Contribution>> = const { RefCell::new(VecDeque::new()) };
 }
 
+struct Panels {
+    depths: [u32; 2],
+    counts: [usize; 2],
+    native: bool,
+}
+
+pub(crate) struct RecordedPanels {
+    values: Vec<Ball>,
+    cost: u64,
+    quadrature_dominates: bool,
+    charges: catallax_numbers::Charges,
+}
+
 impl FaceKey {
-    fn lookup(&self, depth: u32, work: &mut Work) -> Result<Option<Arc<[Ball]>>, Stop> {
+    fn matching<T>(
+        &self,
+        depth: u32,
+        work: &Work,
+        read: impl FnOnce(&Contribution) -> T,
+    ) -> Option<T> {
         let budgeted = catallax_numbers::operation_budget_active();
-        let found = CONTRIBUTIONS.with_borrow(|cache| {
+        CONTRIBUTIONS.with_borrow(|cache| {
             cache
                 .iter()
                 .rev()
@@ -55,7 +74,13 @@ impl FaceKey {
                         && self.patch.shares_definition_nodes(&entry.face.patch)
                         && self.anchor == entry.face.anchor
                 })
-                .map(|entry| (entry.cost, entry.checkpoints, entry.values.clone()))
+                .map(read)
+        })
+    }
+
+    fn lookup(&self, depth: u32, work: &mut Work) -> Result<Option<Arc<[Ball]>>, Stop> {
+        let found = self.matching(depth, work, |entry| {
+            (entry.cost, entry.checkpoints, entry.values.clone())
         });
         if let Some((cost, checkpoints, values)) = found
             && work.reuse(cost, checkpoints)?
@@ -364,6 +389,7 @@ impl Marginals {
             .collect();
         (!spans.is_empty()).then_some(Band {
             spans,
+            marginal: true,
             fitted: true,
             best: None,
             cache: None,
@@ -407,6 +433,7 @@ fn fitted_forms(
     Some(PatchProgram::Tensor(k.finish(&[area]), native))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare(
     model: &Model,
     face: FaceId,
@@ -414,6 +441,7 @@ pub(crate) fn prepare(
     property: Property,
     fitted: bool,
     marginals: &mut Marginals,
+    reuse_contributions: bool,
     dec: &mut Decider,
 ) -> Result<Option<Band>, Refusal> {
     let checked = RationalPatchFace::of_face(model, face, dec)?.ok_or_else(|| {
@@ -429,22 +457,38 @@ pub(crate) fn prepare(
     let sense = model.face(face).sense;
     // Check the complete face domain even when a contribution is cached.
     let coordinates = [&anchor.x, &anchor.y, &anchor.z].map(|r| Real::from_rational(r.clone()));
-    let spans: Vec<_> = checked
-        .support()
-        .bezier_spans(dec)?
-        .filter_map(|(_, controls)| {
-            let coordinates = unit_equations(controls, columns, &coordinates, fitted);
-            if fitted {
-                fitted_forms(&coordinates, property, sense, marginals, native_supported)
-            } else {
-                Some(PatchProgram::Tensor(
-                    forms(&coordinates, property, sense),
-                    None,
-                ))
+    let mut compile = |controls: &[[Real; 4]]| {
+        let coordinates = unit_equations(controls, columns, &coordinates, fitted);
+        if fitted {
+            fitted_forms(&coordinates, property, sense, marginals, native_supported)
+        } else {
+            Some(PatchProgram::Tensor(
+                forms(&coordinates, property, sense),
+                None,
+            ))
+        }
+    };
+    let spans: Vec<_> = if reuse_contributions {
+        checked
+            .support()
+            .bezier_spans(dec)?
+            .filter_map(|(_, controls)| compile(controls))
+            .collect()
+    } else {
+        // A full face-area request can be recorded only if it makes no
+        // charged cache reads. Extract the same exact spans on every thread.
+        let carrier = checked.support().carrier();
+        let mut programs = Vec::new();
+        for span in carrier.span_indices() {
+            dec.check_deadline()?;
+            if let Some(program) = compile(&carrier.span_bezier_controls(span, dec)?) {
+                programs.push(program);
             }
-        })
-        .collect();
-    let cache = (!fitted
+        }
+        programs
+    };
+    let cache = (reuse_contributions
+        && !fitted
         && spans.iter().all(
             |span| matches!(span, PatchProgram::Tensor(program, None) if program.is_rational()),
         ))
@@ -456,6 +500,7 @@ pub(crate) fn prepare(
     });
     Ok((!spans.is_empty()).then_some(Band {
         spans,
+        marginal: false,
         fitted,
         best: None,
         cache,
@@ -475,6 +520,7 @@ impl Band {
         depth: u32,
         rectangle: bool,
         work: &mut Work,
+        recorded: Option<RecordedPanels>,
     ) -> Result<Vec<Ball>, Stop> {
         if !self.fitted
             && !rectangle
@@ -485,39 +531,13 @@ impl Band {
         {
             return Ok(best.to_vec());
         }
-        let marginal = self
-            .spans
-            .iter()
-            .all(|span| matches!(span, PatchProgram::Marginal(_)));
-        let native = work.native_area && self.has_native_area();
-        let depths = if !rectangle && native {
-            work.tensor_depth
-        } else if native {
-            // A broad range of the rational profile is the first domain
-            // obstacle. Subsequent Gauss splits use measured remainders.
-            [depth, depth.saturating_sub(1)]
-        } else if marginal {
-            [depth, 0]
-        } else {
-            [depth; 2]
-        };
-        let counts = [
-            1usize.checked_shl(depths[0]).ok_or(Stop::Budget)?,
-            1usize.checked_shl(depths[1]).ok_or(Stop::Budget)?,
-        ];
-        if counts[0]
-            .checked_mul(counts[1])
-            .and_then(|cells| cells.checked_mul(self.spans.len()))
-            .is_none_or(|cells| cells as u64 > work.remaining())
-        {
-            return Err(Stop::Budget);
-        }
-        let rule = if rectangle || marginal {
+        let plan = self.panel_plan(depth, rectangle, work)?;
+        let rule = if rectangle || self.marginal {
             None
         } else {
             Some(work.gauss_rule()?)
         };
-        // Obtain the rule even on a hit: its proof and its charge belong to
+        // The rule is shared by the whole attempt, including on a cache hit.
         // this attempt and it may be needed by other faces in the same sum.
         let cache = self.cache.as_ref().filter(|_| {
             !rectangle && work.dec.deadline().is_none() && catallax_numbers::shared_caches()
@@ -535,6 +555,123 @@ impl Band {
         // contribution does not turn an exhausted request into an answer.
         let before = (cache.is_some() && catallax_numbers::operation_budget_active())
             .then(catallax_numbers::current_operation_work);
+        let sums = match recorded {
+            Some(recorded)
+                if work.adopt_panels(
+                    recorded.cost,
+                    recorded.quadrature_dominates,
+                    &recorded.charges,
+                ) =>
+            {
+                recorded.values
+            }
+            _ => self.integrate_panels(plan, rule.as_deref(), rectangle, work)?,
+        };
+        if !self.fitted && !rectangle {
+            let values = Arc::from(sums.as_slice());
+            if let Some(face) = cache {
+                let checkpoints = before.and_then(|before| {
+                    let after = catallax_numbers::current_operation_work();
+                    (!before.exhausted && !after.exhausted).then(|| after.used - before.used)
+                });
+                if before.is_none() || checkpoints.is_some() {
+                    face.remember(
+                        depth,
+                        work.precision,
+                        remaining - work.remaining(),
+                        checkpoints,
+                        Arc::clone(&values),
+                    );
+                }
+            }
+            self.best = Some(values);
+        }
+        Ok(sums)
+    }
+
+    pub(crate) fn can_speculate(&self, depth: u32, rectangle: bool, work: &Work) -> bool {
+        // The writer must make the first Gauss rule and decide reuse against
+        // the actual prefix. Native panels add floating errors individually,
+        // so they cannot be merged as a subtotal.
+        rectangle
+            || ((self.fitted || self.best.is_none())
+                && (self.marginal || work.has_gauss_rule())
+                && !(work.native_area && self.has_native_area())
+                && (work.dec.deadline().is_some()
+                    || self
+                        .cache
+                        .as_ref()
+                        .is_none_or(|face| face.matching(depth, work, |_| ()).is_none())))
+    }
+
+    pub(crate) fn record_panels(
+        &self,
+        depth: u32,
+        rectangle: bool,
+        seed: &Work,
+        dec: &Decider,
+    ) -> Option<RecordedPanels> {
+        let mut work = seed.panel_worker(dec);
+        let plan = self.panel_plan(depth, rectangle, &work).ok()?;
+        let (values, charges) = catallax_numbers::record(|| {
+            let rule = if rectangle || self.marginal {
+                None
+            } else {
+                Some(work.gauss_rule()?)
+            };
+            self.integrate_panels(plan, rule.as_deref(), rectangle, &mut work)
+        });
+        Some(RecordedPanels {
+            values: values.ok()?,
+            cost: seed.remaining() - work.remaining(),
+            quadrature_dominates: work.quadrature_dominates,
+            charges: charges?,
+        })
+    }
+
+    fn panel_plan(&self, depth: u32, rectangle: bool, work: &Work) -> Result<Panels, Stop> {
+        let native = work.native_area && self.has_native_area();
+        let depths = if native {
+            if rectangle {
+                [depth, depth.saturating_sub(1)]
+            } else {
+                work.tensor_depth
+            }
+        } else if self.marginal {
+            [depth, 0]
+        } else {
+            [depth; 2]
+        };
+        let counts = [
+            1usize.checked_shl(depths[0]).ok_or(Stop::Budget)?,
+            1usize.checked_shl(depths[1]).ok_or(Stop::Budget)?,
+        ];
+        if counts[0]
+            .checked_mul(counts[1])
+            .and_then(|cells| cells.checked_mul(self.spans.len()))
+            .is_none_or(|cells| cells as u64 > work.remaining())
+        {
+            return Err(Stop::Budget);
+        }
+        Ok(Panels {
+            depths,
+            counts,
+            native,
+        })
+    }
+
+    fn integrate_panels(
+        &self,
+        plan: Panels,
+        rule: Option<&crate::integrate::GaussRule>,
+        rectangle: bool,
+        work: &mut Work,
+    ) -> Result<Vec<Ball>, Stop> {
+        let Panels {
+            depths,
+            counts,
+            native,
+        } = plan;
         let axis = |index| -> Vec<_> {
             (0..=counts[index])
                 .map(|i| {
@@ -563,7 +700,7 @@ impl Band {
                         for v in travel.windows(2) {
                             let u = [&u[0], &u[1]];
                             let v = [&v[0], &v[1]];
-                            let values = match (&rule, area) {
+                            let values = match (rule, area) {
                                 (Some(rule), Some(area)) if native => {
                                     area.integrate(u, v, rule, work)?
                                 }
@@ -578,27 +715,7 @@ impl Band {
                 }
             }
         }
-        let sums = sums.ok_or(Stop::Budget)?;
-        if !self.fitted && !rectangle {
-            let values = Arc::from(sums.as_slice());
-            if let Some(face) = cache {
-                let checkpoints = before.and_then(|before| {
-                    let after = catallax_numbers::current_operation_work();
-                    (!before.exhausted && !after.exhausted).then(|| after.used - before.used)
-                });
-                if before.is_none() || checkpoints.is_some() {
-                    face.remember(
-                        depth,
-                        work.precision,
-                        remaining - work.remaining(),
-                        checkpoints,
-                        Arc::clone(&values),
-                    );
-                }
-            }
-            self.best = Some(values);
-        }
-        Ok(sums)
+        sums.ok_or(Stop::Budget)
     }
 }
 

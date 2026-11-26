@@ -108,6 +108,43 @@ impl<'a> Work<'a> {
         Ok(rule)
     }
 
+    pub(crate) fn has_gauss_rule(&self) -> bool {
+        self.gauss.is_some()
+    }
+
+    /// Gives a panel worker a ceiling, not a reservation. Only the writer can
+    /// admit a contribution after spending the preceding faces' work.
+    pub(crate) fn panel_worker<'b>(&self, dec: &'b Decider) -> Work<'b> {
+        Work {
+            precision: self.precision,
+            dec,
+            remaining: self.remaining,
+            zero: self.zero.clone(),
+            quadrature_dominates: false,
+            tensor_error: [0.; 2],
+            native_area: self.native_area,
+            tensor_depth: self.tensor_depth,
+            gauss: self.gauss.clone(),
+        }
+    }
+
+    pub(crate) fn adopt_panels(
+        &mut self,
+        cost: u64,
+        quadrature_dominates: bool,
+        charges: &catallax_numbers::Charges,
+    ) -> bool {
+        let Some(remaining) = self.remaining.checked_sub(cost) else {
+            return false;
+        };
+        if !charges.adopt(self.dec) {
+            return false;
+        }
+        self.remaining = remaining;
+        self.quadrature_dominates |= quadrature_dominates;
+        true
+    }
+
     fn charge(&mut self) -> Checked<()> {
         self.dec.check_deadline()?;
         let limbs = u64::from(self.precision.div_ceil(64));

@@ -1,0 +1,74 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s18-unresolved",
+ "repo": "BohnBawerick/catallax",
+ "sha": "fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+ "script_exit_code": 1,
+ "seconds": 4664,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s18",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<gzipped base64 kit>' | base64 -d | tar -xzp -C \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" fe8beba50f716c1bcaf4176f680065b962e8fa2a 18 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "The script is a census run, not cargo test, so run.log has no 'test result:' lines (counts are 0). cloud-run.sh built release binaries, printed 'T9KIT open-timeout-unresolved-v1' and 54 T9ROW lines, then one T9FAIL line (last line of run.log) and exited 1. T9FAIL: model 00008662, source_sha256 97bde465b2e45dc2e6ea30049f9ba00bf1db2a2b5bd9e53453ecf5f46f62bd55, status validity_regression, changed_files [document.step], standard_not_worse false (standard check of the after file: valid false, valid_solid_count 0, before file valid true). Which line inside cloud-run.sh exited 1 is not shown beyond that T9FAIL; per-command statuses before the last are inferred from the script's progress (set -e). cargo fetch succeeded. rustc 1.100.0."
+}

@@ -2,8 +2,11 @@
 //!
 //! [`mesh_body`] samples each topological edge once. Faces reference the same
 //! vertex indices on either side of that edge. Periodic chart copies close
-//! seams without adding topological edges. All traversal and refinement orders
-//! are fixed; the implementation has no thread-local or process-global state.
+//! seams without adding topological edges. Each face is then built as its own
+//! result against those samples, and the body places the results in face
+//! order. A face reused from an earlier mesh passes the same placement checks
+//! as a fresh one. All traversal and refinement orders are fixed; the
+//! implementation has no thread-local or process-global state.
 //!
 //! Spline faces use rational charts split at their knots and checked periodic
 //! joins. Whole-span chord bounds include coordinate rounding, and interval
@@ -21,7 +24,10 @@ use std::{io::Write, ops::Range};
 use catallax_numbers::{Answered, Decider, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
+mod assembly;
 mod bounded;
+#[cfg(feature = "display-capture")]
+pub mod capture;
 mod chart;
 mod controls;
 mod display;
@@ -206,6 +212,21 @@ pub fn mesh_body_reusing(
 }
 
 fn mesh_body_impl(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    previous: Option<(&Model, &Mesh)>,
+    dec: &mut Decider,
+) -> Answered<Mesh> {
+    #[cfg(feature = "display-capture")]
+    let call = capture::Call::start("mesh_body_impl", capture::carriers(model, body));
+    let result = mesh_body_checked(model, body, options, previous, dec);
+    #[cfg(feature = "display-capture")]
+    call.finish(options, &result);
+    result
+}
+
+fn mesh_body_checked(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,

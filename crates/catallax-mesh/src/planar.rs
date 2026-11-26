@@ -1,14 +1,19 @@
 //! Planar trims need exact predicates before positions are rounded for display.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    ops::Index,
+};
 
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::Plane;
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::{
-    FaceMesh, Mesh, MeshControl, MeshOptions, Triangle, UnavailableControl, chart,
-    edges::{Boundaries, Position},
+    FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
+    assembly::{FaceDraft, Positions},
+    chart,
+    edges::Position,
     failure,
 };
 
@@ -222,7 +227,7 @@ impl Polygon<'_> {
 
     fn hull(
         &mut self,
-        positions: &[[f64; 3]],
+        positions: &(impl Index<usize, Output = [f64; 3]> + ?Sized),
         axes: [usize; 2],
     ) -> Result<Option<BTreeSet<(usize, usize)>>, Refusal> {
         let mut order: Vec<_> = self.points.keys().copied().collect();
@@ -287,7 +292,7 @@ impl Polygon<'_> {
         &mut self,
         loops: &[Vec<usize>],
         face: FaceId,
-        positions: &[[f64; 3]],
+        positions: &(impl Index<usize, Output = [f64; 3]> + ?Sized),
         axes: [usize; 2],
     ) -> Result<Option<Vec<Triangle>>, Refusal> {
         use spade::Triangulation;
@@ -540,7 +545,7 @@ fn refine(
     triangles: &mut Vec<Triangle>,
     points: &mut BTreeMap<usize, Position>,
     loops: &[Vec<usize>],
-    mesh: &mut Mesh,
+    positions: &mut Positions<'_>,
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
@@ -565,7 +570,7 @@ fn refine(
         for triangle in triangles.iter() {
             for i in 0..3 {
                 let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
-                if crate::controls::length_squared(mesh.positions[a], mesh.positions[b]) > limit2 {
+                if crate::controls::length_squared(positions[a], positions[b]) > limit2 {
                     let key = (a.min(b), a.max(b));
                     if boundary.contains(&key) {
                         return Err(failure(
@@ -579,7 +584,7 @@ fn refine(
         if pending.is_empty() {
             return Ok(error);
         }
-        if pending.len() > options.max_vertices.saturating_sub(mesh.positions.len()) {
+        if pending.len() > options.max_vertices.saturating_sub(positions.len()) {
             return Err(failure("planar refinement reached max_vertices"));
         }
         let mut midpoints = BTreeMap::new();
@@ -596,7 +601,7 @@ fn refine(
             let bits = position.map(f64::to_bits);
             if [a, b]
                 .iter()
-                .any(|&i| mesh.positions[i].map(f64::to_bits) == bits)
+                .any(|&i| positions[i].map(f64::to_bits) == bits)
             {
                 return Err(failure(
                     "coordinate precision cannot shorten a planar mesh edge",
@@ -606,8 +611,8 @@ fn refine(
             if error > options.chord_tolerance {
                 return Err(failure("planar midpoint rounding exceeds chord tolerance"));
             }
-            let index = mesh.positions.len();
-            mesh.positions.push(position);
+            let index = positions.len();
+            positions.push(position);
             points.insert(index, Position::Exact(p));
             midpoints.insert((a, b), index);
         }
@@ -668,7 +673,7 @@ fn split_rail_ears(
     points: &mut BTreeMap<usize, Position>,
     enclosures: &BTreeMap<usize, [catallax_numbers::Ball; 3]>,
     rails: &crate::edges::Rails,
-    mesh: &mut Mesh,
+    positions: &mut Positions<'_>,
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
@@ -682,7 +687,7 @@ fn split_rail_ears(
         if !rails.contains_triangle(vertices) {
             continue;
         }
-        if mesh.positions.len() >= options.max_vertices {
+        if positions.len() >= options.max_vertices {
             return Err(failure("planar rail-ear refinement reached max_vertices"));
         }
         let [a, b, c] = vertices;
@@ -716,8 +721,8 @@ fn split_rail_ears(
         if error > options.chord_tolerance {
             return Err(failure("planar rail-ear rounding exceeds chord tolerance"));
         }
-        let index = mesh.positions.len();
-        mesh.positions.push(position);
+        let index = positions.len();
+        positions.push(position);
         if let Some(p) = exact {
             points.insert(index, Position::Exact(p));
         }
@@ -739,7 +744,7 @@ pub(crate) fn build(
     model: &Model,
     face: FaceId,
     plane: &Plane,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
@@ -774,16 +779,16 @@ pub(crate) fn build(
         for &coedge in coedges {
             let coedge = model.coedge(coedge);
             let edge = model.edge(coedge.edge);
-            let sampled = &boundaries.mesh.edges[boundaries.edges[&coedge.edge]].vertices;
+            let sampled = &draft.mesh.edges[draft.edges[&coedge.edge]].vertices;
             for v in [edge.start, edge.end].into_iter().flatten() {
-                points.entry(boundaries.vertices[&v]).or_insert_with(|| {
+                points.entry(draft.vertices[&v]).or_insert_with(|| {
                     let p = model.geom().position(model.vertex(v).point);
                     Position::Exact([p.x.clone(), p.y.clone(), p.z.clone()])
                 });
             }
             for &index in sampled {
                 if let std::collections::btree_map::Entry::Vacant(entry) = points.entry(index) {
-                    let p = boundaries
+                    let p = draft
                         .exact_positions
                         .get(&index)
                         .ok_or_else(|| failure("planar boundary lacks its exact trace sample"))?;
@@ -801,7 +806,7 @@ pub(crate) fn build(
         }
         loops.push(ring);
     }
-    if boundaries.mesh.positions.len() > options.max_vertices {
+    if draft.mesh.positions.len() > options.max_vertices {
         return Err(failure("planar triangulation reached max_vertices"));
     }
     // A planar support is affine. Convex interpolation of endpoint residuals
@@ -809,11 +814,11 @@ pub(crate) fn build(
     let mut error = Rational::zero();
     let mut projected = BTreeMap::new();
     for (&index, p) in &points {
-        let balls = match boundaries.enclosures.entry(index) {
+        let balls = match draft.enclosures.entry(index) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(p.enclose(dec)?),
         };
-        error = error.max(chart::residual(&boundaries.mesh.positions[index], balls));
+        error = error.max(chart::residual(&draft.mesh.positions[index], balls));
         projected.insert(
             index,
             Point {
@@ -835,60 +840,59 @@ pub(crate) fn build(
         points: projected,
         dec,
     };
-    let mut triangles = if let Some(triangles) =
-        polygon.candidate(&loops, face, &boundaries.mesh.positions, axes)?
-    {
-        triangles
-    } else {
-        let mut outer = Vec::new();
-        let mut holes = Vec::new();
-        let areas: Vec<_> = loops
-            .iter()
-            .map(|ring| polygon.area(ring))
-            .collect::<Result<_, _>>()?;
-        for (i, area) in areas.iter().enumerate() {
-            match sign(area, polygon.dec)? {
-                Sign::Positive => outer.push(i),
-                Sign::Negative => holes.push(i),
-                Sign::Zero => return Err(failure("zero-area planar boundary")),
-            }
-        }
-        let mut assigned = BTreeMap::<usize, Vec<usize>>::new();
-        for hole in holes {
-            let p = polygon.points[&loops[hole][0]].clone();
-            let mut owner: Option<usize> = None;
-            for &candidate in &outer {
-                if polygon.contains(&loops[candidate], &p)?
-                    && (owner.is_none()
-                        || sign(&(&areas[candidate] - &areas[owner.unwrap()]), polygon.dec)?
-                            == Sign::Negative)
-                {
-                    owner = Some(candidate);
+    let mut triangles =
+        if let Some(triangles) = polygon.candidate(&loops, face, &draft.mesh.positions, axes)? {
+            triangles
+        } else {
+            let mut outer = Vec::new();
+            let mut holes = Vec::new();
+            let areas: Vec<_> = loops
+                .iter()
+                .map(|ring| polygon.area(ring))
+                .collect::<Result<_, _>>()?;
+            for (i, area) in areas.iter().enumerate() {
+                match sign(area, polygon.dec)? {
+                    Sign::Positive => outer.push(i),
+                    Sign::Negative => holes.push(i),
+                    Sign::Zero => return Err(failure("zero-area planar boundary")),
                 }
             }
-            assigned
-                .entry(owner.ok_or_else(|| failure("planar hole has no outer boundary"))?)
-                .or_default()
-                .push(hole);
-        }
-        let mut triangles = Vec::new();
-        for i in outer {
-            let mut ring = loops[i].clone();
-            if let Some(holes) = assigned.get(&i) {
-                for &hole in holes {
-                    polygon.bridge(&mut ring, &loops[hole], &loops)?;
+            let mut assigned = BTreeMap::<usize, Vec<usize>>::new();
+            for hole in holes {
+                let p = polygon.points[&loops[hole][0]].clone();
+                let mut owner: Option<usize> = None;
+                for &candidate in &outer {
+                    if polygon.contains(&loops[candidate], &p)?
+                        && (owner.is_none()
+                            || sign(&(&areas[candidate] - &areas[owner.unwrap()]), polygon.dec)?
+                                == Sign::Negative)
+                    {
+                        owner = Some(candidate);
+                    }
                 }
+                assigned
+                    .entry(owner.ok_or_else(|| failure("planar hole has no outer boundary"))?)
+                    .or_default()
+                    .push(hole);
             }
-            polygon.clip(ring, face, &mut triangles)?;
-        }
-        triangles
-    };
+            let mut triangles = Vec::new();
+            for i in outer {
+                let mut ring = loops[i].clone();
+                if let Some(holes) = assigned.get(&i) {
+                    for &hole in holes {
+                        polygon.bridge(&mut ring, &loops[hole], &loops)?;
+                    }
+                }
+                polygon.clip(ring, face, &mut triangles)?;
+            }
+            triangles
+        };
     error = error.max(split_rail_ears(
         &mut triangles,
         &mut points,
-        &boundaries.enclosures,
-        &boundaries.rails,
-        &mut boundaries.mesh,
+        draft.enclosures,
+        draft.rails,
+        &mut draft.mesh.positions,
         options,
         polygon.dec,
     )?);
@@ -896,7 +900,7 @@ pub(crate) fn build(
         &mut triangles,
         &mut points,
         &loops,
-        &mut boundaries.mesh,
+        &mut draft.mesh.positions,
         options,
         polygon.dec,
     )?);
@@ -904,7 +908,7 @@ pub(crate) fn build(
     let mut aspect = Some(Rational::zero());
     let mut angular_reached = true;
     for triangle in &triangles {
-        let mut positions = triangle.vertices.map(|i| boundaries.mesh.positions[i]);
+        let mut positions = triangle.vertices.map(|i| draft.mesh.positions[i]);
         // Quality is compared with the carrier's normal, before face reversal.
         if model.face(face).sense == Sense::Reversed {
             positions.swap(1, 2);
@@ -924,32 +928,29 @@ pub(crate) fn build(
         .as_ref()
         .is_some_and(|limit| aspect.as_ref().is_none_or(|value| value > limit))
     {
-        boundaries.mesh.unavailable_controls.push(UnavailableControl {
+        draft.mesh.unavailable_controls.push(UnavailableControl {
             face,
             control: MeshControl::AspectRatio,
             reason: "rounded planar triangles have no aspect-ratio bound within the requested limit",
         });
     }
     if options.angular_deviation.is_some() && !angular_reached {
-        boundaries
-            .mesh
-            .unavailable_controls
-            .push(UnavailableControl {
-                face,
-                control: MeshControl::AngularDeviation,
-                reason: "rounded planar triangles have no certified facet-normal bound",
-            });
+        draft.mesh.unavailable_controls.push(UnavailableControl {
+            face,
+            control: MeshControl::AngularDeviation,
+            reason: "rounded planar triangles have no certified facet-normal bound",
+        });
     }
     for t in &mut triangles {
         let min = (0..3).min_by_key(|&i| t.vertices[i]).unwrap();
         t.vertices.rotate_left(min);
     }
     triangles.sort_unstable_by_key(|t| t.vertices);
-    let start = boundaries.mesh.triangles.len();
-    boundaries.mesh.triangles.extend(triangles);
-    boundaries.mesh.faces.push(FaceMesh {
+    let start = draft.mesh.triangles.len();
+    draft.mesh.triangles.extend(triangles);
+    draft.mesh.faces.push(FaceMesh {
         face,
-        triangles: start..boundaries.mesh.triangles.len(),
+        triangles: start..draft.mesh.triangles.len(),
         max_chord_error: error,
         max_aspect_ratio: aspect,
         max_angular_deviation: options

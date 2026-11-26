@@ -3,6 +3,14 @@
 
 Run capture inside each disposable checkout with the same copy of this tool and
 its fixtures. Capture writes one JSONL file per worker count.
+
+Two collectors produce the rows. The interface collector, the default, builds
+the tests with the `display-capture` feature: mesh and field display record
+an explicit, versioned encoding of each result and its work. The probe
+collector rewrites four function bodies and hashes `Debug` text; keep it for
+revisions that predate the interface. Compare captures from one collector
+only, and pin exceptions against that collector's rows. `migrate` checks that
+both collectors on one revision record the same calls, results and work.
 """
 import argparse
 import collections
@@ -23,6 +31,15 @@ PROBES = {
     "catallax-field/src/display.rs": ("mesh_plan_inner",),
 }
 THREAD_COUNTS = (1, 2, 4, 24)
+# Cargo features that turn on the interface collector in each tested package.
+CAPTURE_FEATURES = {
+    "catallax-mesh": "display-capture",
+    "catallax-field": "display-capture",
+    "catallax-app": "catallax-field/display-capture",
+    "catallax-features": "catallax-field/display-capture",
+}
+# Record format written by catallax_mesh::capture::FORMAT.
+INTERFACE_FORMAT = 1
 SUITES = {
     "catallax-mesh": "native_boundaries preview_boundary",
     "catallax-app": (
@@ -128,8 +145,13 @@ CARRIERS = r'''
 
 def instrument(source, names):
     for name in names:
+        # Revisions with the capture interface run display_mesh_body's work
+        # inside display_within_allowance. Record that function whole.
+        code_name = name
+        if name == "display_mesh_body" and "fn display_within_allowance(" in source:
+            code_name = "display_within_allowance"
         # Anchor at the function's own declaration. Its closing brace is unindented.
-        pattern = rf"(^[a-z() ]*fn {name}\([^{{]*\{{\n)(.*?)(^\}})"
+        pattern = rf"(^[a-z() ]*fn {code_name}\([^{{]*\{{\n)(.*?)(^\}})"
         match = re.search(pattern, source, re.MULTILINE | re.DOTALL)
         if match is None:
             raise ValueError(f"no declaration for {name}")
@@ -139,7 +161,7 @@ def instrument(source, names):
         # display_mesh_body establishes its own allowance on standalone calls.
         # Record the inner invocation within that allowance exactly once.
         prefix = ""
-        if name == "display_mesh_body":
+        if code_name == "display_mesh_body":
             boundary = "    let faces = model.faces_of_body(body);"
             start = old.index(boundary)
             prefix, old = old[:start], old[start:]
@@ -192,10 +214,10 @@ fn ellipse_rim_at_both_chords() {
 
 
 @contextmanager
-def probes(root):
+def probes(root, collector):
     originals = {}
     try:
-        for filename, names in PROBES.items():
+        for filename, names in PROBES.items() if collector == "probe" else ():
             path = root / "crates" / filename
             originals[path] = path.read_text()
             path.write_text(instrument(originals[path], names))
@@ -223,6 +245,8 @@ def capture(root, args, output, threads):
             if not selected:
                 continue
             cmd = ["cargo", "test", "--no-fail-fast", "--locked", "--release", "-p", package]
+            if args.collector == "interface":
+                cmd += ["--features", CAPTURE_FEATURES[package]]
             for name in selected:
                 cmd += ["--test", name]
             cmd += ["--", "--test-threads=1", "--nocapture"]
@@ -239,25 +263,40 @@ def capture(root, args, output, threads):
                         target = re.match(r"\s*Running tests/(\w+)\.rs ", line)
                         if target:
                             suite = target[1]
-                        if not line.startswith("meshdiff\t"):
+                        row = parse(line, args.collector)
+                        if row is None:
                             continue
-                        case, function, tags, options, work, digest = line.rstrip().split("\t")[1:]
                         assert suite in selected, (suite, line)
-                        key = (package, suite, case, function, options)
+                        key = (package, suite, *row.pop("call"))
                         counts[key] += 1
-                        row = {"key": [*key, counts[key]], "carriers": tags,
-                               "work": json.loads(work), "sha256": digest}
+                        row["key"] = [*key, counts[key]]
                         print(json.dumps(row, sort_keys=True), file=out, flush=True)
                     code = run.wait()
                 if code:
                     log.seek(0)
                     for line in log:
-                        if not line.startswith("meshdiff\t"):
+                        if parse(line, args.collector) is None:
                             sys.stderr.write(line)
                 print(json.dumps({"package": package, "exit": code, "calls": sum(counts.values())}),
                       file=sys.stderr, flush=True)
                 if code:
                     raise SystemExit(code)
+
+
+def parse(line, collector):
+    """One record line as a row with its call key, or None for other output."""
+    fields = line.rstrip("\n").split("\t")
+    if collector == "probe" and fields[0] == "meshdiff":
+        case, function, tags, options, work, digest = fields[1:]
+        return {"call": [case, function, options], "carriers": tags,
+                "work": json.loads(work), "sha256": digest}
+    if collector == "interface" and fields[0] == "displaycapture":
+        version, case, function, tags, options, work, digest = fields[1:]
+        if int(version) != INTERFACE_FORMAT:
+            raise ValueError(f"record format {version}, this tool reads {INTERFACE_FORMAT}")
+        return {"call": [case, function, options], "carriers": tags, "format": int(version),
+                "work": json.loads(work), "sha256": digest}
+    return None
 
 
 def load(path):
@@ -302,8 +341,18 @@ def load_exceptions(path):
     return exceptions
 
 
+def collector(rows, path):
+    formats = {row.get("format") for row in rows.values()}
+    if len(formats) != 1:
+        raise ValueError(f"{path}: rows from more than one collector")
+    return formats.pop()
+
+
 def compare(baseline, candidate, exception_path=None):
-    baseline, candidate = map(load, (baseline, candidate))
+    paths = (baseline, candidate)
+    baseline, candidate = map(load, paths)
+    if collector(baseline, paths[0]) != collector(candidate, paths[1]):
+        raise ValueError("captures come from different collectors; use migrate to match them")
     exceptions = load_exceptions(exception_path) if exception_path else {}
     exact = recorded = unexpected = 0
     for key in sorted(baseline.keys() | candidate.keys()):
@@ -325,16 +374,64 @@ def compare(baseline, candidate, exception_path=None):
     return bool(unexpected or exceptions)
 
 
+def migrate(probe_path, interface_path):
+    """Match a probe capture with an interface capture of the same revision.
+
+    Calls pair in record order within each test and function. The pairs must
+    agree on carriers and work, and options and digests must correspond one
+    to one, so every probe result maps to exactly one interface result.
+    """
+    probe, interface = load(probe_path), load(interface_path)
+    if collector(probe, probe_path) is not None or collector(interface, interface_path) is None:
+        raise ValueError("migrate takes a probe capture, then an interface capture")
+
+    def calls(rows):
+        groups = collections.defaultdict(list)
+        for key, row in rows.items():
+            groups[key[:4]].append(row)
+        return groups
+
+    old, new = calls(probe), calls(interface)
+    problems = []
+    maps = {"options": ({}, {}), "sha256": ({}, {})}
+    for call in sorted(old.keys() | new.keys()):
+        before, after = old.get(call, []), new.get(call, [])
+        if len(before) != len(after):
+            problems.append(f"{call}: {len(before)} probe and {len(after)} interface records")
+            continue
+        for first, second in zip(before, after):
+            pair = {"options": (first["key"][4], second["key"][4]),
+                    "sha256": (first["sha256"], second["sha256"])}
+            for field in ("carriers", "work"):
+                if first[field] != second[field]:
+                    problems.append(f"{first['key']}: {field} {first[field]} != {second[field]}")
+            for field, (a, b) in pair.items():
+                forward, backward = maps[field]
+                if forward.setdefault(a, b) != b or backward.setdefault(b, a) != a:
+                    problems.append(f"{first['key']}: {field} does not correspond one to one")
+    for problem in problems:
+        print(problem)
+    print(f"{len(probe)} probe and {len(interface)} interface records, "
+          f"{len(maps['sha256'][0])} distinct results, {len(problems)} problems")
+    return bool(problems)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(required=True, dest="command")
     run = commands.add_parser("capture")
     run.add_argument("output", type=Path)
+    run.add_argument("--collector", choices=("interface", "probe"), default="interface")
+    run.add_argument("--threads", type=int, action="append", choices=THREAD_COUNTS,
+                     help="capture only these worker counts; compare needs all of them")
     run.add_argument("--suite", action="append", choices=sorted(" ".join(SUITES.values()).split()))
     diff = commands.add_parser("compare")
     diff.add_argument("baseline", type=Path)
     diff.add_argument("candidate", type=Path)
     diff.add_argument("--exceptions", type=Path)
+    match = commands.add_parser("migrate")
+    match.add_argument("probe", type=Path)
+    match.add_argument("interface", type=Path)
     args = parser.parse_args()
 
     if args.command == "capture":
@@ -349,14 +446,20 @@ def main():
             with test.open("x") as source:
                 source.write(ELLIPSE_TEST)
             try:
-                with probes(root):
-                    for threads in THREAD_COUNTS:
+                with probes(root, args.collector):
+                    for threads in args.threads or THREAD_COUNTS:
                         capture(root, args, args.output / f"{threads}.jsonl", threads)
             finally:
                 test.unlink()
         finally:
             (tests / ".display_diff_ellipse.json").unlink()
         return 0
+
+    if args.command == "migrate":
+        return int(any([
+            migrate(args.probe / f"{count}.jsonl", args.interface / f"{count}.jsonl")
+            for count in THREAD_COUNTS
+        ]))
 
     first, *rest = (f"{count}.jsonl" for count in THREAD_COUNTS)
     failed = compare(args.baseline / first, args.candidate / first, args.exceptions)

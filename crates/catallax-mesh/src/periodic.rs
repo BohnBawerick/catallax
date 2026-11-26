@@ -6,8 +6,8 @@ use catallax_topology::{FaceId, Model, Sense};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
+    assembly::FaceDraft,
     chart::{Chart, chord_bound},
-    edges::Boundaries,
     failure,
 };
 
@@ -21,7 +21,7 @@ pub(crate) fn build(
     model: &Model,
     face: FaceId,
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<(), Refusal> {
@@ -47,7 +47,7 @@ pub(crate) fn build(
         return Err(failure("periodic lattice exceeds max_vertices"));
     }
     let [mut columns, mut rows] = counts.map(|n| (n as usize).max(8));
-    let start = boundaries.mesh.positions.len();
+    let start = draft.mesh.positions.len();
     loop {
         dec.check_deadline()?;
         let count = columns
@@ -68,7 +68,7 @@ pub(crate) fn build(
         let mut residual = Rational::zero();
         let mut sample = |uv| -> Result<(), Refusal> {
             let (point, error) = chart.sample(uv, None, &options.chord_tolerance, dec)?;
-            boundaries.mesh.positions.push(point);
+            draft.mesh.positions.push(point);
             if error > residual {
                 residual = error;
             }
@@ -126,7 +126,7 @@ pub(crate) fn build(
                     let (quality, angular) = crate::controls::quality(
                         chart,
                         &selection.map(|i| corners[i]),
-                        vertices.map(|i| boundaries.mesh.positions[i]),
+                        vertices.map(|i| draft.mesh.positions[i]),
                         options.angular_deviation.as_ref(),
                         dec,
                     )?;
@@ -150,11 +150,11 @@ pub(crate) fn build(
         }
         if reached {
             triangles.sort_unstable_by_key(|t| t.vertices);
-            let begin = boundaries.mesh.triangles.len();
-            boundaries.mesh.triangles.extend(triangles);
-            boundaries.mesh.faces.push(FaceMesh {
+            let begin = draft.mesh.triangles.len();
+            draft.mesh.triangles.extend(triangles);
+            draft.mesh.faces.push(FaceMesh {
                 face,
-                triangles: begin..boundaries.mesh.triangles.len(),
+                triangles: begin..draft.mesh.triangles.len(),
                 max_chord_error: error,
                 max_angular_deviation: options.angular_deviation.clone(),
                 max_aspect_ratio: Some(aspect.clone()),
@@ -164,18 +164,15 @@ pub(crate) fn build(
                 .as_ref()
                 .is_some_and(|limit| aspect > *limit)
             {
-                boundaries
-                    .mesh
-                    .unavailable_controls
-                    .push(UnavailableControl {
-                        face,
-                        control: MeshControl::AspectRatio,
-                        reason: "the certified aspect-ratio bound exceeds the requested limit",
-                    });
+                draft.mesh.unavailable_controls.push(UnavailableControl {
+                    face,
+                    control: MeshControl::AspectRatio,
+                    reason: "the certified aspect-ratio bound exceeds the requested limit",
+                });
             }
             return Ok(());
         }
-        boundaries.mesh.positions.truncate(start);
+        draft.mesh.positions.truncate(start);
         columns = columns
             .checked_mul(2)
             .ok_or_else(|| failure("periodic lattice size overflow"))?;

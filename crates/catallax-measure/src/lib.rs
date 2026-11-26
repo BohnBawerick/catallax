@@ -29,6 +29,8 @@
 //! Ball operations share a fresh deterministic budget for each property.
 //! Integral subdivision and precision refine independently. The last certified
 //! integral enclosure survives exhaustion, with a width mark for each unmet property.
+//! Independent spline contributions can run on separate threads. Each attempt
+//! admits their work and adds their enclosures in the original face order.
 //! Bounds refinement refuses exhausted work. Body centroids require nonzero volume;
 //! face centroids require nonzero area.
 //!
@@ -604,17 +606,56 @@ pub fn face_area(
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
     accuracy.validate();
+    measure_face_area(model, face, accuracy, false, dec)
+}
+
+/// Areas of the requested faces, with answers and refusals in input order.
+///
+/// Each face uses the same accuracy and per-property allowance as [`face_area`].
+/// Independent calls can run on the configured kernel threads; any enclosing
+/// operation allowance is still charged in input order. Complete rational
+/// patches use the same exact span extraction on each worker rather than
+/// sharing the charged span and contribution caches used by [`face_area`].
+pub fn face_areas(
+    model: &Model,
+    faces: &[FaceId],
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Vec<Answered<Enclosure>> {
+    accuracy.validate();
+    let mut answers = Vec::with_capacity(faces.len());
+    let _ = catallax_numbers::scoped_in_order(
+        faces.len(),
+        |index, dec| measure_face_area(model, faces[index], accuracy, true, dec),
+        dec,
+        |_, answer, _| {
+            answers.push(answer);
+            std::ops::ControlFlow::<()>::Continue(())
+        },
+    );
+    answers
+}
+
+fn measure_face_area(
+    model: &Model,
+    face: FaceId,
+    accuracy: &Accuracy,
+    independent_area: bool,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
     junction::refuse_fitted_face(model, face)?;
     let single = [face];
     let faces = model.face_chart_cover(face).unwrap_or(&single);
     let anchor = engine::anchor(model, faces);
+    let mut traces = engine::TraceCache::new();
+    traces.independent_area = independent_area;
     let mut answer = engine::measure(
         model,
         faces,
         &anchor,
         accuracy,
         surface::Property::Area,
-        &mut engine::TraceCache::new(),
+        &mut traces,
         dec,
     )?;
     let enclosure = answer.value.remove(0);

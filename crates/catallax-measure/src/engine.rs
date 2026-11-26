@@ -19,6 +19,7 @@ pub(crate) struct TraceCache {
     failed_gauges: BTreeSet<GaugeAttempt>,
     reuse_gauges: bool,
     pub(crate) fitted_patches: bool,
+    pub(crate) independent_area: bool,
     native_conics: bool,
     carriers: HashMap<catallax_shapes::CurveId, Option<Curve>>,
     torus_rectangles: HashMap<FaceId, Option<std::sync::Arc<crate::torus::rectangle::Domain>>>,
@@ -351,6 +352,7 @@ pub(crate) fn measure(
                 property,
                 traces.fitted_patches,
                 &mut marginals,
+                !traces.independent_area,
                 dec,
             )? {
                 prepared.push(Prepared::RationalPatch(band));
@@ -815,7 +817,34 @@ fn evaluate(
         .iter()
         .map(|i| work.rational(&exact[*i]))
         .collect::<Result<_, _>>()?;
-    for face in prepared {
+    let helpers_per_batch = if cache.independent_area {
+        0
+    } else {
+        catallax_numbers::threads().saturating_sub(1)
+    };
+    let mut rest = prepared;
+    while let Some((face, tail)) = rest.split_first_mut() {
+        rest = tail;
+        if let Prepared::RationalPatch(band) = face {
+            let lookahead = rest
+                .iter()
+                .take(helpers_per_batch)
+                .take_while(|face| {
+                    matches!(face, Prepared::RationalPatch(band) if band.can_speculate(depth, rectangle, work))
+                })
+                .count();
+            if lookahead > 0
+                && let Some(helpers) = catallax_numbers::Helpers::new(work.dec)
+            {
+                let (ahead, remaining) = rest.split_at_mut(lookahead);
+                integrate_patch_batch(band, ahead, depth, rectangle, &helpers, &mut sums, work)?;
+                rest = remaining;
+            } else {
+                let values = band.integrate(&sums, depth, rectangle, work, None)?;
+                add_contribution(&mut sums, values, work)?;
+            }
+            continue;
+        }
         let values = match face {
             Prepared::PlanarArea {
                 area_numerator,
@@ -827,7 +856,7 @@ fn evaluate(
                 vec![work.div(&numerator, &norm)?]
             }
             Prepared::Band(band) => band.integrate(&sums, depth, rectangle, work)?,
-            Prepared::RationalPatch(band) => band.integrate(&sums, depth, rectangle, work)?,
+            Prepared::RationalPatch(_) => unreachable!(),
             Prepared::Curved(face) => {
                 let mut answer = None;
                 let candidates = if matches!(face.surface, Surface::Sphere(_))
@@ -901,11 +930,68 @@ fn evaluate(
                 answer.ok_or(Stop::Split)?
             }
         };
-        for (sum, value) in sums.iter_mut().zip(values) {
-            *sum = work.add(sum, &value)?;
-        }
+        add_contribution(&mut sums, values, work)?;
     }
     Ok(sums.iter().map(Enclosure::from_ball).collect())
+}
+
+fn add_contribution(sums: &mut [Ball], values: Vec<Ball>, work: &mut Work) -> Result<(), Stop> {
+    for (sum, value) in sums.iter_mut().zip(values) {
+        *sum = work.add(sum, &value)?;
+    }
+    Ok(())
+}
+
+/// Panels can run ahead, but the writer still checks each face's local
+/// allowance, prefix-dependent reuse and operation charges before adding it.
+fn integrate_patch_batch(
+    first: &mut crate::rational_patch::Band,
+    ahead: &mut [Prepared<'_>],
+    depth: u32,
+    rectangle: bool,
+    helpers: &catallax_numbers::Helpers,
+    sums: &mut [Ball],
+    work: &mut Work,
+) -> Result<(), Stop> {
+    let seed = work.panel_worker(work.dec);
+    let records = std::thread::scope(|scope| {
+        let handles: Vec<_> = ahead
+            .iter()
+            .map(|face| {
+                let Prepared::RationalPatch(band) = face else {
+                    unreachable!();
+                };
+                let seed = &seed;
+                std::thread::Builder::new()
+                    .name("catallax-measure-face".into())
+                    .stack_size(helpers.stack_size())
+                    .spawn_scoped(scope, move || {
+                        helpers.run(|dec| band.record_panels(depth, rectangle, seed, dec))
+                    })
+                    .ok()
+            })
+            .collect();
+        let first = first
+            .integrate(sums, depth, rectangle, work, None)
+            .and_then(|values| add_contribution(sums, values, work));
+        if first.is_err() {
+            helpers.stop();
+        }
+        // Join even on refusal so a worker unwind stays on the worker.
+        let records: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.and_then(|handle| handle.join().ok().flatten()))
+            .collect();
+        first.map(|()| records)
+    })?;
+    for (face, recorded) in ahead.iter_mut().zip(records) {
+        let Prepared::RationalPatch(band) = face else {
+            unreachable!();
+        };
+        let values = band.integrate(sums, depth, rectangle, work, recorded)?;
+        add_contribution(sums, values, work)?;
+    }
+    Ok(())
 }
 
 fn integrate_face(

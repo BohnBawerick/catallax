@@ -29,6 +29,7 @@ struct Contribution {
     precision: u32,
     depth: u32,
     cost: u64,
+    checkpoints: Option<u64>,
     values: Arc<[Ball]>,
 }
 
@@ -40,23 +41,38 @@ thread_local! {
 
 impl FaceKey {
     fn lookup(&self, depth: u32, work: &mut Work) -> Result<Option<Arc<[Ball]>>, Stop> {
-        CONTRIBUTIONS.with_borrow(|cache| {
-            let Some(entry) = cache.iter().rev().find(|entry| {
-                entry.precision == work.precision
-                    && entry.depth == depth
-                    && self.property == entry.face.property
-                    && self.sense == entry.face.sense
-                    && self.patch.shares_definition_nodes(&entry.face.patch)
-                    && self.anchor == entry.face.anchor
-            }) else {
-                return Ok(None);
-            };
-            work.charge_reused(entry.cost)?;
-            Ok(Some(entry.values.clone()))
-        })
+        let budgeted = catallax_numbers::operation_budget_active();
+        let found = CONTRIBUTIONS.with_borrow(|cache| {
+            cache
+                .iter()
+                .rev()
+                .find(|entry| {
+                    entry.precision == work.precision
+                        && entry.depth == depth
+                        && (!budgeted || entry.checkpoints.is_some())
+                        && self.property == entry.face.property
+                        && self.sense == entry.face.sense
+                        && self.patch.shares_definition_nodes(&entry.face.patch)
+                        && self.anchor == entry.face.anchor
+                })
+                .map(|entry| (entry.cost, entry.checkpoints, entry.values.clone()))
+        });
+        if let Some((cost, checkpoints, values)) = found
+            && work.reuse(cost, checkpoints)?
+        {
+            return Ok(Some(values));
+        }
+        Ok(None)
     }
 
-    fn remember(&self, depth: u32, precision: u32, cost: u64, values: Arc<[Ball]>) {
+    fn remember(
+        &self,
+        depth: u32,
+        precision: u32,
+        cost: u64,
+        checkpoints: Option<u64>,
+        values: Arc<[Ball]>,
+    ) {
         CONTRIBUTIONS.with_borrow_mut(|cache| {
             if cache.len() == CACHE_CAPACITY {
                 cache.pop_front();
@@ -66,6 +82,7 @@ impl FaceKey {
                 precision,
                 depth,
                 cost,
+                checkpoints,
                 values,
             });
         });
@@ -410,21 +427,13 @@ pub(crate) fn prepare(
     // Bounded polynomial degrees keep a binary64 panel's working set small.
     let native_supported = degrees.iter().all(|&degree| degree <= 3);
     let sense = model.face(face).sense;
-    // These forms have only rational constants and no budgeted external
-    // decisions. Check the complete face domain even on a cache hit.
-    let cache =
-        (!fitted && checked.support().carrier().has_rational_definition()).then(|| FaceKey {
-            patch: checked.support().clone(),
-            anchor: anchor.clone(),
-            property,
-            sense,
-        });
-    let anchor = [&anchor.x, &anchor.y, &anchor.z].map(|value| Real::from_rational(value.clone()));
+    // Check the complete face domain even when a contribution is cached.
+    let coordinates = [&anchor.x, &anchor.y, &anchor.z].map(|r| Real::from_rational(r.clone()));
     let spans: Vec<_> = checked
         .support()
         .bezier_spans(dec)?
         .filter_map(|(_, controls)| {
-            let coordinates = unit_equations(controls, columns, &anchor, fitted);
+            let coordinates = unit_equations(controls, columns, &coordinates, fitted);
             if fitted {
                 fitted_forms(&coordinates, property, sense, marginals, native_supported)
             } else {
@@ -435,6 +444,16 @@ pub(crate) fn prepare(
             }
         })
         .collect();
+    let cache = (!fitted
+        && spans.iter().all(
+            |span| matches!(span, PatchProgram::Tensor(program, None) if program.is_rational()),
+        ))
+    .then(|| FaceKey {
+        patch: checked.support().clone(),
+        anchor: anchor.clone(),
+        property,
+        sense,
+    });
     Ok((!spans.is_empty()).then_some(Band {
         spans,
         fitted,
@@ -511,6 +530,11 @@ impl Band {
             return Ok(result);
         }
         let remaining = work.remaining();
+        // The only charges to the surrounding allowance in these rational
+        // programs are single-unit deadline checks. Keep those too, so a warm
+        // contribution does not turn an exhausted request into an answer.
+        let before = (cache.is_some() && catallax_numbers::operation_budget_active())
+            .then(catallax_numbers::current_operation_work);
         let axis = |index| -> Vec<_> {
             (0..=counts[index])
                 .map(|i| {
@@ -558,12 +582,19 @@ impl Band {
         if !self.fitted && !rectangle {
             let values = Arc::from(sums.as_slice());
             if let Some(face) = cache {
-                face.remember(
-                    depth,
-                    work.precision,
-                    remaining - work.remaining(),
-                    Arc::clone(&values),
-                );
+                let checkpoints = before.and_then(|before| {
+                    let after = catallax_numbers::current_operation_work();
+                    (!before.exhausted && !after.exhausted).then(|| after.used - before.used)
+                });
+                if before.is_none() || checkpoints.is_some() {
+                    face.remember(
+                        depth,
+                        work.precision,
+                        remaining - work.remaining(),
+                        checkpoints,
+                        Arc::clone(&values),
+                    );
+                }
             }
             self.best = Some(values);
         }

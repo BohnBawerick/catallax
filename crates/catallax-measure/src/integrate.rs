@@ -81,13 +81,24 @@ impl<'a> Work<'a> {
         self.remaining
     }
 
-    /// Debit a reused pure calculation without changing the refinement budget.
-    pub(crate) fn charge_reused(&mut self, cost: u64) -> Checked<()> {
-        self.dec.check_deadline()?;
-        self.remaining = self.remaining.checked_sub(cost).ok_or(Stop::Budget)?;
-        Ok(())
+    /// Replay a completed rational contribution. If the local allowance
+    /// cannot cover it, the caller must run the panel to preserve the order
+    /// in which the local and operation allowances can refuse.
+    pub(crate) fn reuse(&mut self, cost: u64, checkpoints: Option<u64>) -> Checked<bool> {
+        let Some(remaining) = self.remaining.checked_sub(cost) else {
+            return Ok(false);
+        };
+        if catallax_numbers::operation_budget_active() {
+            let Some(checkpoints) = checkpoints else {
+                return Ok(false);
+            };
+            for _ in 0..checkpoints {
+                self.dec.check_deadline()?;
+            }
+        }
+        self.remaining = remaining;
+        Ok(true)
     }
-
     pub(crate) fn gauss_rule(&mut self) -> Checked<Arc<GaussRule>> {
         if let Some(rule) = &self.gauss {
             return Ok(rule.clone());
@@ -520,6 +531,10 @@ pub(crate) struct Program {
 }
 
 impl Program {
+    pub(crate) fn is_rational(&self) -> bool {
+        self.exact.is_empty()
+    }
+
     fn coefficient_plan(nodes: &[Node], outputs: &[usize], mask: u32) -> Box<[u32]> {
         let mut needed = vec![0; nodes.len()];
         for &output in outputs {

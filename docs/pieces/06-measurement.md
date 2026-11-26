@@ -386,8 +386,9 @@ rounding and charge order.
 
 Complete rational patches can reuse a face's quadrature contribution
 when its carrier, sense, integration frame, property and refinement match.
-The current face still passes its domain checks, and reuse debits the same
-refinement allowance before the contribution is added to the body sum.
+The current face still passes its domain checks. Reuse replays both the
+refinement allowance debit and the operation's cancellation checkpoints
+before the contribution is added to the body sum.
 
 No test fails for speed. A benchmark target measures and prints:
 

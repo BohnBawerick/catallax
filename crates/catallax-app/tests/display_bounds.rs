@@ -17,6 +17,8 @@ const TAU: f64 = std::f64::consts::TAU;
 type Point = [f64; 3];
 type Uv = [f64; 2];
 type Triangle = [Point; 3];
+type ChartSampler<'a> = (&'a dyn Fn(Uv) -> Point, &'a dyn Fn(Point) -> Uv, Uv);
+type StepSource = (String, Vec<u8>);
 
 fn dot(a: Point, b: Point) -> f64 {
     a.into_iter().zip(b).map(|(a, b)| a * b).sum()
@@ -575,7 +577,7 @@ fn check_face(
     let invert_spline;
     let sample_analytic;
     let invert_analytic;
-    let (at, uv, periods): (&dyn Fn(Uv) -> Point, &dyn Fn(Point) -> Uv, Uv) = match surface {
+    let (at, uv, periods): ChartSampler<'_> = match surface {
         Surface::BSpline(s) => {
             spline = Spline::new(s.carrier());
             domain = spline.axis.each_ref().map(Basis::domain);
@@ -973,7 +975,7 @@ fn recipe_of(
     row: &Value,
     case_files: &mut BTreeMap<String, BTreeMap<String, Value>>,
     sources: Option<&BTreeMap<String, std::path::PathBuf>>,
-) -> Option<(Recipe, Option<(String, Vec<u8>)>)> {
+) -> Option<(Recipe, Option<StepSource>)> {
     let mut source = None;
     let mut recipe: Value = if let Some(path) = row["recipe"].as_str() {
         serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()

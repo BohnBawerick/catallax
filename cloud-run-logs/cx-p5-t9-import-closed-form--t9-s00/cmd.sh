@@ -1,5 +1,7 @@
 set -euo pipefail
 root=$PWD
+command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }
+command -v bsdtar
 work=$(mktemp -d)
 KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s0
 mkdir -p "$KIT" "$OWNER" /home/user/t9-scratch

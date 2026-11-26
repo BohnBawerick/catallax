@@ -207,7 +207,7 @@ pub enum SizeKind {
     Radius,
     /// A single hole with a compound head, a known drill depth or a known
     /// usable thread depth. Simple diameters retain their existing encoding.
-    Hole(HoleSize),
+    Hole(Box<HoleSize>),
 }
 
 /// Design intent not captured by the pilot diameter. Lengths are in millimetres.

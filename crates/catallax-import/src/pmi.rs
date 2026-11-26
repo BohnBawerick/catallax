@@ -899,7 +899,7 @@ impl<'a> Reader<'a> {
                 features.push(faces);
                 head
             });
-            kind = SizeKind::Hole(HoleSize {
+            kind = SizeKind::Hole(Box::new(HoleSize {
                 head,
                 drill_depth: drill
                     .map(|id| self.hole_length(id, HOLE_DEPTH))
@@ -907,7 +907,7 @@ impl<'a> Reader<'a> {
                 thread_depth: thread_depth
                     .map(|id| self.hole_length(id, THREAD_DEPTH))
                     .transpose()?,
-            });
+            }));
         } else {
             if heads.next().is_some() || drill.is_some() || thread_depth.is_some() {
                 return Err(

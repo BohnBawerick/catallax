@@ -1313,11 +1313,11 @@ fn hole_fixture() -> (Bracket, Pmi<FaceId>) {
                     ItemKind::Size(Size {
                         through: drill_depth.is_none(),
                         thread: thread_depth.as_ref().map(|_| "M2.5x0.45 - 6H".to_owned()),
-                        kind: SizeKind::Hole(HoleSize {
+                        kind: SizeKind::Hole(Box::new(HoleSize {
                             head,
                             drill_depth,
                             thread_depth,
-                        }),
+                        })),
                         features,
                         limits: None,
                         nominal: None,

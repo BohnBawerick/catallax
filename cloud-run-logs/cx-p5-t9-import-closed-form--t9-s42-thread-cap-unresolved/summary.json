@@ -78,5 +78,5 @@
   "nproc": 4,
   "mem_total_gb": 15
  },
- "notes": "run.log has no cargo 'test result:' lines, so test counts are 0. The script ended with T9COMPLETE 62 (62 T9ROW lines). Some rows show outcome timeout at stage open (models 00002048, 00009395 among the last rows). The script installed libarchive-tools via apt because bsdtar was missing. rustup stable was already current (rustc 1.100.0). cargo fetch ran; no failure."
+ "notes": "run.log has no cargo 'test result:' lines, so test counts are 0. The script ended with T9COMPLETE 62 (61 lines start with T9ROW). Some rows show outcome timeout at stage open (models 00002048, 00009395 among the last rows). The script installed libarchive-tools via apt because bsdtar was missing. rustup stable was already current (rustc 1.100.0). cargo fetch ran; no failure."
 }

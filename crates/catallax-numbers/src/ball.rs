@@ -214,6 +214,10 @@ impl Ball {
     /// Reciprocal, or `None` if zero is inside.
     pub fn recip(&self) -> Option<Self> {
         let _whole = counted(self.precision, true);
+        self.recip_inner()
+    }
+
+    fn recip_inner(&self) -> Option<Self> {
         if self.contains_zero() {
             return None;
         }
@@ -233,8 +237,8 @@ impl Ball {
     }
 
     /// Reuses the exact rounded reciprocals of Taylor series divisors for
-    /// repeated trig evaluations on this thread. Does not skip any series
-    /// term or any work reservation.
+    /// repeated trig evaluations on this thread. Each term still counts its
+    /// reciprocal and its multiplication.
     pub fn with_series_reciprocals<T>(run: impl FnOnce() -> T) -> T {
         let outermost = SERIES_RECIPROCALS.with_borrow_mut(|slot| {
             if slot.is_some() {
@@ -257,30 +261,40 @@ impl Ball {
     }
 
     fn divide_series_term(&self, divisor: u64, reuse: bool) -> Self {
-        let reciprocal = || {
-            let integer = Rational::from_integer(Integer::from_u64(divisor));
-            Self::from_rational(&integer, self.precision)
-                .recip()
+        let key = (self.precision, divisor);
+        let compute = || {
+            Self::from_integer(&Integer::from_u64(divisor), self.precision)
+                .recip_inner()
                 .unwrap()
         };
-        if !reuse {
-            return self * &reciprocal();
+        let multiply = |cache: Option<&mut HashMap<_, _>>| {
+            let uncached;
+            let reciprocal = {
+                // Reuse saves computation, not the work of a logical reciprocal.
+                let _whole = counted(self.precision, true);
+                let cached = cache.and_then(|cache| {
+                    // Bound the scratch space even when a fit visits many precisions.
+                    if cache.len() < 4096 {
+                        Some(&*cache.entry(key).or_insert_with(compute))
+                    } else {
+                        cache.get(&key)
+                    }
+                });
+                match cached {
+                    Some(cached) => cached,
+                    None => {
+                        uncached = compute();
+                        &uncached
+                    }
+                }
+            };
+            self * reciprocal
+        };
+        if reuse {
+            SERIES_RECIPROCALS.with_borrow_mut(|slot| multiply(slot.as_mut()))
+        } else {
+            multiply(None)
         }
-        SERIES_RECIPROCALS.with_borrow_mut(|slot| {
-            let cache = slot.as_mut().expect("active series reciprocal scope");
-            let key = (self.precision, divisor);
-            if let Some(reciprocal) = cache.get(&key) {
-                return self * reciprocal;
-            }
-            // Bound the scratch space even when a fit visits many precisions.
-            if cache.len() >= 4096 {
-                return self * &reciprocal();
-            }
-            let cached = crate::operation::uncounted_memo(reciprocal);
-            let product = self * &cached;
-            cache.insert(key, cached);
-            product
-        })
     }
     /// Non-negative integer power.
     pub fn pow_u32(&self, mut exp: u32) -> Self {

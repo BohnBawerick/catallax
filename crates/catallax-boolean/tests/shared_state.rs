@@ -38,6 +38,13 @@ const CRATES: [&str; 7] = [
 const MACHINERY: [&str; 2] = ["catallax-numbers/src/ahead.rs", "catallax-step/src/uv.rs"];
 
 const KNOWN: &[(&str, &str, Kind)] = &[
+    // The thread-local scope drops its reciprocals on exit. Each logical
+    // reciprocal counts the same work whether it fills the cache or not.
+    (
+        "catallax-numbers/src/ball.rs",
+        "SERIES_RECIPROCALS",
+        Kind::Uncharged,
+    ),
     // Bounded diagnostic-code storage, never a geometric proof. Every read
     // charges its input bytes before lookup, whether the code is warm or cold.
     (

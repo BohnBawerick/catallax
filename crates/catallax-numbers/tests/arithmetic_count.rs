@@ -105,6 +105,28 @@ fn a_ball_operation_counts_the_deciders_ball_price() {
     assert!(counted(|| drop(turn.atan())) > 8 * 2 * 2);
 }
 
+#[test]
+fn series_reciprocal_reuse_preserves_enclosure_and_work() {
+    let input = Ball::from_rational(&r("1/5"), 128);
+    let run = || {
+        let (value, work) = with_operation_budget(1_000_000, || input.sin());
+        let OperationWork {
+            used,
+            exhausted,
+            refunded,
+            uncharged,
+        } = work;
+        (
+            value.mid(),
+            value.rad(),
+            (used, exhausted, refunded, uncharged),
+        )
+    };
+    let uncached = [run(), run()];
+    let cached = Ball::with_series_reciprocals(|| [run(), run()]);
+    assert_eq!(cached, uncached);
+}
+
 // A decision charges its arithmetic to `used` as it goes. The number types
 // do not count it a second time.
 #[test]

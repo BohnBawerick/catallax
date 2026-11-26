@@ -140,6 +140,21 @@ pub fn preview_mesh_body(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
+    #[cfg(feature = "display-capture")]
+    let call =
+        crate::capture::Call::start("preview_mesh_body", crate::capture::carriers(model, body));
+    let result = preview_checked(model, body, options, dec);
+    #[cfg(feature = "display-capture")]
+    call.finish(options, &result);
+    result
+}
+
+fn preview_checked(
+    model: &Model,
+    body: BodyId,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<PreviewMesh, Refusal> {
     validate(options)?;
     if let Some(preview) = crate::triangulate::shared_spline_preview(model, body, options, dec) {
         return preview;

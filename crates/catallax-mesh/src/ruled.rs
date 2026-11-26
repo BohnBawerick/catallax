@@ -8,8 +8,8 @@ use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
+    assembly::FaceDraft,
     chart::{self, Chart, Uv, align, chord_bound},
-    edges::Boundaries,
 };
 
 #[derive(Clone)]
@@ -25,7 +25,7 @@ fn layers(
     upper: &[Sample],
     face: (FaceId, Sense),
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
@@ -105,16 +105,16 @@ fn layers(
         0
     };
     let start = (
-        boundaries.mesh.positions.len(),
-        boundaries.mesh.triangles.len(),
-        boundaries.mesh.faces.len(),
-        boundaries.mesh.unavailable_controls.len(),
+        draft.mesh.positions.len(),
+        draft.mesh.triangles.len(),
+        draft.mesh.faces.len(),
+        draft.mesh.unavailable_controls.len(),
     );
     loop {
         if columns
             .len()
             .saturating_mul(rows - 1)
-            .saturating_add(boundaries.mesh.positions.len())
+            .saturating_add(draft.mesh.positions.len())
             > options.max_vertices
         {
             return Ok(false);
@@ -124,7 +124,7 @@ fn layers(
             dec.check_deadline()?;
             let before = previous.as_deref().unwrap_or(lower);
             if row == rows {
-                if sampled_stitch(before, upper, face, chart, boundaries, options, dec)? {
+                if sampled_stitch(before, upper, face, chart, draft, options, dec)? {
                     return Ok(true);
                 }
                 break;
@@ -139,7 +139,7 @@ fn layers(
                 before.len() + columns.len() - 1,
                 dec,
             )?;
-            let Some(next) = sampled_layer(before, &columns, v, strip, boundaries, dec)? else {
+            let Some(next) = sampled_layer(before, &columns, v, strip, draft, dec)? else {
                 break;
             };
             previous = Some(next);
@@ -149,10 +149,10 @@ fn layers(
         };
         retries -= 1;
         rows = next;
-        boundaries.mesh.positions.truncate(start.0);
-        boundaries.mesh.triangles.truncate(start.1);
-        boundaries.mesh.faces.truncate(start.2);
-        boundaries.mesh.unavailable_controls.truncate(start.3);
+        draft.mesh.positions.truncate(start.0);
+        draft.mesh.triangles.truncate(start.1);
+        draft.mesh.faces.truncate(start.2);
+        draft.mesh.unavailable_controls.truncate(start.3);
     }
 }
 
@@ -171,7 +171,7 @@ pub(crate) fn build(
     model: &Model,
     face_id: FaceId,
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
@@ -181,7 +181,7 @@ pub(crate) fn build(
         return Ok(false);
     }
     if face.loops.len() == 1 {
-        return open_strip(model, face_id, chart, boundaries, options, dec);
+        return open_strip(model, face_id, chart, draft, options, dec);
     }
     // Fitted rails and analytic tilted end rings admit the same certified
     // angular merge. Circular rings retain their existing CDT route.
@@ -207,7 +207,7 @@ pub(crate) fn build(
         let ring = &mut rings[index];
         for &coedge in coedges {
             let coedge = model.coedge(coedge);
-            let edge = &boundaries.mesh.edges[boundaries.edges[&coedge.edge]];
+            let edge = &draft.mesh.edges[draft.edges[&coedge.edge]];
             let count = edge.vertices.len();
             if count < 2 {
                 return Ok(false);
@@ -228,7 +228,7 @@ pub(crate) fn build(
                 let vertex = vertex_at(i);
                 ring.push(Sample {
                     vertex,
-                    uv: chart.canonical(chart.project(boundaries.mesh.positions[vertex])),
+                    uv: chart.canonical(chart.project(draft.mesh.positions[vertex])),
                     error: Rational::zero(),
                     filtered_error: 0.0,
                 });
@@ -345,7 +345,7 @@ pub(crate) fn build(
         upper,
         (face_id, face.sense),
         chart,
-        boundaries,
+        draft,
         options,
         dec,
     )
@@ -356,7 +356,7 @@ fn stitch(
     mut upper: Vec<Sample>,
     face: (FaceId, Sense),
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
@@ -364,7 +364,7 @@ fn stitch(
         for sample in ring.iter_mut() {
             let (_, error) = chart.sample(
                 chart.canonical(sample.uv),
-                Some(boundaries.mesh.positions[sample.vertex]),
+                Some(draft.mesh.positions[sample.vertex]),
                 &options.chord_tolerance,
                 dec,
             )?;
@@ -373,26 +373,26 @@ fn stitch(
         }
     }
     let start = (
-        boundaries.mesh.positions.len(),
-        boundaries.mesh.triangles.len(),
-        boundaries.mesh.faces.len(),
-        boundaries.mesh.unavailable_controls.len(),
+        draft.mesh.positions.len(),
+        draft.mesh.triangles.len(),
+        draft.mesh.faces.len(),
+        draft.mesh.unavailable_controls.len(),
     );
     let band = matches!(chart.surface, Surface::Cone(_) | Surface::Torus(_));
     let complete = if band {
-        layers(&lower, &upper, face, chart, boundaries, options, dec)?
+        layers(&lower, &upper, face, chart, draft, options, dec)?
     } else {
-        sampled_stitch(&lower, &upper, face, chart, boundaries, options, dec)?
+        sampled_stitch(&lower, &upper, face, chart, draft, options, dec)?
     };
     if !complete {
-        boundaries.mesh.positions.truncate(start.0);
-        boundaries.mesh.triangles.truncate(start.1);
-        boundaries.mesh.faces.truncate(start.2);
-        boundaries.mesh.unavailable_controls.truncate(start.3);
+        draft.mesh.positions.truncate(start.0);
+        draft.mesh.triangles.truncate(start.1);
+        draft.mesh.faces.truncate(start.2);
+        draft.mesh.unavailable_controls.truncate(start.3);
         return Ok(false);
     }
     if band {
-        let faces = &mut boundaries.mesh.faces;
+        let faces = &mut draft.mesh.faces;
         let maximum = faces[start.2..]
             .iter()
             .map(|f| &f.max_chord_error)
@@ -406,16 +406,16 @@ fn stitch(
             .cloned();
         faces.truncate(start.2 + 1);
         let face = &mut faces[start.2];
-        face.triangles = start.1..boundaries.mesh.triangles.len();
+        face.triangles = start.1..draft.mesh.triangles.len();
         face.max_chord_error = maximum;
         face.max_aspect_ratio = aspect;
-        let unavailable = boundaries.mesh.unavailable_controls.len() > start.3;
-        boundaries
+        let unavailable = draft.mesh.unavailable_controls.len() > start.3;
+        draft
             .mesh
             .unavailable_controls
             .truncate(start.3 + usize::from(unavailable));
     }
-    boundaries.mesh.triangles[start.1..].sort_unstable_by_key(|triangle| triangle.vertices);
+    draft.mesh.triangles[start.1..].sort_unstable_by_key(|triangle| triangle.vertices);
     Ok(true)
 }
 
@@ -424,7 +424,7 @@ fn sampled_stitch(
     upper: &[Sample],
     face: (FaceId, Sense),
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
@@ -471,7 +471,7 @@ fn sampled_stitch(
             };
             samples = other;
         }
-        if !strip.triangle(samples, &boundaries.mesh.positions, dec)? {
+        if !strip.triangle(samples, &draft.mesh.positions, dec)? {
             return Ok(false);
         }
         if take_lower {
@@ -480,7 +480,7 @@ fn sampled_stitch(
             b += 1;
         }
     }
-    strip.finish(boundaries);
+    strip.finish(draft);
     Ok(true)
 }
 
@@ -493,7 +493,7 @@ fn sampled_layer(
     columns: &[f64],
     v: f64,
     mut strip: Strip<'_>,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     dec: &Decider,
 ) -> Result<Option<Vec<Sample>>, Refusal> {
     let mut next = Vec::<Sample>::with_capacity(columns.len() + 1);
@@ -505,8 +505,8 @@ fn sampled_layer(
                 strip
                     .chart
                     .sample(uv, None, &strip.options.chord_tolerance, dec)?;
-            let vertex = boundaries.mesh.positions.len();
-            boundaries.mesh.positions.push(position);
+            let vertex = draft.mesh.positions.len();
+            draft.mesh.positions.push(position);
             Sample {
                 vertex,
                 uv,
@@ -527,7 +527,7 @@ fn sampled_layer(
                 }
                 if !strip.triangle(
                     [&lower[a], &lower[a + 1], previous],
-                    &boundaries.mesh.positions,
+                    &draft.mesh.positions,
                     dec,
                 )? {
                     return Ok(None);
@@ -535,11 +535,7 @@ fn sampled_layer(
                 a += 1;
                 advanced = true;
             }
-            if !strip.triangle(
-                [&lower[a], &sample, previous],
-                &boundaries.mesh.positions,
-                dec,
-            )? {
+            if !strip.triangle([&lower[a], &sample, previous], &draft.mesh.positions, dec)? {
                 return Ok(None);
             }
         }
@@ -549,14 +545,14 @@ fn sampled_layer(
         dec.check_deadline()?;
         if !strip.triangle(
             [&lower[a], &lower[a + 1], next.last().unwrap()],
-            &boundaries.mesh.positions,
+            &draft.mesh.positions,
             dec,
         )? {
             return Ok(None);
         }
         a += 1;
     }
-    strip.finish(boundaries);
+    strip.finish(draft);
     Ok(Some(next))
 }
 
@@ -599,7 +595,7 @@ impl<'a> Strip<'a> {
     fn triangle(
         &mut self,
         samples: [&Sample; 3],
-        positions: &[[f64; 3]],
+        positions: &(impl std::ops::Index<usize, Output = [f64; 3]> + ?Sized),
         dec: &Decider,
     ) -> Result<bool, Refusal> {
         let uvs = samples.map(|p| p.uv);
@@ -666,7 +662,7 @@ impl<'a> Strip<'a> {
         Ok(true)
     }
 
-    fn finish(self, boundaries: &mut Boundaries) {
+    fn finish(self, draft: &mut FaceDraft<'_>) {
         let Self {
             face: (face_id, _),
             options,
@@ -675,11 +671,11 @@ impl<'a> Strip<'a> {
             aspect,
             ..
         } = self;
-        let start = boundaries.mesh.triangles.len();
-        boundaries.mesh.triangles.extend(triangles);
-        boundaries.mesh.faces.push(FaceMesh {
+        let start = draft.mesh.triangles.len();
+        draft.mesh.triangles.extend(triangles);
+        draft.mesh.faces.push(FaceMesh {
             face: face_id,
-            triangles: start..boundaries.mesh.triangles.len(),
+            triangles: start..draft.mesh.triangles.len(),
             max_chord_error: maximum,
             max_aspect_ratio: Some(aspect.clone()),
             max_angular_deviation: options.angular_deviation.clone(),
@@ -689,14 +685,11 @@ impl<'a> Strip<'a> {
             .as_ref()
             .is_some_and(|limit| aspect > *limit)
         {
-            boundaries
-                .mesh
-                .unavailable_controls
-                .push(UnavailableControl {
-                    face: face_id,
-                    control: MeshControl::AspectRatio,
-                    reason: "the certified aspect-ratio bound exceeds the requested limit",
-                });
+            draft.mesh.unavailable_controls.push(UnavailableControl {
+                face: face_id,
+                control: MeshControl::AspectRatio,
+                reason: "the certified aspect-ratio bound exceeds the requested limit",
+            });
         }
     }
 }
@@ -705,7 +698,7 @@ fn open_strip(
     model: &Model,
     face_id: FaceId,
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
@@ -720,7 +713,7 @@ fn open_strip(
     let mut axial = vec![false; coedges.len()];
     for (i, &coedge) in coedges.iter().enumerate() {
         let coedge = model.coedge(coedge);
-        let vertices = &boundaries.mesh.edges[boundaries.edges[&coedge.edge]].vertices;
+        let vertices = &draft.mesh.edges[draft.edges[&coedge.edge]].vertices;
         if vertices.len() < 2 {
             return Ok(false);
         }
@@ -731,7 +724,7 @@ fn open_strip(
                 vertices.len() - 1 - j
             };
             let vertex = vertices[j];
-            let uv = chart.canonical(chart.project(boundaries.mesh.positions[vertex]));
+            let uv = chart.canonical(chart.project(draft.mesh.positions[vertex]));
             chains[i].push(Sample {
                 vertex,
                 uv,
@@ -807,7 +800,7 @@ fn open_strip(
         upper,
         (face_id, face.sense),
         chart,
-        boundaries,
+        draft,
         options,
         dec,
     )
@@ -818,14 +811,16 @@ mod tests {
     use super::*;
     use catallax_shapes::Pose;
     use catallax_topology as topology;
+    use std::collections::BTreeMap;
 
-    fn boundaries(mesh: crate::Mesh) -> Boundaries {
+    use crate::edges::Boundaries;
+
+    fn boundaries() -> Boundaries {
         Boundaries {
-            mesh,
+            mesh: crate::Mesh::default(),
             edges: Default::default(),
             vertices: Default::default(),
             exact_positions: Default::default(),
-            enclosures: Default::default(),
             rails: Default::default(),
             marks: Default::default(),
         }
@@ -835,7 +830,7 @@ mod tests {
         columns: &[f64],
         v: f64,
         chart: &Chart,
-        boundaries: &mut Boundaries,
+        draft: &mut FaceDraft<'_>,
         options: &MeshOptions,
         dec: &Decider,
     ) -> Vec<Sample> {
@@ -845,8 +840,8 @@ mod tests {
             let (position, error) = chart
                 .sample(uv, None, &options.chord_tolerance, dec)
                 .unwrap();
-            let vertex = boundaries.mesh.positions.len();
-            boundaries.mesh.positions.push(position);
+            let vertex = draft.mesh.positions.len();
+            draft.mesh.positions.push(position);
             ring.push(Sample {
                 vertex,
                 uv,
@@ -872,6 +867,7 @@ mod tests {
         )
         .unwrap();
         let face_id = model.faces_of_body(body)[0];
+        let shared = boundaries();
         let surface = model.geom().surface(model.face(face_id).surface);
         let chart = Chart::new(surface, &dec).unwrap();
         for (lower_columns, columns) in [
@@ -892,7 +888,9 @@ mod tests {
                             .then(|| Rational::parse("0.001").unwrap()),
                         ..MeshOptions::default()
                     };
-                    let mut streamed = boundaries(crate::Mesh::default());
+                    let (mut streamed_cache, mut reference_cache) =
+                        (BTreeMap::new(), BTreeMap::new());
+                    let mut streamed = FaceDraft::new(&shared, 0, &mut streamed_cache);
                     let lower = ring(
                         &lower_columns,
                         -0.03125,
@@ -901,7 +899,8 @@ mod tests {
                         &options,
                         &dec,
                     );
-                    let mut reference = boundaries(streamed.mesh.clone());
+                    let mut reference = FaceDraft::new(&shared, 0, &mut reference_cache);
+                    reference.mesh.positions = streamed.mesh.positions.clone();
                     let upper = ring(&columns, 0.015625, &chart, &mut reference, &options, &dec);
                     let complete = sampled_stitch(
                         &lower,

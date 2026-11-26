@@ -20,8 +20,8 @@ use catallax_topology::{
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
+    assembly::{Assembly, FaceDraft},
     chart::{self, BITS},
-    edges::Boundaries,
     failure,
     preview::{PreviewMesh, PreviewOptions},
 };
@@ -164,10 +164,10 @@ pub(crate) fn spline_fillet_face(
     face: FaceId,
     options: &MeshOptions,
     dec: &mut Decider,
-) -> Result<Boundaries, Refusal> {
+) -> Result<(crate::Mesh, catallax_numbers::MarkLog), Refusal> {
     let junction =
         spline_fillet::prepare_face(model, &model.faces_of_body(body), face, options, dec)?;
-    let mut boundaries = crate::edges::sample_selected(
+    let boundaries = crate::edges::sample_selected(
         model,
         body,
         junction.seeds.keys().copied(),
@@ -176,8 +176,15 @@ pub(crate) fn spline_fillet_face(
         options,
         dec,
     )?;
-    junction.triangulate(face, &mut boundaries, options, true)?;
-    Ok(boundaries)
+    let mut assembly = Assembly::new(&boundaries);
+    let mut enclosures = BTreeMap::new();
+    let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
+    junction.triangulate(face, &mut draft, options, true)?;
+    let result = draft.finish(model, face, assembly.prior())?;
+    if !assembly.push(result)? {
+        return Err(failure("a lone face cannot conflict with earlier faces"));
+    }
+    Ok(assembly.finish(boundaries))
 }
 
 pub(crate) fn spline_fillet_carrier(
@@ -462,7 +469,7 @@ impl Junction {
     pub(crate) fn triangulate(
         &self,
         face: FaceId,
-        boundaries: &mut Boundaries,
+        draft: &mut FaceDraft<'_>,
         options: &MeshOptions,
         position_only: bool,
     ) -> Result<(), Refusal> {
@@ -473,7 +480,7 @@ impl Junction {
         let mut index = vec![usize::MAX; columns * rows];
         let mut error = grid.chord.clone();
         for (edge, row, forward) in &envelope.rows {
-            let mesh = &boundaries.mesh.edges[boundaries.edges[edge]];
+            let mesh = &draft.mesh.edges[draft.edges[edge]];
             error = error.max(mesh.max_chord_error.clone());
             let mut vertices = mesh.vertices.clone();
             if !forward {
@@ -502,7 +509,7 @@ impl Junction {
         }
         for column in 1..columns - 1 {
             for line in 1..rows - 1 {
-                if boundaries.mesh.positions.len() >= options.max_vertices {
+                if draft.mesh.positions.len() >= options.max_vertices {
                     return Err(Refusal::new(
                         "mesh.resource-limit",
                         "envelope grid reached max_vertices",
@@ -513,15 +520,15 @@ impl Junction {
                 if envelope.rational.is_none() {
                     error = error.max(&grid.chord + &chart::residual(&position, point));
                 }
-                index[at(column, line)] = boundaries.mesh.positions.len();
-                boundaries.mesh.positions.push(position);
+                index[at(column, line)] = draft.mesh.positions.len();
+                draft.mesh.positions.push(position);
             }
         }
         if let Some(proof) = &envelope.rational {
             let mut residual = Rational::zero();
             for (slot, &vertex) in index.iter().enumerate() {
                 residual = residual.max(chart::residual(
-                    &boundaries.mesh.positions[vertex],
+                    &draft.mesh.positions[vertex],
                     &grid.points[slot],
                 ));
             }
@@ -550,7 +557,7 @@ impl Junction {
                 "proved envelope mesh error exceeds the requested output accuracy",
             ));
         }
-        let start = boundaries.mesh.triangles.len();
+        let start = draft.mesh.triangles.len();
         let mut longest = Rational::zero();
         let mut aspect = Rational::zero();
         let mut angular = None::<Rational>;
@@ -577,7 +584,7 @@ impl Junction {
                     {
                         continue;
                     }
-                    let (ratio, length, normal) = quality(&boundaries.mesh.positions, vertices)?;
+                    let (ratio, length, normal) = quality(&draft.mesh.positions, vertices)?;
                     if let Some(boxes) = envelope
                         .rational
                         .as_ref()
@@ -603,19 +610,16 @@ impl Junction {
                     }
                     aspect = aspect.max(ratio);
                     longest = longest.max(length);
-                    boundaries.mesh.triangles.push(Triangle { vertices, face });
+                    draft.mesh.triangles.push(Triangle { vertices, face });
                 }
             }
         }
         let mut unavailable = |control, reason| {
-            boundaries
-                .mesh
-                .unavailable_controls
-                .push(UnavailableControl {
-                    face,
-                    control,
-                    reason,
-                })
+            draft.mesh.unavailable_controls.push(UnavailableControl {
+                face,
+                control,
+                reason,
+            })
         };
         if options.angular_deviation.is_some() && angular.is_none() {
             unavailable(
@@ -643,9 +647,9 @@ impl Junction {
                 "the certified aspect-ratio bound exceeds the requested limit",
             );
         }
-        boundaries.mesh.faces.push(FaceMesh {
+        draft.mesh.faces.push(FaceMesh {
             face,
-            triangles: start..boundaries.mesh.triangles.len(),
+            triangles: start..draft.mesh.triangles.len(),
             max_chord_error: error,
             max_aspect_ratio: Some(aspect),
             max_angular_deviation: angular,
@@ -656,7 +660,7 @@ impl Junction {
 
 // Longest edge over shortest altitude, and the longest squared edge.
 fn quality(
-    positions: &[[f64; 3]],
+    positions: &(impl std::ops::Index<usize, Output = [f64; 3]> + ?Sized),
     triangle: [usize; 3],
 ) -> Result<(Rational, Rational, [Ball; 3]), Refusal> {
     let points =

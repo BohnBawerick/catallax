@@ -88,7 +88,6 @@ pub(crate) struct Boundaries {
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
     pub(crate) exact_positions: BTreeMap<usize, Position>,
-    pub(crate) enclosures: BTreeMap<usize, [Ball; 3]>,
     pub(crate) rails: Rails,
     pub(crate) marks: MarkLog,
 }
@@ -648,7 +647,6 @@ pub(crate) fn sample_selected(
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
         exact_positions: BTreeMap::new(),
-        enclosures: BTreeMap::new(),
         rails: Rails::default(),
         marks: model.body(body).marks.clone(),
     };

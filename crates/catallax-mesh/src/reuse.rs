@@ -4,9 +4,12 @@ use catallax_numbers::{Decider, Refusal};
 use catallax_shapes::{Curve, Point3, Surface};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, VertexId};
 
-use crate::{EdgeMesh, FaceMesh, Mesh, MeshOptions, Triangle, edges::Boundaries, failure};
-
-type Chords = BTreeSet<(usize, usize)>;
+use crate::{
+    EdgeMesh, FaceMesh, Mesh, MeshOptions, Triangle,
+    assembly::{Assembly, Chords, FaceResult},
+    edges::Boundaries,
+    failure,
+};
 
 pub(crate) struct Previous<'a> {
     model: &'a Model,
@@ -206,51 +209,50 @@ impl<'a> Previous<'a> {
         Ok(Some(remap))
     }
 
-    fn prior_matches(
+    /// Chords that earlier old faces emitted between this old face's samples,
+    /// in new indices: what the cached triangulation was built against.
+    fn relied_on(
         &self,
         face_index: usize,
         remap: &BTreeMap<usize, usize>,
-        prior: &Chords,
         dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
-        let mut old_prior = Chords::new();
+    ) -> Result<Chords, Refusal> {
+        let mut relied_on = Chords::new();
         for (&(a, b), &first_face) in &self.chords {
             dec.charge_work(1)?;
             if first_face < face_index
                 && let (Some(&a), Some(&b)) = (remap.get(&a), remap.get(&b))
             {
-                old_prior.insert((a.min(b), a.max(b)));
+                relied_on.insert((a.min(b), a.max(b)));
             }
         }
-        let mut vertices = BTreeSet::new();
-        for &vertex in remap.values() {
-            dec.charge_work(1)?;
-            vertices.insert(vertex);
-        }
-        for &(a, b) in prior {
-            dec.charge_work(1)?;
-            if vertices.contains(&a) && vertices.contains(&b) && !old_prior.remove(&(a, b)) {
-                return Ok(false);
-            }
-        }
-        Ok(old_prior.is_empty())
+        Ok(relied_on)
     }
 
-    pub(crate) fn append(
+    /// A cached face for `face`, when an old face has the same definition, the
+    /// same shared samples and the same earlier chords between them. The
+    /// assembly checks the chords again when it places the result.
+    pub(crate) fn face(
         &self,
         model: &Model,
         face: FaceId,
-        boundaries: &mut Boundaries,
-        prior: &Chords,
+        boundaries: &Boundaries,
+        assembly: &Assembly,
         options: &MeshOptions,
         dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
+    ) -> Result<Option<FaceResult>, Refusal> {
         for (index, old) in self.mesh.faces.iter().enumerate() {
             dec.charge_work(1)?;
             let Some(mut remap) = self.boundary_map(old, model, face, boundaries, dec)? else {
                 continue;
             };
-            if !self.prior_matches(index, &remap, prior, dec)? {
+            let relies_on = self.relied_on(index, &remap, dec)?;
+            let mut shared = BTreeSet::new();
+            for &vertex in remap.values() {
+                dec.charge_work(1)?;
+                shared.insert(vertex);
+            }
+            if !prior_matches(&relies_on, &shared, assembly.prior(), dec)? {
                 continue;
             }
             let triangles = &self.mesh.triangles[old.triangles.clone()];
@@ -263,27 +265,23 @@ impl<'a> Previous<'a> {
                     }
                 }
             }
-            if interior.len()
-                > options
-                    .max_vertices
-                    .saturating_sub(boundaries.mesh.positions.len())
-            {
+            let base = assembly.base();
+            if interior.len() > options.max_vertices.saturating_sub(base) {
                 return Err(failure("reused face triangulation reached max_vertices"));
             }
             // Preserve the original position order, including periodic chart
             // copies that survived compaction. Only boundary indices are shared.
+            let mut positions = Vec::with_capacity(interior.len());
             for vertex in interior {
                 dec.charge_work(1)?;
-                let next = boundaries.mesh.positions.len();
-                boundaries.mesh.positions.push(self.mesh.positions[vertex]);
-                remap.insert(vertex, next);
+                remap.insert(vertex, base + positions.len());
+                positions.push(self.mesh.positions[vertex]);
             }
-            let start = boundaries.mesh.triangles.len();
             dec.charge_work((triangles.len() as u64).saturating_mul(3))?;
-            boundaries.mesh.triangles.reserve(triangles.len());
+            let mut copied = Vec::with_capacity(triangles.len());
             for triangle in triangles {
                 dec.check_deadline()?;
-                boundaries.mesh.triangles.push(Triangle {
+                copied.push(Triangle {
                     vertices: triangle.vertices.map(|vertex| remap[&vertex]),
                     face,
                 });
@@ -291,20 +289,47 @@ impl<'a> Previous<'a> {
             dec.charge_work(1)?;
             let mut report = old.clone();
             report.face = face;
-            report.triangles = start..boundaries.mesh.triangles.len();
-            boundaries.mesh.faces.push(report);
+            report.triangles = 0..copied.len();
+            let mut unavailable_controls = Vec::new();
             for control in &self.mesh.unavailable_controls {
                 dec.charge_work(1)?;
                 if control.face == old.face {
                     let mut control = control.clone();
                     control.face = face;
-                    boundaries.mesh.unavailable_controls.push(control);
+                    unavailable_controls.push(control);
                 }
             }
-            return Ok(true);
+            return Ok(Some(FaceResult {
+                face,
+                base,
+                positions,
+                triangles: copied,
+                report,
+                unavailable_controls,
+                shared,
+                relies_on,
+            }));
         }
-        Ok(false)
+        Ok(None)
     }
+}
+
+/// Whether the chords emitted so far between `shared` samples are exactly
+/// `relies_on`. Charged per chord, as the old face loop was.
+fn prior_matches(
+    relies_on: &Chords,
+    shared: &BTreeSet<usize>,
+    prior: &Chords,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut unmatched = relies_on.clone();
+    for &(a, b) in prior {
+        dec.charge_work(1)?;
+        if shared.contains(&a) && shared.contains(&b) && !unmatched.remove(&(a, b)) {
+            return Ok(false);
+        }
+    }
+    Ok(unmatched.is_empty())
 }
 
 #[cfg(test)]

@@ -1,0 +1,6 @@
+## 2026-11-26: display capture records for display comparisons
+
+Pieces: catallax-mesh, catallax-field, tools/display-diff
+Change: `catallax-mesh` and `catallax-field` gain a `display-capture` feature, off by default. With it, `mesh_body`, `mesh_body_reusing`, `display_mesh_body`, `preview_mesh_body` and field display write one `displaycapture` line per call to standard error: record format 1, thread name, function, spline carriers, options, work counters and a SHA-256 digest of an explicit encoding of the result. The encoding is in `catallax_mesh::capture`; it does not use `Debug` text. `tools/display-diff/check.py capture` uses this interface by default; `--collector probe` keeps the old source rewrite for revisions without it, and `migrate` matches the two collectors on one revision.
+Why: the probe rewrote four function bodies by regular expression and hashed `Debug` text, so a renamed local or a formatting change could break capture or move a digest without moving a triangle.
+Migration: none for library callers; normal builds do not compile the feature. Compare captures from one collector only. An exception pinned against probe rows does not match interface rows, so re-pin it against an interface capture of both sides.

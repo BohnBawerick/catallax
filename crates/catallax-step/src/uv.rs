@@ -1,6 +1,6 @@
 //! Parameter-coupled degree-seven UV fits, with outward Taylor bounds.
 
-use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Rational, Refusal, StrictSign};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -23,13 +23,10 @@ fn scalar(value: i64, precision: u32) -> Ball {
 impl<const N: usize> Jet<N> {
     pub fn constant(value: Ball) -> Self {
         let precision = value.precision();
+        let mut value = Some(value);
         Self {
-            coefficients: std::array::from_fn(|i| {
-                if i == 0 {
-                    value.clone()
-                } else {
-                    scalar(0, precision)
-                }
+            coefficients: std::array::from_fn(|_| {
+                value.take().unwrap_or_else(|| scalar(0, precision))
             }),
             degree: 0,
         }
@@ -121,13 +118,14 @@ impl<const N: usize> Jet<N> {
         let precision = self.coefficients[0].precision();
         let mut result = Self::constant(self.coefficients[0].square());
         result.degree = (self.degree * 2).min(N - 1);
+        let two = scalar(2, precision);
         for n in 1..=result.degree {
             for k in n.saturating_sub(self.degree)..=self.degree.min(n / 2) {
                 let other = n - k;
                 let term = if k == other {
                     self.coefficients[k].square()
                 } else {
-                    &(&self.coefficients[k] * &self.coefficients[other]) * &scalar(2, precision)
+                    &(&self.coefficients[k] * &self.coefficients[other]) * &two
                 };
                 result.coefficients[n] = &result.coefficients[n] + &term;
             }
@@ -136,7 +134,7 @@ impl<const N: usize> Jet<N> {
     }
 
     pub fn sqrt(&self) -> Result<Self, Refusal> {
-        if self.coefficients[0].lo() <= Rational::zero() {
+        if self.coefficients[0].sign() != Some(StrictSign::Positive) {
             return Err(number::budget("UV radial jet is not separated from a pole"));
         }
         let root = self.coefficients[0]
@@ -1030,18 +1028,20 @@ pub(crate) fn angle(
     dec: &Decider,
 ) -> Result<Ball, Refusal> {
     dec.check_deadline()?;
-    if x.lo() > Rational::zero() {
+    let x_sign = x.sign();
+    if x_sign == Some(StrictSign::Positive) {
         return atan(&y.checked_div(x).unwrap(), dec);
     }
-    if x.hi() < Rational::zero() {
+    if x_sign == Some(StrictSign::Negative) {
         return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
     }
-    if y.lo() > Rational::zero() {
+    let y_sign = y.sign();
+    if y_sign == Some(StrictSign::Positive) {
         return Ok(
             pi * &scalar_ratio(1, 2, pi.precision()) - atan(&x.checked_div(y).unwrap(), dec)?
         );
     }
-    if y.hi() < Rational::zero() {
+    if y_sign == Some(StrictSign::Negative) {
         return Ok(
             -(pi * &scalar_ratio(1, 2, pi.precision())) - atan(&x.checked_div(y).unwrap(), dec)?
         );
@@ -1057,23 +1057,25 @@ pub(crate) fn positive_angle(
     dec: &Decider,
 ) -> Result<Ball, Refusal> {
     dec.check_deadline()?;
-    if x.lo() > Rational::zero() {
-        if y.lo() >= Rational::zero() {
+    let x_sign = x.sign();
+    if x_sign == Some(StrictSign::Negative) {
+        return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
+    }
+    let y_sign = y.sign();
+    if x_sign == Some(StrictSign::Positive) {
+        if y_sign == Some(StrictSign::Positive) || (y_sign.is_none() && y.lo().is_zero()) {
             return atan(&y.checked_div(x).unwrap(), dec);
         }
-        if y.hi() < Rational::zero() {
+        if y_sign == Some(StrictSign::Negative) {
             return Ok(pi * &scalar(2, pi.precision()) + atan(&y.checked_div(x).unwrap(), dec)?);
         }
     }
-    if x.hi() < Rational::zero() {
-        return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
-    }
-    if y.lo() > Rational::zero() {
+    if y_sign == Some(StrictSign::Positive) {
         return Ok(
             pi * &scalar_ratio(1, 2, pi.precision()) - atan(&x.checked_div(y).unwrap(), dec)?
         );
     }
-    if y.hi() < Rational::zero() {
+    if y_sign == Some(StrictSign::Negative) {
         return Ok(
             pi * &scalar_ratio(3, 2, pi.precision()) + atan(&x.checked_div(&(-y)).unwrap(), dec)?
         );

@@ -479,17 +479,22 @@ impl LocalCurve {
                 let parameter = Jet::variable(t.clone())
                     .sub(&Jet::constant(ball(&range[0], t.precision())))
                     .scale(&inverse);
-                let horner = |values: &mut dyn Iterator<Item = &Ball>| {
-                    let values: Vec<&Ball> = values.collect();
-                    let mut value = Jet::constant(values[values.len() - 1].clone());
-                    for k in (0..values.len() - 1).rev() {
-                        value = value.mul(&parameter).add(&Jet::constant(values[k].clone()));
+                fn horner<'a, const N: usize>(
+                    values: impl DoubleEndedIterator<Item = &'a Ball>,
+                    parameter: &Jet<N>,
+                ) -> Jet<N> {
+                    let mut values = values.rev();
+                    let mut value = Jet::constant(values.next().expect("nonempty span").clone());
+                    for coefficient in values {
+                        value = value
+                            .mul(parameter)
+                            .add(&Jet::constant(coefficient.clone()));
                     }
                     value
-                };
-                let weight = horner(&mut weights.iter());
+                }
+                let weight = horner(weights.iter(), &parameter);
                 let [x, y, z] =
-                    std::array::from_fn(|axis| horner(&mut points.iter().map(|p| &p[axis])));
+                    std::array::from_fn(|axis| horner(points.iter().map(|p| &p[axis]), &parameter));
                 [x.div(&weight)?, y.div(&weight)?, z.div(&weight)?]
             }
         };
@@ -673,8 +678,10 @@ impl SurfaceMap {
                 Jet::angle(z, &offset, constant)?
             }
         };
-        Ok(std::array::from_fn(|i| {
-            [u.coefficients[i].clone(), v.coefficients[i].clone()]
+        let mut u = u.coefficients.into_iter();
+        let mut v = v.coefficients.into_iter();
+        Ok(std::array::from_fn(|_| {
+            [u.next().unwrap(), v.next().unwrap()]
         }))
     }
 }
@@ -695,9 +702,10 @@ pub(crate) fn lift(
 }
 
 fn shifted_angle(base: &Ball, target: &Ball, pi: &Ball) -> Option<Ball> {
+    let lower_pi = pi.lo();
     for integer in [-1, 0, 1, 2] {
         let value = base + &(pi * &scalar(integer * 2, pi.precision()));
-        if number::magnitude(&(&value - target)) < pi.lo() {
+        if number::magnitude(&(&value - target)) < lower_pi {
             return Some(value);
         }
     }
@@ -1258,13 +1266,21 @@ impl Guide<'_> {
                 frame.xy(&std::array::from_fn(|axis| &sums[axis] * &inverse))
             }
         };
-        uv::positive_angle(
-            &y.with_precision(precision),
-            &x.with_precision(precision),
-            &pi.with_precision(precision),
-            atan,
-            dec,
-        )
+        let [y, x] = [y, x].map(|value| {
+            if value.precision() == precision {
+                value
+            } else {
+                value.with_precision(precision)
+            }
+        });
+        let reduced_pi;
+        let pi = if pi.precision() == precision {
+            pi
+        } else {
+            reduced_pi = pi.with_precision(precision);
+            &reduced_pi
+        };
+        uv::positive_angle(&y, &x, pi, atan, dec)
     }
 
     fn lift(
@@ -1355,15 +1371,15 @@ impl uv::Parametric for Piece<'_> {
                     self.projection,
                     dec,
                 )?;
-                coefficients[0] = self.projection.map.inverse(
+                let [point] = self.projection.map.inverse(
                     &xyz,
                     u,
                     &self.projection.pi,
                     true,
                     self.projection.atan,
                     dec,
-                )?[0]
-                    .clone();
+                )?;
+                coefficients[0] = point;
             }
             if N > 1 {
                 coefficients[1][0] = scalar(speed, p);
@@ -1400,6 +1416,7 @@ impl uv::Parametric for Piece<'_> {
                 return Ok(point.each_ref().map(|c| ball(c, p)));
             }
         }
-        Ok(self.coefficients::<1>(&ball(parameter, p), true, dec)?[0].clone())
+        let [point] = self.coefficients::<1>(&ball(parameter, p), true, dec)?;
+        Ok(point)
     }
 }

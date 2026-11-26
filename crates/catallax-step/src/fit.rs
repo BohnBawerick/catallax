@@ -10,7 +10,7 @@
 //! counted.
 
 use catallax_intersect::{CurveTrace, TracePiece};
-use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
 
 use crate::StepOptions;
 use crate::number::{self, Point};
@@ -390,6 +390,7 @@ pub(crate) fn taylor_controls<const N: usize>(
         }
     }
     let mut controls = zeros();
+    let negative_width = width.sign() == Sign::Negative;
     for (j, weights) in WEIGHTS.iter().enumerate() {
         let mut parts: [[[Rational; 2]; N]; 2] =
             std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]));
@@ -397,10 +398,12 @@ pub(crate) fn taylor_controls<const N: usize>(
             if weight.is_zero() {
                 continue;
             }
+            // The sign of width^k * weight determines the endpoint order.
+            let reverse = (weight.sign() == Sign::Negative) ^ (negative_width && k % 2 != 0);
             for i in 0..N {
                 let a = &coefficient[i][0] * weight;
                 let b = &coefficient[i][1] * weight;
-                let (lower, upper) = if a <= b { (a, b) } else { (b, a) };
+                let (lower, upper) = if reverse { (b, a) } else { (a, b) };
                 let interval = &mut parts[k % 2][i];
                 interval[0] = &interval[0] + &lower;
                 interval[1] = &interval[1] + &upper;

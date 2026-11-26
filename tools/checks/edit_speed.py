@@ -21,6 +21,46 @@ FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
          "names.txt", "operations.txt")
 MEASURED_PAIRS = 9
 
+# Released edit witnesses: integer probes measure an axis extent; (x, y) probes
+# measure the topmost intersection at an interior point, away from trim edges.
+# The plate's top moves from 10 to 12 mm; the larger boss covers (83.5, 45.25).
+DISPLAY_EDITS = {
+    "bracket": {27: (0, (0, 120), (-10, 130)), 43: (2, (0, 70), (0, 76.2))},
+    "drawing": {24: ((41.25, 19.5), (10,), (12,))},
+    "references": {17: ((41.25, 19.5), (10,), (12,)), 18: ((83.5, 45.25), (12,), (32,))},
+}
+
+CAPTURE_ANCHOR = '        image::save_buffer(png, &picture.pixels, 960, 720, image::ColorType::Rgba8)?;'
+CAPTURE_SCENE = '''        if std::env::var_os("CATALLAX_EDIT_DISPLAY_EVIDENCE").is_some() {
+            let encode = |mesh: &soliddraft_app::document::DisplayMesh| {
+                let positions: Vec<_> = mesh.positions.iter().map(|p| [p.x, p.y, p.z]).collect();
+                let normals: Vec<_> = mesh.normals.iter().map(|p| [p.x, p.y, p.z]).collect();
+                serde_json::to_string(&json!({
+                    "positions": positions, "indices": mesh.indices,
+                    "normals": normals, "face_picks": mesh.face_picks,
+                    "face_features": mesh.face_features, "face_appearances": mesh.face_appearances,
+                }))
+            };
+            let mut meshes = doc.meshes.values().map(|mesh| encode(mesh))
+                .collect::<Result<Vec<_>, _>>()?;
+            meshes.sort_unstable();
+            let provisional = doc.provisional_mesh().as_deref().map(encode).transpose()?;
+            std::fs::write(png.with_extension("mesh.json"),
+                format!(r#"{{"params":{},"meshes":[{}],"provisional":{}}}"#,
+                    serde_json::to_string(&doc.tess_params)?, meshes.join(","),
+                    provisional.as_deref().unwrap_or("null")))?;
+        }
+'''
+
+
+def instrument_scene(app):
+    # Scratch copy of the released app; read the Arc<DisplayMesh> drawn by
+    # Offscreen::capture. Do not issue a new viewport mesh request here.
+    source = app / "crates/soliddraft-cli/src/screenshot.rs"
+    text = source.read_text()
+    assert text.count(CAPTURE_ANCHOR) == 1, "unexpected released viewport capture"
+    source.write_text(text.replace(CAPTURE_ANCHOR, CAPTURE_SCENE + CAPTURE_ANCHOR))
+
 # The STEP answer states two exact bounds: max_deviation, the file against the
 # represented model, and the optional definition_deviation, the file against the
 # exact definition. The definition bound is report-only metadata computed from
@@ -64,6 +104,7 @@ def build(args):
     manifest = args.app / "crates/soliddraft-kernel-catallax/Cargo.toml"
     original = manifest.read_text()
     pin_date(args.app, int(os.environ["SOURCE_DATE_EPOCH"]))
+    instrument_scene(args.app)
     native = args.app / "crates/soliddraft-kernel-catallax/src/native.rs"
     source = native.read_text()
     old = "Ok(FaceRef { face: face_pattern, touching: vec![], near })"
@@ -293,8 +334,86 @@ def compare_work(left, right):
             compare_calls(*foreground, b)
 
 
-def compare_application(comparator, left, right, pins):
+def capture_scene(root):
+    commands = root / "commands"
+    images = {path.parent.name: path.read_bytes() for path in commands.glob("*/viewport.png")}
+    meshes = {path.parent.name: path.read_bytes() for path in commands.glob("*/viewport.mesh.json")}
+    assert images and images.keys() == meshes.keys(), f"missing live mesh or image: {root}"
+    for step, mesh in meshes.items():
+        assert mesh and images[step], f"empty viewport capture: {root}/{step}"
+    return images, meshes
+
+
+def observe_mesh(mesh, probe):
+    positions, indices = mesh["positions"], mesh["indices"]
+    if isinstance(probe, int):
+        values = [positions[i][probe] for i in indices]
+        return min(values), max(values)
+
+    x, y = probe
+
+    def side(a, b):
+        return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
+
+    top = None
+    vertices = (positions[i] for i in indices)
+    for a, b, c in zip(vertices, vertices, vertices, strict=True):
+        area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        weights = side(b, c), side(c, a), side(a, b)
+        if area and all(w / area >= -1e-12 for w in weights):
+            z = sum(w * p[2] for w, p in zip(weights, (a, b, c))) / area
+            top = z if top is None else max(top, z)
+    assert top is not None, f"no live surface at {(x, y)}"
+    return (top,)
+
+
+def compare_display(baseline, candidate, probes, targets):
+    """Validate the post-edit viewport once; later repetitions must match it."""
+    assert baseline.name == candidate.name
+    (base_images, base_meshes), (head_images, head_meshes) = map(capture_scene, (baseline, candidate))
+    assert base_meshes.keys() == head_meshes.keys(), f"missing viewport capture: {candidate}"
+    def geometry(data):
+        return [(m["positions"], m["indices"]) for m in data["meshes"]]
+
+    changed = set()
+    for step in base_meshes:
+        if base_meshes[step] == head_meshes[step]:
+            continue
+        before, after = (json.loads(meshes[step]) for meshes in (base_meshes, head_meshes))
+        assert before["params"] == after["params"], f"viewport controls changed: {candidate}/{step}"
+        assert before["provisional"] == after["provisional"], f"provisional scene changed: {candidate}/{step}"
+        if geometry(before) != geometry(after):
+            changed.add(step)
+    assert "0002" in base_images.keys() - changed, "missing fixed renderer control scene"
+    # The unchanged scenes are the pinned renderer controls. Their bytes must
+    # match under the released renderer's fixed camera and exact viewport metadata.
+    for step in base_images.keys() - changed:
+        assert base_images[step] == head_images[step], f"renderer changed for identical scene: {candidate}/{step}"
+    proved = changed | {f"{s:04}" for n in targets for s in (n - 1, n)}
+    for root, meshes in ((baseline, base_meshes), (candidate, head_meshes)):
+        witnesses = {}
+        for n in targets:
+            probe, pre, post = DISPLAY_EDITS[root.name][n]
+            for s, expected in ((n - 1, pre), (n, post)):
+                mesh, = json.loads(meshes[f"{s:04}"])["meshes"]
+                actual = observe_mesh(mesh, probe)
+                assert all(abs(a - b) <= 0.001 for a, b in zip(actual, expected, strict=True)), \
+                    f"wrong live edit observation at {root}/{s}: {actual} != {expected}"
+                witnesses[f"{n:04}:{s:04}"] = dict(probe=probe, actual=actual, expected=expected)
+        folders = [root / "commands" / step for step in sorted(proved)]
+        proof = subprocess.run([str(probes[root]), *map(str, folders)], check=True,
+                               text=True, stdout=subprocess.PIPE)
+        (root.parent / f"{root.name}-display-proof.jsonl").write_text(proof.stdout)
+        (root.parent / f"{root.name}-display-witnesses.json").write_text(json.dumps(witnesses, indent=2) + "\n")
+    return changed
+
+
+def compare_application(comparator, left, right, pins, *, verified_display=()):
+    assert not verified_display or left.name == right.name, "display proof belongs to a different scenario"
+    verified_images = {f"{step}/viewport.png" for step in verified_display}
     for difference in comparator.problems(left, right, pins):
+        if difference in verified_images:
+            continue
         if re.fullmatch(r"\d{4}/command.json", difference):
             values = [json.loads(comparator.text(root / "commands" / difference, root, pins))
                       for root in (left, right)]
@@ -318,10 +437,12 @@ def run(args):
     comparator = load(args.app / "ci/compare-scenario-bundles.py", "compare_bundles")
     pins = os.environ["BASE_SHA"], os.environ["HEAD_SHA"]
     samples, references, native_references = [], {}, {}
+    display_runs, verified_display = {}, {}
     definition_bounds = DefinitionBounds()
     scenarios = args.out / "inputs"
     scenarios.mkdir()
     for name, targets in TARGETS.items():
+        assert targets.keys() == DISPLAY_EDITS[name].keys(), f"missing live edit witness: {name}"
         source = json.loads((args.app / f"ci/scenarios/{name}.json").read_text())
         for number, tool in targets.items():
             assert source["steps"][number - 1]["tool"] == tool, f"wrong edit target: {name} {number}"
@@ -346,13 +467,29 @@ def run(args):
                            "--soliddraft", str(args.binaries / revision),
                            "--catallax-verify", str(root / "target/release/catallax-verify")]
                 dest.parent.mkdir(exist_ok=True)
+                env = {**os.environ, "CATALLAX_EDIT_DISPLAY_EVIDENCE": "1",
+                       "CATALLAX_THREADS": "4" if pair == 0 else "1"}
                 with (dest.parent / f"{name}.log").open("w") as log:
-                    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+                    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=env)
                 assert result.returncode == 0, f"scenario failed: {dest.parent / (name + '.log')}"
                 report = json.loads((dest / "result.json").read_text())
                 assert report["pass"], f"incomplete or failed scenario: {dest}"
+                key = name, revision
+                if pair == 0:
+                    display_runs[key] = dest
+                    if revision == "candidate":
+                        base = display_runs[name, "baseline"]
+                        probes = {out: kernel / "target/release/examples/edit_display"
+                                  for out, kernel in ((base, args.baseline), (dest, args.candidate))}
+                        changes = compare_display(base, dest, probes, targets)
+                        verified_display[name] = changes
+                        print(f"verified {name} display changes: {', '.join(sorted(changes))}", flush=True)
+                else:
+                    assert capture_scene(display_runs[key]) == capture_scene(dest), \
+                        f"live meshes or renderer differ across thread counts: {dest}"
                 if name in references:
-                    compare_application(comparator, references[name], dest, pins)
+                    compare_application(comparator, references[name], dest, pins,
+                                        verified_display=verified_display[name] if revision == "candidate" else ())
                 else:
                     references[name] = dest
                 for number in targets:
@@ -415,7 +552,10 @@ def run(args):
                   core=core, measured_pairs=MEASURED_PAIRS,
                   binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
                                             for r in ("baseline", "candidate")},
-                  comparison="identical application answers and native STEP, mesh, certificates, names and operation outcomes; the report-only definition bound and accepted work never increase",
+                  comparison=("exact native STEP, certified mesh, kernel and command answers; "
+                              "live meshes checked against their edited references; "
+                              "definition bound and accepted work never increase"),
+                  changed_viewports={name: sorted(steps) for name, steps in verified_display.items()},
                   medians=medians, samples=samples)
     (args.out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

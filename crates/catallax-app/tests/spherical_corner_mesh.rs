@@ -844,13 +844,6 @@ fn certified_line(model: &Model, body: BodyId, options: &MeshOptions) -> String 
     }
 }
 
-fn preview_line(model: &Model, body: BodyId, options: &PreviewOptions) -> String {
-    match preview_mesh_body(model, body, options, &mut Decider::default()) {
-        Ok(mesh) => format!("preview {:016x}", preview_digest(&mesh)),
-        Err(refusal) => format!("refused {refusal}"),
-    }
-}
-
 fn compare(baseline: &[(&str, &str)], actual: Vec<(String, String)>) {
     if std::env::var_os("SPHERICAL_CORNER_CAPTURE").is_some() {
         for (name, line) in &actual {
@@ -984,21 +977,19 @@ const NEIGHBOUR_BASELINE: &[(&str, &str)] = &[
         "complement certified",
         "mesh 8b59d13842557d5b obj e6a62f7a7b2f97ab",
     ),
-    ("complement preview", "preview ffd6120c0138fa48"),
     (
         "concave certified",
         "mesh 905f448b0df8cc7f obj 32f263af67961b58",
     ),
-    ("concave preview", "preview 460b9c33cee2f50b"),
     (
         "long arc certified",
         "mesh 6a4f2ca239db69d4 obj a44477bcfff123e9",
     ),
-    ("long arc preview", "preview 3a901db32a00ba03"),
 ];
 
-/// Three finite great-circle arcs alone do not make a convex corner. A trim with
-/// the same arcs and any other region keeps its earlier route and exact output.
+/// Three finite great-circle arcs alone do not make a convex corner. The
+/// checked meshes are pinned; previews keep their geometry and shared trim
+/// chords without pinning a particular triangulation.
 #[test]
 fn other_three_arc_trims_keep_their_exact_output() {
     let options = MeshOptions {
@@ -1027,12 +1018,41 @@ fn other_three_arc_trims_keep_their_exact_output() {
             format!("{name} certified"),
             certified_line(model, body, &options),
         ));
-        actual.push((
-            format!("{name} preview"),
-            preview_line(model, body, &PreviewOptions::from(&options)),
-        ));
+        let preview = preview_mesh_body(
+            model,
+            body,
+            &PreviewOptions::from(&options),
+            &mut Decider::default(),
+        );
+        let mesh = check_preview(name, model, body, preview);
+        check_shared_preview_chords(name, &mesh);
+        check_preview_surface_samples(model, &mesh, &options.chord_tolerance);
     }
     compare(NEIGHBOUR_BASELINE, actual);
+}
+
+fn check_shared_preview_chords(name: &str, mesh: &PreviewMesh) {
+    let mut incidence = BTreeMap::<_, (usize, i32)>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let a = triangle.vertices[i];
+            let b = triangle.vertices[(i + 1) % 3];
+            let use_ = incidence.entry((a.min(b), a.max(b))).or_default();
+            use_.0 += 1;
+            use_.1 += if a < b { 1 } else { -1 };
+        }
+    }
+    assert!(incidence.values().all(|uses| *uses == (2, 0)), "{name}");
+    for edge in &mesh.edges {
+        for pair in edge.vertices.windows(2) {
+            let [a, b] = [pair[0], pair[1]];
+            assert_eq!(
+                incidence.get(&(a.min(b), a.max(b))),
+                Some(&(2, 0)),
+                "{name}"
+            );
+        }
+    }
 }
 
 fn check_preview_surface_samples(model: &Model, mesh: &PreviewMesh, tolerance: &Rational) {
@@ -1065,13 +1085,9 @@ fn no_angular_target_keeps_corner_geometry_and_preview_outcomes() {
         check_corner_and_strip(&built, &mesh);
         let (built, preview, work) = part.preview(&PreviewOptions::from(&options));
         assert!(!work.exhausted, "{}: {work:?}", part.name);
-        if part.name == H_N.name {
-            let refusal = preview.unwrap_err();
-            assert_eq!(refusal.code, "mesh.precision-or-budget");
-        } else {
-            let mesh = check_preview(part.name, &built.model, built.result, preview);
-            check_preview_surface_samples(&built.model, &mesh, &options.chord_tolerance);
-        }
+        let mesh = check_preview(part.name, &built.model, built.result, preview);
+        check_shared_preview_chords(part.name, &mesh);
+        check_preview_surface_samples(&built.model, &mesh, &options.chord_tolerance);
     }
 }
 

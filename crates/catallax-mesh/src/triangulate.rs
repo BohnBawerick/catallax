@@ -2745,6 +2745,7 @@ pub(crate) fn shared_spline_preview(
             },
             None,
             None,
+            None,
             dec,
         )
         .and_then(|(mut mesh, _)| {
@@ -2760,7 +2761,7 @@ pub(crate) fn build(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,
-    previous: Option<(&Model, &Mesh)>,
+    edit: Option<crate::reuse::Edit<'_, '_>>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     let faces = model.faces_of_body(body);
@@ -2773,7 +2774,9 @@ pub(crate) fn build(
     } else {
         crate::junction::prepare(model, &faces, options, dec)?
     };
-    let previous = previous
+    let previous = edit
+        .as_ref()
+        .and_then(|edit| edit.previous)
         .filter(|_| {
             !faces.is_empty()
                 && faces.iter().all(|&face| {
@@ -2785,7 +2788,7 @@ pub(crate) fn build(
                     )
                 })
         })
-        .map(|(model, mesh)| crate::reuse::Previous::new(model, mesh, dec))
+        .map(|input| crate::reuse::Previous::new(input, dec))
         .transpose()?;
     let (value, marks) = build_junction(
         model,
@@ -2796,6 +2799,7 @@ pub(crate) fn build(
         },
         junction,
         previous.as_ref(),
+        edit.and_then(|edit| edit.capture),
         dec,
     )?;
     Ok(Answer { value, marks })
@@ -2826,6 +2830,7 @@ pub(crate) fn build_position(
         },
         Some(junction),
         None,
+        None,
         dec,
     )
 }
@@ -2836,6 +2841,7 @@ fn build_junction(
     plan: Plan<'_>,
     junction: Option<crate::junction::Junction>,
     previous: Option<&crate::reuse::Previous<'_>>,
+    mut capture: Option<&mut crate::reuse::Capture>,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
     let Plan { options, level } = plan;
@@ -2883,22 +2889,35 @@ fn build_junction(
     let boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
     let mut assembly = Assembly::new(&boundaries);
     let mut enclosures = BTreeMap::new();
+    let mut removed = 0;
     for face in faces {
-        let local_options = charts
+        let mut local_options = charts
             .get(&face)
             .and_then(|chart| chart.chord_goal.as_ref())
             .map(|chord| MeshOptions {
                 chord_tolerance: chord.clone(),
                 ..options.clone()
             });
+        if removed != 0 {
+            local_options
+                .get_or_insert_with(|| options.clone())
+                .max_vertices -= removed;
+        }
         let options = local_options.as_ref().unwrap_or(options);
         let reused = previous
             .map(|previous| previous.face(model, face, &boundaries, &assembly, options, dec))
             .transpose()?
             .flatten();
-        if let Some(result) = reused
-            && assembly.push(result)?
-        {
+        if let Some(result) = reused {
+            // Reuse copies compact positions. Keep the same resource allowance
+            // for subsequent faces as when their predecessors were built.
+            removed += result.uncompacted - result.positions.len();
+            if let Some(capture) = &mut capture {
+                capture.face(&result, options, true);
+            }
+            if !assembly.push(result)? {
+                return Err(failure("a cached face conflicts with the faces before it"));
+            }
             continue;
         }
         let shared = Shared {
@@ -2917,6 +2936,9 @@ fn build_junction(
             dec,
         )?;
         let result = draft.finish(model, face, assembly.prior())?;
+        if let Some(capture) = &mut capture {
+            capture.face(&result, options, false);
+        }
         if !assembly.push(result)? {
             return Err(failure(
                 "a face built in order conflicts with the faces before it",
@@ -3072,21 +3094,41 @@ fn constrain_lens_chord(
     Ok(())
 }
 
-/// Shares the chart and boundary machinery, but never runs facet certification.
+/// Builds preview data from shared charts, optionally with prepared junction rows.
 pub(crate) fn build_preview(
     model: &Model,
     body: BodyId,
     options: &crate::PreviewOptions,
+    junction: Option<crate::junction::Junction>,
     dec: &mut Decider,
 ) -> Result<crate::PreviewMesh, Refusal> {
     let visual = options;
     let options = MeshOptions {
         chord_tolerance: options.chord_tolerance.clone(),
-        angular_deviation: options.angular_deviation.clone(),
+        angular_deviation: if junction.is_some() {
+            None
+        } else {
+            options.angular_deviation.clone()
+        },
         max_vertices: options.max_vertices,
         max_edge_length: None,
         max_aspect_ratio: None,
     };
+    if junction.is_some() {
+        let (mesh, _) = build_junction(
+            model,
+            body,
+            Plan {
+                options: &options,
+                level: Level::Preview,
+            },
+            junction,
+            None,
+            None,
+            dec,
+        )?;
+        return Ok(crate::PreviewMesh::from_mesh(mesh));
+    }
     let faces = model.faces_of_body(body);
     let mut charts = faces
         .iter()
@@ -3163,7 +3205,7 @@ pub(crate) fn build_preview(
         let bounds = std::array::from_fn(|i| {
             if chart.periodic[i] {
                 [0.0, 1.0]
-            } else if i == 1 && matches!(chart.surface, Surface::Sphere(_)) {
+            } else if i == 1 && chart.periodic[0] && matches!(chart.surface, Surface::Sphere(_)) {
                 [-0.25, 0.25]
             } else {
                 [
@@ -3210,7 +3252,11 @@ pub(crate) fn build_preview(
             dec,
         };
         builder.boundary(&segments, definition.sense)?;
-        builder.grid()?;
+        // Planar interpolation is affine. Grid seeds add no resolution, and a
+        // rounded bounding-box corner can land just inside a shared chord.
+        if !matches!(chart.surface, Surface::Plane(_)) {
+            builder.grid()?;
+        }
         let triangles = builder.finish_preview(face, definition.sense)?;
         boundaries.mesh.positions = positions.into_local();
         let start = boundaries.mesh.triangles.len();

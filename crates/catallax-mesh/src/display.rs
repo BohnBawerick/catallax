@@ -95,13 +95,9 @@ pub fn display_spline_fillet_face(
     dec: &mut Decider,
 ) -> Result<DisplayMesh, catallax_numbers::Refusal> {
     check_position_options(options)?;
-    let boundaries = crate::junction::spline_fillet_face(model, body, face, options, dec)?;
-    crate::triangulate::check_surface_faces(model, [face], &boundaries.mesh)?;
-    let result = rendering(
-        boundaries.mesh,
-        boundaries.marks,
-        "complete-cell position enclosures",
-    );
+    let (mesh, marks) = crate::junction::spline_fillet_face(model, body, face, options, dec)?;
+    crate::triangulate::check_surface_faces(model, [face], &mesh)?;
+    let result = rendering(mesh, marks, "complete-cell position enclosures");
     if result.measurement.covered_faces != 1
         || result.measurement.maximum_deviation > options.chord_tolerance
     {
@@ -158,6 +154,23 @@ pub fn display_mesh_body(
             result
         };
     }
+    #[cfg(feature = "display-capture")]
+    let call =
+        crate::capture::Call::start("display_mesh_body", crate::capture::carriers(model, body));
+    let result = display_within_allowance(model, body, options, revision, dec);
+    #[cfg(feature = "display-capture")]
+    call.finish(options, &result);
+    result
+}
+
+/// [`display_mesh_body`] inside the caller's operation allowance.
+fn display_within_allowance(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    revision: &str,
+    dec: &mut Decider,
+) -> OperationResult<DisplayMesh> {
     let faces = model.faces_of_body(body);
     let eligible = options.chord_tolerance == Rational::from_ratio(1, 100).unwrap()
         && options.angular_deviation.is_none()

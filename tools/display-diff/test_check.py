@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from check import compare
+from check import compare, migrate
 
 
 class DifferentialComparison(unittest.TestCase):
@@ -62,3 +62,25 @@ class DifferentialComparison(unittest.TestCase):
         self.write(self.candidate, {key: value for key, value in self.old.items() if key != "work"})
         with self.assertRaisesRegex(ValueError, "missing work field"):
             self.compare_quietly()
+
+    def test_refuses_to_compare_rows_from_different_collectors(self):
+        self.write(self.candidate, {**self.old, "format": 1})
+        with self.assertRaisesRegex(ValueError, "different collectors"):
+            self.compare_quietly()
+
+    def test_migration_maps_each_probe_result_to_one_interface_result(self):
+        def rows(path, results, **fields):
+            lines = []
+            for count, (options, digest) in enumerate(results, 1):
+                key = [*self.key[:4], options, count]
+                lines.append(json.dumps({**self.old, "key": key, "sha256": digest, **fields}))
+            path.write_text("\n".join(lines) + "\n")
+
+        probe = [("Debug", "a" * 64), ("Debug", "b" * 64)]
+        rows(self.main, probe)
+        rows(self.candidate, [("explicit", "c" * 64), ("explicit", "d" * 64)], format=1)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(migrate(self.main, self.candidate))
+            # Two different probe results cannot become one interface result.
+            rows(self.candidate, [("explicit", "c" * 64), ("explicit", "c" * 64)], format=1)
+            self.assertTrue(migrate(self.main, self.candidate))

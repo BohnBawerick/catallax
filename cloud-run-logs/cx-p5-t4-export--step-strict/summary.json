@@ -1,0 +1,62 @@
+{
+ "request_id": "cx-p5-t4-export--step-strict",
+ "repo": "BohnBawerick/catallax",
+ "sha": "85c21262a844e3ee6ae00352f00c983cafdc4fa7",
+ "script_exit_code": 1,
+ "seconds": 13,
+ "commands": [
+  {
+   "cmd": "cargo fmt --all -- --check",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 -c (download abc_0000_step_v00.7z from archive.nyu.edu, verify md5, extract and sha256-verify STEP fixtures)",
+   "status": "failed with exit 1"
+  },
+  {
+   "cmd": "cargo build --release --locked -p catallax-cli --example predictor_corpus (after)",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cp measure-after",
+   "status": "not reached"
+  },
+  {
+   "cmd": "git cat-file/fetch 6e4b5f89e1396d314e991b24fd777bac037526dd",
+   "status": "not reached"
+  },
+  {
+   "cmd": "git switch --detach 6e4b5f89e1396d314e991b24fd777bac037526dd",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo build --release --locked -p catallax-cli --example predictor_corpus (before)",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cp measure-before; git switch --detach 85c21262a844e3ee6ae00352f00c983cafdc4fa7",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 -c (run before/after corpus measurements, 1/2/4/24 threads)",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 -c (compare strict-before and strict-after jsonl)",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "NOT-RUNNABLE in this VM: curl to https://archive.nyu.edu/bitstream/2451/44309/3/abc_0000_step_v00.7z failed: 'curl: (22) The requested URL returned error: 403'. No cargo build or test ran. cargo fmt check passed (inferred: the later python step ran under set -e). Not retried per rules. Toolchain rustc 1.100.0; cargo fetch succeeded."
+}

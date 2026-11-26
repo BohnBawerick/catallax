@@ -173,13 +173,19 @@ pub(crate) fn equivalent_string(process: Process, requirement: &str) -> String {
 
 /// Draws the callout of `texture` with the requirement `value` written as
 /// a decimal. `anchor` is a point on the texture's face, where the leader ends;
-/// without one the symbol stands at the origin with no leader.
-pub(crate) fn draw<F>(texture: &SurfaceTexture<F>, value: &str, anchor: Option<&Point>) -> Drawing {
+/// `slot` vertically separates callouts in their stable item order.
+pub(crate) fn draw<F>(
+    texture: &SurfaceTexture<F>,
+    value: &str,
+    anchor: Option<&Point>,
+    slot: usize,
+) -> Drawing {
     let zero = Rational::zero();
     let text = format!("{} {value}", texture.parameter);
     // Plane coordinates (u along x, v along z) of the drawing, from the
     // symbol's point.
     let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
+    let offset = Rational::from_i64(i64::try_from(slot).expect("callout slot fits i64") * 14);
     let origin = match anchor {
         Some(anchor) => {
             // A leader up and to the right, with an open arrow on the face.
@@ -196,7 +202,7 @@ pub(crate) fn draw<F>(texture: &SurfaceTexture<F>, value: &str, anchor: Option<&
             flat.push(vec![wings[0].clone(), tip, wings[1].clone()]);
             symbol
         }
-        None => [zero.clone(), zero.clone(), zero.clone()],
+        None => [zero.clone(), zero.clone(), offset],
     };
     // ISO 1302 for a 3 mm text height: legs H1 = 4.2 and H2 = 9 high.
     let short = q(21, 5);
@@ -232,7 +238,10 @@ pub(crate) fn draw<F>(texture: &SurfaceTexture<F>, value: &str, anchor: Option<&
             ];
             let mut circle = Vec::new();
             for quarter in 0..4 {
-                for (x, y) in &turn {
+                for (index, (x, y)) in turn.iter().enumerate() {
+                    if (quarter > 0 && index == 0) || (quarter == 3 && index == turn.len() - 1) {
+                        continue;
+                    }
                     let (x, y) = match quarter {
                         0 => (x.clone(), y.clone()),
                         1 => (&zero - y, x.clone()),

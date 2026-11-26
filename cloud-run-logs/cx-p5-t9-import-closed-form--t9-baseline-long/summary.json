@@ -1,0 +1,70 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-baseline-long",
+ "repo": "BohnBawerick/catallax",
+ "sha": "80c987d5867937d96e8ffd5cb68fb3f744db6f7f",
+ "script_exit_code": 0,
+ "seconds": 1965,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-baseline-long",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' 'H4sIAAAAAAAAA+0aa3PjtjGf+SsQ9tKjEomS/JBsXdgZ26ckTu2zx9a1zSgqhyIhiTVFsgTps+L6v3d3Ab4k2U4z6c10KiRnkXjsAvveJdw",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 80c987d5867937d96e8ffd5cb68fb3f744db6f7f",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-baseline-long.sh\" \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exit 0. run.log has no 'test result:' lines (script is a baseline capture run, not cargo test), so test counts are 0. Script ended with T9BASELINECOMPLETE 3 of 3. cargo fetch succeeded. The bsdtar install ran via apt-get. Script hash verified 41869f09... before running."
+}

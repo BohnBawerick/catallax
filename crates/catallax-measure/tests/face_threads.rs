@@ -1,3 +1,5 @@
+//! Face area and mass measurements agree across kernel thread counts.
+
 use std::num::NonZeroUsize;
 
 use catallax_measure::{Accuracy, face_areas, mass_properties};

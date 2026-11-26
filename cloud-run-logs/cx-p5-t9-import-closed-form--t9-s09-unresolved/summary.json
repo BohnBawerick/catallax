@@ -1,0 +1,74 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s09-unresolved",
+ "repo": "BohnBawerick/catallax",
+ "sha": "fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+ "script_exit_code": 0,
+ "seconds": 6641,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s9",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' 'H4sIAAAAAAAAA+xbe3PjNpLP3/oUCDO7oTYUbfk9TrhVHo9m483M2GV7krtyVCxKhCyuJVIhKT/i9XfffgAgSEr2VCXZq7tbpTIWQaDRaHQ",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 fe8beba50f716c1bcaf4176f680065b962e8fa2a",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" fe8beba50f716c1bcaf4176f680065b962e8fa2a 9 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exited 0 under set -e so every command succeeded. run.log has no 'test result:' lines (census run, not cargo test), so test counts are 0. Run ended with T9COMPLETE 63 after 62 T9ROW lines plus T9KIT and T9UNRESOLVED lines. rustc 1.100.0, cargo fetch ok."
+}

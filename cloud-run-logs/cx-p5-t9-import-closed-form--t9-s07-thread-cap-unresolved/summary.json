@@ -78,5 +78,5 @@
   "nproc": 4,
   "mem_total_gb": 15
  },
- "notes": "Script exit 0 (set -e, so every top-level command succeeded). Script is a T9 census runner, not cargo test: run.log has no 'test result:' lines, so test counts are 0. Final log lines: shard 7 of 48, 63 models, found 63, missing []; T9COMPLETE 63. bsdtar was missing, so the script installed libarchive-tools via apt-get. One T9ROW has outcome timeout at stage open (empty files). Script's own pass/fail judgement of rows is not interpreted here."
+ "notes": "Script exit 0 (set -e, so every top-level command succeeded). Script is a T9 census runner, not cargo test: run.log has no 'test result:' lines, so test counts are 0. Final log lines: shard 7 of 48, 63 models, found 63, missing []; T9COMPLETE 63. bsdtar was missing, so the script installed libarchive-tools via apt-get. 3 of 63 T9ROW lines contain an outcome of timeout (counted by text match, not analysed further). Script's own pass/fail judgement of rows is not interpreted here."
 }

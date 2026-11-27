@@ -553,24 +553,70 @@ pub(super) fn grid_face(
     same_sense: bool,
     chart: &impl SurfaceSamples,
     bounds: [Uv; 2],
-    loops: &[Vec<Node>],
-    mut cdt: Cdt,
+    loops: &mut [Vec<Node>],
     mesh: &mut PreviewMesh<String, String>,
     divisions: u32,
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     let [lo, hi] = bounds;
+    let span: Uv = std::array::from_fn(|i| hi[i] - lo[i]);
+    if span.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+        return Err(failure("sampled source chart has no parameter area"));
+    }
+    let position = |uv: Uv, dec: &mut Decider| {
+        chart.position(std::array::from_fn(|i| lo[i] + span[i] * uv[i]), dec)
+    };
+    let mut cdt = Cdt::new();
+    // Use a unit chart before predicate evaluation. Insert all the shared
+    // points first so a trim point on a chord can participate in its constraint.
+    for node in loops.iter_mut().flatten() {
+        dec.charge_work(1)?;
+        node.uv = std::array::from_fn(|i| (node.uv[i] - lo[i]) / span[i]);
+        insert(&mut cdt, *node)?;
+    }
+    for ring in loops.iter() {
+        for i in 0..ring.len() {
+            dec.charge_work(1)?;
+            let point = |n: Node, cdt: &Cdt| match cdt.locate(n.position()) {
+                PositionInTriangulation::OnVertex(v) => v,
+                _ => unreachable!("trim node was inserted above"),
+            };
+            let a = point(ring[i], &cdt);
+            let b = point(ring[(i + 1) % ring.len()], &cdt);
+            if a == b {
+                continue;
+            }
+            if !cdt.can_add_constraint(a, b) {
+                return Err(failure("sampled source trim constraints cross"));
+            }
+            cdt.add_constraint(a, b);
+        }
+    }
     dec.charge_traversal(u64::from(divisions - 1).pow(2))?;
     for v in 1..divisions {
         for u in 1..divisions {
-            let uv = std::array::from_fn(|i| {
-                lo[i] + f64::from([u, v][i]) / f64::from(divisions) * (hi[i] - lo[i])
-            });
+            let uv = [u, v].map(|x| f64::from(x) / f64::from(divisions));
             if inside(uv, loops) {
-                seed(&mut cdt, uv, chart.position(uv, dec)?, mesh, options)?;
+                seed(&mut cdt, uv, position(uv, dec)?, mesh, options)?;
             }
         }
+    }
+    // A narrow region can miss every regular station. A triangle whose two
+    // corners denote one physical pole needs a carrier sample in its interior.
+    let mut extra = Vec::new();
+    dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+    for triangle in cdt.inner_faces() {
+        let [a, b, c] = triangle.vertices().map(|v| *v.data());
+        if a.mesh == b.mesh || b.mesh == c.mesh || c.mesh == a.mesh {
+            let center = std::array::from_fn(|i| (a.uv[i] + b.uv[i] + c.uv[i]) / 3.0);
+            if inside(center, loops) {
+                extra.push(center);
+            }
+        }
+    }
+    for uv in extra {
+        seed(&mut cdt, uv, position(uv, dec)?, mesh, options)?;
     }
     let start = mesh.triangles.len();
     dec.charge_traversal(cdt.num_inner_faces() as u64)?;

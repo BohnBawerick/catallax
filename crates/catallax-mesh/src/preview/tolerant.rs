@@ -239,11 +239,34 @@ fn cut_to_pole(
     let positive = last[axis] > first[axis];
     let side = usize::from(positive == (same_sense == (axis == 0)));
     let bound = (0..source.chart_count()).filter_map(|i| source.domain(i)[normal][side].as_ref());
-    let bound = if side == 0 { bound.min() } else { bound.max() }
-        .ok_or_else(failure)?
-        .to_f64_nearest();
+    let bound = if side == 0 { bound.min() } else { bound.max() };
     let mut uv = first;
-    uv[normal] = bound;
+    uv[normal] = if let Some(bound) = bound {
+        bound.to_f64_nearest()
+    } else {
+        // STEP cones have an unbounded axial chart. Intersect two sampled
+        // meridians, then check that the other meridians meet there too.
+        let radial = |h, dec: &mut Decider| -> Result<P, Refusal> {
+            let mut a = first;
+            a[normal] = h;
+            let mut b = a;
+            b[axis] += period * 0.5;
+            let (a, b) = (carrier.position(a, dec)?, carrier.position(b, dec)?);
+            Ok(std::array::from_fn(|i| b[i] - a[i]))
+        };
+        let h = first[normal];
+        let step = h.abs().max(1.0) * if side == 0 { -1.0 } else { 1.0 };
+        let a = radial(h, dec)?;
+        let b = radial(h + step, dec)?;
+        let i = (0..3)
+            .max_by(|&i, &j| (b[i] - a[i]).abs().total_cmp(&(b[j] - a[j]).abs()))
+            .unwrap();
+        let t = a[i] / (a[i] - b[i]);
+        if !t.is_finite() || t <= 0.0 {
+            return Err(failure());
+        }
+        h + t * step
+    };
     let pole = carrier.position(uv, dec)?;
     let rounding = pole.iter().fold(1.0_f64, |scale, x| scale.max(x.abs())) * 128.0 * f64::EPSILON;
     for station in [0.25, 0.5, 0.75] {
@@ -702,20 +725,10 @@ fn build(
             .and_then(|nodes| nodes.first())
             .ok_or_else(|| failure("face has no sampled parameter region"))?;
         let mut bounds = [first.uv; 2];
-        let mut cdt = Cdt::new();
-        for boundary in &loops {
-            for i in 0..boundary.len() {
-                dec.charge_work(1)?;
-                for axis in 0..2 {
-                    bounds[0][axis] = bounds[0][axis].min(boundary[i].uv[axis]);
-                    bounds[1][axis] = bounds[1][axis].max(boundary[i].uv[axis]);
-                }
-                let a = insert(&mut cdt, boundary[i])?;
-                let b = insert(&mut cdt, boundary[(i + 1) % boundary.len()])?;
-                if a == b || !cdt.can_add_constraint(a, b) {
-                    return Err(failure("native preview trim constraints cross or collapse"));
-                }
-                cdt.add_constraint(a, b);
+        for node in loops.iter().flatten() {
+            for axis in 0..2 {
+                bounds[0][axis] = bounds[0][axis].min(node.uv[axis]);
+                bounds[1][axis] = bounds[1][axis].max(node.uv[axis]);
             }
         }
         if let Some(divisions) = grid {
@@ -724,14 +737,25 @@ fn build(
                 face.same_sense,
                 &carrier,
                 bounds,
-                &loops,
-                cdt,
+                &mut loops,
                 &mut mesh,
                 divisions,
                 &face_options,
                 dec,
             )?;
             continue;
+        }
+        let mut cdt = Cdt::new();
+        for boundary in &loops {
+            for i in 0..boundary.len() {
+                dec.charge_work(1)?;
+                let a = insert(&mut cdt, boundary[i])?;
+                let b = insert(&mut cdt, boundary[(i + 1) % boundary.len()])?;
+                if a == b || !cdt.can_add_constraint(a, b) {
+                    return Err(failure("native preview trim constraints cross or collapse"));
+                }
+                cdt.add_constraint(a, b);
+            }
         }
         seed_rectangles(
             &carrier,

@@ -197,6 +197,46 @@ fn preview_coarsens_within_vertex_and_work_limits() {
 }
 
 #[test]
+fn preview_consumes_the_existing_allowance_and_refuses_without_partial_data() {
+    let recipe = Recipe::parse(include_str!("../benches/fine_mesh/countersink.json")).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    let options = PreviewOptions::default();
+    let preview = || catallax_app::preview_body(&built, &options, &mut Decider::default());
+    let (result, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, preview);
+    let reference = result.unwrap().mesh;
+    assert!(!work.exhausted);
+    let (result, exact) = with_operation_budget(work.used, preview);
+    assert_eq!(result.unwrap().mesh, reference);
+    assert_eq!(exact.used, work.used);
+    assert!(!exact.exhausted);
+
+    let (result, short) = with_operation_budget(work.used - 1, preview);
+    let coarse = result.unwrap().mesh;
+    assert!(!short.exhausted);
+    assert_ne!(coarse.triangles, reference.triangles);
+    assert_eq!(coarse.faces.len(), reference.faces.len());
+    assert!(coarse.faces.iter().all(|face| !face.triangles.is_empty()));
+
+    let ((first, second), shared) = with_operation_budget(work.used, || (preview(), preview()));
+    assert_eq!(first.unwrap().mesh, reference);
+    assert!(second.is_err());
+    assert!(shared.exhausted);
+    let constrained = PreviewOptions {
+        max_vertices: 4,
+        ..options
+    };
+    assert!(
+        preview_mesh_body(
+            &built.model,
+            built.result,
+            &constrained,
+            &mut Decider::default()
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn curved_fillet_end_trims_do_not_leave_large_flat_preview_facets() {
     use catallax_shapes::Surface;
     let recipe = Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap();

@@ -547,6 +547,64 @@ fn seed(
         .map_err(|e| failure(format!("source chart triangulation: {e}")))
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn grid_face(
+    name: &str,
+    same_sense: bool,
+    chart: &impl SurfaceSamples,
+    bounds: [Uv; 2],
+    loops: &[Vec<Node>],
+    mut cdt: Cdt,
+    mesh: &mut PreviewMesh<String, String>,
+    divisions: u32,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let [lo, hi] = bounds;
+    dec.charge_traversal(u64::from(divisions - 1).pow(2))?;
+    for v in 1..divisions {
+        for u in 1..divisions {
+            let uv = std::array::from_fn(|i| {
+                lo[i] + f64::from([u, v][i]) / f64::from(divisions) * (hi[i] - lo[i])
+            });
+            if inside(uv, loops) {
+                seed(&mut cdt, uv, chart.position(uv, dec)?, mesh, options)?;
+            }
+        }
+    }
+    let start = mesh.triangles.len();
+    dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+    for triangle in cdt.inner_faces() {
+        let nodes = triangle.vertices().map(|v| *v.data());
+        let center = std::array::from_fn(|i| nodes.iter().map(|n| n.uv[i] / 3.0).sum());
+        if !inside(center, loops) {
+            continue;
+        }
+        let mut vertices = nodes.map(|n| n.mesh);
+        if vertices[0] == vertices[1] || vertices[1] == vertices[2] || vertices[2] == vertices[0] {
+            continue;
+        }
+        if !same_sense {
+            vertices.swap(1, 2);
+        }
+        let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+        vertices.rotate_left(first);
+        mesh.triangles.push(Triangle {
+            vertices,
+            face: name.into(),
+        });
+    }
+    if mesh.triangles.len() == start {
+        return Err(failure("sampled source face has no previewable interior"));
+    }
+    mesh.triangles[start..].sort_unstable_by_key(|triangle| triangle.vertices);
+    mesh.faces.push(PreviewFace {
+        face: name.into(),
+        triangles: start..mesh.triangles.len(),
+    });
+    Ok(())
+}
+
 pub(super) trait SurfaceSamples {
     fn position(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal>;
     fn normal(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal>;

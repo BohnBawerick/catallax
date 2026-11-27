@@ -183,6 +183,7 @@ fn trimmed<F: Clone, E>(
         [divisions; 2],
         options.max_vertices.saturating_add(nodes),
         usize::MAX,
+        true,
     )
     .map_err(trim_error)?;
     let mut indices = Vec::with_capacity(trim.vertices.len());

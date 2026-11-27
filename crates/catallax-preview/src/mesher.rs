@@ -104,7 +104,7 @@ impl From<trim::TrimRefusal> for FaceRefusal {
         match error {
             InvalidChart => Self::InvalidChart,
             UnsupportedTrim => Self::UnsupportedTrim,
-            InvalidTrim => Self::InvalidTrim,
+            InvalidTrim(_) => Self::InvalidTrim,
             MeshSize => Self::MeshSize,
         }
     }
@@ -398,6 +398,7 @@ impl PackedMesh {
             detail,
             self.max_vertices - self.inputs.len(),
             self.max_indices - self.indices.len(),
+            false,
         )?;
         let first = self.positions.len();
         let params = match surface::pack(

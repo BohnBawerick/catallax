@@ -16,7 +16,7 @@ pub enum TrimRefusal {
     /// The face has a trim that is not a closed polygon or paired band.
     UnsupportedTrim,
     /// Trim topology cannot be triangulated without changing a shared chord.
-    InvalidTrim,
+    InvalidTrim(&'static str),
     /// The requested triangulation exceeds its size limit.
     MeshSize,
 }
@@ -76,6 +76,8 @@ pub struct Triangulated {
 }
 
 /// Triangulate the trim and insert a regular grid without splitting its chords.
+/// With `snap_joints`, the shared 3D edge indices are authoritative at joins:
+/// independently admitted pcurves need not agree in UV to binary64 precision.
 pub fn triangulate<F>(
     face: &DisplayFace<F>,
     edge_range: EdgeRange<'_>,
@@ -83,6 +85,7 @@ pub fn triangulate<F>(
     detail: [u32; 2],
     max_vertices: usize,
     max_indices: usize,
+    snap_joints: bool,
 ) -> Result<Triangulated, FaceRefusal> {
     let span = face.bounds.map(|[lower, upper]| upper - lower);
     if !span.iter().all(|span| span.is_finite() && *span > 0.0)
@@ -106,6 +109,7 @@ pub fn triangulate<F>(
             face.periods,
             tolerance,
             max_vertices - trim_count,
+            snap_joints,
         )?;
         trim_count += ring.points.len();
         rings.push(ring);
@@ -146,7 +150,7 @@ pub fn triangulate<F>(
     }
     let span = bounds.map(|[lower, upper]| upper - lower);
     if span.iter().any(|s| !s.is_finite() || *s <= 0.0) {
-        return Err(FaceRefusal::InvalidTrim);
+        return Err(FaceRefusal::InvalidTrim("trim has zero chart extent"));
     }
     let normalized =
         |uv: [f64; 2]| std::array::from_fn(|axis| (uv[axis] - bounds[axis][0]) / span[axis]);
@@ -178,9 +182,11 @@ pub fn triangulate<F>(
                     point: Point2::new(uv[0], uv[1]),
                     input,
                 })
-                .map_err(|_| FaceRefusal::InvalidTrim)?;
+                .map_err(|_| FaceRefusal::InvalidTrim("trim point is outside the CDT range"))?;
             if cdt.num_vertices() == before {
-                return Err(FaceRefusal::InvalidTrim);
+                return Err(FaceRefusal::InvalidTrim(
+                    "distinct trim samples have the same UV",
+                ));
             }
             handles.push(handle);
         }
@@ -190,7 +196,7 @@ pub fn triangulate<F>(
     }
     for &(a, b) in &constraints {
         if !cdt.can_add_constraint(a, b) || !cdt.add_constraint(a, b) {
-            return Err(FaceRefusal::InvalidTrim);
+            return Err(FaceRefusal::InvalidTrim("trim constraints cross"));
         }
         // A third boundary point on this segment would silently split the
         // shared chord differently on this face than on its neighbour.
@@ -198,7 +204,9 @@ pub fn triangulate<F>(
             .get_edge_from_neighbors(a, b)
             .is_some_and(|e| e.is_constraint_edge())
         {
-            return Err(FaceRefusal::InvalidTrim);
+            return Err(FaceRefusal::InvalidTrim(
+                "another trim sample splits a shared chord",
+            ));
         }
     }
     for v in 1..detail[1] {
@@ -220,7 +228,7 @@ pub fn triangulate<F>(
             }
             let input = inputs.len() as u32;
             cdt.insert(Site { point, input })
-                .map_err(|_| FaceRefusal::InvalidTrim)?;
+                .map_err(|_| FaceRefusal::InvalidTrim("grid point is outside the CDT range"))?;
             inputs.push(TrimVertex {
                 uv,
                 boundary: NO_BOUNDARY,
@@ -231,7 +239,7 @@ pub fn triangulate<F>(
     let count = labels.iter().filter(|&&label| label == Some(true)).count();
     if count == 0 || count > max_indices / 3 {
         return Err(if count == 0 {
-            FaceRefusal::InvalidTrim
+            FaceRefusal::InvalidTrim("trim encloses no triangles")
         } else {
             FaceRefusal::MeshSize
         });
@@ -247,7 +255,7 @@ pub fn triangulate<F>(
             .vertices()
             .map(|vertex| vertex.data().input as usize);
         if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
-            return Err(FaceRefusal::InvalidTrim);
+            return Err(FaceRefusal::InvalidTrim("triangle repeats a trim vertex"));
         }
         if face.reversed {
             ids.swap(1, 2);
@@ -274,22 +282,23 @@ fn collect_ring(
     periods: [Option<f64>; 2],
     tolerance: [f64; 2],
     limit: usize,
+    snap_joints: bool,
 ) -> Result<Ring, FaceRefusal> {
     if trim.vertex.is_some() || trim.uses.is_empty() {
         return Err(FaceRefusal::UnsupportedTrim);
     }
     let mut points = Vec::<TrimPoint>::new();
     for edge in &trim.uses {
-        let range = edge_range(edge.edge).ok_or(FaceRefusal::InvalidTrim)?;
+        let range = edge_range(edge.edge).ok_or(FaceRefusal::InvalidTrim("missing shared edge"))?;
         let get = |i: usize| {
             let sample = &edge.samples[i];
             let boundary = u32::try_from(sample.point)
                 .ok()
                 .and_then(|p| range.start.checked_add(p))
                 .filter(|&p| p < range.end)
-                .ok_or(FaceRefusal::InvalidTrim)?;
+                .ok_or(FaceRefusal::InvalidTrim("missing shared sample"))?;
             if !sample.uv.iter().all(|uv| uv.is_finite()) {
-                return Err(FaceRefusal::InvalidTrim);
+                return Err(FaceRefusal::InvalidTrim("nonfinite trim parameter"));
             }
             Ok(TrimPoint {
                 uv: sample.uv,
@@ -298,14 +307,18 @@ fn collect_ring(
             })
         };
         if edge.samples.len() < 2 {
-            return Err(FaceRefusal::InvalidTrim);
+            return Err(FaceRefusal::InvalidTrim(
+                "shared edge has fewer than two samples",
+            ));
         }
         let first = get(0)?;
         let shift = if let Some(last) = points.last() {
             if !same_position(last.boundary, first.boundary) {
-                return Err(FaceRefusal::InvalidTrim);
+                return Err(FaceRefusal::InvalidTrim(
+                    "shared edge endpoints are not sewn",
+                ));
             }
-            let (_, shift) = wraps(first.uv, last.uv, periods, tolerance)?;
+            let (_, shift) = wraps(first.uv, last.uv, periods, tolerance, snap_joints)?;
             shift
         } else {
             points.push(first);
@@ -325,14 +338,16 @@ fn collect_ring(
     let first = points[0];
     let last = *points.last().unwrap();
     if !same_position(first.boundary, last.boundary) {
-        return Err(FaceRefusal::InvalidTrim);
+        return Err(FaceRefusal::InvalidTrim(
+            "trim does not close at a shared vertex",
+        ));
     }
-    let (winding, _) = wraps(first.uv, last.uv, periods, tolerance)?;
+    let (winding, _) = wraps(first.uv, last.uv, periods, tolerance, snap_joints)?;
     if winding == [0, 0] {
         points.pop();
     }
     if points.len() < 3 {
-        return Err(FaceRefusal::InvalidTrim);
+        return Err(FaceRefusal::InvalidTrim("trim has fewer than three nodes"));
     }
     if points.len() > limit {
         return Err(FaceRefusal::MeshSize);
@@ -345,24 +360,27 @@ fn wraps(
     to: [f64; 2],
     periods: [Option<f64>; 2],
     tolerance: [f64; 2],
+    snap_joints: bool,
 ) -> Result<([i32; 2], [f64; 2]), FaceRefusal> {
     let mut turns = [0; 2];
     let mut shift = [0.0; 2];
     for axis in 0..2 {
         let d = to[axis] - from[axis];
         if !d.is_finite() {
-            return Err(FaceRefusal::InvalidTrim);
+            return Err(FaceRefusal::InvalidTrim("nonfinite trim join"));
         }
         if let Some(period) = periods[axis] {
             let n = (d / period).round();
             if n.abs() > f64::from(i32::MAX) {
-                return Err(FaceRefusal::InvalidTrim);
+                return Err(FaceRefusal::InvalidTrim("trim join exceeds period range"));
             }
             turns[axis] = n as i32;
             shift[axis] = n * period;
         }
-        if (d - shift[axis]).abs() > tolerance[axis] {
-            return Err(FaceRefusal::InvalidTrim);
+        if !snap_joints && (d - shift[axis]).abs() > tolerance[axis] {
+            return Err(FaceRefusal::InvalidTrim(
+                "trim parameters do not meet at a joint",
+            ));
         }
     }
     Ok((turns, shift))
@@ -464,7 +482,9 @@ fn label_triangles(cdt: &Cdt) -> Result<Vec<Option<bool>>, FaceRefusal> {
 
 fn mark(label: &mut Option<bool>, inside: bool, queue: impl FnOnce()) -> Result<(), FaceRefusal> {
     match label {
-        Some(old) if *old != inside => Err(FaceRefusal::InvalidTrim),
+        Some(old) if *old != inside => {
+            Err(FaceRefusal::InvalidTrim("trim has inconsistent winding"))
+        }
         Some(_) => Ok(()),
         None => {
             *label = Some(inside);

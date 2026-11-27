@@ -13,11 +13,12 @@ use catallax_import::{
         native::{DisplayCurve, DisplaySurface, NativeLocation},
     },
 };
-use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_numbers::{Decider, Rational, Refusal, refund_on_refusal};
 use spade::Triangulation;
 
 use super::imported::{
-    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, insert, push, seed_rectangles,
+    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, grid_face, insert, push,
+    seed_rectangles,
 };
 use crate::{PreviewEdge, PreviewMesh, PreviewOptions};
 
@@ -127,6 +128,31 @@ fn edge_samples(
     Ok(output)
 }
 
+fn grid_edge(
+    carrier: &EdgeCarrier,
+    ends: [usize; 2],
+    divisions: u32,
+    mesh: &mut PreviewMesh<String, String>,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<Vec<(f64, usize)>, Refusal> {
+    let divisions = match carrier {
+        EdgeCarrier::Line(_) => 1,
+        EdgeCarrier::Native(..) if ends[0] == ends[1] => divisions.max(4),
+        EdgeCarrier::Native(..) => divisions.max(2),
+    };
+    dec.charge_traversal(u64::from(divisions))?;
+    let mut output = Vec::with_capacity(divisions as usize + 1);
+    output.push((0.0, ends[0]));
+    for i in 1..divisions {
+        let fraction = f64::from(i) / f64::from(divisions);
+        let index = push(mesh, carrier.sample(fraction, dec)?, options)?;
+        output.push((fraction, index));
+    }
+    output.push((1.0, ends[1]));
+    Ok(output)
+}
+
 fn trim_seed(trim: &NativeTrim, fraction: f64) -> NativeLocation {
     let next = trim
         .samples
@@ -201,6 +227,7 @@ fn cut_band(
     mesh: &mut PreviewMesh<String, String>,
     options: &PreviewOptions,
     dec: &mut Decider,
+    grid: bool,
 ) -> Result<Vec<Node>, Refusal> {
     if rims.len() != 2 {
         return Err(failure("periodic trim needs a paired-rim seam"));
@@ -227,6 +254,28 @@ fn cut_band(
         }
         if winding[axis] < 0.0 {
             rim.reverse();
+        }
+        if grid {
+            rim.pop();
+            let distance = |node: &Node| {
+                let delta = (node.uv[axis] - cut) / period;
+                (delta - delta.round()).abs()
+            };
+            let split = rim
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))
+                .unwrap()
+                .0;
+            let shift = ((cut - rim[split].uv[axis]) / period).round() * period;
+            for (i, node) in rim.iter_mut().enumerate() {
+                node.uv[axis] += shift + if i < split { period } else { 0.0 };
+            }
+            rim.rotate_left(split);
+            let mut last = rim[0];
+            last.uv[axis] += period;
+            rim.push(last);
+            continue;
         }
         let shift = ((cut - rim[0].uv[axis]) / period).floor() * period;
         for node in rim.iter_mut() {
@@ -297,11 +346,24 @@ pub fn preview_tolerant_body(
     dec: &mut Decider,
 ) -> Result<PreviewMesh<String, String>, Refusal> {
     super::validate(options)?;
-    let body = import
-        .bodies()
-        .get(index)
-        .ok_or_else(|| failure("body index is out of range"))?
-        .definition();
+    if index >= import.bodies().len() {
+        return Err(failure("body index is out of range"));
+    }
+    refund_on_refusal(|| build(import, index, options, None, dec)).or_else(|_| {
+        super::coarsen(options, dec, |divisions, _, dec| {
+            build(import, index, options, Some(divisions), dec)
+        })
+    })
+}
+
+fn build(
+    import: &TolerantImport,
+    index: usize,
+    options: &PreviewOptions,
+    grid: Option<u32>,
+    dec: &mut Decider,
+) -> Result<PreviewMesh<String, String>, Refusal> {
+    let body = import.bodies()[index].definition();
     let trims: Vec<_> = import
         .evidence()
         .native_trims
@@ -364,17 +426,21 @@ pub fn preview_tolerant_body(
                 },
             )
         };
-        let samples = edge_samples(
-            &carrier,
-            ends,
-            options
-                .chord_tolerance
-                .to_f64_nearest()
-                .max(edge.tolerance_mm().to_f64_nearest()),
-            &mut mesh,
-            options,
-            dec,
-        )?;
+        let samples = if let Some(divisions) = grid {
+            grid_edge(&carrier, ends, divisions, &mut mesh, options, dec)?
+        } else {
+            edge_samples(
+                &carrier,
+                ends,
+                options
+                    .chord_tolerance
+                    .to_f64_nearest()
+                    .max(edge.tolerance_mm().to_f64_nearest()),
+                &mut mesh,
+                options,
+                dec,
+            )?
+        };
         mesh.edges.push(PreviewEdge {
             edge: edge.name.clone(),
             vertices: samples.iter().map(|(_, index)| *index).collect(),
@@ -468,7 +534,7 @@ pub fn preview_tolerant_body(
                         },
                     );
                     let uv = match &carrier {
-                        Carrier::Native(surface) => {
+                        Carrier::Native(surface) if grid.is_none() => {
                             let projection = surface
                                 .project(mesh.positions[index], Some(seed), dec)
                                 .map_err(source_error)?;
@@ -483,17 +549,7 @@ pub fn preview_tolerant_body(
                             }
                             projection.location.parameters
                         }
-                        Carrier::Inferred(_) => {
-                            trim_seed(
-                                trim,
-                                if usage.forward {
-                                    fraction
-                                } else {
-                                    1.0 - fraction
-                                },
-                            )
-                            .parameters
-                        }
+                        _ => seed.parameters,
                     };
                     if nodes.last().is_some_and(|node| {
                         node.mesh == index && (node.uv[0] - uv[0]).hypot(node.uv[1] - uv[1]) <= 1e-8
@@ -516,7 +572,7 @@ pub fn preview_tolerant_body(
             let vertex = body.edges()[first_usage.edge].vertices
                 [usize::from(first_usage.forward != boundary.orientation)];
             let tolerance = body.vertices()[vertex].tolerance_mm().to_f64_nearest();
-            for endpoint in [first, last] {
+            for endpoint in [first, last].into_iter().filter(|_| grid.is_none()) {
                 if distance(
                     carrier.position(endpoint.uv, dec)?,
                     mesh.positions[first.mesh],
@@ -568,7 +624,14 @@ pub fn preview_tolerant_body(
             )?);
         }
         if !winding.is_empty() {
-            loops.push(cut_band(winding, &carrier, &mut mesh, &face_options, dec)?);
+            loops.push(cut_band(
+                winding,
+                &carrier,
+                &mut mesh,
+                &face_options,
+                dec,
+                grid.is_some(),
+            )?);
         }
         let first = loops
             .first()
@@ -590,6 +653,21 @@ pub fn preview_tolerant_body(
                 }
                 cdt.add_constraint(a, b);
             }
+        }
+        if let Some(divisions) = grid {
+            grid_face(
+                &face.name,
+                face.same_sense,
+                &carrier,
+                bounds,
+                &loops,
+                cdt,
+                &mut mesh,
+                divisions,
+                &face_options,
+                dec,
+            )?;
+            continue;
         }
         seed_rectangles(
             &carrier,

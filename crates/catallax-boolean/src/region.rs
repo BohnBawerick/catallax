@@ -248,7 +248,9 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
                         break;
                     }
                 }
-                if clear && depth >= 2 {
+                // In a plane the enclosure is convex. Moving this arc to
+                // its chord stays inside the box and misses every query.
+                if clear && (depth >= 2 || matches!(projection, Projection::Plane { .. })) {
                     out.push(Segment { entire, start, end });
                     return Ok(None);
                 }

@@ -6,9 +6,9 @@ use std::time::Instant;
 use catallax_app::queries::{SectionPlane, section_solid};
 use catallax_app::views::{StrokeSource, hidden_line_view, stroke_drawing};
 use catallax_boolean::{BoolOp, boolean};
-use catallax_numbers::{Decider, Rational, set_threads, with_operation_budget};
+use catallax_numbers::{Decider, Rational, Sign, set_threads, with_operation_budget};
 use catallax_shapes::{Pose, RPoint3, RVector3, Rotation, Surface};
-use catallax_topology::{BodyId, Loop, Model, cone, cylinder};
+use catallax_topology::{BodyId, Loop, Model, Sense, cone, cylinder};
 
 fn vector(x: i64, y: i64, z: i64) -> RVector3 {
     RVector3::new(x.into(), y.into(), z.into())
@@ -78,12 +78,15 @@ fn check_cap(
         {
             continue;
         }
-        assert!(
-            support
-                .normal
-                .dot(&n)
-                .rational_ref()
-                .is_some_and(|q| q > &Rational::zero())
+        let facing = support.normal.dot(&n);
+        let facing = facing.rational_ref().unwrap().sign();
+        assert_eq!(
+            facing,
+            if face.sense == Sense::Same {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            }
         );
         faces += 1;
         for &lp in &face.loops {
@@ -139,6 +142,22 @@ fn inclined_sections_certify() {
                 origin: RPoint3::origin(),
                 normal: vector(x, y, z),
             };
+            let mut cancelled = Decider::default();
+            cancelled.set_deadline(Some(Instant::now()));
+            assert_eq!(
+                section_solid(&model, body, &plane, &mut cancelled)
+                    .unwrap_err()
+                    .refusal
+                    .code,
+                "numbers.deadline"
+            );
+            assert_eq!(
+                hidden_line_view(&model, body, &plane.normal, &mut cancelled)
+                    .unwrap_err()
+                    .refusal
+                    .code,
+                "numbers.deadline"
+            );
             let mut first = None;
             for workers in [1, 2, 4, 24] {
                 set_threads(NonZeroUsize::new(workers));

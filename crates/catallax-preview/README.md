@@ -33,6 +33,8 @@ The phase 5 corpus test reports preview time through GPU completion, sampled-gri
 faces by carrier kind, and refusals. It checks closedness and shared chords
 against the display description, then checks vertices against the checked mesh
 for exact rows or the binary64 admitted carrier for fitted rows.
+The two known checked-mesh refusals are reported separately and must still draw
+every face; they are not counted as geometry passes without a checked reference.
 
 ```sh
 # 75 public rows, software Vulkan (correctness only)

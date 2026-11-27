@@ -1,18 +1,20 @@
 //! Compares the actual compute evaluator with an independent binary64 chart evaluation.
 // Set CATALLAX_ANALYTIC_ROW to a predictor corpus row ID. Imported rows use
 // CATALLAX_ANALYTIC_SOURCES (STEP directory) and CATALLAX_ANALYTIC_SELECTION.
+#![cfg(not(target_arch = "wasm32"))]
+
 #[path = "../src/eval/analytic.rs"]
 mod analytic;
 
 use analytic::{AnalyticSurface, AnalyticVertex, Definition, Kind, WGSL};
 use catallax_features::evaluate;
 use catallax_numbers::{Decider, Rational, Real};
-use catallax_preview::gpu::Gpu;
 use catallax_recipe::Recipe;
 use catallax_shapes::{
     BezierExtrusion, Cone, Cylinder, Plane, Point3, RPoint3, RVector3, RollingPipe, Sphere,
     Surface, Torus, Vector3,
 };
+use wgpu::util::DeviceExt;
 
 const DRIVER: &str = r"
 @group(0) @binding(0) var<storage, read> faces: array<AnalyticSurface>;
@@ -429,10 +431,103 @@ fn grid(kind: Kind) -> (Vec<f32>, Vec<f32>) {
     }
 }
 
+async fn dispatch(
+    adapter: &wgpu::Adapter,
+    faces: &[AnalyticSurface],
+    samples: &[[f32; 4]],
+) -> Vec<AnalyticVertex> {
+    let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Analytic evaluator test"),
+        source: wgpu::ShaderSource::Wgsl(shader().into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &shader,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    if let Some(error) = scope.pop().await {
+        panic!("Analytic pipeline validation failed: {error}");
+    }
+    let input = |contents| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents,
+            usage: wgpu::BufferUsages::STORAGE,
+        })
+    };
+    let output = |usage| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (samples.len() * size_of::<AnalyticVertex>()) as u64,
+            usage,
+            mapped_at_creation: false,
+        })
+    };
+    let readback = output(wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ);
+    let buffers = [
+        input(bytemuck::cast_slice(faces)),
+        input(bytemuck::cast_slice(samples)),
+        output(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC),
+    ];
+    let entries = std::array::from_fn::<_, 3, _>(|i| wgpu::BindGroupEntry {
+        binding: i as u32,
+        resource: buffers[i].as_entire_binding(),
+    });
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &entries,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups((samples.len() as u32).div_ceil(64), 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(&buffers[2], 0, &readback, 0, readback.size());
+    let submission = queue.submit([encoder.finish()]);
+    let slice = readback.slice(..);
+    let (send, recv) = futures_channel::oneshot::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = send.send(result);
+    });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(std::time::Duration::from_secs(30)),
+        })
+        .unwrap();
+    recv.await.unwrap().unwrap();
+    bytemuck::cast_slice(&slice.get_mapped_range().unwrap()).to_vec()
+}
+
 #[test]
 fn analytic_compute_matches_binary64_charts() {
+    pollster::block_on(check_stored_charts());
+}
+
+async fn check_stored_charts() {
     let requirement = std::env::var("CATALLAX_ANALYTIC_ADAPTER").ok();
-    let gpu = match Gpu::new(false) {
+    let software = requirement.as_deref() == Some("software");
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    if software {
+        descriptor.backends = wgpu::Backends::VULKAN;
+    }
+    let instance = wgpu::Instance::new(descriptor);
+    let adapter = match instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: software,
+            ..Default::default()
+        })
+        .await
+    {
         Ok(gpu) => gpu,
         Err(reason) => {
             assert!(
@@ -443,15 +538,20 @@ fn analytic_compute_matches_binary64_charts() {
             return;
         }
     };
-    eprintln!("Analytic compute adapter: {}", gpu.name());
-    let device_type = gpu.name().split_whitespace().last().unwrap();
+    let info = adapter.get_info();
+    eprintln!(
+        "Analytic compute adapter: {} {:?} {:?}",
+        info.name, info.backend, info.device_type
+    );
     match requirement.as_deref() {
         Some("hardware") => assert!(
-            matches!(device_type, "IntegratedGpu" | "DiscreteGpu"),
-            "{}",
-            gpu.name()
+            matches!(
+                info.device_type,
+                wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::DiscreteGpu
+            ),
+            "{info:?}"
         ),
-        Some("software") => assert_eq!(device_type, "Cpu", "{}", gpu.name()),
+        Some("software") => assert_eq!(info.device_type, wgpu::DeviceType::Cpu, "{info:?}"),
         None => (),
         Some(other) => panic!("Unknown CATALLAX_ANALYTIC_ADAPTER: {other}"),
     }
@@ -498,20 +598,7 @@ fn analytic_compute_matches_binary64_charts() {
             .fold(0.0, f64::max);
         assert!(size > 0.0, "{}", case.name);
     }
-    let zero = vec![[0.0_f32; 8]; samples.len()];
-    let actual: Vec<AnalyticVertex> = gpu
-        .dispatch(
-            &shader(),
-            "main",
-            &[
-                bytemuck::cast_slice(&faces),
-                bytemuck::cast_slice(&samples),
-                bytemuck::cast_slice(&zero),
-            ],
-            2,
-            [(samples.len() as u32).div_ceil(64), 1, 1],
-        )
-        .unwrap();
+    let actual = dispatch(&adapter, &faces, &samples).await;
 
     let mut start = 0;
     assert_eq!(actual.len(), samples.len());

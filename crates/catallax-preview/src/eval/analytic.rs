@@ -1,10 +1,12 @@
 //! Standalone GPU surface evaluation; mesher integration supplies the body origin and trims.
 #![allow(dead_code)] // The mesher consumes this module in a separate lane.
 
+#[cfg(test)]
 use catallax_shapes::{Point3, SplineSupport, Surface, Vector3};
 
 pub const WGSL: &str = include_str!("analytic.wgsl");
 
+#[cfg(test)]
 type D3 = [f64; 3];
 
 #[repr(u32)]
@@ -49,6 +51,7 @@ impl Definition {
     /// Reads stored support data, without sampling the surface or calling a proof route.
     /// `same` selects the natural or reversed face sense. Fitted or general spline
     /// supports are left to the separate control-net evaluator.
+    #[cfg(test)]
     pub fn from_surface(surface: &Surface, body_origin: D3, same: bool) -> Option<Self> {
         let orientation = if same { 1.0 } else { -1.0 };
         let mut data = [[0.0; 4]; 7];
@@ -157,6 +160,7 @@ impl Definition {
     }
 }
 
+#[cfg(test)]
 fn frame(data: &mut [[f64; 4]; 7], p: &Point3, a: &Vector3, r: &Vector3, origin: D3) {
     let axis = unit(vector(a));
     let across = unit(vector(r));
@@ -166,27 +170,33 @@ fn frame(data: &mut [[f64; 4]; 7], p: &Point3, a: &Vector3, r: &Vector3, origin:
     data[3] = lane(unit(cross(axis, across)));
 }
 
+#[cfg(test)]
 fn local(p: &Point3, origin: D3) -> D3 {
     let point = [&p.x, &p.y, &p.z].map(|v| v.to_f64());
     std::array::from_fn(|i| point[i] - origin[i])
 }
 
+#[cfg(test)]
 fn vector(v: &Vector3) -> D3 {
     [&v.x, &v.y, &v.z].map(|x| x.to_f64())
 }
 
+#[cfg(test)]
 fn lane([x, y, z]: D3) -> [f64; 4] {
     [x, y, z, 0.0]
 }
 
+#[cfg(test)]
 fn dot(a: D3, b: D3) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
+#[cfg(test)]
 fn cross([x, y, z]: D3, [a, b, c]: D3) -> D3 {
     [y * c - z * b, z * a - x * c, x * b - y * a]
 }
 
+#[cfg(test)]
 fn unit(v: D3) -> D3 {
     let length = v[0].hypot(v[1]).hypot(v[2]);
     v.map(|x| x / length)

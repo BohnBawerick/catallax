@@ -1,11 +1,8 @@
-//! Unproved graphics-card preview routes for the field.
+//! Unproved B-rep previews in buffers that the renderer can draw directly.
 //!
-//! Nothing in this crate is proved. Its values, meshes and pixels are display
-//! estimates labelled unproved, and never feed an export, a proof or a proven
-//! measurement. Exports and proven queries go through `catallax-field`'s
-//! retained definitions and their proof routes.
-pub mod batch;
+//! This crate never supplies a checked mesh, a proof, an export, or a
+//! geometric query. Face IDs identify draw ranges; they do not resolve picks.
+
 mod eval;
-pub mod first_paint;
-pub mod gpu;
-pub mod picking;
+mod gpu;
+pub mod mesher;

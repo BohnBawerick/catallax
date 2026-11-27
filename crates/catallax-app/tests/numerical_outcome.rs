@@ -87,6 +87,39 @@ fn application_outcome_retains_repair_evidence_and_export_provenance() {
     let EvaluatedApplicationOutcome::Numerical(retained) = outcome else {
         panic!("numerical geometry must retain its authority");
     };
+    let (display, work) = catallax_numbers::with_operation_budget(0, || {
+        catallax_app::preview::numerical_display_description(
+            &retained,
+            &catallax_mesh::float::DisplayOptions::default(),
+        )
+    });
+    let display = display.unwrap();
+    assert!(!work.exhausted);
+    assert_eq!((work.used, work.uncharged), (0, 0));
+    assert_eq!(display.face_origins, *retained.face_origins());
+    let roof = display
+        .description
+        .faces
+        .iter()
+        .find(|f| f.face == "roof")
+        .unwrap();
+    assert!(matches!(
+        roof.surface,
+        catallax_mesh::float::DisplaySurface::BSpline(_)
+    ));
+    let mut incidence = std::collections::BTreeMap::<_, (usize, bool)>::new();
+    for face in &display.description.faces {
+        for edge in face.loops.iter().flat_map(|l| &l.uses) {
+            let ascending = edge.samples.first().unwrap().point == 0;
+            let usage = incidence.entry(edge.edge).or_insert((0, ascending));
+            if usage.0 == 1 {
+                assert_ne!(usage.1, ascending);
+            }
+            usage.0 += 1;
+        }
+    }
+    assert_eq!(incidence.len(), display.description.edges.len());
+    assert!(incidence.values().all(|(count, _)| *count == 2));
     let artifact = catallax_step::numerical::build(
         retained.body(),
         &Default::default(),

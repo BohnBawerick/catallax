@@ -1171,11 +1171,11 @@ fn checked_corpus_faces_stay_within_their_reported_bounds() {
         );
     }
     eprintln!("{faces} checked faces; {private} private STEP rows not supplied");
-    assert!(faces > 0, "corpus did not exercise any faces");
     assert!(
         findings.is_empty(),
         "{}\n{}",
         findings.len(),
         findings.join("\n")
     );
+    assert!(faces > 0, "corpus did not exercise any faces");
 }

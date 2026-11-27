@@ -231,7 +231,7 @@ fn caller_reserves_once_and_deferred_proof_cannot_take_a_fresh_allowance() {
 }
 
 #[test]
-fn exact_phase_caps_pass_and_one_unit_short_fails_without_borrowing() {
+fn short_preview_coarsens_but_short_proof_fails_without_borrowing() {
     let controller = Controller::default();
     let job = start(&controller, 4, allocation(), &MeshOptions::default());
     assert!(job.prove(&mut Decider::default()).publish());
@@ -273,8 +273,11 @@ fn exact_phase_caps_pass_and_one_unit_short_fails_without_borrowing() {
         },
         &mut Decider::default(),
     );
-    assert!(answer.is_err());
-    assert!(preview_short.latest().is_none());
+    assert!(answer.unwrap().is_some());
+    let preview = preview_short.latest().unwrap();
+    assert!(matches!(preview.status(), Status::Unproved));
+    assert!(!preview.preview().brep().unwrap().mesh.triangles.is_empty());
+    assert!(preview.work().preview.used < caps.preview);
 }
 
 #[test]

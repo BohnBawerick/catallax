@@ -45,6 +45,22 @@ impl PatchPairCurve {
         self.pieces[0].definition.branch.closed
     }
 
+    /// The two retained carriers in natural pair-normal order, without a
+    /// geometric query. Their parameters are those used by the graph pieces.
+    pub fn carriers(&self) -> [&BSplineSurface; 2] {
+        let piece = &self.pieces[0];
+        [&piece.definition.first, &piece.definition.second].map(|source| match source {
+            RetainedSource::Patch(patch) => patch.carrier(),
+            RetainedSource::Atlas(atlas) => atlas.source(),
+            RetainedSource::Original(original) => original.atlas.source(),
+        })
+    }
+
+    /// Parameter pairs at the retained component's first witness.
+    pub fn first_parameters(&self) -> &[Real; 4] {
+        self.pieces[0].endpoint_parameters(0)
+    }
+
     /// Endpoints of an open component, or its seam point twice when closed.
     pub fn endpoints(&self) -> [Point3; 2] {
         [

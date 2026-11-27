@@ -55,6 +55,13 @@ impl PatchSectionBranch {
     pub fn charts(&self) -> &[RationalPatch] {
         &self.charts
     }
+
+    /// The first cell's retained carrier and two parameter endpoints.
+    /// Reading them does not construct an exact position or run a query.
+    pub fn first_cell(&self) -> (&BSplineSurface, &[[Real; 2]; 2]) {
+        let cell = &self.cells[0];
+        (self.charts[cell.chart].carrier(), &cell.ends)
+    }
     fn span(&self, cell: &ArcCell) -> &Span {
         &self.charts[cell.chart].data.spans[cell.span]
     }

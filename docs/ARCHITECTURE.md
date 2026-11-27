@@ -33,6 +33,10 @@ An unproved preview belongs to one immutable recipe revision. The app can replac
 
 An ordinary B-rep part uses its B-rep display path. Field-only features can use a field preview. Render with samples, but use the retained definition for geometry queries and exports. Display meshes share one boundary polyline between incident faces and report a proved error bound where they claim one. Two-kernel sampled agreement is not a whole-boundary proof and does not run on every edit.
 
+`catallax_app::preview::display_description` reads a retained B-rep into the versioned binary64 input for GPU preview. It returns body-relative carrier definitions, shared edge samples, oriented UV trims and picking names without constructing triangles or running proof. The CPU preview and checked display remain separate calls.
+
+Fitted B-reps use `catallax_app::preview::numerical_display_description`, which reads admitted carriers and retained trim curves and identifies faces and edges by their stable definition keys.
+
 Output accuracy is separate from modelling tolerance. STEP preserves exact forms where supported and labels approximate exports. Printing defaults to 0.01 mm; it uses qualified B-rep tessellation for supported solids and certified field output where supported. Keep the requested accuracy and resource limits visible and report a refusal rather than silently coarsening the mesh.
 
 ## Work and determinism

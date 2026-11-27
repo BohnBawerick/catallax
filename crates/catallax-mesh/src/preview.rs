@@ -167,9 +167,20 @@ fn preview_checked(
         }
         crate::triangulate::build_preview(model, body, options, None, dec)
     });
-    direct.or_else(|_| {
+    direct.or_else(|direct_refusal| {
         coarsen(options, dec, |divisions, tolerance, dec| {
             crate::float::grid::build(model, body, options, divisions, tolerance, dec)
+        })
+        .map_err(|coarse_refusal| {
+            // A fallback that cannot draw the body is not a new public
+            // outcome. Cancellation or real exhaustion still takes priority.
+            if coarse_refusal.code == "numbers.deadline"
+                || catallax_numbers::current_operation_work().exhausted
+            {
+                coarse_refusal
+            } else {
+                direct_refusal
+            }
         })
     })
 }

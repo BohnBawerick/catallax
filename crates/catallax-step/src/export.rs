@@ -1716,8 +1716,7 @@ impl<'a> Exporter<'a> {
         uses.values().all(|counts| *counts == [1, 1])
     }
 
-    /// The entities of the part's manufacturing information, added after
-    /// every face is written. Each dimension's nominal is measured here.
+    /// Writes the part's manufacturing information after all faces are written.
     fn annotations(
         &mut self,
         pmi: &crate::pmi::Pmi<FaceId>,
@@ -1725,22 +1724,13 @@ impl<'a> Exporter<'a> {
     ) -> Result<Vec<Id>, Refusal> {
         pmi.validate()?;
         let digits = self.digits();
-        let mut nominals = Vec::with_capacity(pmi.items.len());
-        for value in crate::pmi::nominals(self.model, pmi, self.dec)? {
-            nominals.push(match value {
-                Some(value) => Some(number::decimal(
-                    &number::real(&value, digits, self.dec)?.text,
-                )),
-                None => None,
-            });
-        }
         crate::pmi::emit(
             &mut self.graph,
             self.model,
             &self.written_faces,
             references,
             pmi,
-            &nominals,
+            digits,
             self.dec,
         )
     }

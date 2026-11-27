@@ -15,6 +15,7 @@ from math import comb, dist, isfinite
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -35,19 +36,22 @@ from test_loopless_faces import BINARY, DRIVER, ROOT, unique
 from test_p5_flanged_housing import ordinary_shape
 from raw_step import raw_shapes
 
+sys.path.insert(0, str(ROOT / 'tools/release'))
+from record_topology import certificate_by_face_rank
+
 CONTRACT = json.loads((Path(__file__).parent / 'fixtures/certified-spline-seams.json').read_text())
 EXAMPLE = ROOT / '.claude/skills/verify-catallax/references/examples/certified-recipe.json'
 ORACLE = CONTRACT['property_oracle']
 EPSILONS = (1e-6, 1e-8, 1e-10, 1e-12)
 ROUNDOFF = Decimal('1e-35')
-# Accepted base geometry and certificate digests, after exact chart reassembly.
+# Exact chart geometry and certificates expressed in result-face order.
 FINGERPRINTS = {
     'offset': ('30fd8b0c12cfeb0f123abf5affe1491c80cc3fbad43145f96186ff3502abd477',
-               '77259346ecb7cb4508c17d33842114850148a646e7e4fa03c8e5f45419f611c9'),
+               'e27f4728884555a27fdbc300553408f161cf14257a96d8d85e85c92f59cbb2ef'),
     'second': ('a69cfe0f941f6ed11502316403d84c83d0c458097f047bb31040db1765883ea9',
-               '5aaf9c6ec621c994ebbb4377bec71b0b701ad320ee5292afdf433857701f6f3c'),
+               'ef3e113c55eac30ddcc7350bd2603838935e49402fbc6f4e8bc9556242526dbe'),
     'after_trim': ('ed1ec54082e4776bd689ebef58772649b79f22b18c5a5d2389af0d837a704f4f',
-                   '91c5409dce8e40add112b56ebb65968cc80286818e8b22a5f3cdbab97f050395'),
+                   'a78560fba31c0467f03913f56b70c3ce440be28e999da380da82607314075285'),
 }
 # Orthonormal frame of the sweep: n, then the ellipse's a=2 and b=8/5 axes.
 AXIS = (Fraction(3, 5), Fraction(0), Fraction(4, 5))
@@ -564,8 +568,9 @@ class CertifiedSplineSeams(unittest.TestCase):
 
                 geometry, certificate = FINGERPRINTS[scenario['id']]
                 self.assertEqual(reassembled(sides), geometry)
-                self.assertEqual(canonical(manifest['certificate']), certificate)
-                self.assertEqual(canonical(full['response']['manifest']['certificate']), certificate)
+                for case in (writer, full):
+                    self.assertEqual(canonical(certificate_by_face_rank(
+                        case['response']['manifest']['certificate'], problem['recipe'])), certificate)
 
                 lower, upper = (Fraction(value) for value in scenario['axial'])
                 goal = target(Fraction(scenario['distance']), upper - lower)

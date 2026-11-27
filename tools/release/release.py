@@ -33,6 +33,7 @@ REFUSAL_SCOPES = {REFUSAL_CLASS: REFUSAL_STAGE_FIELDS, REVIEWED_REFUSAL_CLASS: R
 REBUILD_CORPUS = ROOT / "tools/release/rebuild-corpus.jsonl"
 REBUILD_ANSWERS = ROOT / "tools/release/rebuild-answers.json"
 REBUILD_FORMAT = "catallax-release-rebuild/1"
+REBUILD_ANSWERS_FORMAT = "catallax-rebuild-answers/2"
 REBUILD_ROW_FIELDS = {"index", "request_sha256", "answer_sha256", "manifest_sha256",
                       "faces", "step_faces", "names"}
 REBUILD_SUMMARY_FIELDS = {"format", "corpus_sha256", "answers_sha256", "base_sha",
@@ -153,12 +154,16 @@ def read_corrections():
     return document
 
 
+def output_digests(directory):
+    return {name: sha256(directory / name) if (directory / name).exists() else None
+            for name in OUTPUTS}
+
+
 def answer_digest(driver, directory):
     directory = Path(directory)
     return driver.digest({
         "manifest": driver.comparable(read_json(directory / "manifest.json")),
-        "files": {name: sha256(directory / name) if (directory / name).exists() else None
-                  for name in OUTPUTS}})
+        "files": output_digests(directory)})
 
 
 def compare_baseline(driver, baseline, candidate, upgrades, corrections):
@@ -379,7 +384,7 @@ def read_rebuild_answers():
     document = read_json(REBUILD_ANSWERS)
     require(set(document) == {"format", "corpus_sha256", "cases"},
             "unexpected rebuild answers fields")
-    require(document["format"] == "catallax-rebuild-answers/1", "unsupported rebuild answers file")
+    require(document["format"] == REBUILD_ANSWERS_FORMAT, "unsupported rebuild answers file")
     require(document["corpus_sha256"] == sha256(REBUILD_CORPUS),
             "rebuild answers corpus digest differs")
     rows = document["cases"]
@@ -409,6 +414,12 @@ def rebuild_case_facts(driver, directory, manifest):
             (manifest.get("name_edit") or {}).get("brep", {}).get("summary"))
 
 
+def rebuild_manifest(driver, manifest, request):
+    from record_topology import manifest_by_face_rank
+
+    return manifest_by_face_rank(driver.comparable(manifest), request)
+
+
 def rebuild_case_row(driver, case, index, expected_request):
     """Validate one replayed case and extract its record row."""
     directory = Path(case["path"])
@@ -434,9 +445,10 @@ def rebuild_case_row(driver, case, index, expected_request):
                 (manifest.get("refusal") or {}).get("code") == "numbers.operation-budget",
                 f"case {index}: exhausted work is not valid evidence")
     faces, step_faces, names = rebuild_case_facts(driver, directory, manifest)
+    comparable = rebuild_manifest(driver, manifest, request)
     return {"index": index, "request_sha256": driver.digest(request),
-            "answer_sha256": answer_digest(driver, directory),
-            "manifest_sha256": driver.digest(driver.comparable(manifest)),
+            "answer_sha256": driver.digest({"manifest": comparable, "files": output_digests(directory)}),
+            "manifest_sha256": driver.digest(comparable),
             "faces": faces, "step_faces": step_faces, "names": names}
 
 
@@ -487,7 +499,7 @@ def rebuild_record(args):
     report = rebuild_fresh_run(read_json(args.run), len(rows), args.workers)
     cases = [rebuild_case_row(driver, case, index, rebuild_expected_request(driver, row))
              for index, (row, case) in enumerate(zip(rows, report["cases"]))]
-    document = {"format": "catallax-rebuild-answers/1", "corpus_sha256": sha256(REBUILD_CORPUS),
+    document = {"format": REBUILD_ANSWERS_FORMAT, "corpus_sha256": sha256(REBUILD_CORPUS),
                 "cases": cases}
     write_json(args.out, document)
     print(f"rebuild answers written to {args.out}: {len(cases)} cases")
@@ -556,7 +568,8 @@ def rebuild_summary(args):
         result = driver.compare(paths[left], paths[right])
         require(result["equal"], "candidate worker replay differs; inspect the local comparison")
         comparisons[name] = result
-    baseline = driver.compare(paths[LABELS[0]], paths[LABELS[1]])
+    baseline = driver.compare(paths[LABELS[0]], paths[LABELS[1]],
+                              project=lambda manifest, request: rebuild_manifest(driver, manifest, request))
     changes = rebuild_changes(baseline["failures"])
     comparisons[COMPARISONS[0]] = {"cases": baseline["cases"], "equal": baseline["equal"],
                                    "failures": changes}

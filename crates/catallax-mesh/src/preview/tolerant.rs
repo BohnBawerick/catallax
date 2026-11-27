@@ -245,18 +245,28 @@ fn cut_to_pole(
     let (pole_v, on_oriented_side) = if let Some(bound) = bound {
         (bound.to_f64_nearest(), true)
     } else {
-        if normal != 1 {
+        // STEP cones have an unbounded axial chart. Intersect two sampled
+        // meridians, then check that the other meridians meet there too.
+        let radial = |h, dec: &mut Decider| -> Result<P, Refusal> {
+            let mut a = first;
+            a[normal] = h;
+            let mut b = a;
+            b[axis] += period * 0.5;
+            let (a, b) = (carrier.position(a, dec)?, carrier.position(b, dec)?);
+            Ok(std::array::from_fn(|i| b[i] - a[i]))
+        };
+        let h = first[normal];
+        let step = h.abs().max(1.0) * if side == 0 { -1.0 } else { 1.0 };
+        let a = radial(h, dec)?;
+        let b = radial(h + step, dec)?;
+        let i = (0..3)
+            .max_by(|&i, &j| (b[i] - a[i]).abs().total_cmp(&(b[j] - a[j]).abs()))
+            .unwrap();
+        let t = a[i] / (a[i] - b[i]);
+        if !t.is_finite() || t == 0.0 || (t < 0.0 && vertex_loop.is_none()) {
             return Err(failure());
         }
-        let apex = source.cone_apex_parameter().ok_or_else(failure)?;
-        (
-            apex,
-            if side == 0 {
-                apex < first[1]
-            } else {
-                apex > first[1]
-            },
-        )
+        (h + t * step, t > 0.0)
     };
     uv[normal] = pole_v;
     let pole = carrier.position(uv, dec)?;

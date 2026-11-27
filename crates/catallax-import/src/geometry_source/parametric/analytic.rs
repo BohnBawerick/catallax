@@ -163,14 +163,6 @@ pub(crate) struct AnalyticProjection {
 }
 
 impl AnalyticProjection {
-    pub(crate) fn cone_apex_parameter(&self) -> Option<f64> {
-        let ProjectionKind::Cone(radius, slope) = self.kind else {
-            return None;
-        };
-        let apex = (-radius / slope) / self.length;
-        apex.is_finite().then_some(apex)
-    }
-
     pub(crate) fn parameters(&self, target: [f64; 3], period: f64) -> Option<[f64; 2]> {
         let delta = std::array::from_fn::<_, 3, _>(|i| target[i] - self.centre[i]);
         let [x, y, z] = std::array::from_fn(|i| {

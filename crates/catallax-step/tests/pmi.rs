@@ -12,10 +12,10 @@ use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{HolePart, Recipe, Role};
 use catallax_shapes::{Pose, Surface};
 use catallax_step::pmi::{
-    Anchor, At, ChamferNominal, Characteristic, Datum, DatumRef, DatumTarget, Feature,
+    Anchor, At, Camera, ChamferNominal, Characteristic, Datum, DatumRef, DatumTarget, Feature,
     GeometricTolerance, HoleHead, HoleSize, Item, ItemKind, Limits, Location, MaterialCondition,
-    PartNotes, Pmi, PositionControl, PositionFrame, PositionSegment, Process, ProjectedZone, Size,
-    SizeKind, SurfaceTexture, TargetArea, TargetKind, nominals,
+    PartNotes, Pmi, PositionControl, PositionFrame, PositionSegment, Process, ProjectedZone,
+    SavedView, Size, SizeKind, SurfaceTexture, TargetArea, TargetKind, nominals,
 };
 use catallax_step::{StepOptions, write_step_with_pmi};
 use catallax_topology::{BodyId, FaceId, Loop, Model, cylinder};
@@ -397,6 +397,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
             material: Some("6061-T6".into()),
             notes: vec!["Break sharp edges".into()],
         },
+        views: Vec::new(),
     };
     (pmi, nominal)
 }
@@ -819,6 +820,7 @@ fn each_process_condition_draws_its_symbol() {
                 }),
             )],
             part: PartNotes::default(),
+            views: Vec::new(),
         };
         let (file, _) = write(&part, &pmi);
         let all = entities(&file);
@@ -892,6 +894,7 @@ fn a_conflicting_datum_does_not_reserve_its_letter() {
             ),
         ],
         part: PartNotes::default(),
+        views: Vec::new(),
     };
     let (clean, _) = write(&part, &pmi);
     if let Some(directory) = std::env::var_os("CATALLAX_PMI_OUT") {
@@ -1053,6 +1056,7 @@ fn a_changed_bore_keeps_its_items_and_reads_its_new_size() {
             ),
         ],
         part: PartNotes::default(),
+        views: Vec::new(),
     };
     let (file, _) = write(&part, &pmi);
     let read = read_step_pmi(file.as_bytes()).unwrap();
@@ -1109,6 +1113,7 @@ fn information_that_does_not_fit_the_part_is_refused() {
     let one = |kind| Pmi {
         items: vec![item("X", kind)],
         part: PartNotes::default(),
+        views: Vec::new(),
     };
 
     // A diameter on a plane.
@@ -1179,6 +1184,7 @@ fn a_threaded_hole_reads_back_with_its_designation() {
             }),
         )],
         part: PartNotes::default(),
+        views: Vec::new(),
     };
     let (file, _) = write(&part, &pmi);
     assert!(
@@ -1214,6 +1220,7 @@ fn a_threaded_hole_reads_back_with_its_designation() {
             }),
         )],
         part: PartNotes::default(),
+        views: Vec::new(),
     };
     let refusal = write_step_with_pmi(
         &part.model,
@@ -1346,6 +1353,7 @@ fn hole_fixture() -> (Bracket, Pmi<FaceId>) {
             })
             .collect(),
         part: PartNotes::default(),
+        views: Vec::new(),
     };
     (part, pmi)
 }
@@ -1544,6 +1552,7 @@ fn planar_pmi([x_min, y_min, x_max, bevel]: &[Feature<FaceId>; 4]) -> Pmi<FaceId
             ),
         ],
         part: PartNotes::default(),
+        views: Vec::new(),
     }
 }
 
@@ -1686,6 +1695,7 @@ fn malformed_planar_pmi_does_not_hide_other_items() {
         let invalid = Pmi {
             items: vec![item("wrong faces", kind)],
             part: PartNotes::default(),
+            views: Vec::new(),
         };
         let refusal = nominals(&part.model, &invalid, &mut Decider::default()).unwrap_err();
         assert_eq!(refusal.code, "step.pmi-not-measurable");
@@ -1702,6 +1712,7 @@ fn malformed_planar_pmi_does_not_hide_other_items() {
             },
         )],
         part: PartNotes::default(),
+        views: Vec::new(),
     };
     assert_eq!(invalid.validate().unwrap_err().code, "step.pmi-invalid");
 }
@@ -1913,6 +1924,7 @@ fn gdt_pmi(f: &GdtFaces) -> Pmi<FaceId> {
             ),
         ],
         part: PartNotes::default(),
+        views: Vec::new(),
     }
 }
 
@@ -2735,4 +2747,222 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
             .any(|skip| skip.reason == "a text variable `surface treatment` is not read"),
         "{skipped:?}"
     );
+}
+
+fn camera(
+    eye: [&str; 3],
+    direction: [&str; 3],
+    up: [&str; 3],
+    distance: &str,
+    window: [&str; 2],
+    perspective: bool,
+) -> Camera {
+    Camera {
+        eye: eye.map(q),
+        direction: direction.map(q),
+        up: up.map(q),
+        distance: q(distance),
+        window: window.map(q),
+        perspective,
+    }
+}
+
+/// The P1 bracket with two saved views: the bore from the front, and the
+/// datum frame and hole pattern from above in perspective. The bore position
+/// is in both.
+fn viewed_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static str>) {
+    let (mut pmi, nominal) = bracket_pmi(part);
+    let names = |names: &[&str]| names.iter().map(|name| (*name).to_owned()).collect();
+    pmi.views = vec![
+        SavedView {
+            name: "Bore".into(),
+            camera: camera(
+                ["30", "-120", "10"],
+                ["0", "1", "0"],
+                ["0", "0", "1"],
+                "145",
+                ["100", "60"],
+                false,
+            ),
+            items: names(&["Datum A", "Bore diameter", "Bore finish", "Bore position"]),
+        },
+        SavedView {
+            name: "Top".into(),
+            camera: camera(
+                ["30", "20", "150"],
+                ["0", "0", "-1"],
+                ["0", "1", "0"],
+                "150",
+                ["90", "60"],
+                true,
+            ),
+            items: names(&["Datum B", "Datum C", "Hole position", "Bore position"]),
+        },
+    ];
+    (pmi, nominal)
+}
+
+/// The file's entities by number: the full record text.
+fn records(file: &str) -> BTreeMap<String, String> {
+    file.lines()
+        .filter_map(|line| {
+            let (id, rest) = line.split_once('=')?;
+            id.starts_with('#')
+                .then(|| (id.to_owned(), rest.to_owned()))
+        })
+        .collect()
+}
+
+#[test]
+fn saved_views_write_their_callouts_and_read_back() {
+    let part = bracket();
+    let (pmi, nominal) = viewed_pmi(&part);
+    pmi.validate().unwrap();
+    let (file, report) = write(&part, &pmi);
+    if let Ok(directory) = std::env::var("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("c4c-saved-views.step"),
+            &file,
+        )
+        .unwrap();
+    }
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert_eq!(read.skipped, Vec::new());
+    // Every callout presents an item that was read, so none is graphics.
+    assert_eq!(read.graphics, Vec::new());
+    assert_eq!(read.pmi.views, pmi.views);
+    let faces = written_faces(&file, &report);
+    let back = read
+        .pmi
+        .try_map(|_, key| faces.get(key).copied().ok_or_else(|| key.clone()))
+        .unwrap();
+    let mut expected = pmi.clone();
+    for item in &mut expected.items {
+        let value = nominal.get(item.id.as_str()).map(|text| q(text));
+        match &mut item.kind {
+            ItemKind::Size(size) => size.nominal = value,
+            ItemKind::Location(location) => location.nominal = value,
+            _ => {}
+        }
+    }
+    assert_eq!(back.items.len(), pmi.items.len());
+    assert_same(back, expected);
+
+    // One callout per shown item, the finish's own and six labels, each
+    // associated with the entity of its item.
+    let all = records(&file);
+    assert_eq!(file.matches("=DRAUGHTING_CALLOUT(").count(), 7);
+    let counts: Vec<String> = validation_items(&file)
+        .into_values()
+        .flatten()
+        .map(|(_, fields)| fields)
+        .collect();
+    assert!(
+        counts
+            .iter()
+            .any(|fields| fields == "'number of annotations',7.")
+    );
+    for (item, entity) in [
+        ("Datum A", "DATUM("),
+        ("Bore diameter", "DIMENSIONAL_SIZE("),
+        ("Bore position", "POSITION_TOLERANCE("),
+        ("Hole position", "POSITION_TOLERANCE("),
+    ] {
+        let association = all
+            .values()
+            .find(|record| {
+                record.starts_with(&format!("DRAUGHTING_MODEL_ITEM_ASSOCIATION('{item}'"))
+            })
+            .unwrap_or_else(|| panic!("{item} has no association"));
+        let definition = references(association)[0].clone();
+        assert!(
+            all[&definition].contains(entity),
+            "{item}: {}",
+            all[&definition]
+        );
+    }
+    // Two views: a model named for each, its camera and its relation to the
+    // global model.
+    assert_eq!(file.matches("=CAMERA_MODEL_D3(").count(), 2);
+    assert_eq!(
+        file.matches("=MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP(")
+            .count(),
+        2
+    );
+    assert!(file.contains("=DRAUGHTING_MODEL('Top',"));
+    assert!(file.contains("=VIEW_VOLUME(.CENTRAL.,"));
+
+    // A view that names an item with no callout, or a camera looking along
+    // its own up direction, is refused.
+    let mut bad = pmi.clone();
+    bad.views[0].items.push("Slot width".into());
+    assert!(
+        try_write(&part, &bad)
+            .unwrap_err()
+            .contains("item Slot width has no callout")
+    );
+    let mut bad = pmi.clone();
+    bad.views[1].camera.up = v("0", "0", "1");
+    assert!(
+        try_write(&part, &bad)
+            .unwrap_err()
+            .contains("up direction square to it")
+    );
+}
+
+#[test]
+fn graphical_only_callouts_are_read_apart_from_semantic_items() {
+    let part = bracket();
+    let (pmi, _) = viewed_pmi(&part);
+    let (file, report) = write(&part, &pmi);
+    let all = records(&file);
+    let association = |item: &str| {
+        all.iter()
+            .find(|(_, record)| {
+                record.starts_with(&format!("DRAUGHTING_MODEL_ITEM_ASSOCIATION('{item}'"))
+            })
+            .map(|(id, record)| (id.clone(), record.clone()))
+            .unwrap()
+    };
+
+    // Without its association the datum callout presents nothing read: it is
+    // graphics in the Bore view, and the datum is still one semantic item.
+    let (id, record) = association("Datum A");
+    let broken = mutate(&file, &format!("{id}={record}\n"), "");
+    let (back, skipped) = read_back(&broken, &report);
+    assert_eq!(skipped, Vec::new());
+    assert_eq!(back.items.len(), pmi.items.len());
+    let read = read_step_pmi(broken.as_bytes()).unwrap();
+    let [graphic] = read.graphics.as_slice() else {
+        panic!("{:?}", read.graphics);
+    };
+    assert_eq!(
+        (
+            graphic.name.as_str(),
+            graphic.kind.as_str(),
+            graphic.text.as_deref(),
+            graphic.presents.as_ref()
+        ),
+        ("Datum A", "datum", Some("A"), None)
+    );
+    assert_eq!(graphic.views, vec!["Bore".to_owned()]);
+    assert!(!read.pmi.views[0].items.contains(&"Datum A".to_owned()));
+
+    // A callout whose size is not read stays graphics that names the size.
+    let (_, record) = association("Bore diameter");
+    let size = references(&record)[0].clone();
+    let size_record = &all[&size];
+    let broken = mutate(
+        &file,
+        &format!("{size}={size_record}"),
+        &format!("{size}={}", size_record.replace("'diameter'", "'girth'")),
+    );
+    let read = read_step_pmi(broken.as_bytes()).unwrap();
+    assert!(read.pmi.items.iter().all(|item| item.id != "Bore diameter"));
+    let [graphic] = read.graphics.as_slice() else {
+        panic!("{:?}", read.graphics);
+    };
+    assert_eq!(graphic.presents.as_deref(), Some(size.as_str()));
+    assert_eq!(graphic.text.as_deref(), Some("\u{2300}8 H7"));
+    assert_eq!(graphic.kind, "diameter dimension");
 }

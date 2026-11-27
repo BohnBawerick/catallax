@@ -18,12 +18,12 @@ use catallax_numbers::{Decider, Rational, Real};
 use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
 use catallax_shapes::{Circle, Plane, Point3, RPoint3, RVector3, Vector3};
 use catallax_step::pmi::{
-    Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, ChamferNominal,
+    Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, Camera, ChamferNominal,
     Characteristic, Datum, DatumRef, DatumTarget, EDGE_BREAK, FIRST_SIDE, Feature,
     GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize,
     INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location, MAX_SETBACK, MIN_SETBACK,
     MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl, PositionFrame,
-    PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, Size, SizeKind,
+    PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, SavedView, Size, SizeKind,
     SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH,
     TargetArea, TargetKind, WIDTH, off_face,
 };
@@ -39,6 +39,29 @@ pub struct StepPmi {
     pub pmi: Pmi<String>,
     /// Items in the file that were not read.
     pub skipped: Vec<SkippedPmi>,
+    /// Graphic callouts that present no item that was read: graphical-only
+    /// PMI, kept apart so nothing is counted twice.
+    pub graphics: Vec<GraphicCallout>,
+}
+
+/// A graphic callout with no semantic item read from the file.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct GraphicCallout {
+    /// The callout entity, such as `#412`.
+    pub entity: String,
+    /// The callout's name.
+    pub name: String,
+    /// The presented PMI type its geometry is named with, such as
+    /// `position` (recommended practices, table 18), or empty.
+    pub kind: String,
+    /// The text it shows, from its equivalent Unicode string, if stated.
+    pub text: Option<String>,
+    /// The faces of the shape aspect it is associated with, if any.
+    pub faces: Option<Feature<String>>,
+    /// The semantic entity it presents when that entity was not read.
+    pub presents: Option<String>,
+    /// The saved views that show it.
+    pub views: Vec<String>,
 }
 
 /// An item of manufacturing information that was not read.
@@ -1873,6 +1896,277 @@ impl<'a> Reader<'a> {
         })
     }
 
+    /// The equivalent Unicode string a callout's validation property states.
+    fn callout_text(&self, callout: u64) -> Option<String> {
+        for (within, _) in self.sharing_at(callout, "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION", 2) {
+            for (property, _) in self.sharing_at(within, "PROPERTY_DEFINITION", 2) {
+                for (_, link) in self.sharing_at(property, "PROPERTY_DEFINITION_REPRESENTATION", 0)
+                {
+                    let Some(representation) =
+                        reference(link.get(1)).and_then(|id| self.entity(id))
+                    else {
+                        continue;
+                    };
+                    for item in references(representation.parts[0].1.get(1)) {
+                        if let Some(fields) = self
+                            .entity(item)
+                            .and_then(|entity| entity.part("DESCRIPTIVE_REPRESENTATION_ITEM"))
+                            && string(fields.first()).as_deref()
+                                == Some("equivalent unicode string")
+                        {
+                            return string(fields.get(1));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// The presented PMI type a callout's geometry is named with.
+    fn callout_kind(&self, callout: u64) -> String {
+        let Some(entity) = self.entity(callout) else {
+            return String::new();
+        };
+        let params = entity
+            .part("DRAUGHTING_CALLOUT")
+            .unwrap_or(entity.parts[0].1.as_slice());
+        for occurrence in references(params.get(1)) {
+            let Some(occurrence) = self.entity(occurrence) else {
+                continue;
+            };
+            let fields = occurrence.parts[0].1.as_slice();
+            if let Some(name) = reference(fields.get(2))
+                .and_then(|set| self.entity(set))
+                .and_then(|set| string(set.parts[0].1.first()))
+                .filter(|name| !name.is_empty())
+            {
+                return name;
+            }
+        }
+        String::new()
+    }
+
+    /// A saved view's camera (recommended practices, section 9.4.2.6), with
+    /// lengths in millimetres.
+    fn camera(&self, id: u64, scale: &Rational) -> Result<Camera, String> {
+        let entity = self.entity(id).ok_or("the camera is missing")?;
+        if entity.parts.len() != 1 || entity.type_name() != "CAMERA_MODEL_D3" {
+            return Err(format!("a {} is not read", entity.type_name()));
+        }
+        let params = entity.parts[0].1.as_slice();
+        let frame = reference(params.get(1))
+            .and_then(|frame| self.placement(frame))
+            .ok_or("the camera has no readable placement")?;
+        let across = frame
+            .reference
+            .ok_or("the camera's placement has no x axis")?;
+        let norm = dot3(&frame.axis, &frame.axis);
+        let up = cross3(&frame.axis, &across).map(|value| &value / &norm);
+        let volume = reference(params.get(2))
+            .and_then(|volume| self.entity(volume))
+            .and_then(|volume| volume.part("VIEW_VOLUME"))
+            .ok_or("the camera has no view volume")?;
+        let perspective = match volume.first() {
+            Some(Param::Enum(kind)) if kind == "CENTRAL" => true,
+            Some(Param::Enum(kind)) if kind == "PARALLEL" => false,
+            _ => return Err("the camera's projection is neither central nor parallel".into()),
+        };
+        let distance = number(volume.get(2)).ok_or("the camera has no view distance")?;
+        let window = reference(volume.get(8))
+            .and_then(|window| self.entity(window))
+            .and_then(|window| window.part("PLANAR_BOX"))
+            .ok_or("the camera has no view window")?;
+        let size = |index: usize| {
+            number(window.get(index))
+                .map(|value| &value * scale)
+                .ok_or("the camera's window has no size")
+        };
+        Ok(Camera {
+            eye: frame.origin.map(|value| &value * scale),
+            direction: frame.axis,
+            up,
+            distance: &distance * scale,
+            window: [size(1)?, size(2)?],
+            perspective,
+        })
+    }
+
+    /// The saved views and graphic callouts of the file. A callout whose
+    /// association names a read item, or the private aspect of a read surface
+    /// texture, presents that item and is not listed again as graphics.
+    fn presentation(
+        &self,
+        items: &[(u64, Item<String>)],
+        lowers: &BTreeMap<u64, u64>,
+        skipped: &mut Vec<SkippedPmi>,
+    ) -> (Vec<SavedView>, Vec<GraphicCallout>) {
+        let mut by_entity: BTreeMap<u64, &str> = items
+            .iter()
+            .map(|(entity, item)| (*entity, item.id.as_str()))
+            .collect();
+        for (lower, upper) in lowers {
+            if let Some(name) = by_entity.get(upper).copied() {
+                by_entity.insert(*lower, name);
+            }
+        }
+        let is_callout = |entity: &Entity| {
+            entity
+                .parts
+                .iter()
+                .any(|(part, _)| part == "DRAUGHTING_CALLOUT" || part.ends_with("_CALLOUT"))
+        };
+        let mut presented = BTreeMap::new();
+        let mut graphics = BTreeMap::new();
+        for (&callout, entity) in self.g {
+            if !is_callout(entity) {
+                continue;
+            }
+            let mut item = None;
+            let mut presents = None;
+            let mut faces = None;
+            for (_, association) in self.sharing_at(callout, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
+            {
+                let Some(definition) = reference(association.get(2)) else {
+                    continue;
+                };
+                if let Some(name) = by_entity.get(&definition) {
+                    item = Some((*name).to_owned());
+                    break;
+                }
+                if let Some(params) = self.aspect_params(definition) {
+                    let feature: Option<Feature<String>> = self
+                        .features(definition, 0)
+                        .ok()
+                        .map(|features| features.into_iter().flatten().collect());
+                    let name = string(params.first()).unwrap_or_default();
+                    if let Some((_, texture)) = items.iter().find(|(_, texture)| {
+                        texture.id == name
+                            && matches!(&texture.kind, ItemKind::Texture(t)
+                            if feature.as_ref().is_some_and(|faces| {
+                                let mut a = faces.clone();
+                                let mut b = t.feature.clone();
+                                a.sort();
+                                b.sort();
+                                a == b
+                            }))
+                    }) {
+                        item = Some(texture.id.clone());
+                        break;
+                    }
+                    faces = feature;
+                } else {
+                    presents = Some(format!("#{definition}"));
+                }
+            }
+            match item {
+                Some(name) => {
+                    presented.insert(callout, name);
+                }
+                None => {
+                    let params = entity.parts[0].1.as_slice();
+                    graphics.insert(
+                        callout,
+                        GraphicCallout {
+                            entity: format!("#{callout}"),
+                            name: string(params.first()).unwrap_or_default(),
+                            kind: self.callout_kind(callout),
+                            text: self.callout_text(callout),
+                            faces,
+                            presents,
+                            views: Vec::new(),
+                        },
+                    );
+                }
+            }
+        }
+        let mut views: Vec<SavedView> = Vec::new();
+        for (&model, entity) in self.g {
+            if entity.type_name() != "DRAUGHTING_MODEL" || entity.parts.len() != 1 {
+                continue;
+            }
+            let params = entity.parts[0].1.as_slice();
+            let members = references(params.get(1));
+            let cameras: Vec<u64> = members
+                .iter()
+                .copied()
+                .filter(|member| {
+                    self.entity(*member)
+                        .is_some_and(|e| e.type_name().starts_with("CAMERA_MODEL"))
+                })
+                .collect();
+            if cameras.is_empty() {
+                continue;
+            }
+            let mut shown = Vec::new();
+            for member in &members {
+                let Some(entity) = self.entity(*member) else {
+                    continue;
+                };
+                if is_callout(entity) {
+                    shown.push(*member);
+                } else if let Some(plane) = entity.part("ANNOTATION_PLANE") {
+                    shown.extend(
+                        references(plane.get(3))
+                            .into_iter()
+                            .filter(|element| self.entity(*element).is_some_and(is_callout)),
+                    );
+                }
+            }
+            let Some(scale) =
+                reference(params.get(2)).and_then(|context| self.context_millimetres(context))
+            else {
+                skipped.push(SkippedPmi {
+                    entity: format!("#{model}"),
+                    kind: "DRAUGHTING_MODEL".into(),
+                    reason: "the saved view has no known length unit".into(),
+                });
+                continue;
+            };
+            for camera in cameras {
+                let camera_name = self
+                    .entity(camera)
+                    .and_then(|camera| string(camera.parts[0].1.first()))
+                    .filter(|name| !name.is_empty());
+                let mut name = camera_name
+                    .or_else(|| string(params.first()))
+                    .unwrap_or_default();
+                if views.iter().any(|view| view.name == name) {
+                    name = format!("{name} ({})", string(params.first()).unwrap_or_default());
+                }
+                let camera_record = match self.camera(camera, &scale) {
+                    Ok(camera) => camera,
+                    Err(reason) => {
+                        skipped.push(SkippedPmi {
+                            entity: format!("#{camera}"),
+                            kind: "CAMERA_MODEL_D3".into(),
+                            reason,
+                        });
+                        continue;
+                    }
+                };
+                let mut view_items: Vec<String> = Vec::new();
+                for callout in &shown {
+                    if let Some(item) = presented.get(callout) {
+                        if !view_items.contains(item) {
+                            view_items.push(item.clone());
+                        }
+                    } else if let Some(graphic) = graphics.get_mut(callout)
+                        && !graphic.views.contains(&name)
+                    {
+                        graphic.views.push(name.clone());
+                    }
+                }
+                views.push(SavedView {
+                    name,
+                    camera: camera_record,
+                    items: view_items,
+                });
+            }
+        }
+        (views, graphics.into_values().collect())
+    }
+
     /// Editable text on faces (recommended practices, section 7.4): a face
     /// note whose lines have no variable name, or a knurl designation held
     /// under [`KNURL`].
@@ -2454,7 +2748,9 @@ fn read_items<'a>(
     for (name, base) in recovered_names {
         *name = Some(validator.assign_name(base));
     }
+    let mut paired_lowers = BTreeMap::new();
     for (id, kind, upper) in lowers {
+        paired_lowers.insert(id, upper);
         let read = later.iter().any(|(_, item)| {
             item.order == upper
                 && item.name.is_some()
@@ -2478,22 +2774,33 @@ fn read_items<'a>(
     }
     drop(conflicting_letters);
     drop(validator);
-    let items = datums
+    // Each read item with the entity it was read from.
+    let items: Vec<(u64, Item<String>)> = datums
         .into_iter()
         .chain(later)
         .filter_map(|(_, item)| {
-            Some(Item {
-                id: item.name?,
-                kind: item.kind,
-            })
+            Some((
+                item.order,
+                Item {
+                    id: item.name?,
+                    kind: item.kind,
+                },
+            ))
         })
         .collect();
+    let (views, graphics) = match scope {
+        None => reader.presentation(&items, &paired_lowers, &mut skipped),
+        // Saved views and graphics of an assembly's parts are not read.
+        Some(_) => (Vec::new(), Vec::new()),
+    };
     StepPmi {
         pmi: Pmi {
-            items,
+            items: items.into_iter().map(|(_, item)| item).collect(),
             part: reader.part_notes(scope),
+            views,
         },
         skipped,
+        graphics,
     }
 }
 

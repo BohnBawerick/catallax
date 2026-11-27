@@ -26,8 +26,8 @@ use catallax_topology::{FaceId, Loop, Model};
 use super::callout::{self, presented};
 use super::{
     Anchor, At, DatumRef, DatumTarget, Feature, GeometricTolerance, HoleHead, HoleSize, ItemKind,
-    Limits, MaterialCondition, Pmi, PositionControl, PositionFrame, PositionSegment, Size,
-    SizeKind, SurfaceTexture, TargetArea, TargetKind, check, measure,
+    Limits, MaterialCondition, Pmi, PositionControl, PositionFrame, PositionSegment, SavedView,
+    Size, SizeKind, SurfaceTexture, TargetArea, TargetKind, check, measure,
 };
 use crate::document::PartReferences;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
@@ -204,6 +204,11 @@ struct Emitter<'a> {
     degree: Option<Id>,
     presentation: Option<Presentation>,
     annotations: usize,
+    /// The semantic entity each item is written as, by item name, for the
+    /// association of its callout.
+    semantic: BTreeMap<String, Id>,
+    /// The callout already drawn for an item, by item name.
+    callouts: BTreeMap<String, Id>,
     dec: &'a mut Decider,
 }
 
@@ -442,6 +447,7 @@ impl Emitter<'_> {
             vec![text("''"), text("''"), aspect.into(), datum.into()],
         );
         self.datums.insert(letter.to_owned(), datum);
+        self.semantic.insert(item.to_owned(), datum);
         self.root("ID_ATTRIBUTE", vec![quoted(item), aspect.into()]);
         self.equivalent(datum, &format!("DTM\\w{letter}"));
         Ok(())
@@ -686,7 +692,7 @@ impl Emitter<'_> {
             .iter()
             .map(|letter| DatumRef::new(letter))
             .collect();
-        self.geometric(
+        let (id, _) = self.geometric(
             tolerance.characteristic,
             &tolerance.value,
             tolerance.diameter_zone,
@@ -695,6 +701,7 @@ impl Emitter<'_> {
             target,
             item,
         )?;
+        self.semantic.insert(item.to_owned(), id);
         Ok(())
     }
 
@@ -796,7 +803,8 @@ impl Emitter<'_> {
                 segment,
                 projected_zone,
             } => {
-                let (_, zone) = self.segment(segment, target, item)?;
+                let (single, zone) = self.segment(segment, target, item)?;
+                self.semantic.insert(item.to_owned(), single);
                 if let Some(projection) = projected_zone {
                     let zone = zone.ok_or_else(|| {
                         Refusal::new(
@@ -822,6 +830,7 @@ impl Emitter<'_> {
             }
             PositionFrame::Composite { upper, lower } => {
                 let (upper, _) = self.segment(upper, target, item)?;
+                self.semantic.insert(item.to_owned(), upper);
                 let (lower, _) = self.segment(lower, target, item)?;
                 self.root(
                     "GEOMETRIC_TOLERANCE_RELATIONSHIP",
@@ -909,6 +918,7 @@ impl Emitter<'_> {
             vec![property.into(), representation.into()],
         );
         self.root("ID_ATTRIBUTE", vec![quoted(item), property.into()]);
+        self.semantic.insert(item.to_owned(), property);
         Ok(())
     }
 
@@ -1255,6 +1265,7 @@ impl Emitter<'_> {
             .graph
             .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
         self.graph.extend_list(presentation.plane, 3, [callout]);
+        self.callouts.insert(item.to_owned(), callout);
         let aspect = self.graph.add(
             "SHAPE_ASPECT",
             vec![
@@ -1312,6 +1323,220 @@ impl Emitter<'_> {
         let centre = self.point("polyline centre point", &centre.map(|c| presented(&c)));
         self.validation(within.into(), vec![string, length, centre]);
         self.annotations += 1;
+        Ok(())
+    }
+
+    /// The label callout of an item a saved view shows: a leader to a point on
+    /// `feature` and the framed lines, associated with the item's semantic
+    /// entity so a reader pairs the two rather than counting both.
+    fn label_callout(
+        &mut self,
+        item: &str,
+        set_name: &str,
+        lines: &[String],
+        feature: &[FaceId],
+    ) -> Result<(), Refusal> {
+        if let Some(line) = lines.iter().find(|line| !callout::drawable(line)) {
+            return Err(Refusal::new(
+                "step.pmi-invalid",
+                format!("{item}: the callout font cannot draw `{line}`"),
+            ));
+        }
+        let definition = *self
+            .semantic
+            .get(item)
+            .expect("a shown item was written first");
+        let anchor = self.anchor_point(feature)?;
+        let drawing = callout::label(lines, anchor.as_ref(), self.annotations);
+        let presentation = self.presentation();
+        let mut curves = Vec::with_capacity(drawing.polylines.len());
+        for line in &drawing.polylines {
+            let points: Vec<Id> = line.iter().map(|at| self.point("", at)).collect();
+            curves.push(self.graph.add("POLYLINE", vec![text("''"), refs(points)]));
+        }
+        let set = self
+            .graph
+            .add("GEOMETRIC_CURVE_SET", vec![quoted(set_name), refs(curves)]);
+        let occurrence = self.graph.add(
+            "ANNOTATION_CURVE_OCCURRENCE",
+            vec![quoted(item), refs([presentation.style]), set.into()],
+        );
+        let callout = self
+            .graph
+            .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
+        self.graph.extend_list(presentation.plane, 3, [callout]);
+        self.callouts.insert(item.to_owned(), callout);
+        self.root(
+            "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+            vec![
+                quoted(item),
+                text("''"),
+                definition.into(),
+                presentation.model.into(),
+                callout.into(),
+            ],
+        );
+        let within = self.graph.add(
+            "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION",
+            vec![
+                text("''"),
+                text("''"),
+                callout.into(),
+                presentation.model.into(),
+            ],
+        );
+        let (length, centre) = drawing.length_and_centre();
+        let string = self.graph.add(
+            "DESCRIPTIVE_REPRESENTATION_ITEM",
+            vec![text("'equivalent unicode string'"), quoted(&drawing.text)],
+        );
+        let length = self.graph.add(
+            "MEASURE_REPRESENTATION_ITEM",
+            vec![
+                text("'polyline curve length'"),
+                Field::Typed(
+                    "POSITIVE_LENGTH_MEASURE",
+                    vec![text(decimal(
+                        &presented(&length)
+                            .to_decimal_exact()
+                            .expect("a rounded length is a decimal"),
+                    ))],
+                ),
+                self.references.length_unit.into(),
+            ],
+        );
+        let centre = self.point("polyline centre point", &centre.map(|c| presented(&c)));
+        self.validation(within.into(), vec![string, length, centre]);
+        self.annotations += 1;
+        Ok(())
+    }
+
+    /// A saved view (recommended practices, section 9.4): a draughting model
+    /// named for the view holding its callouts, the part's geometry under a
+    /// null style and a camera of the same name, related to the global model.
+    fn view(&mut self, view: &SavedView) -> Result<(), Refusal> {
+        let name = view.name.as_str();
+        let presentation = self.presentation();
+        let camera = &view.camera;
+        let [ux, uy, uz] = &camera.up;
+        let [dx, dy, dz] = &camera.direction;
+        // The view's x axis reads to the right: up cross the direction of view.
+        let across = [
+            &(uy * dz) - &(uz * dy),
+            &(uz * dx) - &(ux * dz),
+            &(ux * dy) - &(uy * dx),
+        ];
+        let eye = self.exact_point(&camera.eye, name)?;
+        let axis = self.direction(&camera.direction, name)?;
+        let across = self.direction(&across, name)?;
+        let frame = self.graph.add(
+            "AXIS2_PLACEMENT_3D",
+            vec![text("''"), eye.into(), axis.into(), across.into()],
+        );
+        let projection_point = self
+            .graph
+            .add("CARTESIAN_POINT", vec![text("''"), text("(0.,0.,0.)")]);
+        let half = Rational::from_ratio(-1, 2).expect("a nonzero denominator");
+        let corner = camera
+            .window
+            .iter()
+            .map(|size| real(&(size * &half), name).map(text))
+            .collect::<Result<_, _>>()?;
+        let corner = self
+            .graph
+            .add("CARTESIAN_POINT", vec![text("''"), Field::List(corner)]);
+        let window_frame = self.graph.add(
+            "AXIS2_PLACEMENT_2D",
+            vec![text("''"), corner.into(), text("$")],
+        );
+        let window = self.graph.add(
+            "PLANAR_BOX",
+            vec![
+                text("''"),
+                text(real(&camera.window[0], name)?),
+                text(real(&camera.window[1], name)?),
+                window_frame.into(),
+            ],
+        );
+        let distance = real(&camera.distance, name)?;
+        let volume = self.graph.add(
+            "VIEW_VOLUME",
+            vec![
+                text(if camera.perspective {
+                    ".CENTRAL."
+                } else {
+                    ".PARALLEL."
+                }),
+                projection_point.into(),
+                text(distance.clone()),
+                text(distance.clone()),
+                boolean(false),
+                text(distance),
+                boolean(false),
+                boolean(false),
+                window.into(),
+            ],
+        );
+        let camera = self.graph.add(
+            "CAMERA_MODEL_D3",
+            vec![quoted(name), frame.into(), volume.into()],
+        );
+        let source_point = self
+            .graph
+            .add("CARTESIAN_POINT", vec![text("''"), text("(0.,0.,0.)")]);
+        let source = self.graph.add(
+            "AXIS2_PLACEMENT_3D",
+            vec![text("''"), source_point.into(), text("$"), text("$")],
+        );
+        let map = self.graph.add(
+            "REPRESENTATION_MAP",
+            vec![source.into(), self.references.product.representation.into()],
+        );
+        let target_point = self
+            .graph
+            .add("CARTESIAN_POINT", vec![text("''"), text("(0.,0.,0.)")]);
+        let target = self.graph.add(
+            "AXIS2_PLACEMENT_3D",
+            vec![text("''"), target_point.into(), text("$"), text("$")],
+        );
+        let mapped = self
+            .graph
+            .add("MAPPED_ITEM", vec![text("''"), map.into(), target.into()]);
+        let unstyled = self.graph.add(
+            "PRESENTATION_STYLE_ASSIGNMENT",
+            vec![Field::List(vec![Field::Typed(
+                "NULL_STYLE",
+                vec![text(".NULL.")],
+            )])],
+        );
+        let styled = self.graph.add(
+            "STYLED_ITEM",
+            vec![text("''"), refs([unstyled]), mapped.into()],
+        );
+        let mut items: Vec<Id> = view
+            .items
+            .iter()
+            .map(|id| {
+                *self
+                    .callouts
+                    .get(id)
+                    .expect("each shown item has a callout")
+            })
+            .collect();
+        items.extend([mapped, styled, camera]);
+        let model = self.graph.add(
+            "DRAUGHTING_MODEL",
+            vec![quoted(name), refs(items), self.references.context.into()],
+        );
+        self.root(
+            "MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP",
+            vec![
+                text("''"),
+                text("''"),
+                model.into(),
+                presentation.model.into(),
+            ],
+        );
         Ok(())
     }
 
@@ -1509,6 +1734,155 @@ impl Emitter<'_> {
     }
 }
 
+/// A material condition as a label writes it: `(M)`, `(L)` or nothing.
+fn circled(material: Option<MaterialCondition>) -> String {
+    material.map_or_else(String::new, |material| format!("({})", letter(material)))
+}
+
+/// The name of a tolerance's graphic and its symbol as a label writes it
+/// (recommended practices, table 18).
+fn characteristic(characteristic: super::Characteristic) -> (&'static str, &'static str) {
+    use super::Characteristic as C;
+    match characteristic {
+        C::Angularity => ("angularity", "ANG"),
+        C::CircularRunout => ("circular runout", "RUNOUT"),
+        C::Coaxiality => ("coaxiality", "COAX"),
+        C::Concentricity => ("concentricity", "CONC"),
+        C::Cylindricity => ("cylindricity", "CYL"),
+        C::Flatness => ("flatness", "FLAT"),
+        C::LineProfile => ("profile of line", "PROFILE LINE"),
+        C::Parallelism => ("parallelism", "PARL"),
+        C::Perpendicularity => ("perpendicularity", "PERP"),
+        C::Position => ("position", "POS"),
+        C::Roundness => ("roundness", "CIRC"),
+        C::Straightness => ("straightness", "STR"),
+        C::SurfaceProfile => ("profile of surface", "PROFILE SURFACE"),
+        C::Symmetry => ("symmetry", "SYM"),
+        C::TotalRunout => ("total runout", "TOTAL RUNOUT"),
+    }
+}
+
+/// One compartment line of a feature control frame, such as
+/// `POS|⌀0.4(M)|A|D(M)|B`.
+fn frame(
+    symbol: &str,
+    diameter: bool,
+    value: &Rational,
+    material: Option<MaterialCondition>,
+    extra: &str,
+    datums: &[DatumRef],
+    item: &str,
+) -> Result<String, Refusal> {
+    let zone = format!(
+        "{}{}{}{extra}",
+        if diameter { "\u{2300}" } else { "" },
+        plain(value, item)?,
+        circled(material)
+    );
+    let mut cells = vec![symbol.to_owned(), zone];
+    cells.extend(
+        datums
+            .iter()
+            .map(|datum| format!("{}{}", datum.letter, circled(datum.material))),
+    );
+    Ok(cells.join("|"))
+}
+
+/// The graphic name, text lines and leader feature of an item's label
+/// callout. `nominal` is a size's measured value as the file writes it.
+fn label<'a>(
+    item: &'a super::Item<FaceId>,
+    nominal: Option<&str>,
+) -> Result<(&'static str, Vec<String>, &'a [FaceId]), Refusal> {
+    let id = item.id.as_str();
+    Ok(match &item.kind {
+        ItemKind::Datum(datum) => ("datum", vec![datum.letter.clone()], &datum.feature),
+        ItemKind::Size(size) => {
+            let value = nominal.expect("a size has a measured value");
+            let value = value.strip_suffix('.').unwrap_or(value);
+            let (set, mut main) = match size.kind {
+                SizeKind::Radius => ("radial dimension", format!("R{value}")),
+                _ => ("diameter dimension", format!("\u{2300}{value}")),
+            };
+            match &size.limits {
+                None => {}
+                Some(Limits::Basic) => main = format!("[{main}]"),
+                Some(Limits::Fit { deviation, grade }) => {
+                    main = format!("{main} {deviation}{grade}")
+                }
+                Some(Limits::Deviations { upper, lower }) => {
+                    main = format!("{main} {}/{}", signed(upper, id)?, signed(lower, id)?);
+                }
+            }
+            if size.through {
+                main.push_str(" THRU");
+            }
+            let mut lines = vec![main];
+            lines.extend(size.thread.clone());
+            (set, lines, &size.features[0])
+        }
+        ItemKind::Tolerance(tolerance) => {
+            let (set, symbol) = characteristic(tolerance.characteristic);
+            let datums: Vec<DatumRef> = tolerance
+                .datums
+                .iter()
+                .map(|letter| DatumRef::new(letter))
+                .collect();
+            let line = frame(
+                symbol,
+                tolerance.diameter_zone,
+                &tolerance.value,
+                tolerance.material,
+                "",
+                &datums,
+                id,
+            )?;
+            (set, vec![line], &tolerance.features[0])
+        }
+        ItemKind::Position(control) => {
+            let extra = match &control.frame {
+                PositionFrame::Single {
+                    projected_zone: Some(zone),
+                    ..
+                } => format!("(P){}", plain(&zone.height_mm, id)?),
+                _ => String::new(),
+            };
+            let lines = control
+                .frame
+                .segments()
+                .into_iter()
+                .map(|segment| {
+                    frame(
+                        "POS",
+                        segment.diameter_zone,
+                        &segment.value_mm,
+                        segment.material,
+                        &extra,
+                        &segment.datums,
+                        id,
+                    )
+                })
+                .collect::<Result<_, _>>()?;
+            ("position", lines, &control.features[0])
+        }
+        ItemKind::FaceNote { text, feature } => (
+            "note",
+            text.split('\n').map(str::to_owned).collect(),
+            feature,
+        ),
+        ItemKind::Knurl {
+            designation,
+            feature,
+        } => ("note", vec![designation.clone()], feature),
+        _ => {
+            return Err(Refusal::new(
+                "step.pmi-invalid",
+                format!("{id}: the writer draws no callout for this item"),
+            ));
+        }
+    })
+}
+
 /// The names part notes are written under, in order.
 pub(crate) const GENERAL_TOLERANCE: &str = "general tolerance";
 pub(crate) const MATERIAL: &str = "material";
@@ -1543,6 +1917,8 @@ pub(crate) fn emit(
         degree: None,
         presentation: None,
         annotations: 0,
+        semantic: BTreeMap::new(),
+        callouts: BTreeMap::new(),
         dec,
     };
     check::check_on_model(model, pmi, emitter.dec)?;
@@ -1557,6 +1933,7 @@ pub(crate) fn emit(
         }
     }
     let mut texture_slot = 0;
+    let mut sizes = BTreeMap::new();
     for item in &pmi.items {
         let id = item.id.as_str();
         let measured = measure::dimension(model, item, emitter.dec)?;
@@ -1590,6 +1967,8 @@ pub(crate) fn emit(
                 let dimension = emitter
                     .graph
                     .add("DIMENSIONAL_SIZE", vec![target.into(), text(name)]);
+                emitter.semantic.insert(id.to_owned(), dimension);
+                sizes.insert(id, nominal().to_owned());
                 emitter.dimension(
                     dimension,
                     Nominal::Length(nominal()),
@@ -1697,6 +2076,23 @@ pub(crate) fn emit(
                 texture_slot += 1;
             }
         }
+    }
+    // A callout for each item a saved view shows, in item order, then the views.
+    let shown: std::collections::BTreeSet<&str> = pmi
+        .views
+        .iter()
+        .flat_map(|view| view.items.iter().map(String::as_str))
+        .collect();
+    for item in &pmi.items {
+        let id = item.id.as_str();
+        if !shown.contains(id) || emitter.callouts.contains_key(id) {
+            continue;
+        }
+        let (set, lines, feature) = label(item, sizes.get(id).map(String::as_str))?;
+        emitter.label_callout(id, set, &lines, feature)?;
+    }
+    for view in &pmi.views {
+        emitter.view(view)?;
     }
     if let Some(value) = &pmi.part.general_tolerance {
         emitter.note(GENERAL_TOLERANCE, value);

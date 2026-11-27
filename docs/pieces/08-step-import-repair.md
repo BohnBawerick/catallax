@@ -327,6 +327,15 @@ A datum skipped because its faces already carry a datum does not reserve
 its letter. A later datum on a different feature can define that letter.
 The only refusal is a file that is not readable Part 21 text.
 
+Saved views come back in `Pmi::views`: one per `CAMERA_MODEL_D3` in a
+draughting model, with its camera in millimetres and the items whose callouts
+it holds. A callout is paired with the item its association names, through a
+composite's lower segment or a surface texture's own aspect, so an item is
+never counted twice. A callout that presents nothing read is graphical-only
+PMI: `StepPmi::graphics` lists it with its type, its equivalent Unicode
+string, its faces, the unread entity it names and the views that show it. Views
+and graphics are read for a single part, not for the parts of an assembly.
+
 `cargo run -p catallax-import --example step_pmi -- part.step` prints what a
 file reads as and every item left out.
 

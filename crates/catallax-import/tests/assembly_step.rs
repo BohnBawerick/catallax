@@ -46,6 +46,7 @@ fn annotation(model: &Model, body: BodyId, note: &str) -> Pmi<FaceId> {
             notes: vec![note.into()],
             ..PartNotes::default()
         },
+        views: Vec::new(),
     }
 }
 

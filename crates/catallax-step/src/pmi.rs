@@ -20,6 +20,7 @@ mod check;
 mod measure;
 mod position;
 mod target;
+mod view;
 mod write;
 
 use std::borrow::Cow;
@@ -32,6 +33,7 @@ pub use check::check_on_model;
 pub use measure::nominals;
 pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
 pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
+pub use view::{Camera, SavedView};
 pub(crate) use write::emit;
 pub use write::{
     BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, DATUM_TARGET, EDGE_BREAK,
@@ -50,6 +52,8 @@ pub struct Pmi<F> {
     pub items: Vec<Item<F>>,
     /// What applies to the whole part.
     pub part: PartNotes,
+    /// The saved views, in the order the part lists them.
+    pub views: Vec<SavedView>,
 }
 
 impl<F> Default for Pmi<F> {
@@ -57,6 +61,7 @@ impl<F> Default for Pmi<F> {
         Self {
             items: Vec::new(),
             part: PartNotes::default(),
+            views: Vec::new(),
         }
     }
 }
@@ -64,7 +69,7 @@ impl<F> Default for Pmi<F> {
 impl<F> Pmi<F> {
     /// True when there is nothing to write.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty() && self.part.is_empty()
+        self.items.is_empty() && self.part.is_empty() && self.views.is_empty()
     }
 
     /// The same information with every face key replaced. The first face
@@ -226,6 +231,7 @@ impl<F> Pmi<F> {
         Ok(Pmi {
             items,
             part: self.part.clone(),
+            views: self.views.clone(),
         })
     }
 }
@@ -1203,6 +1209,7 @@ impl<F: Ord> Pmi<F> {
                 .check_values(&item.kind)
                 .map_err(|reason| refuse(&item.id, reason))?;
         }
+        self.validate_views()?;
         for (what, text) in self
             .part
             .general_tolerance
@@ -1216,6 +1223,73 @@ impl<F: Ord> Pmi<F> {
             }
         }
         Ok(())
+    }
+}
+
+impl<F> Pmi<F> {
+    fn validate_views(&self) -> Result<(), Refusal> {
+        let mut names = BTreeSet::new();
+        for view in &self.views {
+            let name = view.name.as_str();
+            if name.trim().is_empty() {
+                return Err(refuse("a saved view", "has no name"));
+            }
+            if !names.insert(name) {
+                return Err(refuse(name, "the view name is used twice"));
+            }
+            let camera = &view.camera;
+            let dot = (0..3).fold(Rational::zero(), |sum, i| {
+                &sum + &(&camera.up[i] * &camera.direction[i])
+            });
+            if is_zero_vector(&camera.direction) || is_zero_vector(&camera.up) || !dot.is_zero() {
+                return Err(refuse(
+                    name,
+                    "the camera needs a direction and an up direction square to it",
+                ));
+            }
+            if !positive(&camera.distance) || !camera.window.iter().all(positive) {
+                return Err(refuse(
+                    name,
+                    "the camera needs a positive distance and window",
+                ));
+            }
+            let mut shown = BTreeSet::new();
+            for id in &view.items {
+                if !shown.insert(id.as_str()) {
+                    return Err(refuse(name, format!("item {id} is listed twice")));
+                }
+                let item = self
+                    .items
+                    .iter()
+                    .find(|item| &item.id == id)
+                    .ok_or_else(|| refuse(name, format!("item {id} is not on the part")))?;
+                if !item.kind.has_callout() {
+                    return Err(refuse(
+                        name,
+                        format!("item {id} has no callout this writer draws"),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<F> ItemKind<F> {
+    /// Whether a saved view can show the item: the writer draws a callout for
+    /// datums, sizes, geometric tolerances, position controls, surface
+    /// textures and text.
+    pub fn has_callout(&self) -> bool {
+        matches!(
+            self,
+            ItemKind::Datum(_)
+                | ItemKind::Size(_)
+                | ItemKind::Tolerance(_)
+                | ItemKind::Position(_)
+                | ItemKind::Texture(_)
+                | ItemKind::FaceNote { .. }
+                | ItemKind::Knurl { .. }
+        )
     }
 }
 

@@ -109,6 +109,15 @@ fn glyph(c: char) -> Option<&'static str> {
         '8' => "1,3 0,4 0,5 1,6 3,6 4,5 4,4 3,3 1,3 0,2 0,1 1,0 3,0 4,1 4,2 3,3",
         '9' => "0,1 1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,4 1,3 4,3",
         '.' => "1,0 1,1",
+        '\u{2300}' => "1,1 0,2 0,4 1,5 3,5 4,4 4,2 3,1 1,1;0,0 4,6",
+        '[' => "2,-1 1,-1 1,6 2,6",
+        ']' => "2,-1 3,-1 3,6 2,6",
+        '(' => "2,-1 1,1 1,4 2,6",
+        ')' => "2,-1 3,1 3,4 2,6",
+        '|' => "2,-1 2,6",
+        '+' => "0,3 4,3;2,1 2,5",
+        '-' => "0,3 4,3",
+        '/' => "0,0 4,6",
         ' ' => "",
         _ => return None,
     })
@@ -185,31 +194,7 @@ pub(crate) fn draw<F>(
     // Plane coordinates (u along x, v along z) of the drawing, from the
     // symbol's point.
     let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
-    let offset = Rational::from_i64(i64::try_from(slot).expect("callout slot fits i64") * 14);
-    let origin = match anchor {
-        Some(anchor) => {
-            // A leader up and to the right, with an open arrow on the face.
-            let reach = Rational::from_i64(7);
-            let symbol = [
-                &anchor[0] + &reach,
-                anchor[1].clone(),
-                &(&anchor[2] + &reach) + &offset,
-            ];
-            let back = |u: Rational, v: Rational| {
-                [&zero - &reach + u, &zero - &reach - offset.clone() + v]
-            };
-            let tip = back(zero.clone(), zero.clone());
-            // Arrow wings 2.5 mm long at 15 degrees either side of the leader.
-            let wings = [
-                back(q(216_506, 100_000), q(5, 4)),
-                back(q(5, 4), q(216_506, 100_000)),
-            ];
-            flat.push(vec![tip.clone(), [zero.clone(), zero.clone()]]);
-            flat.push(vec![wings[0].clone(), tip, wings[1].clone()]);
-            symbol
-        }
-        None => [zero.clone(), zero.clone(), offset],
-    };
+    let origin = leader(anchor, slot, &mut flat);
     // ISO 1302 for a 3 mm text height: legs H1 = 4.2 and H2 = 9 high.
     let short = q(21, 5);
     let long = Rational::from_i64(9);
@@ -262,15 +247,98 @@ pub(crate) fn draw<F>(
         }
     }
     flat.extend(letters);
-    let polylines = flat
-        .into_iter()
+    Drawing {
+        polylines: place(&origin, flat),
+        text,
+    }
+}
+
+/// The leader of a callout in slot `slot`, up and to the right of `anchor`
+/// with an open arrow on the face, added to `flat` in plane coordinates from
+/// the returned start of the callout's symbol or text.
+fn leader(anchor: Option<&Point>, slot: usize, flat: &mut Vec<Vec<[Rational; 2]>>) -> Point {
+    let zero = Rational::zero();
+    let offset = Rational::from_i64(i64::try_from(slot).expect("callout slot fits i64") * 14);
+    match anchor {
+        Some(anchor) => {
+            let reach = Rational::from_i64(7);
+            let symbol = [
+                &anchor[0] + &reach,
+                anchor[1].clone(),
+                &(&anchor[2] + &reach) + &offset,
+            ];
+            let back = |u: Rational, v: Rational| {
+                [&zero - &reach + u, &zero - &reach - offset.clone() + v]
+            };
+            let tip = back(zero.clone(), zero.clone());
+            // Arrow wings 2.5 mm long at 15 degrees either side of the leader.
+            let wings = [
+                back(q(216_506, 100_000), q(5, 4)),
+                back(q(5, 4), q(216_506, 100_000)),
+            ];
+            flat.push(vec![tip.clone(), [zero.clone(), zero.clone()]]);
+            flat.push(vec![wings[0].clone(), tip, wings[1].clone()]);
+            symbol
+        }
+        None => [zero.clone(), zero, offset],
+    }
+}
+
+fn place(origin: &Point, flat: Vec<Vec<[Rational; 2]>>) -> Vec<Vec<Point>> {
+    flat.into_iter()
         .map(|line| {
             line.into_iter()
                 .map(|[u, v]| [&origin[0] + &u, origin[1].clone(), &origin[2] + &v])
                 .collect()
         })
-        .collect();
-    Drawing { polylines, text }
+        .collect()
+}
+
+/// Whether the stroke font draws every character of `text`.
+pub(crate) fn drawable(text: &str) -> bool {
+    text.chars().all(|c| glyph(c).is_some())
+}
+
+/// Draws a label callout: a leader as for a texture, then `lines` upper line
+/// first, each in a compartment of one frame, as a feature control frame or
+/// a dimension label is drawn. Every character must be [`drawable`].
+pub(crate) fn label(lines: &[String], anchor: Option<&Point>, slot: usize) -> Drawing {
+    let zero = Rational::zero();
+    let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
+    let origin = leader(anchor, slot, &mut flat);
+    // Lines 5 mm apart in compartments, with 1 mm around the 3 mm text.
+    let pitch = Rational::from_i64(5);
+    let gap = Rational::one();
+    let count = Rational::from_i64(i64::try_from(lines.len()).expect("few lines"));
+    let height = &pitch * &count;
+    let mut right = Rational::zero();
+    let mut letters = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let below = Rational::from_i64(i64::try_from(lines.len() - 1 - index).expect("few lines"));
+        let baseline = &(&pitch * &below) + &gap;
+        let (strokes, end) = stroke(line, &gap, &baseline);
+        letters.extend(strokes);
+        let edge = &end + &gap;
+        if edge > right {
+            right = edge;
+        }
+    }
+    flat.push(vec![
+        [zero.clone(), zero.clone()],
+        [right.clone(), zero.clone()],
+        [right.clone(), height.clone()],
+        [zero.clone(), height],
+        [zero.clone(), zero.clone()],
+    ]);
+    for index in 1..lines.len() {
+        let v = &pitch * &Rational::from_i64(i64::try_from(index).expect("few lines"));
+        flat.push(vec![[zero.clone(), v.clone()], [right.clone(), v]]);
+    }
+    flat.extend(letters);
+    Drawing {
+        polylines: place(&origin, flat),
+        text: lines.join(" / "),
+    }
 }
 
 /// A coordinate or measure of the drawing to six decimal places, a

@@ -406,6 +406,34 @@ fn cell(
     })
 }
 
+/// An edge outside the other solid can still contain a singular carrier cut.
+/// Only a strict separation from every such point permits the unsplit path.
+fn clear_of_singular(model: &Model, edge: EdgeId, singular: &BTreeSet<PointId>) -> bool {
+    if singular.is_empty() {
+        return true;
+    }
+    let edge = model.edge(edge);
+    let bounds = if matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+        let (Some(start), Some(end)) = (edge.start, edge.end) else {
+            return false;
+        };
+        let point = |vertex| model.geom().position(model.vertex(vertex).point);
+        let (a, b) = (point(start), point(end));
+        Some([
+            a.x.approx().hull(&b.x.approx()),
+            a.y.approx().hull(&b.y.approx()),
+            a.z.approx().hull(&b.z.approx()),
+        ])
+    } else {
+        crate::carrier_bounds::enclosure(model.geom(), edge.curve)
+    };
+    bounds.is_some_and(|bounds| {
+        singular.iter().all(|&point| {
+            crate::carrier_bounds::excludes_point(&bounds, &model.geom().position(point))
+        })
+    })
+}
+
 /// Reuse the split boundary of a fitted face without probing its winding.
 /// A repeated vertex can change the walk successors; use the arrangement then.
 fn unsectioned_piece(
@@ -766,8 +794,8 @@ fn imprint_groups(
         }
     }
     if local {
-        // Any new cut on an embedded shell must be a meeting with the other
-        // solid. Its vertex or section endpoint is already in the graph.
+        // For an embedded shell, keep only section points and singular
+        // carrier cuts; the original edge endpoints are added separately.
         builder.cuts = Some(
             builder
                 .points
@@ -777,6 +805,7 @@ fn imprint_groups(
                 .collect(),
         );
     }
+
     // Each boundary edge once, under the first body that has it. A body's own
     // edges do not change while its edges are split.
     let mut boundary_edges = Vec::new();
@@ -787,7 +816,12 @@ fn imprint_groups(
             .unwrap_or_else(|| model.edges_of_body(body))
         {
             if listed.insert(edge) {
-                boundary_edges.push((body, edge, graph.outside_edges.contains(&edge)));
+                boundary_edges.push((
+                    body,
+                    edge,
+                    graph.outside_edges.contains(&edge)
+                        && clear_of_singular(model, edge, &graph.singular),
+                ));
             }
         }
     }

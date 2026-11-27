@@ -174,6 +174,7 @@ async fn check_p5(adapter: wgpu::Adapter) {
         .await
         .unwrap();
     let gpu = Mesher::new(&device, &queue).await.unwrap();
+    check_rational_patch(&gpu, &device, &queue).await;
     let recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
     let mut dec = Decider::new(BudgetPolicy {
         max_work: 20_000_000,
@@ -238,6 +239,80 @@ async fn check_p5(adapter: wgpu::Adapter) {
     .unwrap();
     assert!(
         matches!(cpu_only, Preview::Cpu { reason: GpuRefusal::NoAdapter, mesh } if mesh.mesh.faces.len() == checked.faces.len())
+    );
+}
+
+async fn check_rational_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu::Queue) {
+    use catallax_mesh::float::{
+        DISPLAY_DESCRIPTION_VERSION, DisplayEdge, DisplayEdgeUse, DisplayFace, DisplayLoop,
+        DisplaySpline, DisplaySurface, DisplayTrimSample,
+    };
+
+    let corners = [[8., -3.], [14., -3.], [14., 1.], [8., 1.], [8., -3.]];
+    let description = DisplayDescription {
+        version: DISPLAY_DESCRIPTION_VERSION,
+        origin: [0.; 3],
+        edges: vec![DisplayEdge {
+            edge: 0,
+            points: vec![
+                [0., 0., 0.],
+                [4., 0., 0.],
+                [4., 2., 0.],
+                [0., 2., 0.],
+                [0., 0., 0.],
+            ],
+        }],
+        faces: vec![DisplayFace {
+            face: 0,
+            reversed: false,
+            surface: DisplaySurface::BSpline(DisplaySpline {
+                degree: [2, 1],
+                knots: [vec![8., 8., 8., 14., 14., 14.], vec![-3., -3., 1., 1.]],
+                size: [3, 2],
+                points: vec![
+                    [0., 0., 0.],
+                    [2., 0., 2.],
+                    [4., 0., 0.],
+                    [0., 2., 0.],
+                    [2., 2., 2.],
+                    [4., 2., 0.],
+                ],
+                weights: Some(vec![1., 2., 1., 1., 2., 1.]),
+            }),
+            bounds: [[8., 14.], [-3., 1.]],
+            periods: [None; 2],
+            loops: vec![DisplayLoop {
+                uses: vec![DisplayEdgeUse {
+                    edge: 0,
+                    samples: corners
+                        .into_iter()
+                        .enumerate()
+                        .map(|(point, uv)| DisplayTrimSample { point, uv })
+                        .collect(),
+                }],
+                vertex: None,
+            }],
+        }],
+    };
+    let mesh = gpu
+        .mesh(&description, |_| FaceDetail([3, 2]))
+        .await
+        .unwrap();
+    assert!(!mesh.faces[0].draw.as_ref().unwrap().sampled_grid);
+    let (vertices, _) = readback(device, queue, &mesh.buffers.unwrap()).await;
+    // At (1/3, 1/2), the weighted Bernstein numerators are [4, 8, 1].
+    let p = [20. / 13., 1., 16. / 13., 1.];
+    let n = [-3., 0., 7., 0.].map(|x| x / 58_f32.sqrt());
+    let vertex = vertices
+        .iter()
+        .find(|v| v.position.iter().zip(p).all(|(&a, b)| (a - b).abs() < 1e-5))
+        .expect("missing rational patch interior vertex");
+    assert!(
+        vertex
+            .normal
+            .iter()
+            .zip(n)
+            .all(|(&a, b)| (a - b).abs() < 1e-5)
     );
 }
 

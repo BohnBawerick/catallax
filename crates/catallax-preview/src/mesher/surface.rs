@@ -4,12 +4,18 @@ use super::{FaceRefusal, SurfaceParams, position32, scalar32};
 
 type Bounds = [[f64; 2]; 2];
 
+pub(super) const GRID: u32 = 2;
+const SPLINE: u32 = 3;
+const MAX_SPLINE_DEGREE: usize = 12;
+
 pub(super) fn pack<F>(
     face: &DisplayFace<F>,
     bounds: Bounds,
     detail: [u32; 2],
     positions: &mut Vec<[f32; 4]>,
     max_positions: usize,
+    knots: &mut Vec<f32>,
+    max_knots: usize,
 ) -> Result<SurfaceParams, FaceRefusal> {
     let span = bounds.map(|[lower, upper]| upper - lower);
     let facing = if face.reversed { -1.0 } else { 1.0 };
@@ -61,6 +67,11 @@ pub(super) fn pack<F>(
                 positions.push(position32(point)?);
             }
         }
+        DisplaySurface::BSpline(spline) => {
+            params.mode[0] = SPLINE;
+            params.spline =
+                pack_spline(spline, bounds, positions, max_positions, knots, max_knots)?;
+        }
         surface => {
             // Transitional sampler for surfaces that do not yet have a WGSL
             // evaluator. The GPU still evaluates preview vertices and normals.
@@ -69,10 +80,7 @@ pub(super) fn pack<F>(
             params.mode = grid_mode(positions.len(), size);
             params.y = [1.0, 1.0, 0.0, 0.0];
             positions.reserve(count);
-            match surface {
-                DisplaySurface::BSpline(spline) => sample_spline(spline, bounds, size, positions)?,
-                _ => sample_analytic(surface, bounds, size, positions)?,
-            }
+            sample_analytic(surface, bounds, size, positions)?;
         }
     }
     params.origin[3] = facing;
@@ -80,7 +88,7 @@ pub(super) fn pack<F>(
 }
 
 fn grid_mode(first: usize, size: [usize; 2]) -> [u32; 4] {
-    [2, first as u32, size[0] as u32, size[1] as u32]
+    [GRID, first as u32, size[0] as u32, size[1] as u32]
 }
 
 fn check_grid(size: [usize; 2], points: &[[f32; 4]], limit: usize) -> Result<usize, FaceRefusal> {
@@ -153,116 +161,99 @@ fn sample_analytic(
     Ok(())
 }
 
-fn sample_spline(
+fn pack_spline(
     spline: &DisplaySpline,
     bounds: Bounds,
-    size: [usize; 2],
-    positions: &mut Vec<[f32; 4]>,
-) -> Result<(), FaceRefusal> {
-    let count = spline.size[0]
-        .checked_mul(spline.size[1])
-        .ok_or(FaceRefusal::InvalidSurface)?;
-    if spline.points.len() != count
-        || spline
-            .weights
-            .as_ref()
-            .is_some_and(|w| w.len() != count || w.iter().any(|w| !w.is_finite() || *w <= 0.0))
-    {
+    controls: &mut Vec<[f32; 4]>,
+    max_controls: usize,
+    knots: &mut Vec<f32>,
+    max_knots: usize,
+) -> Result<[u32; 8], FaceRefusal> {
+    let [nu, nv] = spline.size;
+    let [du, dv] = spline.degree;
+    let count = nu.checked_mul(nv).ok_or(FaceRefusal::InvalidSurface)?;
+    if spline.points.len() != count || spline.weights.as_ref().is_some_and(|w| w.len() != count) {
         return Err(FaceRefusal::InvalidSurface);
     }
-    let u = Basis::sample(spline, 0, bounds, size[0])?;
-    let v = Basis::sample(spline, 1, bounds, size[1])?;
-    for (first_v, bv) in v.rows() {
-        for (first_u, bu) in u.rows() {
-            let mut p = [0.0; 3];
-            let mut sum = 0.0;
-            for (j, &b) in bv.iter().enumerate() {
-                let first = (first_v + j) * spline.size[0] + first_u;
-                for (i, &a) in bu.iter().enumerate() {
-                    let weight = a
-                        * b
-                        * spline
-                            .weights
-                            .as_ref()
-                            .map_or(1.0, |weights| weights[first + i]);
-                    for k in 0..3 {
-                        p[k] += weight * spline.points[first + i][k];
-                    }
-                    sum += weight;
-                }
+    if count > max_controls - controls.len() {
+        return Err(FaceRefusal::MeshSize);
+    }
+    let control_offset = controls.len() as u32;
+    let [ku, kv] = pack_knots(spline, bounds, knots, max_knots)?;
+    controls.reserve(count);
+    // The description is U-fastest, while spline_sample reads V-fastest.
+    for u in 0..nu {
+        for v in 0..nv {
+            let i = v * nu + u;
+            let w = spline.weights.as_ref().map_or(1.0, |weights| weights[i]);
+            if !w.is_finite() || w <= 0.0 {
+                return Err(FaceRefusal::InvalidSurface);
             }
-            positions.push(position32(p.map(|p| p / sum))?);
+            let weight = scalar32(w)?;
+            if weight == 0.0 {
+                return Err(FaceRefusal::GpuRange);
+            }
+            let [x, y, z] = spline.points[i].map(|p| scalar32(p * w));
+            controls.push([x?, y?, z?, weight]);
         }
     }
-    Ok(())
+    Ok([
+        control_offset,
+        ku,
+        kv,
+        du as u32,
+        dv as u32,
+        nu as u32,
+        nv as u32,
+        0,
+    ])
 }
 
-struct Basis {
-    starts: Vec<usize>,
-    values: Vec<f64>,
-    stride: usize,
-}
-
-impl Basis {
-    fn sample(
-        spline: &DisplaySpline,
-        axis: usize,
-        bounds: Bounds,
-        count: usize,
-    ) -> Result<Self, FaceRefusal> {
+fn pack_knots(
+    spline: &DisplaySpline,
+    bounds: Bounds,
+    packed: &mut Vec<f32>,
+    limit: usize,
+) -> Result<[u32; 2], FaceRefusal> {
+    let mut offsets = [0; 2];
+    for (axis, &[lower, upper]) in bounds.iter().enumerate() {
         let knots = &spline.knots[axis];
         let degree = spline.degree[axis];
         let n = spline.size[axis];
-        if degree >= n
+        if degree > MAX_SPLINE_DEGREE
+            || degree >= n
             || n.checked_add(degree + 1) != Some(knots.len())
-            || knots.iter().any(|k| !k.is_finite())
-            || knots.windows(2).any(|k| k[0] > k[1])
             || knots[degree] >= knots[n]
         {
             return Err(FaceRefusal::InvalidSurface);
         }
-        let (lo, hi) = (knots[degree], knots[n]);
+        let lo = knots[degree];
+        let hi = knots[n];
         let tolerance = (hi - lo) * 1e-10;
-        if bounds[axis][0] < lo - tolerance || bounds[axis][1] > hi + tolerance {
+        if lower < lo - tolerance || upper > hi + tolerance {
             return Err(FaceRefusal::UnsupportedTrim);
         }
-        let stride = degree + 1;
-        let len = count.checked_mul(stride).ok_or(FaceRefusal::MeshSize)?;
-        let mut basis = Self {
-            starts: Vec::with_capacity(count),
-            values: vec![0.0; len],
-            stride,
-        };
-        let mut left = vec![0.0; stride];
-        let mut right = vec![0.0; stride];
-        for (i, values) in basis.values.chunks_exact_mut(stride).enumerate() {
-            let t = tick(bounds, axis, i, count).clamp(lo, hi);
-            let span = knots
-                .partition_point(|&k| k <= t)
-                .saturating_sub(1)
-                .clamp(degree, n - 1);
-            basis.starts.push(span - degree);
-            values[0] = 1.0;
-            for j in 1..=degree {
-                left[j] = t - knots[span + 1 - j];
-                right[j] = knots[span + j] - t;
-                let mut saved = 0.0;
-                for r in 0..j {
-                    let denom = right[r + 1] + left[j - r];
-                    let term = if denom > 0.0 { values[r] / denom } else { 0.0 };
-                    values[r] = saved + right[r + 1] * term;
-                    saved = left[j - r] * term;
-                }
-                values[j] = saved;
-            }
+        if knots.len() > limit - packed.len() {
+            return Err(FaceRefusal::MeshSize);
         }
-        Ok(basis)
+        offsets[axis] = packed.len() as u32;
+        packed.reserve(knots.len());
+        // Match the trim's normalized UVs before converting to binary32.
+        let mut previous = f64::NEG_INFINITY;
+        let mut previous32 = f32::NEG_INFINITY;
+        let span = upper - lower;
+        for &knot in knots {
+            if !knot.is_finite() || knot < previous {
+                return Err(FaceRefusal::InvalidSurface);
+            }
+            let converted = scalar32((knot - lower) / span)?;
+            if knot > previous && converted <= previous32 {
+                return Err(FaceRefusal::GpuRange);
+            }
+            packed.push(converted);
+            previous = knot;
+            previous32 = converted;
+        }
     }
-
-    fn rows(&self) -> impl Iterator<Item = (usize, &[f64])> {
-        self.starts
-            .iter()
-            .copied()
-            .zip(self.values.chunks_exact(self.stride))
-    }
+    Ok(offsets)
 }

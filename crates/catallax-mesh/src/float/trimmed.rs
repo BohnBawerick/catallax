@@ -785,7 +785,9 @@ fn seam_start(ring: &Ring, holes: &[Ring], axis: usize, period: f64) -> usize {
 
 // Crossing a constraint toggles the inside label, including at holes. Visit
 // every triangle once, rather than testing every centroid against every trim.
-fn label_triangles(cdt: &Cdt) -> Result<Vec<Option<bool>>, TrimRefusal> {
+pub(crate) fn label_triangles<V: HasPosition<Scalar = f64>>(
+    cdt: &ConstrainedDelaunayTriangulation<V>,
+) -> Result<Vec<Option<bool>>, TrimRefusal> {
     let mut labels = vec![None; cdt.num_all_faces()];
     let mut queue = VecDeque::new();
     for triangle in cdt.inner_faces() {

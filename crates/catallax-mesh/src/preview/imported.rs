@@ -572,7 +572,9 @@ pub(super) fn grid_face(
     // points first so a trim point on a chord can participate in its constraint.
     for node in loops.iter_mut().flatten() {
         dec.charge_work(1)?;
-        node.uv = std::array::from_fn(|i| (node.uv[i] - lo[i]) / span[i]);
+        let [u, v] = std::array::from_fn(|i| (node.uv[i] - lo[i]) / span[i]);
+        let safe = spade::mitigate_underflow(Point2::new(u, v));
+        node.uv = [safe.x, safe.y];
         insert(&mut cdt, *node)?;
     }
     for ring in loops.iter() {
@@ -605,25 +607,40 @@ pub(super) fn grid_face(
     // A narrow region can miss every regular station. A triangle whose two
     // corners denote one physical pole needs a carrier sample in its interior.
     let mut extra = Vec::new();
+    let classify = crate::float::trim::label_triangles;
+    let center =
+        |nodes: [Node; 3]| std::array::from_fn(|i| nodes.iter().map(|n| n.uv[i] / 3.0).sum());
+    // A closed constraint cycle labels the interior without subtracting
+    // nearly equal UVs at a thin boundary. Overlapping constraints can
+    // contribute even multiplicity; test the original rings in that case.
+    let interior = |labels: &Result<Vec<Option<bool>>, _>, i, nodes| {
+        labels.as_ref().map_or_else(
+            |_| inside(center(nodes), loops),
+            |labels| labels[i] == Some(true),
+        )
+    };
     dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+    let mut labels = classify(&cdt);
     for triangle in cdt.inner_faces() {
-        let [a, b, c] = triangle.vertices().map(|v| *v.data());
-        if a.mesh == b.mesh || b.mesh == c.mesh || c.mesh == a.mesh {
-            let center = std::array::from_fn(|i| (a.uv[i] + b.uv[i] + c.uv[i]) / 3.0);
-            if inside(center, loops) {
-                extra.push(center);
-            }
+        let nodes @ [a, b, c] = triangle.vertices().map(|v| *v.data());
+        if (a.mesh == b.mesh || b.mesh == c.mesh || c.mesh == a.mesh)
+            && interior(&labels, triangle.index(), nodes)
+        {
+            extra.push(center(nodes));
         }
     }
-    for uv in extra {
-        seed(&mut cdt, uv, position(uv, dec)?, mesh, options)?;
+    if !extra.is_empty() {
+        for uv in extra {
+            seed(&mut cdt, uv, position(uv, dec)?, mesh, options)?;
+        }
+        dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+        labels = classify(&cdt);
     }
     let start = mesh.triangles.len();
     dec.charge_traversal(cdt.num_inner_faces() as u64)?;
     for triangle in cdt.inner_faces() {
         let nodes = triangle.vertices().map(|v| *v.data());
-        let center = std::array::from_fn(|i| nodes.iter().map(|n| n.uv[i] / 3.0).sum());
-        if !inside(center, loops) {
+        if !interior(&labels, triangle.index(), nodes) {
             continue;
         }
         let mut vertices = nodes.map(|n| n.mesh);

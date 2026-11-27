@@ -791,17 +791,28 @@ impl SplineChart {
         let domain = source.domain();
         let area = |[u, v]: [[&Rational; 2]; 2]| &(u[1] - u[0]) * &(v[1] - v[0]);
         let mut covered = Rational::zero();
+        let mut bounds = atlas.charts()[0]
+            .patch()
+            .domain()
+            .each_ref()
+            .map(|axis| axis.each_ref());
         let mut pieces = Vec::with_capacity(atlas.charts().len());
         for chart in atlas.charts() {
             let patch = chart.patch();
-            covered = covered + area(patch.domain().each_ref().map(|axis| axis.each_ref()));
+            let cell = patch.domain().each_ref().map(|axis| axis.each_ref());
+            covered = covered + area(cell);
+            for axis in 0..2 {
+                bounds[axis][0] = bounds[axis][0].min(cell[axis][0]);
+                bounds[axis][1] = bounds[axis][1].max(cell[axis][1]);
+            }
             pieces.extend(rational_spans(patch.carrier(), dec)?);
         }
-        // The atlas construction partitions the source without overlap. The
-        // single trimmed parameter mesh needs the whole source rectangle.
-        if covered != area(domain) {
+        // A logical face may retain only part of its source carrier. Keep
+        // source coordinates for boundary hints, but check that the actual
+        // cells cover their own rectangle, without gaps in the face proof.
+        if covered != area(bounds) {
             return Err(failure(
-                "a trimmed spline atlas does not cover its source rectangle",
+                "a trimmed spline atlas has gaps in its chart rectangle",
             ));
         }
         Self::with_pieces(

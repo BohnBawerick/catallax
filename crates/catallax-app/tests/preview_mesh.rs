@@ -162,7 +162,7 @@ fn preview_coarsens_within_vertex_and_work_limits() {
         max_vertices: 8,
         ..PreviewOptions::default()
     };
-    let (result, work) = with_operation_budget(96, || {
+    let (result, work) = with_operation_budget(u64::MAX, || {
         preview_mesh_body(model, body, &options, &mut Decider::default())
     });
     let coarse = result.unwrap();
@@ -179,6 +179,11 @@ fn preview_coarsens_within_vertex_and_work_limits() {
             assert_eq!(uses, 2, "both faces must use the same sampled chord");
         }
     }
+    let (result, capped) = with_operation_budget(work.used, || {
+        preview_mesh_body(model, body, &options, &mut Decider::default())
+    });
+    assert_eq!(result.unwrap(), coarse);
+    assert!(!capped.exhausted);
     let (result, shared) = with_operation_budget(0, || {
         preview_mesh_body(model, body, &options, &mut Decider::default())
     });

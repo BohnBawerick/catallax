@@ -111,7 +111,7 @@ pub(crate) fn crossing_edges(
     plane: &Plane,
     boundary: &Boundaries,
     dec: &mut Decider,
-) -> Result<BTreeSet<EdgeId>, Refusal> {
+) -> Result<BTreeSet<(EdgeId, [usize; 2])>, Refusal> {
     let edges = model
         .face(face)
         .loops
@@ -211,10 +211,10 @@ pub(crate) fn crossing_edges(
                 && straddles(polygon.turn(r, s, p)?, polygon.turn(r, s, q)?)
             {
                 if !straight {
-                    crossings.insert(edge);
+                    crossings.insert((edge, [p.min(q), p.max(q)]));
                 }
                 if !other_straight {
-                    crossings.insert(other);
+                    crossings.insert((other, [r.min(s), r.max(s)]));
                 }
             }
         }

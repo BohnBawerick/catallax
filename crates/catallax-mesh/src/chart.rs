@@ -10,9 +10,11 @@ use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
 use catallax_shapes::{BoundaryRow, SplineSupport, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, LinearFilletBand, Model};
 
-use crate::failure;
+use crate::{MeshOptions, failure};
 
+mod fixed;
 mod spline;
+pub(crate) use fixed::FixedTrim;
 use spline::SplineNormals;
 pub(crate) use spline::{CollarBridge, NormalProof, RailSample, RailSpan, SplineChart};
 
@@ -80,6 +82,7 @@ pub(crate) struct Chart {
     /// corner. These select grid seeds only; every proof still applies.
     pub(crate) corner_planes: Option<[[Interval; 3]; 3]>,
     pub(crate) chord_goal: Option<Rational>,
+    pub(crate) fixed: Option<FixedTrim>,
     sampling: Sampling,
     trims: BTreeMap<EdgeId, Trim>,
     centers: [Option<f64>; 2],
@@ -167,6 +170,7 @@ impl Chart {
             great_circle_sector: false,
             corner_planes: None,
             chord_goal: None,
+            fixed: None,
             trims: BTreeMap::new(),
             sampling: Sampling::Analytic(Box::new(Analytic {
                 ellipse_radii: axes,
@@ -186,6 +190,7 @@ impl Chart {
         model: &Model,
         face: FaceId,
         support: &SplineSupport,
+        options: &MeshOptions,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         if matches!(
@@ -257,11 +262,13 @@ impl Chart {
                 | SplineSupport::RationalPatch(_)
                 | SplineSupport::SplineFillet(_) => SplineNormals::Patch,
                 SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
+                SplineSupport::RollingMitre(_) => SplineNormals::Mitre,
                 SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
                 _ => SplineNormals::Carrier,
             },
             dec,
         )?;
+        let fixed = FixedTrim::new(model, face, support, &spline, options, dec)?;
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
             periodic,
@@ -273,13 +280,17 @@ impl Chart {
             great_circle_sector: false,
             corner_planes: None,
             chord_goal: None,
+            fixed,
             trims,
             sampling: Sampling::Spline(spline),
         })
     }
 
     pub(crate) fn trim(&self, edge: EdgeId) -> Option<Trim> {
-        self.trims.get(&edge).copied()
+        self.trims
+            .get(&edge)
+            .or_else(|| self.fixed.as_ref()?.rows.get(&edge))
+            .copied()
     }
 
     pub(crate) fn collapsed_station(&self) -> Option<f64> {
@@ -363,6 +374,12 @@ impl Chart {
             || (matches!(self.surface, Surface::Cone(_)) && uv[1] == 0.0)
         {
             uv[0] = 0.0;
+        }
+        if let Some(fixed) = &self.fixed
+            && fixed.apex
+            && Some(&uv[0]) == fixed.axes[0].last()
+        {
+            uv[1] = fixed.axes[1][0];
         }
         uv
     }

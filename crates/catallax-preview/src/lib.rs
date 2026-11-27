@@ -5,6 +5,7 @@
 //! measurement. Exports and proven queries go through `catallax-field`'s
 //! retained definitions and their proof routes.
 pub mod batch;
+mod eval;
 pub mod first_paint;
 pub mod gpu;
 pub mod picking;

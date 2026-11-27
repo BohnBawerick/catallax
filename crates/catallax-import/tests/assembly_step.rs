@@ -309,6 +309,51 @@ fn nested_step_assembly_round_trips_part_placement_and_pmi() {
     }
 }
 
+#[test]
+fn legacy_page_directives_do_not_make_assembly_names_missing() {
+    let (file, _, _) = export_and_read(1);
+    let source = String::from_utf8(file).unwrap();
+    let mut lines = Vec::new();
+    let mut product = false;
+    let mut occurrence = false;
+    let legacy = r"'\PE\\S\*\S\U\S\b'";
+    for line in source.lines() {
+        let mut line = line.to_owned();
+        if line.contains("=PRODUCT(") && line.contains(BASE_STEP_NAME) {
+            let (_, rest) = line.split_once("=PRODUCT(").unwrap();
+            let start = line.len() - rest.len();
+            let name = rest.find(BASE_STEP_NAME).unwrap() + start;
+            let name = line[name + BASE_STEP_NAME.len()..]
+                .find(BASE_STEP_NAME)
+                .map(|next| name + BASE_STEP_NAME.len() + next)
+                .unwrap_or(name);
+            line.replace_range(name..name + BASE_STEP_NAME.len(), legacy);
+            product = true;
+        }
+        if !occurrence && line.contains("=NEXT_ASSEMBLY_USAGE_OCCURRENCE(") {
+            let mut fields = line.splitn(3, ',');
+            line = format!("{},{legacy},{}", fields.next().unwrap(), {
+                fields.next();
+                fields.next().unwrap()
+            });
+            occurrence = true;
+        }
+        lines.push(line);
+    }
+    assert!(product && occurrence);
+    let assembly =
+        read_step_assembly(lines.join("\n").as_bytes(), &mut Decider::default()).unwrap();
+    let spelling = legacy.trim_matches('\'');
+    assert!(
+        assembly
+            .products
+            .iter()
+            .any(|product| product.name == spelling)
+    );
+    assert!(assembly.products.iter().any(|product| matches!(&product.content,
+        ProductContent::Assembly(members) if members.iter().any(|occurrence| occurrence.name == spelling))));
+}
+
 fn next_entity(source: &str) -> u64 {
     source
         .lines()

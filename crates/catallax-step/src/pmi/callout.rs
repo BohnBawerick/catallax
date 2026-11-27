@@ -25,6 +25,7 @@ pub(crate) struct Drawing {
     pub(crate) polylines: Vec<Vec<Point>>,
     /// The requirement as the callout writes it, such as `Ra 1.6`.
     pub(crate) text: String,
+    junction: Point,
 }
 
 fn q(numerator: i64, denominator: i64) -> Rational {
@@ -250,6 +251,7 @@ pub(crate) fn draw<F>(
     Drawing {
         polylines: place(&origin, flat),
         text,
+        junction: origin,
     }
 }
 
@@ -316,6 +318,7 @@ pub(crate) fn label(line: &str) -> Drawing {
     Drawing {
         polylines: place(&[zero.clone(), zero.clone(), zero], flat),
         text: String::new(),
+        junction: std::array::from_fn(|_| Rational::zero()),
     }
 }
 
@@ -407,7 +410,7 @@ impl Drawing {
         for point in self.polylines.iter_mut().flatten() {
             *point = at(&point[0], &point[2]);
         }
-        let end = at(&bounds[0].0, &bounds[1].0);
+        let end = at(&self.junction[0], &self.junction[2]);
         if *anchor != end {
             self.polylines.insert(0, vec![anchor.clone(), end]);
         }

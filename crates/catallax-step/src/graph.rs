@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Id(usize);
 
 #[derive(Clone)]
@@ -124,6 +124,12 @@ impl Graph {
     pub(crate) fn record(&self, id: Id) -> (&'static str, &[Field]) {
         let entity = &self.entities[id.0];
         (entity.name, &entity.fields)
+    }
+
+    pub(crate) fn records(&self) -> impl Iterator<Item = (&'static str, &[Field])> {
+        self.entities
+            .iter()
+            .map(|entity| (entity.name, entity.fields.as_slice()))
     }
 
     pub(crate) fn duplicate(&mut self, id: Id) -> Id {

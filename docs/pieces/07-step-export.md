@@ -187,9 +187,11 @@ Every `ADVANCED_FACE` of a PMI file carries the name `face-<index>-<n>`, and
 | part notes | user defined attributes of the product definition named `general tolerance`, `material` and `note 1`, `note 2`, ... |
 
 An `APPLIED_DOCUMENT_REFERENCE` declares the part's dimensioning standard.
-Parts with composite position frames declare ASME Y14.5-2018. Other parts
-declare ISO 1101:2017. The reader requires the ASME declaration for a composite
-frame and reports missing or conflicting declarations.
+The default is ISO 1101:2017. Set `PartNotes::standard` to
+`Some(DimensioningStandard::AsmeY14_5_2018)` to export a composite position
+frame. Export refuses concentricity, coaxiality and symmetry controls under
+that selection. The reader requires the ASME declaration for a composite frame
+and reports missing or conflicting declarations.
 
 The NIST STEP File Analyzer 5.54 reported no error on the P1 bracket file before
 the callout and the validation properties were added. The file has not been

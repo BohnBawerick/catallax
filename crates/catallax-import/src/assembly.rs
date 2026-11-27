@@ -10,7 +10,7 @@ use catallax_step::assembly::{Assembly, Colour, Occurrence, Product, ProductCont
 use crate::{
     ImportRefusal, StepFile, StepPmi,
     part21::{Graph, Param, parse},
-    pmi::{read_assembly_pmi, string},
+    pmi::{assembly_name as string, read_assembly_pmi},
     recognize::{number, read_graph, source_length_scale, source_placement},
 };
 

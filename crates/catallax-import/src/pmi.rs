@@ -39,8 +39,8 @@ pub struct StepPmi {
     pub pmi: Pmi<String>,
     /// Items in the file that were not read.
     pub skipped: Vec<SkippedPmi>,
-    /// Graphic callouts that present no item that was read: graphical-only
-    /// PMI, kept apart so nothing is counted twice.
+    /// Graphics without a semantic item and graphics whose associations include
+    /// an unread semantic item.
     pub graphics: Vec<GraphicCallout>,
     /// The entity each item was read from, such as `#412`, by item name: a
     /// tolerance, dimension, datum, target or property. A source patch starts
@@ -48,7 +48,7 @@ pub struct StepPmi {
     pub sources: BTreeMap<String, String>,
 }
 
-/// A graphic callout with no semantic item read from the file.
+/// A graphic callout with no semantic item or with an unread association.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct GraphicCallout {
     /// The callout entity, such as `#412`.
@@ -62,8 +62,8 @@ pub struct GraphicCallout {
     pub text: Option<String>,
     /// The faces of the shape aspect it is associated with, if any.
     pub faces: Option<Feature<String>>,
-    /// The semantic entity it presents when that entity was not read.
-    pub presents: Option<String>,
+    /// The semantic entities it presents that were not read.
+    pub presents: Vec<String>,
     /// Polyline strokes in part coordinates, in millimetres.
     pub polylines_mm: Vec<Vec<[Rational; 3]>>,
     /// Annotation planes that contain the callout.
@@ -218,7 +218,15 @@ fn decode(raw: &str) -> Option<String> {
     Some(out)
 }
 
-pub(crate) fn string(param: Option<&Param>) -> Option<String> {
+pub(crate) fn assembly_name(param: Option<&Param>) -> Option<String> {
+    if let Some(Param::Str(raw)) = param {
+        Some(decode(raw).unwrap_or_else(|| raw.clone()))
+    } else {
+        None
+    }
+}
+
+fn string(param: Option<&Param>) -> Option<String> {
     match param {
         Some(Param::Str(text)) => decode(text),
         _ => None,
@@ -1492,12 +1500,48 @@ impl<'a> Reader<'a> {
             let Some(zone) = self.entity(*user) else {
                 continue;
             };
-            let Some(fields) = zone.part("TOLERANCE_ZONE") else {
-                continue;
+            let simple = zone.parts.len() == 1;
+            let specialized = [
+                "DIRECTED_TOLERANCE_ZONE",
+                "ORIENTED_TOLERANCE_ZONE",
+                "DIRECTION_FEATURE_TOLERANCE_ZONE",
+                "TOLERANCE_ZONE_WITH_DATUM",
+            ];
+            let fields = match zone.part("TOLERANCE_ZONE") {
+                Some(fields) => fields,
+                None if simple && specialized.contains(&zone.type_name()) => {
+                    zone.parts[0].1.as_slice()
+                }
+                _ => continue,
             };
-            let defining = if zone.parts.len() == 1 { 4 } else { 0 };
+            let defining = if simple { 4 } else { 0 };
             if !references(fields.get(defining)).contains(&id) {
                 continue;
+            }
+            let shape = if simple && zone.type_name() == "TOLERANCE_ZONE" {
+                fields.get(..4)
+            } else if !simple && zone.parts.len() == 2 {
+                zone.part("SHAPE_ASPECT")
+            } else {
+                None
+            };
+            let Some(
+                [
+                    Param::Str(_),
+                    Param::Str(_) | Param::Unset,
+                    owner,
+                    Param::Enum(flag),
+                ],
+            ) = shape
+            else {
+                return Err("its tolerance zone has unsupported shape attributes".into());
+            };
+            if !matches!(flag.as_str(), "T" | "F" | "U")
+                || reference(Some(owner)).filter(|id| self.has(*id, "PRODUCT_DEFINITION_SHAPE"))
+                    != self.aspect_params(target).and_then(|p| reference(p.get(2)))
+                || reference(Some(owner)).is_none()
+            {
+                return Err("its tolerance zone has invalid ownership or flag".into());
             }
             let members = reference_list(fields.get(defining))
                 .ok_or("its zone has an invalid defining tolerance list")?;
@@ -1524,7 +1568,10 @@ impl<'a> Reader<'a> {
             let form = form
                 .and_then(|form| self.entity(form))
                 .and_then(|form| form.part("TOLERANCE_ZONE_FORM"))
-                .and_then(|form| string(form.first()))
+                .and_then(|form| match form {
+                    [Param::Str(label)] => decode(label),
+                    _ => None,
+                })
                 .ok_or("its zone has no readable form")?;
             zone_form = match form.as_str() {
                 "cylindrical or circular" | "within a cylinder" => ZoneForm::Cylinder,
@@ -1572,12 +1619,23 @@ impl<'a> Reader<'a> {
             } else {
                 entity.part("TOLERANCE_ZONE_DEFINITION")
             };
-            let Some(base) = base.filter(|params| reference(params.first()) == Some(zone)) else {
+            let Some(base) = base else {
+                if entity.part("PROJECTED_ZONE_DEFINITION").is_some() {
+                    return Err("its projected zone lacks a tolerance zone definition".into());
+                }
                 continue;
             };
+            if !references(base.first()).contains(&zone) {
+                continue;
+            }
+            if reference(base.first()) != Some(zone) {
+                return Err("its projected zone must name one tolerance zone".into());
+            }
             let fields = match (simple, kind, entity.part("PROJECTED_ZONE_DEFINITION")) {
                 (true, "PROJECTED_ZONE_DEFINITION", _) => base.get(2..),
-                (false, _, Some(fields)) if entity.parts.len() == 2 => Some(fields),
+                (false, _, Some(fields)) if entity.parts.len() == 2 && base.len() == 2 => {
+                    Some(fields)
+                }
                 _ => {
                     return Err(format!(
                         "its zone definition uses {kind}, which is not read"
@@ -1611,8 +1669,13 @@ impl<'a> Reader<'a> {
                 let params = self
                     .entity(*user)?
                     .part("GEOMETRIC_TOLERANCE_RELATIONSHIP")?;
-                (reference(params.get(2)) == Some(id) || reference(params.get(3)) == Some(id))
-                    .then_some(params)
+                (references(params.get(2)).contains(&id)
+                    || references(params.get(3)).contains(&id)
+                    || (params.len() != 4
+                        && params
+                            .iter()
+                            .any(|param| references(Some(param)).contains(&id))))
+                .then_some(params)
             })
     }
 
@@ -1621,14 +1684,21 @@ impl<'a> Reader<'a> {
         let Some(params) = links.next() else {
             return Ok(None);
         };
-        let name = string(params.first()).unwrap_or_default();
+        let [Param::Str(raw), Param::Str(_) | Param::Unset, upper, lower] = params else {
+            return Err("its tolerance relationship has invalid attributes".into());
+        };
+        let name = decode(raw).ok_or("its tolerance relationship has no readable name")?;
         if name != COMPOSITE {
             return Err(format!(
                 "it is in a `{name}` tolerance relationship, which is not read"
             ));
         }
-        let upper = reference(params.get(2)).ok_or("its composite frame has no upper segment")?;
-        let lower = reference(params.get(3)).ok_or("its composite frame has no lower segment")?;
+        let upper = reference(Some(upper))
+            .filter(|id| self.has(*id, "POSITION_TOLERANCE"))
+            .ok_or("its composite frame has no upper position segment")?;
+        let lower = reference(Some(lower))
+            .filter(|id| self.has(*id, "POSITION_TOLERANCE"))
+            .ok_or("its composite frame has no lower position segment")?;
         let other = if id == upper { lower } else { upper };
         if upper == lower
             || links.next().is_some()
@@ -1893,6 +1963,11 @@ impl<'a> Reader<'a> {
         if let Some(lower) = lower {
             return self.composite(id, characteristic, upper, lower);
         }
+        if !characteristic.supports_asme_2018() && self.aspect_has_asme_standard(upper.target) {
+            return Err(format!(
+                "this tolerance is not supported under {COMPOSITE_STANDARD}"
+            ));
+        }
         let datum_sources = upper.datums.iter().map(|(_, source)| *source).collect();
         let boundary = upper
             .datums
@@ -1945,7 +2020,7 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn has_composite_standard(&self, target: u64) -> bool {
+    fn aspect_has_asme_standard(&self, target: u64) -> bool {
         let Some(product) = self
             .aspect_params(target)
             .and_then(|p| reference(p.get(2)))
@@ -1954,6 +2029,10 @@ impl<'a> Reader<'a> {
         else {
             return false;
         };
+        self.has_asme_standard(product)
+    }
+
+    fn has_asme_standard(&self, product: u64) -> bool {
         let mut standards = BTreeSet::new();
         for (_, fields) in self.sharing_at(product, "PRODUCT_DEFINITION_CONTEXT_ASSOCIATION", 0) {
             let Some(context) = reference(fields.get(1)) else {
@@ -2006,7 +2085,8 @@ impl<'a> Reader<'a> {
         if upper.projected.is_some() || lower.projected.is_some() {
             return Err("a composite frame with a projected zone is not read".into());
         }
-        if !self.has_composite_standard(upper.target) || !self.has_composite_standard(lower.target)
+        if !self.aspect_has_asme_standard(upper.target)
+            || !self.aspect_has_asme_standard(lower.target)
         {
             return Err(format!(
                 "a composite position frame requires a part declaration of {COMPOSITE_STANDARD}"
@@ -2039,16 +2119,11 @@ impl<'a> Reader<'a> {
 
     /// The placed datum targets that set up a datum.
     fn placed_targets(&self, datum: u64) -> Vec<u64> {
-        let mut targets = Vec::new();
-        for user in self.sharing.get(&datum).map_or(&[][..], Vec::as_slice) {
-            if let Some((_, relating, related)) = self.relationship(*user)
-                && related == datum
-                && self.has(relating, "PLACED_DATUM_TARGET_FEATURE")
-            {
-                targets.push(relating);
-            }
-        }
-        targets
+        self.sharing_at(datum, "SHAPE_ASPECT_RELATIONSHIP", 3)
+            .into_iter()
+            .flat_map(|(_, fields)| references(fields.get(2)))
+            .filter(|&target| self.has(target, "PLACED_DATUM_TARGET_FEATURE"))
+            .collect()
     }
 
     /// An `AXIS2_PLACEMENT_3D` as the file writes it.
@@ -2085,10 +2160,31 @@ impl<'a> Reader<'a> {
         let params = self.entity(id)?.part("ADVANCED_FACE")?;
         let plane = self.entity(reference(params.get(2))?)?.part("PLANE")?;
         let placement = self.placement(reference(plane.get(1))?)?;
-        let normal = match params.get(3) {
-            Some(Param::Enum(sense)) if sense == "T" => placement.axis,
-            Some(Param::Enum(sense)) if sense == "F" => neg3(&placement.axis),
+        let Some(Param::Enum(sense)) = params.get(3) else {
+            return None;
+        };
+        let mut same = match sense.as_str() {
+            "T" => true,
+            "F" => false,
             _ => return None,
+        };
+        let shells = self.sharing_at(id, "CLOSED_SHELL", 1);
+        if shells.len() > 1 {
+            return None;
+        }
+        if let [(shell, _)] = shells.as_slice() {
+            let oriented = self.sharing_at(*shell, "ORIENTED_CLOSED_SHELL", 2);
+            match oriented.as_slice() {
+                [] => {}
+                [(_, [_, Param::Derived, _, Param::Enum(flag)])] if flag == "T" => {}
+                [(_, [_, Param::Derived, _, Param::Enum(flag)])] if flag == "F" => same = !same,
+                _ => return None,
+            }
+        }
+        let normal = if same {
+            placement.axis
+        } else {
+            neg3(&placement.axis)
         };
         Some((placement.origin, normal))
     }
@@ -2135,6 +2231,38 @@ impl<'a> Reader<'a> {
         references(units)
             .into_iter()
             .find_map(|unit| unit_millimetres(self.g, unit, 0).ok())
+    }
+
+    fn representation_contains_face(&self, representation: u64, face: u64) -> bool {
+        let Some(rep) = self.entity(representation) else {
+            return false;
+        };
+        let mut pending = references(rep.parts[0].1.get(1));
+        let mut seen = BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if id == face {
+                return true;
+            }
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(entity) = self.entity(id) else {
+                continue;
+            };
+            if matches!(
+                entity.type_name(),
+                "MANIFOLD_SOLID_BREP"
+                    | "BREP_WITH_VOIDS"
+                    | "BREP_WITH_VOIDS_AND_BOUNDS"
+                    | "ORIENTED_CLOSED_SHELL"
+                    | "CLOSED_SHELL"
+                    | "OPEN_SHELL"
+                    | "SHELL_BASED_SURFACE_MODEL"
+            ) {
+                collect_references(&entity.parts[0].1, &mut pending);
+            }
+        }
+        false
     }
 
     fn representation_scale(&self, representation: u64) -> Option<Rational> {
@@ -2432,6 +2560,131 @@ impl<'a> Reader<'a> {
         })
     }
 
+    fn graphic_callout(entity: &Entity) -> Option<&[Param]> {
+        entity.part("DRAUGHTING_CALLOUT")
+    }
+
+    fn graphic_faces(&self, id: u64) -> Result<Vec<String>, String> {
+        let entity = self.entity(id).ok_or("its linked item is missing")?;
+        let mut aspects = Vec::new();
+        if let Some(fields) = entity.part("DIMENSIONAL_SIZE") {
+            aspects.extend(reference(fields.first()));
+        } else if let Some((_, a, b)) = self.relationship(id)
+            && (entity.part("DIMENSIONAL_LOCATION").is_some()
+                || entity.part("ANGULAR_LOCATION").is_some())
+        {
+            aspects.extend([a, b]);
+        } else if let Some(fields) = entity.part("PROPERTY_DEFINITION") {
+            aspects.extend(reference(fields.get(2)));
+        } else if entity.type_name() == "DATUM" {
+            aspects.extend(
+                self.sharing
+                    .get(&id)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|link| self.relationship(*link))
+                    .filter_map(|(_, feature, datum)| {
+                        (datum == id && self.has(feature, "DATUM_FEATURE")).then_some(feature)
+                    }),
+            );
+        } else if let Some(fields) = entity.part("GEOMETRIC_TOLERANCE").or_else(|| {
+            Characteristic::of_entity(entity.type_name()).map(|_| entity.parts[0].1.as_slice())
+        }) {
+            let target = reference(fields.get(3)).ok_or("its linked tolerance names no feature")?;
+            aspects.push(
+                self.entity(target)
+                    .and_then(|item| item.part("DIMENSIONAL_SIZE"))
+                    .and_then(|fields| reference(fields.first()))
+                    .unwrap_or(target),
+            );
+        } else if self.aspect_params(id).is_some() {
+            aspects.push(id);
+        }
+        if aspects.is_empty() {
+            return Err("its linked item names no face feature".into());
+        }
+        let mut faces = Vec::new();
+        for aspect in aspects {
+            faces.extend(self.features(aspect, 0)?.into_iter().flatten());
+        }
+        Ok(faces)
+    }
+
+    fn legacy_texture<'b>(
+        &self,
+        name: &str,
+        text: Option<&str>,
+        aspect: u64,
+        items: &'b [(u64, Item<String>)],
+    ) -> Result<Option<&'b str>, String> {
+        let Some([Param::Str(aspect_name), _, owner, Param::Enum(flag)]) = self
+            .entity(aspect)
+            .filter(|entity| entity.parts.len() == 1)
+            .and_then(|entity| entity.part("SHAPE_ASPECT"))
+        else {
+            return Ok(None);
+        };
+        let Some(owner) =
+            reference(Some(owner)).filter(|id| self.has(*id, "PRODUCT_DEFINITION_SHAPE"))
+        else {
+            return Ok(None);
+        };
+        if flag != "T" || decode(aspect_name).as_deref() != Some(name) {
+            return Ok(None);
+        }
+        let Some((prefix, requirement)) = text.and_then(|text| text.split_once(r"\w\w\w\w")) else {
+            return Ok(None);
+        };
+        let process = match prefix {
+            "SRFAPAN" => Process::Any,
+            "SRFMRRN" => Process::Removal,
+            "SRFNMRN" => Process::NoRemoval,
+            _ => return Ok(None),
+        };
+        let Some((parameter, value)) = requirement.split_once(' ') else {
+            return Ok(None);
+        };
+        let Ok(value) = Rational::parse(value) else {
+            return Ok(None);
+        };
+        let Some(mut faces) = self.used_faces(aspect)? else {
+            return Ok(None);
+        };
+        faces.sort();
+        let mut matched = items.iter().filter(|(property, item)| {
+            let ItemKind::Texture(texture) = &item.kind else {
+                return false;
+            };
+            let semantic_aspect = self
+                .entity(*property)
+                .and_then(|e| e.part("PROPERTY_DEFINITION"))
+                .and_then(|fields| reference(fields.get(2)));
+            self.id_attribute(*property).as_deref() == Some(name)
+                && semantic_aspect.is_some_and(|id| {
+                    id != aspect
+                        && self
+                            .aspect_params(id)
+                            .and_then(|fields| reference(fields.get(2)))
+                            == Some(owner)
+                })
+                && texture.parameter == parameter
+                && texture.value == value
+                && texture.process == process
+                && texture
+                    .feature
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .eq(faces.iter().cloned())
+        });
+        let first = matched.next();
+        if matched.next().is_some() {
+            return Err("its legacy surface texture association matches several finishes".into());
+        }
+        Ok(first.map(|(_, item)| item.id.as_str()))
+    }
+
     /// The saved views and graphic callouts of the file. A callout whose
     /// association names a read item presents that item and is not listed
     /// again as graphics.
@@ -2462,27 +2715,20 @@ impl<'a> Reader<'a> {
                 by_entity.insert(*lower, name);
             }
         }
-        let is_callout = |entity: &Entity| {
-            entity
-                .parts
-                .iter()
-                .any(|(part, _)| part == "DRAUGHTING_CALLOUT" || part.ends_with("_CALLOUT"))
-        };
         let mut presented = BTreeMap::new();
         let mut graphics = BTreeMap::new();
         for (&callout, entity) in self.g {
-            if !is_callout(entity) {
+            let Some(params) = Self::graphic_callout(entity) else {
                 continue;
-            }
-            let params = entity
-                .part("DRAUGHTING_CALLOUT")
-                .unwrap_or(entity.parts[0].1.as_slice());
+            };
+            let name = string(params.first()).unwrap_or_default();
             let occurrences = references(params.get(1));
             let subjects: Vec<_> = std::iter::once(callout)
                 .chain(occurrences.iter().copied())
                 .collect();
             let mut linked = Vec::new();
-            let mut presents = None;
+            let mut presents = BTreeSet::new();
+            let mut legacy_aspects = BTreeSet::new();
             let mut faces = Vec::new();
             let mut models = BTreeSet::new();
             let mut planes = BTreeSet::new();
@@ -2498,12 +2744,25 @@ impl<'a> Reader<'a> {
                         linked.push((*name).to_owned());
                         continue;
                     }
-                    if self.aspect_params(definition).is_some() {
-                        if let Ok(features) = self.features(definition, 0) {
-                            faces.extend(features.into_iter().flatten());
-                        }
-                    } else if presents.is_none() {
-                        presents = Some(format!("#{definition}"));
+                    match self.graphic_faces(definition) {
+                        Ok(attached) => faces.extend(attached),
+                        Err(reason) => skipped.push(SkippedPmi {
+                            entity: format!("#{callout}"),
+                            kind: entity.type_name().into(),
+                            reason: format!(
+                                "cannot resolve graphic attachment #{definition}: {reason}"
+                            ),
+                        }),
+                    }
+                    if self.aspect_params(definition).is_none()
+                        || self.has(definition, "DATUM_FEATURE")
+                        || self.has(definition, "PLACED_DATUM_TARGET_FEATURE")
+                    {
+                        presents.insert(definition);
+                    } else if !name.is_empty()
+                        && string(association.first()).as_deref() == Some(&name)
+                    {
+                        legacy_aspects.insert(definition);
                     }
                 }
                 models.extend(
@@ -2533,7 +2792,9 @@ impl<'a> Reader<'a> {
             }
             if !linked.is_empty() {
                 presented.insert(callout, linked);
-                continue;
+                if presents.is_empty() {
+                    continue;
+                }
             }
             for &plane in &planes {
                 models.extend(
@@ -2575,17 +2836,35 @@ impl<'a> Reader<'a> {
                     continue;
                 }
             };
+            if kind == "surface roughness" && presents.is_empty() {
+                for aspect in legacy_aspects {
+                    match self.legacy_texture(&name, equivalent.as_deref(), aspect, items) {
+                        Ok(Some(item)) => {
+                            presented.entry(callout).or_default().push(item.to_owned())
+                        }
+                        Ok(None) => {}
+                        Err(reason) => skipped.push(SkippedPmi {
+                            entity: format!("#{callout}"),
+                            kind: entity.type_name().into(),
+                            reason,
+                        }),
+                    }
+                }
+                if presented.contains_key(&callout) {
+                    continue;
+                }
+            }
             faces.sort();
             faces.dedup();
             graphics.insert(
                 callout,
                 GraphicCallout {
                     entity: format!("#{callout}"),
-                    name: string(params.first()).unwrap_or_default(),
+                    name,
                     kind,
                     text: equivalent,
                     faces: (!faces.is_empty()).then_some(faces),
-                    presents,
+                    presents: presents.into_iter().map(|id| format!("#{id}")).collect(),
                     polylines_mm,
                     planes,
                     views: Vec::new(),
@@ -2616,11 +2895,15 @@ impl<'a> Reader<'a> {
                 let Some(entity) = self.entity(*member) else {
                     continue;
                 };
-                if is_callout(entity) {
+                if Self::graphic_callout(entity).is_some() {
                     shown.push(*member);
                 } else if let Some(plane) = entity.part("ANNOTATION_PLANE") {
                     for element in references(plane.get(3)) {
-                        if self.entity(element).is_some_and(is_callout) {
+                        if self
+                            .entity(element)
+                            .and_then(Self::graphic_callout)
+                            .is_some()
+                        {
                             shown.push(element);
                         } else {
                             shown.extend(
@@ -2628,7 +2911,9 @@ impl<'a> Reader<'a> {
                                     .get(&element)
                                     .into_iter()
                                     .flatten()
-                                    .filter(|id| self.entity(**id).is_some_and(is_callout))
+                                    .filter(|id| {
+                                        self.entity(**id).and_then(Self::graphic_callout).is_some()
+                                    })
                                     .copied(),
                             );
                         }
@@ -2678,7 +2963,8 @@ impl<'a> Reader<'a> {
                                 view_items.push(item.clone());
                             }
                         }
-                    } else if let Some(graphic) = graphics.get_mut(callout)
+                    }
+                    if let Some(graphic) = graphics.get_mut(callout)
                         && !graphic.views.contains(&name)
                     {
                         graphic.views.push(name.clone());
@@ -2749,23 +3035,63 @@ impl<'a> Reader<'a> {
     /// point out of the face, the point must lie on the face's plane, and the
     /// whole target must lie on the face within its trim.
     fn target(&self, id: u64, params: &[Param]) -> Result<Found, String> {
-        let description = string(params.get(1)).unwrap_or_default();
-        let number = string(params.get(4))
+        let [
+            Param::Str(_),
+            Param::Str(raw),
+            owner,
+            Param::Enum(flag),
+            number,
+        ] = params
+        else {
+            return Err("its placed target has invalid attributes".into());
+        };
+        if !matches!(flag.as_str(), "T" | "F" | "U") {
+            return Err("its placed target has an invalid definitional flag".into());
+        }
+        let description = decode(raw).ok_or("its target description is unreadable")?;
+        let owner = reference(Some(owner))
+            .filter(|id| self.has(*id, "PRODUCT_DEFINITION_SHAPE"))
+            .ok_or("its target has no owning part")?;
+        let number = string(Some(number))
             .and_then(|text| text.trim().parse::<u32>().ok())
             .filter(|number| *number > 0)
             .ok_or("its target number is not a positive whole number")?;
         let mut datums = Vec::new();
         for user in self.sharing.get(&id).map_or(&[][..], Vec::as_slice) {
-            if let Some((_, relating, related)) = self.relationship(*user)
-                && relating == id
-                && self.has(related, "DATUM")
+            if let Some(fields) = self
+                .entity(*user)
+                .and_then(|e| e.part("SHAPE_ASPECT_RELATIONSHIP"))
+                && references(fields.get(2)).contains(&id)
+                && references(fields.get(3))
+                    .into_iter()
+                    .any(|id| self.has(id, "DATUM"))
             {
+                let [Param::Str(_), description, from, to] = fields else {
+                    return Err("its datum relationship has invalid attributes".into());
+                };
+                if reference(Some(from)) != Some(id)
+                    || string(Some(description)).as_deref()
+                        != Some(catallax_step::pmi::DATUM_TARGET)
+                {
+                    return Err("its datum relationship is unreadable".into());
+                }
+                let related = reference(Some(to))
+                    .filter(|id| self.has(*id, "DATUM"))
+                    .ok_or("its datum relationship has no datum")?;
                 datums.push(related);
             }
         }
         let [datum] = datums.as_slice() else {
             return Err("it does not belong to exactly one datum".into());
         };
+        if self
+            .entity(*datum)
+            .and_then(|datum| datum.part("DATUM"))
+            .and_then(|fields| reference(fields.get(2)))
+            != Some(owner)
+        {
+            return Err("its datum belongs to another part".into());
+        }
         let letter = self.datum_letter(*datum).ok_or("its datum has no letter")?;
         let links = self.sharing_at(id, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP", 3);
         let [(_, link)] = links.as_slice() else {
@@ -2775,9 +3101,14 @@ impl<'a> Reader<'a> {
                 "it is tied to more than one face feature".into()
             });
         };
-        let aspect = reference(link.get(2)).ok_or("its face feature is missing")?;
-        if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != reference(params.get(2))
-        {
+        let [Param::Str(_), Param::Str(_) | Param::Unset, aspect, placed] = *link else {
+            return Err("its face relationship has invalid attributes".into());
+        };
+        if reference(Some(placed)) != Some(id) {
+            return Err("its face relationship does not name one target".into());
+        }
+        let aspect = reference(Some(aspect)).ok_or("its face feature is missing")?;
+        if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != Some(owner) {
             return Err("its face feature belongs to another part".into());
         }
         let faces = self
@@ -2803,7 +3134,12 @@ impl<'a> Reader<'a> {
             .and_then(|context| self.context_millimetres(context))
             .ok_or("its parameters have no known length unit")?;
         let (mut orientation, mut length, mut width, mut diameter) = (None, None, None, None);
-        for item in references(representation.get(1)) {
+        let [Param::Str(_), parameters, _] = representation else {
+            return Err("its parameter representation has invalid attributes".into());
+        };
+        for item in reference_list(Some(parameters))
+            .ok_or("its parameter list is not a flat set of distinct items")?
+        {
             if let Some(placement) = self.placement(item) {
                 if placement.name != ORIENTATION {
                     return Err(format!(
@@ -2833,17 +3169,13 @@ impl<'a> Reader<'a> {
             }
         }
         let orientation = orientation.ok_or("it has no orientation")?;
-        let direction = || {
-            orientation
-                .reference
-                .clone()
-                .ok_or_else(|| format!("the {description} target has no direction"))
-        };
+        let direction = placement_reference(&orientation.axis, orientation.reference)
+            .ok_or("its orientation has parallel or invalid placement axes")?;
         let kind = match (description.as_str(), length, width, diameter) {
             ("point", None, None, None) => TargetKind::Point,
             ("line", Some(length_mm), None, None) => TargetKind::Line {
                 length_mm,
-                direction: direction()?,
+                direction: direction.clone(),
             },
             ("circle", None, None, Some(diameter_mm)) => {
                 TargetKind::Area(TargetArea::Circular { diameter_mm })
@@ -2852,7 +3184,7 @@ impl<'a> Reader<'a> {
                 TargetKind::Area(TargetArea::Rectangular {
                     length_mm,
                     width_mm,
-                    direction: direction()?,
+                    direction,
                 })
             }
             ("point" | "line" | "circle" | "rectangle", ..) => {
@@ -2885,8 +3217,40 @@ impl<'a> Reader<'a> {
                 if !references(usage.get(4)).contains(&face_id) {
                     continue;
                 }
-                let scale = reference(usage.get(3))
-                    .and_then(|id| self.representation_scale(id))
+                let [
+                    Param::Str(_),
+                    Param::Str(_) | Param::Unset,
+                    definition,
+                    representation,
+                    identified,
+                ] = usage
+                else {
+                    return Err("its face usage has invalid attributes".into());
+                };
+                let one_face = match identified {
+                    Param::Ref(id) => *id == face_id,
+                    Param::Typed(kind, fields)
+                        if kind == "SET_REPRESENTATION_ITEM" && fields.len() == 1 =>
+                    {
+                        reference_list(fields.first()).as_deref() == Some(&[face_id])
+                    }
+                    _ => false,
+                };
+                if !one_face || reference(Some(definition)) != Some(aspect) {
+                    return Err("its face usage must name one face and one feature".into());
+                }
+                let representation = reference(Some(representation))
+                    .filter(|rep| {
+                        self.sharing_at(*rep, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                            .iter()
+                            .any(|(_, link)| reference(link.first()) == Some(owner))
+                            && self.representation_contains_face(*rep, face_id)
+                    })
+                    .ok_or(
+                        "its face usage does not identify a face in the owning representation",
+                    )?;
+                let scale = self
+                    .representation_scale(representation)
                     .ok_or("its face has no known length unit")?;
                 if face_scale.as_ref().is_some_and(|known| known != &scale) {
                     return Err("its face has conflicting length units".into());
@@ -3007,8 +3371,7 @@ impl<'a> Reader<'a> {
             });
             let has_graphics = members.iter().any(|id| {
                 self.entity(*id).is_some_and(|e| {
-                    e.part("ANNOTATION_PLANE").is_some()
-                        || e.parts.iter().any(|(kind, _)| kind.ends_with("_CALLOUT"))
+                    e.part("ANNOTATION_PLANE").is_some() || Self::graphic_callout(e).is_some()
                 })
             });
             if !(has_view || has_graphics) {
@@ -3037,6 +3400,18 @@ impl<'a> Reader<'a> {
 
     fn part_notes(&self, scope: Option<(u64, u64)>) -> PartNotes {
         let mut notes = PartNotes::default();
+        let product = scope.map(|(product, _)| product).or_else(|| {
+            let mut products = self
+                .g
+                .keys()
+                .copied()
+                .filter(|&id| self.has(id, "PRODUCT_DEFINITION"));
+            let product = products.next()?;
+            products.next().is_none().then_some(product)
+        });
+        if product.is_some_and(|id| self.has_asme_standard(id)) {
+            notes.standard = Some(catallax_step::pmi::DimensioningStandard::AsmeY14_5_2018);
+        }
         let mut numbered = Vec::new();
         let candidates: Box<dyn Iterator<Item = (&u64, &Entity)>> = match scope {
             Some((definition, shape)) => Box::new(

@@ -393,6 +393,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
     let pmi = Pmi {
         items,
         part: PartNotes {
+            standard: None,
             general_tolerance: Some("ISO 2768-m".into()),
             material: Some("6061-T6".into()),
             notes: vec!["Break sharp edges".into()],
@@ -691,7 +692,7 @@ fn the_bore_finish_is_drawn_on_the_bore() {
     assert_eq!(associations.len(), 2, "{associations:?}");
     let association = associations
         .iter()
-        .find(|fields| fields.starts_with("'Bore finish',''"))
+        .find(|fields| fields.starts_with("'PMI presentation to geometry link',''"))
         .unwrap();
     let semantic = associations
         .iter()
@@ -722,6 +723,31 @@ fn the_bore_finish_is_drawn_on_the_bore() {
         .collect();
     on.sort();
     assert_eq!(on, bore);
+
+    let link = line_with(
+        &file,
+        &[
+            "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+            "'PMI representation to presentation link'",
+        ],
+    );
+    let legacy = mutate(&file, &format!("{link}={}\n", records(&file)[&link]), "");
+    let legacy = mutate(
+        &legacy,
+        "'PMI presentation to geometry link'",
+        "'Bore finish'",
+    );
+    let read = read_step_pmi(legacy.as_bytes()).unwrap();
+    assert_eq!(
+        read.pmi
+            .items
+            .iter()
+            .filter(|item| item.id == "Bore finish")
+            .count(),
+        1
+    );
+    assert!(read.graphics.is_empty(), "{:?}", read.graphics);
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
 
     // The callout is in the model's annotation plane, which faces the front.
     let (plane, (_, fields)) = all
@@ -1974,7 +2000,10 @@ fn gdt_pmi(f: &GdtFaces) -> Pmi<FaceId> {
                 }),
             ),
         ],
-        part: PartNotes::default(),
+        part: PartNotes {
+            standard: Some(catallax_step::pmi::DimensioningStandard::AsmeY14_5_2018),
+            ..PartNotes::default()
+        },
         views: Vec::new(),
     }
 }
@@ -2599,16 +2628,138 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
         assert!(reasons(&skipped).contains("height is not a length"));
     }
 
+    let mut unspecified = gdt_pmi(&f);
+    unspecified.part.standard = None;
+    assert!(
+        try_write(&part, &unspecified)
+            .unwrap_err()
+            .contains("explicit selection")
+    );
+    let scope = &f.front;
+    let incompatible = item(
+        "ISO symmetry",
+        ItemKind::Tolerance(GeometricTolerance {
+            characteristic: Characteristic::Symmetry,
+            value: q("0.1"),
+            diameter_zone: false,
+            material: None,
+            datums: vec!["A".into()],
+            features: vec![scope.clone()],
+        }),
+    );
+    unspecified.items.retain(|item| item.id != "Bolt pattern");
+    unspecified.items.push(incompatible.clone());
+    assert!(
+        try_write(&part, &unspecified)
+            .unwrap()
+            .contains("DOCUMENT('ISO 1101:2017'")
+    );
+    let mut mixed = gdt_pmi(&f);
+    mixed.items.push(incompatible);
+    assert!(
+        try_write(&part, &mixed)
+            .unwrap_err()
+            .contains("ISO symmetry")
+    );
+
     let iso = mutate(&file, "ASME Y14.5-2018", "ISO 1101:2017");
     let (back, skipped) = read_back(&iso, &report);
     assert!(!ids(&back).contains(&"Bolt pattern".to_owned()));
     assert!(ids(&back).contains(&"Bore projection".to_owned()));
     assert!(reasons(&skipped).contains("requires a part declaration of ASME Y14.5-2018"));
     let all = records(&file);
+    let (target_id, target) = all
+        .iter()
+        .find(|(_, fields)| fields.starts_with("PLACED_DATUM_TARGET_FEATURE('A1'"))
+        .unwrap();
+    let owner = &references(target)[0];
+    let attachment = all
+        .values()
+        .find(|fields| {
+            fields.starts_with("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP(")
+                && references(fields)[1] == *target_id
+        })
+        .unwrap();
+    let aspect_id = &references(attachment)[0];
+    let aspect = &all[aspect_id];
+    let bad_owner = mutate(&file, target, &target.replace(owner, "$"));
+    let bad_owner = mutate(
+        &bad_owner,
+        &format!("{aspect_id}={aspect}"),
+        &format!("{aspect_id}={}", aspect.replace(owner, "$")),
+    );
+    let (back, skipped) = read_back(&bad_owner, &report);
+    assert!(!ids(&back).contains(&"Datum A".to_owned()));
+    assert!(ids(&back).contains(&"Bore projection".to_owned()));
+    assert!(reasons(&skipped).contains("target has no owning part"));
+
+    let orientation = all
+        .values()
+        .find(|fields| {
+            fields.starts_with("AXIS2_PLACEMENT_3D('orientation'")
+                && all[&references(fields)[0]].ends_with("(30.,5.,0.));")
+        })
+        .unwrap();
+    let ortho = &references(orientation)[2];
+    let tilted = mutate(&file, orientation, &orientation.replace(ortho, "#900010"));
+    let tilted = mutate(
+        &tilted,
+        "ENDSEC;\nEND-ISO",
+        "#900010=DIRECTION('',(1.,0.,1.));\nENDSEC;\nEND-ISO",
+    );
+    let (back, skipped) = read_back(&tilted, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    let ItemKind::DatumTarget(target) = kind_of(&back, "A2") else {
+        panic!("expected line target")
+    };
+    assert!(
+        matches!(&target.kind, TargetKind::Line { direction, .. } if direction == &v("1", "0", "0"))
+    );
+
+    let projection = all
+        .values()
+        .find(|fields| {
+            fields.starts_with("PROJECTED_ZONE_DEFINITION(")
+                && all[&references(fields)[2]].contains("(10.)")
+        })
+        .unwrap();
+    let zone = &references(projection)[0];
+    let wrapped = mutate(
+        &file,
+        projection,
+        &projection.replacen(zone, &format!("({zone})"), 1),
+    );
+    let (back, skipped) = read_back(&wrapped, &report);
+    assert!(!ids(&back).contains(&"Bore projection".to_owned()));
+    assert!(ids(&back).contains(&"Bolt pattern".to_owned()));
+    assert!(reasons(&skipped).contains("must name one tolerance zone"));
+    let specialized = mutate(
+        &file,
+        &all[zone],
+        &all[zone].replace("TOLERANCE_ZONE(", "DIRECTED_TOLERANCE_ZONE("),
+    );
+    let (back, skipped) = read_back(&specialized, &report);
+    assert!(!ids(&back).contains(&"Bore projection".to_owned()));
+    assert!(reasons(&skipped).contains("unsupported shape attributes"));
     let relationship = all
         .values()
         .find(|body| body.starts_with("GEOMETRIC_TOLERANCE_RELATIONSHIP('composite'"))
         .unwrap();
+    let upper = &references(relationship)[0];
+    let wrapped = mutate(
+        &file,
+        relationship,
+        &relationship.replacen(upper, &format!("({upper})"), 1),
+    );
+    let (back, skipped) = read_back(&wrapped, &report);
+    assert!(!ids(&back).contains(&"Bolt pattern".to_owned()));
+    assert!(ids(&back).contains(&"Bore projection".to_owned()));
+    assert_eq!(
+        reasons(&skipped)
+            .matches("no upper position segment")
+            .count(),
+        2
+    );
     let lower = &all[&references(relationship)[1]];
     let marker = "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((";
     let datum = lower
@@ -3401,11 +3552,90 @@ fn saved_views_write_their_callouts_and_read_back() {
             let plane_right = unit(numbers(&all[&frame[2]]));
             assert!(dot(&plane_right, &across) > 1.0 - 1e-9);
             assert!(dot(&cross(&normal, &plane_right), &up) > 1.0 - 1e-9);
-            let occurrence = references(&all[&keys[2]]).pop().unwrap();
+            let callout = &keys[2];
+            let name = all[callout].split('\'').nth(1).unwrap();
+            let occurrence = references(&all[callout]).pop().unwrap();
             let set = references(&all[&occurrence]).pop().unwrap();
             let lines = references(&all[&set]);
             let leader = references(&all[&lines[0]]);
             assert_eq!(numbers(&all[&leader[0]]), origin);
+            let squared_radius = |x: f64, y: f64| (origin[0] - x).powi(2) + (origin[1] - y).powi(2);
+            match name {
+                "Datum A" => assert_eq!(origin[2], 0.0),
+                "Datum B" => assert_eq!(origin[1], 0.0),
+                "Datum C" => assert_eq!(origin[0], 0.0),
+                "Bore diameter" | "Bore finish" | "Bore position" => {
+                    assert!((squared_radius(30.0, 25.0) - 16.0).abs() < 1e-9)
+                }
+                "Hole position" => assert!(
+                    [(10.0, 12.0), (10.0, 32.0), (50.0, 12.0), (50.0, 32.0)]
+                        .into_iter()
+                        .any(|(x, y)| (squared_radius(x, y) - 4.0).abs() < 1e-9)
+                ),
+                _ => panic!("unexpected saved-view label {name}"),
+            }
+            let wire: Vec<_> = lines[1..].iter().map(|id| references(&all[id])).collect();
+            let symbol = &wire[0];
+            let junction = usize::from(name == "Bore finish");
+            assert_eq!(numbers(&all[&leader[1]]), numbers(&all[&symbol[junction]]));
+            let glyphs: Vec<_> = wire.iter().skip(1).map(Vec::len).collect();
+            let expected: &[usize] = match name {
+                "Datum A" => &[3, 2],
+                "Datum B" => &[7, 5],
+                "Datum C" => &[8],
+                "Bore diameter" => &[9, 2, 16, 2, 2, 2, 3],
+                "Bore finish" => &[2, 7, 2, 2, 8, 3, 2, 2, 11],
+                "Bore position" => &[7, 9, 12, 2, 9, 2, 9, 2, 2, 9, 2, 9, 2, 3, 2, 2, 7, 5, 2, 8],
+                "Hole position" => &[7, 9, 12, 2, 9, 2, 9, 2, 2, 7, 2, 3, 2, 2, 7, 5, 2, 8],
+                _ => panic!("unexpected saved-view label {name}"),
+            };
+            assert_eq!(glyphs, expected, "{view} {name}");
+            let expected_faces: std::collections::BTreeSet<_> = pmi
+                .items
+                .iter()
+                .find(|item| item.id == name)
+                .unwrap()
+                .kind
+                .faces()
+                .into_iter()
+                .copied()
+                .collect();
+            let definitions: Vec<_> = callout_associations(&all, name)
+                .into_iter()
+                .filter_map(|(_, link)| {
+                    let ids = references(&link);
+                    (ids.last() == Some(callout)).then(|| ids[0].clone())
+                })
+                .collect();
+            let mut pending = definitions;
+            let mut actual_faces = std::collections::BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                let record = &all[&id];
+                if record.contains("POSITION_TOLERANCE(") || record.starts_with("DIMENSIONAL_SIZE(")
+                {
+                    pending.push(
+                        references(record)[if record.contains("POSITION_TOLERANCE(") {
+                            1
+                        } else {
+                            0
+                        }]
+                        .clone(),
+                    );
+                }
+                for usage in all.values() {
+                    let refs = references(usage);
+                    if usage.contains("_USAGE(") && refs.first() == Some(&id) {
+                        actual_faces
+                            .extend(refs[2..].iter().filter_map(|id| faces.get(id).copied()));
+                    } else if usage.starts_with("SHAPE_ASPECT_RELATIONSHIP(")
+                        && refs.first() == Some(&id)
+                        && all[&refs[1]].starts_with("SHAPE_ASPECT(")
+                    {
+                        pending.push(refs[1].clone());
+                    }
+                }
+            }
+            assert_eq!(actual_faces, expected_faces, "{view} {name}");
             let project = |id: String| {
                 let world = numbers(&all[&id]);
                 let from_eye: Vec<_> = world.iter().zip(&eye).map(|(p, eye)| p - eye).collect();
@@ -3576,9 +3806,9 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
             graphic.name.as_str(),
             graphic.kind.as_str(),
             graphic.text.as_deref(),
-            graphic.presents.as_ref()
+            &graphic.presents[..]
         ),
-        ("Datum A", "datum", Some(r"DTM\wA"), None)
+        ("Datum A", "datum", Some(r"DTM\wA"), &[][..])
     );
     assert_eq!(graphic.views, vec!["Bore".to_owned()]);
     assert!(!read.pmi.views[0].items.contains(&"Datum A".to_owned()));
@@ -3597,7 +3827,28 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
     let [graphic] = read.graphics.as_slice() else {
         panic!("{:?}", read.graphics);
     };
-    assert_eq!(graphic.presents.as_deref(), Some(size.as_str()));
+    let bore = part.round(2, "4", ["30", "25"]);
+    let expected: Vec<_> = written_faces(&file, &report)
+        .into_iter()
+        .filter_map(|(id, face)| bore.contains(&face).then_some(id))
+        .collect();
+    assert_eq!(graphic.faces.as_ref(), Some(&expected));
+    let mixed = mutate(
+        &shared,
+        &format!("{size}={size_record}"),
+        &format!("{size}={}", size_record.replace("'diameter'", "'girth'")),
+    );
+    let mixed = read_step_pmi(mixed.as_bytes()).unwrap();
+    assert!(mixed.pmi.views[0].items.contains(&"Datum A".to_owned()));
+    let retained = mixed
+        .graphics
+        .iter()
+        .find(|graphic| graphic.name == "Bore diameter")
+        .unwrap();
+    assert_eq!(retained.presents, [size.clone()]);
+    assert_eq!(retained.faces.as_ref(), Some(&expected));
+    assert_eq!(retained.views, ["Bore"]);
+    assert_eq!(graphic.presents, [size]);
     assert_eq!(graphic.text.as_deref(), Some(r"DIM\w⌀8 H7"));
     assert_eq!(graphic.kind, "diameter dimension");
 }
@@ -3629,6 +3880,11 @@ fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
             reference: v("1", "0", "0"),
         }]
     );
+
+    let unsupported_callout = mutate(source, "DRAUGHTING_CALLOUT(", "UNSUPPORTED_CALLOUT(");
+    let unsupported_callout = read_step_pmi(unsupported_callout.as_bytes()).unwrap();
+    assert!(unsupported_callout.graphics.is_empty());
+    assert_eq!(unsupported_callout.pmi.views[0].name, "Top");
 
     let boxed = mutate(
         source,
@@ -3756,6 +4012,137 @@ fn target_refuses_a_face_moved_by_step_rounding() {
         "{refusal:?}"
     );
     assert!(out.is_empty());
+}
+
+#[test]
+fn rounded_step_geometry_cannot_reverse_a_projection() {
+    use catallax_shapes::{Isometry, RVector3, Rotation};
+    let (mut part, _) = hole_fixture();
+    let rotation = Rotation::from_quaternion(q("3"), q("-1"), q("0"), q("0")).unwrap();
+    let pose = Pose::from_rational(
+        rotation,
+        RVector3::new(q("0"), Rational::from_ratio(-2, 3).unwrap(), q("1")),
+    );
+    part.body = catallax_topology::transformed_body(
+        &mut part.model,
+        part.body,
+        &Isometry::from(&pose),
+        Clone::clone,
+    );
+    let head: Vec<_> = part
+        .faces()
+        .into_iter()
+        .filter(|&face| {
+            part.model.face_origins(face).iter().any(|origin| {
+                origin.step.as_str() == "counterbore"
+                    && matches!(
+                        origin.role,
+                        Role::Hole {
+                            part: HolePart::CounterboreWall,
+                            ..
+                        }
+                    )
+            })
+        })
+        .collect();
+    let entry = part
+        .faces()
+        .into_iter()
+        .find(|&face| {
+            let Surface::Plane(plane) = part.model.geom().surface(part.model.face(face).surface)
+            else {
+                return false;
+            };
+            let [_, y, z] = plane.origin.rational_components().unwrap();
+            let [nx, ny, nz] = plane.normal.rational_components().unwrap();
+            nx.is_zero()
+                && ((&q("0.8") * ny) - (&q("0.6") * nz)).is_zero()
+                && &(&q("0.6") * y) + &(&q("0.8") * z) == q("0.4")
+        })
+        .unwrap();
+    let pmi = Pmi {
+        items: vec![item(
+            "Projection",
+            ItemKind::Position(PositionControl {
+                features: vec![head],
+                frame: PositionFrame::Single {
+                    segment: segment("0.05", None, Vec::new()),
+                    projected_zone: Some(ProjectedZone {
+                        height_mm: q("8"),
+                        direction: v("0", "-0.6", "-0.8"),
+                        entry_faces: vec![entry],
+                    }),
+                },
+            }),
+        )],
+        ..Pmi::default()
+    };
+    catallax_step::pmi::check_on_model(&part.model, &pmi, &mut Decider::default()).unwrap();
+    let error = try_write(&part, &pmi).unwrap_err();
+    assert!(
+        error.contains("projected zone cannot be proved on the written geometry"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rectangle_checks_the_rounded_corner_arc_instead_of_its_circle() {
+    use catallax_numbers::Real;
+    use catallax_shapes::{
+        Circle, Plane, Point3, Vector3,
+        distance::{PlanarBoundary, PlanarEdge},
+    };
+    let point = |x, y| Point3::new(Real::from(q(x)), Real::from(q(y)), Real::zero());
+    let normal = Vector3::new(Real::zero(), Real::zero(), Real::one());
+    let along = Vector3::new(Real::one(), Real::zero(), Real::zero());
+    let boundary = PlanarBoundary {
+        plane: Plane {
+            origin: point("0", "0"),
+            normal: normal.clone(),
+            ref_dir: along.clone(),
+        },
+        vertices: vec![
+            point("1", "0"),
+            point("4", "0"),
+            point("4", "4"),
+            point("0", "4"),
+            point("0", "1"),
+        ],
+        edges: vec![
+            PlanarEdge::Segment([0, 1]),
+            PlanarEdge::Segment([1, 2]),
+            PlanarEdge::Segment([2, 3]),
+            PlanarEdge::Segment([3, 4]),
+            PlanarEdge::Arc {
+                circle: Circle {
+                    center: point("1", "1"),
+                    normal,
+                    ref_dir: along,
+                    radius_sq: Real::one(),
+                },
+                ends: Some([4, 0]),
+            },
+        ],
+    };
+    let rectangle = |x, y, width| DatumTarget {
+        datum: "A".into(),
+        number: 1,
+        face: (),
+        point_mm: v(x, y, "0"),
+        kind: TargetKind::Area(TargetArea::Rectangular {
+            length_mm: q("0.6"),
+            width_mm: q(width),
+            direction: v("1", "0", "0"),
+        }),
+    };
+    for (target, accepted) in [
+        (rectangle("1.9", "1", "0.2"), true),
+        (rectangle("0.5", "0.4", "0.3"), false),
+    ] {
+        let reason =
+            catallax_step::pmi::off_face(&boundary, &target, &mut Decider::default()).unwrap();
+        assert_eq!(reason.is_none(), accepted, "{reason:?}");
+    }
 }
 
 #[test]

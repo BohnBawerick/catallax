@@ -630,6 +630,14 @@ impl Characteristic {
             .find(|characteristic| characteristic.entity() == name)
     }
 
+    /// Whether this characteristic is supported under ASME Y14.5-2018.
+    pub fn supports_asme_2018(self) -> bool {
+        !matches!(
+            self,
+            Self::Concentricity | Self::Coaxiality | Self::Symmetry
+        )
+    }
+
     /// Whether the characteristic refers to datums.
     pub fn datum_use(self) -> DatumUse {
         match self {
@@ -704,9 +712,18 @@ impl Process {
     }
 }
 
+/// The explicitly selected dimensioning standard for a part.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DimensioningStandard {
+    /// ASME Y14.5-2018.
+    AsmeY14_5_2018,
+}
+
 /// What applies to the whole part.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct PartNotes {
+    /// The dimensioning standard. Omission uses ISO 1101:2017.
+    pub standard: Option<DimensioningStandard>,
     /// The general tolerance, such as `ISO 2768-m`.
     pub general_tolerance: Option<String>,
     /// The material, such as `6061-T6`.
@@ -716,9 +733,12 @@ pub struct PartNotes {
 }
 
 impl PartNotes {
-    /// True when the part has no note at all.
+    /// True when the part has no notes or explicit standard.
     pub fn is_empty(&self) -> bool {
-        self.general_tolerance.is_none() && self.material.is_none() && self.notes.is_empty()
+        self.standard.is_none()
+            && self.general_tolerance.is_none()
+            && self.material.is_none()
+            && self.notes.is_empty()
     }
 }
 
@@ -781,7 +801,6 @@ impl<F> Datum<F> {
 /// Item validation against the names and datums accepted for one part.
 pub struct PartValidator<'a, F> {
     names: BTreeSet<Cow<'a, str>>,
-    letters: BTreeSet<&'a str>,
     datum_features: BTreeSet<Vec<&'a F>>,
     datum_faces: BTreeMap<&'a str, Vec<&'a F>>,
     targets: BTreeSet<(String, u32)>,
@@ -791,7 +810,6 @@ impl<F> Default for PartValidator<'_, F> {
     fn default() -> Self {
         Self {
             names: BTreeSet::new(),
-            letters: BTreeSet::new(),
             datum_features: BTreeSet::new(),
             datum_faces: BTreeMap::new(),
             targets: BTreeSet::new(),
@@ -825,7 +843,6 @@ impl<'a, F: Ord> PartValidator<'a, F> {
         if !self.datum_features.insert(feature_key(&datum.feature)) {
             return Err(ItemError::DuplicateDatumFeature);
         }
-        self.letters.insert(letter);
         self.datum_faces
             .insert(letter, datum.feature.iter().collect());
         Ok(())
@@ -855,7 +872,7 @@ impl<'a, F: Ord> PartValidator<'a, F> {
 
     /// Whether the part has accepted a datum with this letter.
     pub fn contains_datum(&self, letter: &str) -> bool {
-        self.letters.contains(letter)
+        self.datum_faces.contains_key(letter)
     }
 
     /// Checks an item's features and values against the accepted datums.

@@ -173,15 +173,17 @@ fn written_plane(graph: &Graph, placement: &Field) -> Option<Plane> {
     })
 }
 
-fn written_boundary(graph: &Graph, face: Id) -> Option<(PlanarBoundary, bool)> {
+fn written_face(graph: &Graph, face: Id) -> Option<(&[Field], &Field, bool)> {
     let ("ADVANCED_FACE", [_, Field::List(bounds), surface, Field::Text(sense)]) =
         graph.record(face)
     else {
         return None;
     };
-    let plane = written_plane(graph, fields(graph, surface, "PLANE")?.get(1)?)?;
-    let mut vertices = Vec::new();
-    let mut edges = Vec::new();
+    Some((bounds, surface, sense.as_ref() == ".T."))
+}
+
+fn written_edges(graph: &Graph, bounds: &[Field]) -> Option<BTreeSet<Id>> {
+    let mut edges = BTreeSet::new();
     for bound in bounds {
         let cycle = fields(graph, bound, "FACE_BOUND")
             .or_else(|| fields(graph, bound, "FACE_OUTER_BOUND"))?
@@ -193,73 +195,114 @@ fn written_boundary(graph: &Graph, face: Id) -> Option<(PlanarBoundary, bool)> {
             return None;
         };
         for edge in oriented {
-            let edge = fields(
-                graph,
-                fields(graph, edge, "ORIENTED_EDGE")?.get(3)?,
-                "EDGE_CURVE",
-            )?;
-            let [
+            let Field::Ref(edge) = fields(graph, edge, "ORIENTED_EDGE")?.get(3)? else {
+                return None;
+            };
+            edges.insert(*edge);
+        }
+    }
+    Some(edges)
+}
+
+fn written_point(graph: &Graph, vertex: &Field) -> Option<Point3> {
+    let point = fields(graph, vertex, "VERTEX_POINT")?.get(1)?;
+    let [x, y, z] = values(fields(graph, point, "CARTESIAN_POINT")?)?;
+    Some(Point3::new(x, y, z))
+}
+
+fn written_curve<'a>(graph: &'a Graph, curve: &'a Field) -> &'a Field {
+    fields(graph, curve, "SEAM_CURVE")
+        .or_else(|| fields(graph, curve, "SURFACE_CURVE"))
+        .and_then(|fields| fields.get(1))
+        .unwrap_or(curve)
+}
+
+fn written_boundary(graph: &Graph, face: Id) -> Option<PlanarBoundary> {
+    let (bounds, surface, _) = written_face(graph, face)?;
+    let plane = written_plane(graph, fields(graph, surface, "PLANE")?.get(1)?)?;
+    let mut vertices = Vec::new();
+    let mut edges = Vec::new();
+    for id in written_edges(graph, bounds)? {
+        let (
+            "EDGE_CURVE",
+            [
                 _,
                 Field::Ref(start),
                 Field::Ref(end),
                 curve,
                 Field::Text(same),
-            ] = edge
+            ],
+        ) = graph.record(id)
+        else {
+            return None;
+        };
+        let ends = if start == end {
+            None
+        } else {
+            let mut ends = [0, 0];
+            for (slot, vertex) in ends.iter_mut().zip([*start, *end]) {
+                *slot = vertices.len();
+                vertices.push(written_point(graph, &Field::Ref(vertex))?);
+            }
+            if same.as_ref() == ".F." {
+                ends.swap(0, 1);
+            }
+            Some(ends)
+        };
+        let curve = written_curve(graph, curve);
+        if fields(graph, curve, "LINE").is_some() {
+            edges.push(PlanarEdge::Segment(ends?));
+        } else {
+            let [_, placement, Field::Text(radius)] = fields(graph, curve, "CIRCLE")? else {
+                return None;
+            };
+            let circle = written_plane(graph, placement)?;
+            edges.push(PlanarEdge::Arc {
+                circle: Circle {
+                    center: circle.origin,
+                    normal: circle.normal,
+                    radius_sq: written_real(radius).square(),
+                    ref_dir: circle.ref_dir,
+                },
+                ends,
+            });
+        }
+    }
+    (!edges.is_empty()).then_some(PlanarBoundary {
+        plane,
+        vertices,
+        edges,
+    })
+}
+
+pub(super) fn reversed_faces(graph: &Graph) -> BTreeSet<Id> {
+    graph
+        .records()
+        .filter_map(|(kind, fields)| {
+            let ("ORIENTED_CLOSED_SHELL", [_, _, shell, Field::Text(sense)]) = (kind, fields)
             else {
                 return None;
             };
-            let ends = if start == end {
-                None
-            } else {
-                let mut ends = [0, 0];
-                for (slot, vertex) in ends.iter_mut().zip([*start, *end]) {
-                    let (_, fields) = graph.record(vertex);
-                    let point = fields.get(1)?;
-                    let [x, y, z] = values(self::fields(graph, point, "CARTESIAN_POINT")?)?;
-                    *slot = vertices.len();
-                    vertices.push(Point3::new(x, y, z));
-                }
-                if same.as_ref() == ".F." {
-                    ends.swap(0, 1);
-                }
-                Some(ends)
-            };
-            let curve = fields(graph, curve, "SEAM_CURVE")
-                .or_else(|| fields(graph, curve, "SURFACE_CURVE"))
-                .and_then(|fields| fields.get(1))
-                .unwrap_or(curve);
-            if fields(graph, curve, "LINE").is_some() {
-                edges.push(PlanarEdge::Segment(ends?));
-            } else {
-                let [_, placement, Field::Text(radius)] = fields(graph, curve, "CIRCLE")? else {
-                    return None;
-                };
-                let circle = written_plane(graph, placement)?;
-                edges.push(PlanarEdge::Arc {
-                    circle: Circle {
-                        center: circle.origin,
-                        normal: circle.normal,
-                        radius_sq: written_real(radius).square(),
-                        ref_dir: circle.ref_dir,
-                    },
-                    ends,
-                });
+            if sense.as_ref() != ".F." {
+                return None;
             }
-        }
-    }
-    (!edges.is_empty()).then_some((
-        PlanarBoundary {
-            plane,
-            vertices,
-            edges,
-        },
-        sense.as_ref() == ".T.",
-    ))
+            let Field::List(faces) = self::fields(graph, shell, "CLOSED_SHELL")?.get(1)? else {
+                return None;
+            };
+            Some(faces)
+        })
+        .flatten()
+        .filter_map(|face| match face {
+            Field::Ref(id) => Some(*id),
+            _ => None,
+        })
+        .collect()
 }
 
 pub(super) fn check_written_target(
     graph: &Graph,
     faces: &[Id],
+    reversed: &BTreeSet<Id>,
     target: &DatumTarget<FaceId>,
     normal: &Vector3,
     item: &str,
@@ -268,8 +311,10 @@ pub(super) fn check_written_target(
     let [face] = faces else {
         return Err(refuse(item, "the datum target's face was split on export"));
     };
-    let (boundary, same) = written_boundary(graph, *face)
-        .ok_or_else(|| refuse(item, "the datum target's written trim cannot be checked"))?;
+    let no_trim = || refuse(item, "the datum target's written trim cannot be checked");
+    let boundary = written_boundary(graph, *face).ok_or_else(no_trim)?;
+    let (_, _, same) = written_face(graph, *face).ok_or_else(no_trim)?;
+    let same = same != reversed.contains(face);
     let plane = &boundary.plane;
     if is_zero_vector(&plane.ref_dir, dec)?
         || !is_zero_vector(&normal.cross(&plane.normal), dec)?
@@ -314,6 +359,154 @@ pub(super) fn check_written_target(
     }
     if let Some(reason) = target::off_face(&boundary, target, dec)? {
         return Err(refuse(item, format!("on the written face, {reason}")));
+    }
+    Ok(())
+}
+
+pub(super) fn check_written_projection(
+    graph: &Graph,
+    faces: &BTreeMap<FaceId, Vec<Id>>,
+    reversed: &BTreeSet<Id>,
+    control: &PositionControl<FaceId>,
+    zone: &super::ProjectedZone<FaceId>,
+    item: &str,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let invalid = || {
+        refuse(
+            item,
+            "the projected zone cannot be proved on the written geometry",
+        )
+    };
+    let entry_ids: BTreeSet<_> = zone
+        .entry_faces
+        .iter()
+        .flat_map(|face| faces[face].iter().copied())
+        .collect();
+    let mut adjacent = BTreeMap::<Id, Vec<Id>>::new();
+    for &face in faces.values().flatten() {
+        let (bounds, _, _) = written_face(graph, face).ok_or_else(invalid)?;
+        for edge in written_edges(graph, bounds).ok_or_else(invalid)? {
+            adjacent.entry(edge).or_default().push(face);
+        }
+    }
+    let direction = target::vector(&zone.direction);
+    for (feature, entry) in control.features.iter().zip(&zone.entry_faces) {
+        let [entry] = faces[entry].as_slice() else {
+            return Err(invalid());
+        };
+        let (bounds, _, same) = written_face(graph, *entry).ok_or_else(invalid)?;
+        let entry_edges = written_edges(graph, bounds).ok_or_else(invalid)?;
+        let boundary = written_boundary(graph, *entry).ok_or_else(invalid)?;
+        let plane = &boundary.plane;
+        let normal = if same != reversed.contains(entry) {
+            plane.normal.clone()
+        } else {
+            plane.normal.scaled(&Real::from_i64(-1))
+        };
+        if !is_zero_vector(&direction.cross(&normal), dec)?
+            || !is_positive(&direction.dot(&normal), dec)?
+        {
+            return Err(invalid());
+        }
+        let mut first: Option<(Plane, Real)> = None;
+        let mut trim = BTreeSet::new();
+        for &face in feature.iter().flat_map(|face| &faces[face]) {
+            let (bounds, surface, _) = written_face(graph, face).ok_or_else(invalid)?;
+            let [_, frame, Field::Text(radius)] =
+                fields(graph, surface, "CYLINDRICAL_SURFACE").ok_or_else(invalid)?
+            else {
+                return Err(invalid());
+            };
+            let axis = written_plane(graph, frame).ok_or_else(invalid)?;
+            let radius = written_real(radius);
+            if !is_zero_vector(&axis.normal.cross(&normal), dec)? {
+                return Err(invalid());
+            }
+            if let Some((first, first_radius)) = &first {
+                if !is_zero_vector(&axis.origin.minus(&first.origin).cross(&normal), dec)?
+                    || !is_zero(&(&radius - first_radius), dec)?
+                {
+                    return Err(invalid());
+                }
+            } else {
+                first = Some((axis, radius));
+            }
+            trim.extend(written_edges(graph, bounds).ok_or_else(invalid)?);
+        }
+        if trim.is_disjoint(&entry_edges) {
+            return Err(invalid());
+        }
+        for &other in entry_ids.iter().filter(|id| *id != entry) {
+            let (bounds, _, _) = written_face(graph, other).ok_or_else(invalid)?;
+            if !trim.is_disjoint(&written_edges(graph, bounds).ok_or_else(invalid)?) {
+                return Err(invalid());
+            }
+        }
+        let mut inward = false;
+        for id in trim {
+            let ("EDGE_CURVE", [_, a, b, curve, _]) = graph.record(id) else {
+                return Err(invalid());
+            };
+            let curve = written_curve(graph, curve);
+            let points = if fields(graph, curve, "LINE").is_some() {
+                vec![
+                    written_point(graph, a).ok_or_else(invalid)?,
+                    written_point(graph, b).ok_or_else(invalid)?,
+                ]
+            } else {
+                let circle = fields(graph, curve, "CIRCLE")
+                    .and_then(|fields| written_plane(graph, fields.get(1)?))
+                    .ok_or_else(invalid)?;
+                if !is_zero_vector(&circle.normal.cross(&normal), dec)? {
+                    return Err(invalid());
+                }
+                vec![circle.origin]
+            };
+            for point in points {
+                let distance = point.minus(&plane.origin).dot(&normal);
+                if is_positive(&distance, dec)? {
+                    return Err(invalid());
+                }
+                inward |= is_positive(&(-distance), dec)?;
+            }
+        }
+        if !inward {
+            return Err(invalid());
+        }
+        let (axis, _) = first.ok_or_else(invalid)?;
+        let offset = plane.origin.minus(&axis.origin).dot(&normal) / axis.normal.dot(&normal);
+        let at = axis.origin.plus(&axis.normal.scaled(&offset));
+        let mut pending = vec![*entry];
+        let mut seen = BTreeSet::new();
+        while let Some(face) = pending.pop() {
+            if !seen.insert(face) {
+                continue;
+            }
+            let (bounds, surface, _) = written_face(graph, face).ok_or_else(invalid)?;
+            let Some(plane) = fields(graph, surface, "PLANE")
+                .and_then(|fields| written_plane(graph, fields.get(1)?))
+            else {
+                continue;
+            };
+            if !is_zero_vector(&plane.normal.cross(&normal), dec)?
+                || !is_zero(&at.minus(&plane.origin).dot(&normal), dec)?
+            {
+                continue;
+            }
+            let boundary = written_boundary(graph, face).ok_or_else(invalid)?;
+            if boundary.contains(&at, dec)? {
+                return Err(invalid());
+            }
+            for edge in written_edges(graph, bounds).ok_or_else(invalid)? {
+                pending.extend(
+                    adjacent[&edge]
+                        .iter()
+                        .copied()
+                        .filter(|id| !seen.contains(id)),
+                );
+            }
+        }
     }
     Ok(())
 }

@@ -413,12 +413,20 @@ fn tolerance_patch_refuses_zone_properties() {
     let file = source();
     let before = read_step_pmi(file.as_bytes()).unwrap();
     let flatness = &before.sources["Base flatness"];
+    let aspect = file
+        .lines()
+        .find_map(|line| line.strip_prefix(&format!("{flatness}=FLATNESS_TOLERANCE(")))
+        .unwrap()
+        .trim_end_matches(");")
+        .rsplit(',')
+        .next()
+        .unwrap();
     let part = file
         .lines()
-        .find_map(|line| {
-            line.split_once("=PRODUCT_DEFINITION_SHAPE(")
-                .map(|(id, _)| id)
-        })
+        .find_map(|line| line.strip_prefix(&format!("{aspect}=SHAPE_ASPECT(")))
+        .unwrap()
+        .split(',')
+        .nth(2)
         .unwrap();
     let dependent = format!(
         "#900000=PROPERTY_DEFINITION('zone validation','',#900001);\n\
@@ -630,6 +638,33 @@ fn an_unrelated_assembly_dimension_and_id_comments_survive_a_leaf_edit() {
     let out = String::from_utf8(out).unwrap();
     assert!(out.contains(&dimension));
     assert!(out.contains(&commented));
+    let read = read_step_pmi(out.as_bytes()).unwrap();
+    assert!(read.pmi.items.iter().any(|item| item.id == "Base flatness"
+        && matches!(&item.kind, ItemKind::Tolerance(tolerance) if tolerance.value == q("0.02"))));
+}
+
+#[test]
+fn new_patch_ids_leave_existing_dangling_references_unbound() {
+    let file = source();
+    let id = read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone();
+    let qualification = "#900000=MEASURE_QUALIFICATION('','',#900001,(#900002));";
+    let extended = file.replacen(
+        "ENDSEC;\nEND-ISO",
+        &format!("{qualification}\nENDSEC;\nEND-ISO"),
+        1,
+    );
+    let out = patch_step_pmi(
+        extended.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: id,
+            value: q("0.02"),
+        }],
+    )
+    .unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.lines().any(|record| record == qualification));
+    assert!(!out.lines().any(|record| record.starts_with("#900001=")));
+    assert!(!out.lines().any(|record| record.starts_with("#900002=")));
     let read = read_step_pmi(out.as_bytes()).unwrap();
     assert!(read.pmi.items.iter().any(|item| item.id == "Base flatness"
         && matches!(&item.kind, ItemKind::Tolerance(tolerance) if tolerance.value == q("0.02"))));

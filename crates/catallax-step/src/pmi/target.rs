@@ -378,45 +378,88 @@ impl Rectangle {
         Ok(total)
     }
 
-    /// Whether a boundary edge has a point inside the open rectangle. A circle
-    /// arc that is not a whole circle and whose circle reaches into the
-    /// rectangle cannot be settled here and refuses.
     fn meets_edge(
         &self,
         boundary: &PlanarBoundary,
         edge: &PlanarEdge,
         dec: &mut Decider,
-    ) -> Result<Option<bool>, Refusal> {
-        match edge {
-            PlanarEdge::Segment([e, f]) => Ok(Some(self.meets_segment(
-                &boundary.vertices[*e],
-                &boundary.vertices[*f],
+    ) -> Result<bool, Refusal> {
+        let PlanarEdge::Arc { circle, ends } = edge else {
+            let PlanarEdge::Segment([a, b]) = edge else {
+                unreachable!()
+            };
+            return self.meets_segment(&boundary.vertices[*a], &boundary.vertices[*b], dec);
+        };
+        let corners = self.corners();
+        let mut inside_disc = true;
+        for corner in &corners {
+            inside_disc &= !less(
+                &circle.radius_sq,
+                &corner.minus(&circle.center).norm_squared(),
                 dec,
-            )?)),
-            PlanarEdge::Arc { circle, ends } => {
-                let mut inside_disc = true;
-                for corner in self.corners() {
-                    if less(
-                        &circle.radius_sq,
-                        &corner.minus(&circle.center).norm_squared(),
-                        dec,
-                    )? {
-                        inside_disc = false;
-                        break;
-                    }
+            )?;
+        }
+        if inside_disc
+            || !less(
+                &self.distance_sq(&circle.center, dec)?,
+                &circle.radius_sq,
+                dec,
+            )?
+        {
+            return Ok(false);
+        }
+        let Some([start, end]) = arc_ends(boundary, *ends) else {
+            return Ok(true);
+        };
+        let mut candidates = vec![start.clone(), end.clone()];
+        for (a, b) in [(0, 1), (0, 2), (1, 3), (2, 3)] {
+            let from = &corners[a];
+            let to = &corners[b];
+            let side = to.minus(from);
+            for t in segment_breaks(boundary, edge, from, to, dec)? {
+                if sign(&t, dec)? != Sign::Negative && !less(&Real::one(), &t, dec)? {
+                    candidates.push(from.plus(&side.scaled(&t)));
                 }
-                if inside_disc
-                    || !less(
-                        &self.distance_sq(&circle.center, dec)?,
-                        &circle.radius_sq,
-                        dec,
-                    )?
-                {
-                    return Ok(Some(false));
-                }
-                Ok(ends.is_none().then_some(true))
             }
         }
+        for point in candidates {
+            let radial = point.minus(&circle.center);
+            let tangent = circle.normal.cross(&radial);
+            let from = point.minus(&self.centre);
+            for forward in [true, false] {
+                let at_end = if forward { end } else { start };
+                if sign(&point.minus(at_end).norm_squared(), dec)? == Sign::Zero {
+                    continue;
+                }
+                let mut enters = true;
+                for (axis, extent) in &self.axes {
+                    let at = from.dot(axis);
+                    let delta = tangent.dot(axis);
+                    let delta = if forward { delta } else { -&delta };
+                    for positive in [true, false] {
+                        let side = if positive { at.clone() } else { -&at };
+                        match sign(&(&side - extent), dec)? {
+                            Sign::Positive => enters = false,
+                            Sign::Negative => {}
+                            Sign::Zero => {
+                                let speed = if positive { delta.clone() } else { -&delta };
+                                let radial = radial.dot(axis);
+                                let curvature = if positive { -&radial } else { radial };
+                                enters &= match sign(&speed, dec)? {
+                                    Sign::Negative => true,
+                                    Sign::Positive => false,
+                                    Sign::Zero => sign(&curvature, dec)? == Sign::Negative,
+                                };
+                            }
+                        }
+                    }
+                }
+                if enters {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -518,16 +561,8 @@ pub fn off_face(
                 centre,
             };
             for edge in &boundary.edges {
-                match rectangle.meets_edge(boundary, edge, dec)? {
-                    Some(false) => {}
-                    Some(true) => {
-                        return Ok(Some("the target area crosses its face's boundary"));
-                    }
-                    None => {
-                        return Ok(Some(
-                            "the target area reaches a curved boundary arc this check cannot settle",
-                        ));
-                    }
+                if rectangle.meets_edge(boundary, edge, dec)? {
+                    return Ok(Some("the target area crosses its face's boundary"));
                 }
             }
         }

@@ -211,6 +211,7 @@ struct Emitter<'a> {
     /// The semantic entity each item is written as, by item name, for the
     /// association of its callout.
     semantic: BTreeMap<String, Id>,
+    reversed: BTreeSet<Id>,
     dec: &'a mut Decider,
 }
 
@@ -807,6 +808,15 @@ impl Emitter<'_> {
             } => {
                 let (_, zone) = self.segment(segment, target, item)?;
                 if let Some(projection) = projected_zone {
+                    check::check_written_projection(
+                        self.graph,
+                        self.faces,
+                        &self.reversed,
+                        control,
+                        projection,
+                        item,
+                        self.dec,
+                    )?;
                     let zone = zone.ok_or_else(|| {
                         Refusal::new(
                             "step.pmi-invalid",
@@ -934,6 +944,7 @@ impl Emitter<'_> {
         check::check_written_target(
             self.graph,
             &self.faces[&target.face],
+            &self.reversed,
             target,
             &normal,
             item,
@@ -1370,7 +1381,7 @@ impl Emitter<'_> {
             let link_name = if index == 0 {
                 "PMI representation to presentation link"
             } else {
-                item
+                "PMI presentation to geometry link"
             };
             self.root(
                 "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
@@ -1853,6 +1864,7 @@ pub(crate) fn emit(
             ));
         }
     }
+    let reversed = check::reversed_faces(graph);
     let mut emitter = Emitter {
         graph,
         model,
@@ -1870,10 +1882,11 @@ pub(crate) fn emit(
         front_plane: None,
         annotations: 0,
         semantic: BTreeMap::new(),
+        reversed,
         dec,
     };
     check::check_on_model_for_export(model, pmi, Some(faces), emitter.dec)?;
-    if !pmi.items.is_empty() {
+    if !pmi.items.is_empty() || pmi.part.standard.is_some() {
         let composite = pmi.items.iter().any(|item| {
             matches!(
                 &item.kind,
@@ -1883,7 +1896,28 @@ pub(crate) fn emit(
                 })
             )
         });
-        emitter.standard(if composite {
+        let asme = pmi.part.standard == Some(super::DimensioningStandard::AsmeY14_5_2018);
+        if composite && !asme {
+            return Err(Refusal::new(
+                "step.pmi-invalid",
+                format!("composite position requires explicit selection of {COMPOSITE_STANDARD}"),
+            ));
+        }
+        if asme
+            && let Some(item) = pmi.items.iter().find(|item| {
+                matches!(&item.kind, ItemKind::Tolerance(tolerance)
+                    if !tolerance.characteristic.supports_asme_2018())
+            })
+        {
+            return Err(Refusal::new(
+                "step.pmi-invalid",
+                format!(
+                    "{}: this tolerance is not supported under {COMPOSITE_STANDARD}",
+                    item.id
+                ),
+            ));
+        }
+        emitter.standard(if asme {
             COMPOSITE_STANDARD
         } else {
             "ISO 1101:2017"

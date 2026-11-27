@@ -273,7 +273,7 @@ impl Patch {
         let highest = records
             .records
             .iter()
-            .map(|record| record.id)
+            .flat_map(|record| std::iter::once(record.id).chain(record.refs.iter().copied()))
             .max()
             .unwrap_or(0);
         Self {

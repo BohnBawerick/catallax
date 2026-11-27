@@ -3,7 +3,7 @@
 //! The carriers are sampled in binary64 through their display variants: the
 //! preview takes thousands of samples per face and claims no bound on any of
 //! them, and an enclosing evaluation of each costs a body's whole allowance.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_import::{
     Curve,
@@ -431,19 +431,39 @@ pub fn preview_tolerant_body(
     if index >= import.bodies().len() {
         return Err(failure("body index is out of range"));
     }
-    let mut edge_detail = BTreeMap::new();
-    refund_on_refusal(|| build(import, index, options, None, &mut edge_detail, dec)).or_else(|_| {
-        super::coarsen(options, dec, |divisions, _, dec| {
-            build(
-                import,
-                index,
-                options,
-                Some(divisions),
-                &mut edge_detail,
-                dec,
-            )
+    let empty = BTreeSet::new();
+    let mut refine = BTreeSet::new();
+    refund_on_refusal(|| build(import, index, options, None, (&empty, &mut refine), dec))
+        .or_else(|_| {
+            super::coarsen(options, dec, |divisions, _, dec| {
+                build(
+                    import,
+                    index,
+                    options,
+                    Some(divisions),
+                    (&empty, &mut refine),
+                    dec,
+                )
+            })
         })
-    })
+        .or_else(|refusal| {
+            if refusal.code != GRID_TRIM_REFUSAL || refine.is_empty() {
+                return Err(refusal);
+            }
+            // Try denser shared chords only after all normal levels failed.
+            // Do not discard a usable coarse preview to refine its trims.
+            refund_on_refusal(|| {
+                build(
+                    import,
+                    index,
+                    options,
+                    Some(8),
+                    (&refine, &mut BTreeSet::new()),
+                    dec,
+                )
+            })
+            .or(Err(refusal))
+        })
 }
 
 fn build(
@@ -451,7 +471,7 @@ fn build(
     index: usize,
     options: &PreviewOptions,
     grid: Option<u32>,
-    edge_detail: &mut BTreeMap<usize, u32>,
+    edge_detail: (&BTreeSet<usize>, &mut BTreeSet<usize>),
     dec: &mut Decider,
 ) -> Result<PreviewMesh<String, String>, Refusal> {
     let body = import.bodies()[index].definition();
@@ -518,7 +538,11 @@ fn build(
             )
         };
         let samples = if let Some(divisions) = grid {
-            let detail = edge_detail.get(&edge_index).copied().unwrap_or(divisions);
+            let detail = if edge_detail.0.contains(&edge_index) {
+                64
+            } else {
+                divisions
+            };
             grid_edge(
                 &carrier,
                 ends,
@@ -783,25 +807,16 @@ fn build(
                 dec,
             ) {
                 if refusal.code == GRID_TRIM_REFUSAL {
-                    // A coarser face grid cannot separate its trim chords.
-                    // Refine the incident edges for the next whole-body
-                    // attempt, so every face still sees the same samples.
-                    let incident: std::collections::BTreeSet<_> = face
-                        .loops
-                        .iter()
-                        .flat_map(|ring| &ring.edges)
-                        .map(|usage| usage.edge)
-                        .filter(|&i| {
-                            let edge = &body.edges()[i];
-                            !edge.degenerate && !matches!(edge.curve, Curve::Line(..))
-                        })
-                        .collect();
-                    for edge in incident {
-                        edge_detail
-                            .entry(edge)
-                            .and_modify(|n| *n *= 2)
-                            .or_insert(64);
-                    }
+                    edge_detail.1.extend(
+                        face.loops
+                            .iter()
+                            .flat_map(|ring| &ring.edges)
+                            .map(|usage| usage.edge)
+                            .filter(|&i| {
+                                let edge = &body.edges()[i];
+                                !edge.degenerate && !matches!(edge.curve, Curve::Line(..))
+                            }),
+                    );
                 }
                 return Err(refusal);
             }

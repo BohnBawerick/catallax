@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_numbers::{Decider, Rational, Real};
+use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
 use catallax_shapes::{Circle, Plane, Point3, RPoint3, RVector3, Vector3};
 use catallax_step::pmi::{
@@ -42,6 +42,10 @@ pub struct StepPmi {
     /// Graphic callouts that present no item that was read: graphical-only
     /// PMI, kept apart so nothing is counted twice.
     pub graphics: Vec<GraphicCallout>,
+    /// The entity each item was read from, such as `#412`, by item name: a
+    /// tolerance, dimension, datum, target or property. A source patch starts
+    /// from it.
+    pub sources: BTreeMap<String, String>,
 }
 
 /// A graphic callout with no semantic item read from the file.
@@ -2793,7 +2797,12 @@ fn read_items<'a>(
         // Saved views and graphics of an assembly's parts are not read.
         Some(_) => (Vec::new(), Vec::new()),
     };
+    let sources = items
+        .iter()
+        .map(|(entity, item)| (item.id.clone(), format!("#{entity}")))
+        .collect();
     StepPmi {
+        sources,
         pmi: Pmi {
             items: items.into_iter().map(|(_, item)| item).collect(),
             part: reader.part_notes(scope),
@@ -2802,6 +2811,331 @@ fn read_items<'a>(
         skipped,
         graphics,
     }
+}
+
+/// One edit of a source file's PMI.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum PmiEdit {
+    /// Gives a geometric tolerance a new zone value in millimetres.
+    ToleranceValue {
+        /// The item's name as [`read_step_pmi`] gives it.
+        item: String,
+        /// The new value.
+        value: Rational,
+    },
+    /// Removes an item and every record only it uses.
+    Remove {
+        /// The item's name as [`read_step_pmi`] gives it.
+        item: String,
+    },
+}
+
+fn patch_refusal(what: impl std::fmt::Display) -> Refusal {
+    Refusal::new("step.pmi-patch", what.to_string())
+}
+
+/// A positive millimetre value in a file's length unit, as a STEP real.
+fn file_real(value: &Rational, scale: &Rational) -> Option<String> {
+    let text = (value / scale).to_decimal_exact()?;
+    Some(if text.contains('.') {
+        text
+    } else {
+        format!("{text}.")
+    })
+}
+
+/// The validation counts that include an item of this kind, with how many
+/// each counts it (recommended practices, sections 7.4.3 and 10.1.1.2).
+fn counted(kind: &ItemKind<String>) -> Vec<(&'static str, u64)> {
+    let mut counts = Vec::new();
+    if kind.is_text() {
+        counts.push(("number of semantic text notes", 1));
+        counts.push(("number of semantic text notes on geometry", 1));
+        return counts;
+    }
+    counts.push(("number of semantic pmi elements", 1));
+    match kind {
+        ItemKind::Size(_)
+        | ItemKind::Width { .. }
+        | ItemKind::Chamfer { .. }
+        | ItemKind::EdgeBreak { .. } => counts.push(("number of dimensional sizes", 1)),
+        ItemKind::Location(_) | ItemKind::BasicAngle { .. } => {
+            counts.push(("number of dimensional locations", 1));
+        }
+        ItemKind::Tolerance(_) => counts.push(("number of geometric tolerances", 1)),
+        ItemKind::Position(control) => {
+            let segments = control.frame.segments().len() as u64;
+            counts.push(("number of geometric tolerances", segments));
+            if segments == 2 {
+                counts.push(("number of composite tolerances", 1));
+            }
+        }
+        ItemKind::Datum(_) => counts.push(("number of datums", 1)),
+        ItemKind::DatumTarget(_) => counts.push(("number of datum targets", 1)),
+        _ => {}
+    }
+    counts
+}
+
+/// Edits the PMI of a STEP file in its own records, keeping every other
+/// record as it was written: the assembly, colours, other annotations and
+/// records this reader does not know. No edits give back the same bytes.
+///
+/// A tolerance value is a new length measure under a fresh number, and the
+/// tolerance record names it; a removal takes out the item's own records and
+/// lowers the part's validation counts. The patch refuses, before anything is
+/// written, when another record outside the item still refers to what it
+/// changes, when a callout or validation property would show the old value,
+/// or when the patched file does not read back as the edited PMI with every
+/// untouched record unchanged.
+pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusal> {
+    use catallax_step::pmi::patch::{Patch, Records};
+    if edits.is_empty() {
+        return Ok(bytes.to_vec());
+    }
+    let read = read_step_pmi(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
+    let graph = parse(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
+    let reader = Reader::new(&graph);
+    let records = Records::parse(bytes)?;
+    let mut patch = Patch::new(&records);
+    let mut expected = read.clone();
+    let mut edited = BTreeSet::new();
+    let mut counts: BTreeMap<u64, Rational> = BTreeMap::new();
+    for edit in edits {
+        let (PmiEdit::ToleranceValue { item, .. } | PmiEdit::Remove { item }) = edit;
+        if !edited.insert(item.as_str()) {
+            return Err(patch_refusal(format!("{item}: it is edited twice")));
+        }
+        let position = read
+            .pmi
+            .items
+            .iter()
+            .position(|found| &found.id == item)
+            .ok_or_else(|| patch_refusal(format!("{item}: no such item was read")))?;
+        let kind = &read.pmi.items[position].kind;
+        let root: u64 = read.sources[item][1..]
+            .parse()
+            .expect("a source is an entity");
+        match edit {
+            PmiEdit::ToleranceValue { value, .. } => {
+                let ItemKind::Tolerance(tolerance) = kind else {
+                    return Err(patch_refusal(format!(
+                        "{item}: only a geometric tolerance's value is patched"
+                    )));
+                };
+                if *value <= Rational::zero() {
+                    return Err(patch_refusal(format!(
+                        "{item}: the value must be more than zero"
+                    )));
+                }
+                for user in records.users(root) {
+                    let user_kind = records.get(*user).map_or("", |r| r.kind.as_str());
+                    if matches!(
+                        user_kind,
+                        "DRAUGHTING_MODEL_ITEM_ASSOCIATION" | "PROPERTY_DEFINITION"
+                    ) {
+                        return Err(patch_refusal(format!(
+                            "{item}: #{user} ({user_kind}) would still show the old value"
+                        )));
+                    }
+                }
+                let entity = graph.get(&root).expect("a read item's entity");
+                let base = entity
+                    .part("GEOMETRIC_TOLERANCE")
+                    .unwrap_or(entity.parts[0].1.as_slice());
+                let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
+                let measure = graph.get(&magnitude).expect("a read tolerance's value");
+                let (true, [Param::Typed(kind, _), Param::Ref(unit)]) = (
+                    measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
+                    measure.parts[0].1.as_slice(),
+                ) else {
+                    return Err(patch_refusal(format!(
+                        "{item}: its value #{magnitude} is not a plain length measure"
+                    )));
+                };
+                let scale = reader.millimetres(*unit, 0).ok_or_else(|| {
+                    patch_refusal(format!("{item}: its value's unit is not known"))
+                })?;
+                let written = file_real(value, &scale).ok_or_else(|| {
+                    patch_refusal(format!(
+                        "{item}: the value is not a decimal in the file's unit"
+                    ))
+                })?;
+                let fresh = patch.add(format!(
+                    "LENGTH_MEASURE_WITH_UNIT({kind}({written}),#{unit})"
+                ));
+                let body = records.body(root).expect("a read item's record");
+                let old = format!("#{magnitude}");
+                let mut rewritten = String::with_capacity(body.len());
+                let mut rest = body;
+                while let Some(at) = rest.find(&old) {
+                    let after = &rest[at + old.len()..];
+                    rewritten.push_str(&rest[..at]);
+                    if after.starts_with(|c: char| c.is_ascii_digit()) {
+                        rewritten.push_str(&old);
+                    } else {
+                        rewritten.push_str(&format!("#{fresh}"));
+                    }
+                    rest = after;
+                }
+                rewritten.push_str(rest);
+                patch.rewrite(root, rewritten);
+                if records.users(magnitude) == [root] {
+                    patch.remove(magnitude);
+                }
+                let mut changed = tolerance.clone();
+                changed.value = value.clone();
+                expected.pmi.items[position].kind = ItemKind::Tolerance(changed);
+            }
+            PmiEdit::Remove { .. } => {
+                let mut roots = vec![root];
+                if let Ok(Some(lower)) = reader.composite_lower(root) {
+                    roots.push(lower);
+                }
+                if let ItemKind::Datum(datum) = kind {
+                    let letter = datum.letter.as_str();
+                    if let Some(user) = read.pmi.items.iter().find(|other| {
+                        let mut letters: Vec<&str> = Vec::new();
+                        match &other.kind {
+                            ItemKind::Tolerance(tolerance) => {
+                                letters.extend(tolerance.datums.iter().map(String::as_str));
+                            }
+                            ItemKind::Position(control) => {
+                                for segment in control.frame.segments() {
+                                    letters
+                                        .extend(segment.datums.iter().map(|d| d.letter.as_str()));
+                                }
+                            }
+                            ItemKind::DatumTarget(target) => letters.push(target.datum.as_str()),
+                            _ => {}
+                        }
+                        letters.contains(&letter)
+                    }) {
+                        return Err(patch_refusal(format!(
+                            "{item}: {} refers to datum {letter}",
+                            user.id
+                        )));
+                    }
+                }
+                let mut owned = BTreeSet::new();
+                for root in roots {
+                    owned.extend(records.owned(root));
+                }
+                if let Some(association) = owned.iter().find(|id| {
+                    records
+                        .get(**id)
+                        .is_some_and(|record| record.kind == "DRAUGHTING_MODEL_ITEM_ASSOCIATION")
+                }) {
+                    return Err(patch_refusal(format!(
+                        "{item}: #{association} (DRAUGHTING_MODEL_ITEM_ASSOCIATION) presents it in a callout that would stay"
+                    )));
+                }
+                if let Some(user) = records.outside_users(&owned).first() {
+                    let user_kind = records.get(*user).map_or("", |r| r.kind.as_str());
+                    return Err(patch_refusal(format!(
+                        "{item}: #{user} ({user_kind}) still refers to its records, so removing them is not proven safe"
+                    )));
+                }
+                for id in &owned {
+                    patch.remove(*id);
+                }
+                let shapes = reader.owner_shapes(root);
+                let [shape] = shapes.iter().copied().collect::<Vec<_>>()[..] else {
+                    return Err(patch_refusal(format!(
+                        "{item}: it does not belong to one part"
+                    )));
+                };
+                for (name, by) in counted(kind) {
+                    for (property, params) in reader.sharing_at(shape, "PROPERTY_DEFINITION", 2) {
+                        if string(params.first()).as_deref() != Some("pmi validation property") {
+                            continue;
+                        }
+                        for (_, link) in
+                            reader.sharing_at(property, "PROPERTY_DEFINITION_REPRESENTATION", 0)
+                        {
+                            let Some(representation) =
+                                reference(link.get(1)).and_then(|id| graph.get(&id))
+                            else {
+                                continue;
+                            };
+                            for count in references(representation.parts[0].1.get(1)) {
+                                let Some(fields) = graph
+                                    .get(&count)
+                                    .and_then(|entity| entity.part("INTEGER_REPRESENTATION_ITEM"))
+                                else {
+                                    continue;
+                                };
+                                if string(fields.first()).as_deref() != Some(name) {
+                                    continue;
+                                }
+                                let current = match counts.get(&count) {
+                                    Some(current) => current.clone(),
+                                    None => number(fields.get(1)).ok_or_else(|| {
+                                        patch_refusal(format!(
+                                            "#{count}: the count is not a number"
+                                        ))
+                                    })?,
+                                };
+                                let left = &current
+                                    - &Rational::from_i64(i64::try_from(by).unwrap_or(i64::MAX));
+                                if left < Rational::zero() {
+                                    return Err(patch_refusal(format!(
+                                        "#{count}: the count would go below zero"
+                                    )));
+                                }
+                                let body = records.body(count).expect("a parsed count");
+                                let (head, _) =
+                                    body.rsplit_once(',').expect("a count has two fields");
+                                patch.rewrite(
+                                    count,
+                                    format!(
+                                        "{head},{}.)",
+                                        left.to_decimal_exact().unwrap_or_default()
+                                    ),
+                                );
+                                counts.insert(count, left);
+                            }
+                        }
+                    }
+                }
+                expected.pmi.items.remove(position);
+                expected.sources.remove(item);
+            }
+        }
+    }
+    let out = patch.apply(&records);
+    let back = read_step_pmi(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
+    if back.pmi == expected.pmi
+        && back.skipped == expected.skipped
+        && let Some(left) = back
+            .graphics
+            .iter()
+            .find(|graphic| !expected.graphics.contains(graphic))
+    {
+        return Err(patch_refusal(format!(
+            "callout {} ({}) presented an edited item and would stay as graphics",
+            left.entity, left.name
+        )));
+    }
+    if back.pmi != expected.pmi
+        || back.skipped != expected.skipped
+        || back.graphics != expected.graphics
+    {
+        return Err(patch_refusal(
+            "the patched file does not read back as the edited PMI",
+        ));
+    }
+    let patched = Records::parse(&out)?;
+    let touched = patch.touched();
+    for record in records.all() {
+        if !touched.contains(&record.id) && patched.text(record.id) != records.text(record.id) {
+            return Err(patch_refusal(format!(
+                "#{}: an untouched record changed",
+                record.id
+            )));
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

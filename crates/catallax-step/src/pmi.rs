@@ -18,6 +18,7 @@
 mod callout;
 mod check;
 mod measure;
+pub mod patch;
 mod position;
 mod target;
 mod view;

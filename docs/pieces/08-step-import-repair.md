@@ -339,6 +339,23 @@ and graphics are read for a single part, not for the parts of an assembly.
 `cargo run -p catallax-import --example step_pmi -- part.step` prints what a
 file reads as and every item left out.
 
+## Editing manufacturing information in place
+
+`patch_step_pmi(bytes, &[PmiEdit])` edits a file's PMI in its own records and
+copies every other byte, so the assembly, colours, other annotations and
+records no Catallax reader knows stay as written. `ToleranceValue` gives a
+geometric tolerance a new value as a length measure under a fresh number above
+the file's highest. `Remove` takes out the records the item owns and lowers
+the part's validation counts. No edits give back the same bytes.
+
+The edit is refused with `step.pmi-patch` before anything is written when it
+is not proven safe: a record outside the item still refers to the records it
+removes, another item refers to a datum it removes, a callout or validation
+property would still show the item or its old value, or the value is not an
+exact decimal in the file's unit. The patched file must also read back as the
+edited PMI with every untouched record byte for byte the same.
+`StepPmi::sources` names the entity each item was read from.
+
 ## Immutable source
 
 The file bytes are stored unchanged and addressed by `sha256`. The recipe step keeps `file` and `decisions`. A repaired derivative is a separate artifact derived from (source hash, approved change record); it is never written back over the source and can be rebuilt from the two inputs. A hash mismatch is a recipe error, not geometry.

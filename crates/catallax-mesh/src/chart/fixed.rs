@@ -86,12 +86,14 @@ impl FixedTrim {
                 }
             }
         }
-        let axes = spline.fixed_lattice(
-            &options.chord_tolerance.mul_pow2(-1),
-            angular_rates,
-            options.max_vertices,
-            dec,
-        )?;
+        let axes = spline
+            .fixed_lattice(
+                &options.chord_tolerance.mul_pow2(-1),
+                angular_rates,
+                options.max_vertices,
+                dec,
+            )?
+            .into_axes();
         let bounds = axes.each_ref().map(|axis| [axis[0], axis[axis.len() - 1]]);
         let mut chart_sense = None;
         let rows = rows

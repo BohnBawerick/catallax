@@ -167,9 +167,10 @@ pub(crate) fn spline_fillet_face(
     )?;
     let mut assembly = Assembly::new(&boundaries);
     let mut enclosures = BTreeMap::new();
+    let edge_samples = boundaries.face_edge_samples(model, face);
     let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
     junction.triangulate(face, &mut draft, options, true)?;
-    let result = draft.finish(model, face, assembly.prior())?;
+    let result = draft.finish(face, edge_samples, assembly.prior())?;
     if !assembly.push(result)? {
         return Err(failure("a lone face cannot conflict with earlier faces"));
     }

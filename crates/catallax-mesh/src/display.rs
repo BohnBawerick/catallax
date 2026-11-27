@@ -43,7 +43,7 @@ pub struct DisplayMesh {
     pub source_marks: catallax_numbers::MarkLog,
 }
 
-fn rendering(
+pub(crate) fn rendering(
     mesh: Mesh,
     source_marks: catallax_numbers::MarkLog,
     method: &'static str,

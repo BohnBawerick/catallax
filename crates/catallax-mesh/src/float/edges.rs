@@ -163,7 +163,7 @@ pub(super) fn sample_span(
         {
             return out(b, q);
         }
-        if depth >= 32 || mid <= a || mid >= b {
+        if depth >= 32 || mid == a || mid == b {
             return None;
         }
         visit(at, [a, mid], [p, m], tolerance, out, depth + 1)?;
@@ -201,9 +201,10 @@ impl<'a> Intersection<'a> {
                 residuals[i] = dot(normals[i], sub(q, p));
             }
             let [a, b] = normals;
+            let tangent = cross(a, b);
             if residuals.iter().all(|v| v.abs() <= accuracy) {
                 self.seeds = seeds;
-                return Some((p, unit(cross(a, b))?));
+                return (norm(tangent) > 1e-12).then(|| (p, unit(tangent).unwrap()));
             }
             let [x, y] = solve_gram(a, b, residuals)?;
             p = add(p, add(scale(a, x), scale(b, y)));
@@ -213,6 +214,28 @@ impl<'a> Intersection<'a> {
 
     fn trace(
         mut self,
+        ends: [Option<Xyz>; 2],
+        witness: Xyz,
+        sense: f64,
+        tolerance: f64,
+        max: usize,
+    ) -> Option<Vec<Xyz>> {
+        if let Some(points) = self.walk(ends, witness, sense, tolerance, max) {
+            return Some(points);
+        }
+        // A finite arc can end at a tangency where the intersection has no
+        // usable first tangent. Start at its regular end in that case.
+        if !matches!(ends, [Some(a), Some(b)] if a != b) {
+            return None;
+        }
+        self.seeds = [None, None];
+        let mut points = self.walk([ends[1], ends[0]], witness, -sense, tolerance, max)?;
+        points.reverse();
+        Some(points)
+    }
+
+    fn walk(
+        &mut self,
         ends: [Option<Xyz>; 2],
         witness: Xyz,
         sense: f64,

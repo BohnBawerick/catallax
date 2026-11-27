@@ -135,3 +135,43 @@ fn parallel_cylinder_seams_refine_wide_retained_root_selectors() {
     }
     assert_eq!(sides, [true; 2]);
 }
+
+#[test]
+fn descending_sections_and_tangent_intersections_keep_their_edges() {
+    let fixture = include_str!("../../../parts/fillets/cases.jsonl");
+    for case in ["partial-oblique", "unequal-mitres"] {
+        let row = fixture
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|row| row["id"] == case)
+            .unwrap();
+        let recipe = Recipe::parse(&row["recipe"].to_string()).unwrap();
+        let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+        let (display, work) = with_operation_budget(0, || {
+            display_description(&built, &DisplayOptions::default())
+        });
+        let desc = display
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"))
+            .description;
+        assert_eq!((work.used, work.uncharged, work.exhausted), (0, 0, false));
+        for sampled in &desc.edges {
+            let edge = built.model.edge(sampled.edge);
+            let geom = built.model.geom();
+            for (end, actual) in [
+                (edge.start, sampled.points.first().unwrap()),
+                (edge.end, sampled.points.last().unwrap()),
+            ] {
+                if let Some(end) = end {
+                    let point = geom.position(built.model.vertex(end).point);
+                    let expected =
+                        [&point.x, &point.y, &point.z].map(|v| v.display_value().unwrap());
+                    assert_eq!(
+                        *actual,
+                        std::array::from_fn(|i| expected[i] - desc.origin[i])
+                    );
+                }
+            }
+        }
+    }
+}

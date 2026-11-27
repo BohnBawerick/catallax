@@ -1,0 +1,7 @@
+T9BASELINE {"capture": "/home/user/t9-repaired-long-caps-9/captures/00002816", "cpu_seconds": 678.0447869999999, "files": {"document.step": ["3ef2461b620b662907b78f42348d122ed4a6487ab386f573c99ab58a781592fd", [0, 1, 2, 3, 4, 5], "selected_document"]}, "model": "00002816", "outcome": {"bodies": [{"bo
+T9BASELINE {"capture": "/home/user/t9-repaired-long-caps-9/captures/00007420", "cpu_seconds": 871.888007, "files": {"document.step": ["c7117c5ec6ba0f1b297939d5aaf2e3fb67dc242ece0390bca7277d2ca9b9fc21", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], "selected_document"]}, "model": "0
+T9BASELINECOMPLETE 2 of 2
+T9CANDIDATE ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7
+T9LONGPAIR {"after": {"files": {"document.step": ["bb31a3dc257301a949412c0f918f37230595b8bfcffc99f8b1b6fd6591642e11", [0, 1, 2, 3, 4, 5], "selected_document"]}, "open_checkpoint_sha256": "a177353e20b0822b4073e3111a48fdd35c952b2c70dc3704bd8b1c23b16acd2c", "outcome": {"bodies": [{"body": 0, "checked_r
+T9LONGPAIR {"after": {"files": {"document.step": ["a718ff88010580c9de0f7e90aa80de4674bbedd3e61662a52da8fc2952c48e80", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], "selected_document"]}, "open_checkpoint_sha256": "035a45fd27ad1160e88d0e46d81c26bcbd9f4a6d024633e4a105a874ec65be81", "
+T9LONGPAIRCOMPLETE 2 of 2

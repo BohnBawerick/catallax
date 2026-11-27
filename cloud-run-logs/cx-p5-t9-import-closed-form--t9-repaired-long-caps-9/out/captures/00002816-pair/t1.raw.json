@@ -1,0 +1,150 @@
+{
+  "complete_source_body_bound_established": false,
+  "files": [
+    {
+      "bodies": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "kind": "selected_document",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 0,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#1097",
+          "topology": {
+            "edges": 281,
+            "euler_with_face_holes": -14,
+            "faces": 105,
+            "solids": 1,
+            "two_loop_faces": 12,
+            "vertices": 182
+          },
+          "valid_solid_count": 0
+        },
+        {
+          "body": 1,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#1101",
+          "topology": {
+            "edges": 173,
+            "euler_with_face_holes": -14,
+            "faces": 61,
+            "solids": 1,
+            "two_loop_faces": 12,
+            "vertices": 118
+          },
+          "valid_solid_count": 0
+        },
+        {
+          "body": 2,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#1105",
+          "topology": {
+            "edges": 86,
+            "euler_with_face_holes": -2,
+            "faces": 33,
+            "solids": 1,
+            "two_loop_faces": 5,
+            "vertices": 56
+          },
+          "valid_solid_count": 0
+        },
+        {
+          "body": 3,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#1109",
+          "topology": {
+            "edges": 59,
+            "euler_with_face_holes": -2,
+            "faces": 22,
+            "solids": 1,
+            "two_loop_faces": 5,
+            "vertices": 40
+          },
+          "valid_solid_count": 0
+        },
+        {
+          "body": 4,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#1113",
+          "topology": {
+            "edges": 67,
+            "euler_with_face_holes": -2,
+            "faces": 31,
+            "solids": 1,
+            "two_loop_faces": 6,
+            "vertices": 40
+          },
+          "valid_solid_count": 0
+        },
+        {
+          "body": 5,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#1117",
+          "topology": {
+            "edges": 205,
+            "euler_with_face_holes": -14,
+            "faces": 97,
+            "solids": 1,
+            "two_loop_faces": 16,
+            "vertices": 118
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "bb31a3dc257301a949412c0f918f37230595b8bfcffc99f8b1b6fd6591642e11",
+      "topology": {
+        "edges": 937,
+        "euler_with_face_holes": -68,
+        "faces": 349,
+        "solids": 6,
+        "two_loop_faces": 26,
+        "vertices": 570
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    }
+  ],
+  "ocp_version": "8.0.1.1",
+  "source_sha256": "780ce273b0389e9eb9350e0a85a39cb8c7c79006a84d21e546f342caafc9f53c",
+  "unhealed_validity_established": false
+}

@@ -12,6 +12,8 @@
 //!
 //! The entity forms follow the CAx-IF recommended practices for the
 //! representation of PMI in AP242, version 4.1.
+//! Width, chamfer and edge break use dimensional sizes with explicit
+//! side roles. Chamfer angle and edge break bounds use named properties.
 
 mod callout;
 mod measure;
@@ -26,8 +28,9 @@ use catallax_numbers::{Rational, Refusal};
 pub use measure::nominals;
 pub(crate) use write::emit;
 pub use write::{
-    COUNTERBORE, COUNTERSINK, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE,
-    THREAD, THREAD_DEPTH, THROUGH,
+    BEVEL_ANGLE, CHAMFER, COUNTERBORE, COUNTERSINK, EDGE_BREAK, FIRST_SIDE, HEAD_DEPTH,
+    HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, MAX_SETBACK, MIN_SETBACK, SECOND_SIDE,
+    THREAD, THREAD_DEPTH, THROUGH, WIDTH,
 };
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
@@ -99,6 +102,44 @@ impl<F> Pmi<F> {
                         nominal: location.nominal.clone(),
                     })
                 }
+                ItemKind::Width {
+                    flats: [a, b],
+                    limits,
+                    nominal,
+                } => ItemKind::Width {
+                    flats: [feature(a)?, feature(b)?],
+                    limits: limits.clone(),
+                    nominal: nominal.clone(),
+                },
+                ItemKind::Chamfer {
+                    bevel,
+                    sides: [a, b],
+                    nominal,
+                } => ItemKind::Chamfer {
+                    bevel: feature(bevel)?,
+                    sides: [feature(a)?, feature(b)?],
+                    nominal: nominal.clone(),
+                },
+                ItemKind::EdgeBreak {
+                    bevel,
+                    sides: [a, b],
+                    min_mm,
+                    max_mm,
+                    nominal,
+                } => ItemKind::EdgeBreak {
+                    bevel: feature(bevel)?,
+                    sides: [feature(a)?, feature(b)?],
+                    min_mm: min_mm.clone(),
+                    max_mm: max_mm.clone(),
+                    nominal: nominal.clone(),
+                },
+                ItemKind::BasicAngle {
+                    planes: [a, b],
+                    nominal,
+                } => ItemKind::BasicAngle {
+                    planes: [feature(a)?, feature(b)?],
+                    nominal: nominal.clone(),
+                },
                 ItemKind::Tolerance(tolerance) => ItemKind::Tolerance(GeometricTolerance {
                     characteristic: tolerance.characteristic,
                     value: tolerance.value.clone(),
@@ -149,6 +190,44 @@ pub enum ItemKind<F> {
     Size(Size<F>),
     /// The distance between two features.
     Location(Location<F>),
+    /// The width between opposed planar face groups.
+    Width {
+        /// The two opposed flats.
+        flats: [Feature<F>; 2],
+        /// The width tolerance, if stated.
+        limits: Option<Limits>,
+        /// The width in millimetres stated by an imported file.
+        nominal: Option<Rational>,
+    },
+    /// The setback on the reference side and its angle to the bevel.
+    Chamfer {
+        /// The planar bevel.
+        bevel: Feature<F>,
+        /// The two adjacent planar sides, reference side first.
+        sides: [Feature<F>; 2],
+        /// The setback and angle stated by an imported file.
+        nominal: Option<ChamferNominal>,
+    },
+    /// Explicit bounds on the larger setback of a planar broken edge.
+    EdgeBreak {
+        /// The planar break face.
+        bevel: Feature<F>,
+        /// The two adjacent planar sides.
+        sides: [Feature<F>; 2],
+        /// Minimum setback in millimetres.
+        min_mm: Rational,
+        /// Maximum setback in millimetres.
+        max_mm: Rational,
+        /// The larger setback in millimetres stated by an imported file.
+        nominal: Option<Rational>,
+    },
+    /// The basic included angle between two planes.
+    BasicAngle {
+        /// The two planar face groups.
+        planes: [Feature<F>; 2],
+        /// The angle in degrees stated by an imported file.
+        nominal: Option<Rational>,
+    },
     /// A geometric tolerance.
     Tolerance(GeometricTolerance<F>),
     /// A surface texture requirement.
@@ -162,10 +241,32 @@ impl<F> ItemKind<F> {
             ItemKind::Datum(datum) => vec![&datum.feature],
             ItemKind::Size(size) => size.features.iter().collect(),
             ItemKind::Location(location) => vec![&location.from.feature, &location.to.feature],
+            ItemKind::Width { flats: [a, b], .. } | ItemKind::BasicAngle { planes: [a, b], .. } => {
+                vec![a, b]
+            }
+            ItemKind::Chamfer {
+                bevel,
+                sides: [a, b],
+                ..
+            }
+            | ItemKind::EdgeBreak {
+                bevel,
+                sides: [a, b],
+                ..
+            } => vec![bevel, a, b],
             ItemKind::Tolerance(tolerance) => tolerance.features.iter().collect(),
             ItemKind::Texture(texture) => vec![&texture.feature],
         }
     }
+}
+
+/// The two values of an imported chamfer dimension.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ChamferNominal {
+    /// Setback in millimetres along the first side.
+    pub setback_mm: Rational,
+    /// Acute angle in degrees between the first side and the bevel.
+    pub angle_deg: Rational,
 }
 
 /// A datum feature.
@@ -659,6 +760,46 @@ impl<'a, F: Ord> PartValidator<'a, F> {
                 }
                 check_limits(location.limits.as_ref())?;
             }
+            ItemKind::Width {
+                limits, nominal, ..
+            } => {
+                if nominal.as_ref().is_some_and(|value| !positive(value)) {
+                    return Err(Rule("the width must be more than zero"));
+                }
+                check_limits(limits.as_ref())?;
+            }
+            ItemKind::Chamfer { nominal, .. } => {
+                if nominal.as_ref().is_some_and(|nominal| {
+                    !positive(&nominal.setback_mm)
+                        || !positive(&nominal.angle_deg)
+                        || nominal.angle_deg > Rational::from_i64(90)
+                }) {
+                    return Err(Rule(
+                        "the chamfer needs a positive setback and an angle up to 90 degrees",
+                    ));
+                }
+            }
+            ItemKind::EdgeBreak {
+                min_mm,
+                max_mm,
+                nominal,
+                ..
+            } => {
+                if *min_mm < Rational::zero() || max_mm <= min_mm {
+                    return Err(Rule("edge break bounds must be nonnegative and ordered"));
+                }
+                if nominal.as_ref().is_some_and(|value| !positive(value)) {
+                    return Err(Rule("the edge break setback must be more than zero"));
+                }
+            }
+            ItemKind::BasicAngle { nominal, .. } => {
+                if nominal
+                    .as_ref()
+                    .is_some_and(|value| !positive(value) || *value >= Rational::from_i64(180))
+                {
+                    return Err(Rule("the basic angle must lie between 0 and 180 degrees"));
+                }
+            }
             ItemKind::Tolerance(tolerance) => {
                 if tolerance.features.is_empty() {
                     return Err(Rule("the tolerance names no feature"));
@@ -731,6 +872,19 @@ fn check_features<F: Ord>(kind: &ItemKind<F>) -> Result<(), ItemError<'static>> 
         ItemKind::Location(location) => {
             check(&location.from.feature)?;
             check(&location.to.feature)
+        }
+        ItemKind::Width { .. }
+        | ItemKind::Chamfer { .. }
+        | ItemKind::EdgeBreak { .. }
+        | ItemKind::BasicAngle { .. } => {
+            let mut used = BTreeSet::new();
+            for feature in kind.features() {
+                check(feature)?;
+                if !feature.iter().all(|face| used.insert(face)) {
+                    return Err(ItemError::Rule("planar dimension roles share a face"));
+                }
+            }
+            Ok(())
         }
         ItemKind::Tolerance(tolerance) => tolerance.features.iter().try_for_each(check),
         ItemKind::Texture(texture) => check(&texture.feature),

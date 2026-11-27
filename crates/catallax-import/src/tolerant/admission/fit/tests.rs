@@ -88,6 +88,54 @@ fn optional_pcurve_compilation_preserves_fitting_and_control_refusals() {
     );
 }
 
+#[test]
+fn closed_cone_rim_does_not_snap_the_two_fitted_seam_anchors_to_one_turn() {
+    // The cone and circular rim shared by the two invalid faces of ABC 00008662.
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;
+#1=CARTESIAN_POINT('',(-0.0235820111525714,-0.0107,0.0235820111525714));
+#2=CARTESIAN_POINT('',(-0.0235820111525714,-0.011,0.0235820111525714));
+#3=DIRECTION('',(0.,-1.,0.));#4=DIRECTION('',(0.,0.,-1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#3,#4);#6=AXIS2_PLACEMENT_3D('',#2,#3,#4);
+#7=CONICAL_SURFACE('',#5,0.00225,0.785398163400000);
+#8=CIRCLE('',#6,0.00255);
+ENDSEC;END-ISO-10303-21;";
+    let mut dec = Decider::default();
+    let parsed = ParsedStep::read(source, &mut dec).unwrap();
+    let scale = Rational::from_i64(1000);
+    let surface =
+        NativeSurface::from_source(&parsed, 7, &scale, AngleUnit::Radians, &mut dec).unwrap();
+    let rim = NativeCurve::from_source(&parsed, 8, &scale, AngleUnit::Radians, &mut dec).unwrap();
+    let start = std::f64::consts::FRAC_PI_4;
+    let end = start + surface.angular_period();
+    let hint = |angle| Some(surface.location([angle, 0.0003]).unwrap());
+    let first_point = rim
+        .sample(rim.location(start).unwrap(), &mut dec)
+        .unwrap()
+        .point_mm;
+    let last_point = rim
+        .sample(rim.location(end).unwrap(), &mut dec)
+        .unwrap()
+        .point_mm;
+    let first = surface
+        .project_for_trim(first_point, hint(start), true, &mut dec)
+        .unwrap();
+    let continuation = hint(end - 0.0002);
+    let last = surface
+        .project_for_trim(last_point, continuation, true, &mut dec)
+        .unwrap();
+    let inverse = surface
+        .project_for_trim(last_point, continuation, false, &mut dec)
+        .unwrap();
+    assert!(first.converged && last.converged && inverse.converged);
+    let span = |fit: NativeProjection| fit.location.parameters[0] - first.location.parameters[0];
+    assert!((span(inverse) - surface.angular_period()).abs() < 8.0 * f64::EPSILON);
+    let unsnapped = (span(last) - surface.angular_period()).abs();
+    assert!(
+        (1e-13..1e-7).contains(&unsnapped),
+        "closed rim span: {unsnapped:e}"
+    );
+}
+
 /// A straight edge along `y = 0` of a flat spline patch, with three u/v
 /// curves for it. `#22` traces the edge at the edge's own speed. `#26` traces
 /// the same segment as `u = t/2 + t^2/4`: it is a quarter of a millimetre off

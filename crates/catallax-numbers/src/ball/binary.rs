@@ -141,6 +141,55 @@ impl Binary {
         Self::new(Integer(mantissa), self.exponent + discard as i64)
     }
 
+    /// Nearest midpoint and its exact absolute rounding error.
+    pub(super) fn rounded_center(&self, precision: u32) -> (Self, Self) {
+        let bits = self.mantissa.bit_length();
+        let discard = bits - u64::from(precision);
+        debug_assert!(discard > 0);
+        if discard > 128 {
+            let mid = self.rounded(precision, false);
+            let error = (self - &mid).into_abs();
+            return (mid, error);
+        }
+
+        let sign = self.mantissa.0.sign();
+        let magnitude = self.mantissa.0.magnitude();
+        let mut words = magnitude.iter_u64_digits();
+        let low =
+            u128::from(words.next().unwrap_or(0)) | (u128::from(words.next().unwrap_or(0)) << 64);
+        let mask = u128::MAX >> (128 - discard);
+        let tail = low & mask;
+        let half = 1u128 << (discard - 1);
+        let away = tail > half || (tail == half && self.sign() == Sign::Positive);
+        let quotient = if bits <= 128 {
+            ((low >> discard) + u128::from(away)).into()
+        } else {
+            let mut quotient = magnitude >> discard;
+            if away {
+                quotient += 1u32;
+            }
+            quotient
+        };
+        let mid = Self::new(
+            Integer(BigInt::from_biguint(sign, quotient)),
+            self.exponent + discard as i64,
+        );
+        // The error is odd at the original scale: the mantissa is odd and
+        // the rounded value at that scale is a multiple of 2^discard.
+        let error = if away {
+            tail.wrapping_neg() & mask
+        } else {
+            tail
+        };
+        (
+            mid,
+            Self {
+                mantissa: Integer(BigInt::from(error)),
+                exponent: self.exponent,
+            },
+        )
+    }
+
     pub(super) fn div_rounded(&self, denominator: &Self, precision: u32, upwards: bool) -> Self {
         debug_assert_eq!(denominator.sign(), Sign::Positive);
         debug_assert!(precision > 0);
@@ -375,6 +424,31 @@ impl Neg for &Binary {
         Binary {
             mantissa: -&self.mantissa,
             exponent: self.exponent,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn center_rounding_keeps_signed_ties_and_exact_residuals() {
+        for discard in [1u32, 2, 63, 64, 65, 127, 128, 129] {
+            let half = BigInt::from(1) << (discard - 1);
+            for tail in [&half - 1u32, half.clone(), &half + 1u32] {
+                for precision in [1u32, 64, 128] {
+                    let upper = (BigInt::from(1) << precision) - 1u32;
+                    let magnitude: BigInt = ((upper << discard) + &tail) | BigInt::from(1);
+                    for mantissa in [magnitude.clone(), -magnitude] {
+                        let center = Binary::new(Integer(mantissa), -97);
+                        let expected = center.rounded(precision, false);
+                        let (mid, error) = center.rounded_center(precision);
+                        assert_eq!(mid, expected);
+                        assert_eq!(error, (&center - &expected).into_abs());
+                    }
+                }
+            }
         }
     }
 }

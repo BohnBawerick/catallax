@@ -1,9 +1,14 @@
 //! Source parameter charts for numerical fitting, with interval enclosures.
+
+mod analytic;
 use super::expression::{self as ex, Expr, Triple};
 use super::*;
+pub(crate) use analytic::AnalyticProjection;
+use analytic::{AnalyticChart, Kind};
 use catallax_numbers::{Ball, Rational, Refusal};
 use catallax_shapes::{Point3, Vector3};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 /// Plane-angle unit of the containing representation.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -43,6 +48,7 @@ pub struct ParameterChart {
     domain: [[Option<Rational>; 2]; 2],
     wrappers: Vec<EntityId>,
     coordinates: Triple,
+    analytic: Option<Arc<AnalyticChart>>,
     coordinate_space: CoordinateSpace,
 }
 impl ParameterChart {
@@ -107,6 +113,30 @@ impl ParameterChart {
         self.evaluate_box_derivative(bounds, &[], precision, dec)
     }
 
+    pub(crate) fn sample_box(
+        &self,
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<[Ball; 3], MappingError> {
+        let Some(chart) = &self.analytic else {
+            return self.evaluate_box(bounds, precision, dec);
+        };
+        self.validate_box(bounds, precision, dec)?;
+        let parameters = std::array::from_fn(|i| parameter_ball(&bounds[i], precision));
+        chart.sample(&parameters, precision, dec)
+    }
+
+    pub(crate) fn analytic_projection(
+        &self,
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<Option<AnalyticProjection>, MappingError> {
+        self.analytic
+            .as_ref()
+            .map_or(Ok(None), |chart| chart.projection(precision, dec))
+    }
+
     /// Enclose a mixed derivative over an exact rational parameter box.
     /// Polynomial extensions only bound rounding around the validated box;
     /// requests outside the source knot span still refuse.
@@ -117,7 +147,24 @@ impl ParameterChart {
         precision: u32,
         dec: &mut Decider,
     ) -> Result<[Ball; 3], MappingError> {
-        if bounds.len() != self.dimension || axes.iter().any(|i| *i >= self.dimension) {
+        if axes.iter().any(|i| *i >= self.dimension) {
+            return Err(error("wrong parameter dimension"));
+        }
+        self.validate_box(bounds, precision, dec)?;
+        let parameters = bounds
+            .iter()
+            .map(|range| parameter_ball(range, precision))
+            .collect::<Vec<_>>();
+        self.evaluate_expressions(&parameters, axes, precision, dec)
+    }
+
+    fn validate_box(
+        &self,
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        dec: &Decider,
+    ) -> Result<(), MappingError> {
+        if bounds.len() != self.dimension {
             return Err(error("wrong parameter dimension"));
         }
         if precision == 0 || precision > dec.policy().max_precision_bits {
@@ -135,13 +182,7 @@ impl ParameterChart {
                 return Err(error("parameter interval is outside its source knot span"));
             }
         }
-        let parameters = bounds
-            .iter()
-            .map(|[a, b]| {
-                Ball::from_rational(a, precision).hull(&Ball::from_rational(b, precision))
-            })
-            .collect::<Vec<_>>();
-        self.evaluate_expressions(&parameters, axes, precision, dec)
+        Ok(())
     }
 
     /// Compile the chart for binary64 sampling. The work is charged once,
@@ -170,6 +211,10 @@ impl ParameterChart {
             coordinates[2].evaluate(parameters, bits, dec)?,
         ])
     }
+}
+
+fn parameter_ball([a, b]: &[Rational; 2], precision: u32) -> Ball {
+    Ball::from_rational(a, precision).hull(&Ball::from_rational(b, precision))
 }
 /// A [`ParameterChart`] compiled for binary64 evaluation.
 ///
@@ -244,6 +289,7 @@ fn chart(id: EntityId, dimension: usize, coordinates: Triple) -> ParameterChart 
         domain: domain(),
         wrappers: Vec::new(),
         coordinates,
+        analytic: None,
         coordinate_space: CoordinateSpace::Millimetres,
     }
 }
@@ -323,6 +369,63 @@ impl Compiler<'_> {
     fn length(&self, v: &Rational) -> Expr {
         Expr::rational(v * &self.length_mm)
     }
+    fn analytic_chart(
+        &self,
+        id: EntityId,
+        placement: EntityId,
+        kind: Kind,
+        dec: &mut Decider,
+    ) -> Result<ParameterChart, MappingError> {
+        let frame = self.frame(placement, dec)?;
+        let u = Expr::parameter(0);
+        let v = Expr::parameter(1);
+        let length = Expr::rational(self.length_mm.clone());
+        let angle = self.angles.factor();
+        let a = u.mul(&angle);
+        let b = v.mul(&angle);
+        let height = v.mul(&length);
+        let radial = |radius: &Expr, z| [radius.mul(&a.cos()), radius.mul(&a.sin()), z];
+        let number = |value: &Rational| Expr::rational(value.clone());
+        let local = match &kind {
+            Kind::Plane => [u.mul(&length), height, Expr::integer(0)],
+            Kind::Cylinder(r) => radial(&number(r), height),
+            Kind::Cone(r, semi_angle) => {
+                let semi_angle = number(semi_angle).mul(&angle);
+                let radius = number(r).add(&height.mul(&semi_angle.sin().div(&semi_angle.cos())));
+                radial(&radius, height)
+            }
+            Kind::Sphere(r) => {
+                let radius = number(r);
+                radial(&radius.mul(&b.cos()), radius.mul(&b.sin()))
+            }
+            Kind::Torus(major, minor) => {
+                let minor = number(minor);
+                radial(
+                    &number(major).add(&minor.mul(&b.cos())),
+                    minor.mul(&b.sin()),
+                )
+            }
+        };
+        let mut result = chart(id, 2, frame_point(&frame, &local));
+        if matches!(kind, Kind::Sphere(_)) {
+            let latitude = Expr::pi()
+                .div(&Expr::integer(2))
+                .div(&angle)
+                .evaluate(&[], 96, dec)?;
+            let limit = latitude.lo().abs().max(latitude.hi().abs());
+            result.domain[1] = [Some(-&limit), Some(limit)];
+        }
+        if self.active.len() == 1 {
+            result.analytic = Some(Arc::new(AnalyticChart {
+                frame,
+                length: self.length_mm.clone(),
+                angle,
+                kind,
+            }));
+        }
+        Ok(result)
+    }
+
     fn torus_coordinates(
         &self,
         placement: EntityId,
@@ -524,78 +627,25 @@ impl Compiler<'_> {
         let b = v.mul(&self.angles.factor());
         let zero = Expr::integer(0);
         let mut out = match surface {
-            Surface::Plane(p) => vec![chart(
-                id,
-                2,
-                frame_point(
-                    &self.frame(p, dec)?,
-                    &[
-                        u.mul(&Expr::rational(self.length_mm.clone())),
-                        v.mul(&Expr::rational(self.length_mm.clone())),
-                        zero,
-                    ],
-                ),
-            )],
-            Surface::Cylinder(p, r) => vec![chart(
-                id,
-                2,
-                frame_point(
-                    &self.frame(p, dec)?,
-                    &[
-                        self.length(&r).mul(&a.cos()),
-                        self.length(&r).mul(&a.sin()),
-                        v.mul(&Expr::rational(self.length_mm.clone())),
-                    ],
-                ),
-            )],
+            Surface::Plane(p) => vec![self.analytic_chart(id, p, Kind::Plane, dec)?],
+            Surface::Cylinder(p, r) => {
+                vec![self.analytic_chart(id, p, Kind::Cylinder(&r * &self.length_mm), dec)?]
+            }
             Surface::Cone(p, r, angle) => {
-                let angle = Expr::rational(angle).mul(&self.angles.factor());
-                let height = v.mul(&Expr::rational(self.length_mm.clone()));
-                let radius = self
-                    .length(&r)
-                    .add(&height.mul(&angle.sin().div(&angle.cos())));
-                vec![chart(
-                    id,
-                    2,
-                    frame_point(
-                        &self.frame(p, dec)?,
-                        &[radius.mul(&a.cos()), radius.mul(&a.sin()), height],
-                    ),
-                )]
+                vec![self.analytic_chart(id, p, Kind::Cone(&r * &self.length_mm, angle), dec)?]
             }
             Surface::Sphere(p, r) => {
-                let radial = self.length(&r).mul(&b.cos());
-                let latitude = Expr::pi()
-                    .div(&Expr::integer(2))
-                    .div(&self.angles.factor())
-                    .evaluate(&[], 96, dec)?;
-                let limit = latitude.lo().abs().max(latitude.hi().abs());
-                let mut sphere = chart(
-                    id,
-                    2,
-                    frame_point(
-                        &self.frame(p, dec)?,
-                        &[
-                            radial.mul(&a.cos()),
-                            radial.mul(&a.sin()),
-                            self.length(&r).mul(&b.sin()),
-                        ],
-                    ),
-                );
-                sphere.domain[1] = [Some(-&limit), Some(limit)];
-                vec![sphere]
+                vec![self.analytic_chart(id, p, Kind::Sphere(&r * &self.length_mm), dec)?]
             }
-            Surface::Torus(p, major, minor) => vec![chart(
+            Surface::Torus(p, major, minor) => vec![self.analytic_chart(
                 id,
-                2,
-                self.torus_coordinates(
-                    p,
-                    &self.length(&major.abs()),
-                    &self.length(&minor.abs()),
-                    [&a, &b],
-                    dec,
-                )?,
-            )],
+                p,
+                Kind::Torus(
+                    &major.abs() * &self.length_mm,
+                    &minor.abs() * &self.length_mm,
+                ),
+                dec,
+            )?],
             Surface::BSpline(_) => {
                 let native = self
                     .source

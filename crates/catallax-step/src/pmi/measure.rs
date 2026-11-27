@@ -1,17 +1,16 @@
 //! Nominal values of dimensions, measured from the exact geometry.
 //!
-//! A size is read off a cylinder, a distance between planes and cylinder
-//! axes. Every geometric condition a dimension rests on is decided exactly:
-//! the faces of a round feature share one axis and radius, the two ends of a
-//! distance are parallel. A condition that does not hold refuses
-//! `step.pmi-not-measurable` with the item's name; nothing is estimated.
+//! Predicates on the dimension's faces are exact. Angular values are
+//! converted to degrees with a certified decimal rounding bound.
 
-use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, StrictSign};
+use std::collections::BTreeSet;
+
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Refusal, StrictSign};
 use catallax_shapes::{Point3, Surface, Vector3};
-use catallax_topology::{FaceId, Model};
+use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 
-use super::{Anchor, At, Feature, HoleHead, ItemKind, Pmi, Size, SizeKind};
-use crate::number::sqrt_real;
+use super::{Anchor, At, Feature, HoleHead, Item, ItemKind, Pmi, Size, SizeKind};
+use crate::number::{self, sqrt_real};
 
 /// What a feature is for measuring.
 enum Shape {
@@ -394,47 +393,249 @@ fn hole_size(
     Ok(diameter)
 }
 
-/// The nominal value of every dimension of `pmi` in millimetres, measured
-/// on `model`. The result has one entry per item, `None` for an item that is
-/// not a dimension. Any nominal an item states is ignored.
-///
-/// Refuses `step.pmi-not-measurable` when a dimension does not fit its
-/// faces, such as a diameter on a plane or a distance between faces that are
-/// not parallel.
+struct OrientedPlane {
+    point: Point3,
+    normal: Vector3,
+}
+
+fn oriented_plane(
+    model: &Model,
+    feature: &[FaceId],
+    item: &str,
+    dec: &mut Decider,
+) -> Result<OrientedPlane, Refusal> {
+    let plane = |id| {
+        let face = model.face(id);
+        let Surface::Plane(plane) = model.geom().surface(face.surface) else {
+            return Err(refuse(item, "the dimension needs planar faces"));
+        };
+        let normal = if face.sense == Sense::Same {
+            plane.normal.clone()
+        } else {
+            plane.normal.scaled(&(-Real::one()))
+        };
+        Ok(OrientedPlane {
+            point: plane.origin.clone(),
+            normal,
+        })
+    };
+    let (first, rest) = feature
+        .split_first()
+        .ok_or_else(|| refuse(item, "a feature has no face"))?;
+    let first = plane(*first)?;
+    for id in rest {
+        let other = plane(*id)?;
+        if !is_zero_vector(&first.normal.cross(&other.normal), dec)?
+            || !is_positive(&first.normal.dot(&other.normal), dec)?
+            || !is_zero(&other.point.minus(&first.point).dot(&first.normal), dec)?
+        {
+            return Err(refuse(
+                item,
+                "the feature's faces are not one oriented plane",
+            ));
+        }
+    }
+    Ok(first)
+}
+
+fn face_edges(model: &Model, face: FaceId) -> impl Iterator<Item = EdgeId> + '_ {
+    model
+        .face(face)
+        .loops
+        .iter()
+        .filter_map(|id| match model.loop_(*id) {
+            Loop::Coedges(edges) => Some(edges),
+            Loop::Vertex(_) => None,
+        })
+        .flatten()
+        .map(|id| model.coedge(*id).edge)
+}
+
+/// The setback measured along `side`, facing away from the theoretical
+/// corner. `across` is the other side's outward normal projected into `side`,
+/// scaled by the squared norm of this side's normal.
+fn setback(
+    side: &OrientedPlane,
+    other: &OrientedPlane,
+    bevel: &OrientedPlane,
+    item: &str,
+    dec: &mut Decider,
+) -> Result<Real, Refusal> {
+    let n = &side.normal;
+    let m = &other.normal;
+    let across = m.scaled(&n.norm_squared()).minus(&n.scaled(&m.dot(n)));
+    let slope = across.dot(&bevel.normal);
+    if !is_positive(&slope, dec)? {
+        return Err(refuse(
+            item,
+            "the bevel must cut back the theoretical corner",
+        ));
+    }
+    let at_corner = other.point.minus(&side.point).dot(m) / across.dot(m);
+    let corner = side.point.plus(&across.scaled(&at_corner));
+    let distance = corner.minus(&bevel.point).dot(&bevel.normal) / slope;
+    if !is_positive(&distance, dec)? {
+        return Err(refuse(
+            item,
+            "the bevel must cut back the theoretical corner",
+        ));
+    }
+    Ok(distance * sqrt_real(&across.norm_squared()))
+}
+
+fn bevel_planes(
+    model: &Model,
+    bevel: &Feature<FaceId>,
+    sides: &[Feature<FaceId>; 2],
+    item: &str,
+    dec: &mut Decider,
+) -> Result<[OrientedPlane; 3], Refusal> {
+    let a = oriented_plane(model, &sides[0], item, dec)?;
+    let b = oriented_plane(model, &sides[1], item, dec)?;
+    let h = oriented_plane(model, bevel, item, dec)?;
+    let along = a.normal.cross(&b.normal);
+    let edges: BTreeSet<_> = bevel.iter().flat_map(|id| face_edges(model, *id)).collect();
+    let adjacent = |side: &Feature<FaceId>| {
+        side.iter()
+            .flat_map(|id| face_edges(model, *id))
+            .any(|edge| edges.contains(&edge))
+    };
+    if is_zero_vector(&along, dec)?
+        || !is_zero(&along.dot(&h.normal), dec)?
+        || !sides.iter().all(adjacent)
+    {
+        return Err(refuse(
+            item,
+            "the bevel must meet both sides along their corner direction",
+        ));
+    }
+    Ok([a, b, h])
+}
+
+fn angle_deg(rise: &Real, run: &Real, item: &str, dec: &mut Decider) -> Result<Rational, Refusal> {
+    if is_zero(run, dec)? {
+        return Ok(Rational::from_i64(90));
+    }
+    const DIGITS: u32 = 15;
+    let precision = number::work_precision(dec.policy(), DIGITS * 4 + 48, 2)
+        .ok_or_else(|| number::budget("no work available for the PMI angle"))?;
+    let rise = dec.enclose_at(rise, precision)?;
+    let run = dec.enclose_at(run, precision)?;
+    let pi = Ball::pi_checked(precision, dec)?;
+    let radians = crate::uv::angle(&rise, &run, &pi, Ball::atan_checked, dec)?;
+    let scale = Ball::from_rational(&Rational::from_i64(180), precision);
+    let degrees = (&radians * &scale)
+        .checked_div(&pi)
+        .expect("pi is positive");
+    let number = number::certified(number::ball_number(&degrees, DIGITS), DIGITS)?;
+    if number.value <= Rational::zero() || number.value >= Rational::from_i64(180) {
+        return Err(refuse(
+            item,
+            "the rounded angle is not between 0 and 180 degrees",
+        ));
+    }
+    Ok(number.value)
+}
+
+pub(super) struct Measured {
+    pub(super) value: Real,
+    pub(super) bevel_angle: Option<Rational>,
+}
+
+pub(super) fn dimension(
+    model: &Model,
+    item: &Item<FaceId>,
+    dec: &mut Decider,
+) -> Result<Option<Measured>, Refusal> {
+    let id = item.id.as_str();
+    let mut bevel_angle = None;
+    let value = match &item.kind {
+        ItemKind::Size(dimension) => match &dimension.kind {
+            SizeKind::Hole(hole) => hole_size(model, dimension, hole.head.as_ref(), id, dec)?,
+            kind => size(model, kind, &dimension.features, id, dec)?,
+        },
+        ItemKind::Location(location) => {
+            let from = anchor_shape(model, &location.from, id, dec)?;
+            let to = anchor_shape(model, &location.to, id, dec)?;
+            let mut distance = separation(&from, &to, id, dec)?;
+            for (shape, at) in [(&from, location.from.at), (&to, location.to.at)] {
+                if let Some(radius) = side(shape, at) {
+                    distance = &distance + &radius;
+                }
+            }
+            if !is_positive(&distance, dec)? {
+                return Err(refuse(id, "the two ends are not apart"));
+            }
+            distance
+        }
+        ItemKind::Width { flats: [a, b], .. } => {
+            let a = oriented_plane(model, a, id, dec)?;
+            let b = oriented_plane(model, b, id, dec)?;
+            let gap = b.point.minus(&a.point).dot(&a.normal);
+            if !is_zero_vector(&a.normal.cross(&b.normal), dec)?
+                || !is_positive(&(-a.normal.dot(&b.normal)), dec)?
+                || is_zero(&gap, dec)?
+            {
+                return Err(refuse(
+                    id,
+                    "width needs two distinct opposed parallel planes",
+                ));
+            }
+            magnitude(&gap) / sqrt_real(&a.normal.norm_squared())
+        }
+        ItemKind::Chamfer { bevel, sides, .. } | ItemKind::EdgeBreak { bevel, sides, .. } => {
+            let [a, b, h] = bevel_planes(model, bevel, sides, id, dec)?;
+            let first = setback(&a, &b, &h, id, dec)?;
+            let second = setback(&b, &a, &h, id, dec)?;
+            if matches!(&item.kind, ItemKind::Chamfer { .. }) {
+                let rise = sqrt_real(&a.normal.cross(&h.normal).norm_squared());
+                bevel_angle = Some(angle_deg(
+                    &rise,
+                    &magnitude(&a.normal.dot(&h.normal)),
+                    id,
+                    dec,
+                )?);
+                first
+            } else {
+                match dec.sign(&(&second - &first)) {
+                    Outcome::Proven(StrictSign::Positive) => second,
+                    Outcome::Proven(StrictSign::Negative) | Outcome::ProvenCoincident(_) => first,
+                    Outcome::Refused(refusal) => return Err(refusal),
+                    Outcome::NotExact(inexact) => return Err(Refusal::from(inexact)),
+                }
+            }
+        }
+        ItemKind::BasicAngle { planes: [a, b], .. } => {
+            let a = oriented_plane(model, a, id, dec)?;
+            let b = oriented_plane(model, b, id, dec)?;
+            let cross = a.normal.cross(&b.normal);
+            if is_zero_vector(&cross, dec)? {
+                return Err(refuse(id, "basic angle needs two nonparallel planes"));
+            }
+            angle_deg(
+                &sqrt_real(&cross.norm_squared()),
+                &(-a.normal.dot(&b.normal)),
+                id,
+                dec,
+            )?
+            .into()
+        }
+        ItemKind::Datum(_) | ItemKind::Tolerance(_) | ItemKind::Texture(_) => return Ok(None),
+    };
+    Ok(Some(Measured { value, bevel_angle }))
+}
+
+/// Each dimension's primary nominal on `model`, in millimetres (degrees
+/// for a basic angle). For a chamfer this is the reference-side setback.
+/// There is one entry per item, `None` for non-dimensions, and imported
+/// nominals are ignored. Refuses a dimension that does not fit its faces.
 pub fn nominals(
     model: &Model,
     pmi: &Pmi<FaceId>,
     dec: &mut Decider,
 ) -> Result<Vec<Option<Real>>, Refusal> {
-    let mut values = Vec::with_capacity(pmi.items.len());
-    for item in &pmi.items {
-        let id = item.id.as_str();
-        values.push(match &item.kind {
-            ItemKind::Size(dimension) => Some(match &dimension.kind {
-                SizeKind::Hole(hole) => hole_size(model, dimension, hole.head.as_ref(), id, dec)?,
-                kind => size(model, kind, &dimension.features, id, dec)?,
-            }),
-            ItemKind::Location(location) => {
-                let from = anchor_shape(model, &location.from, id, dec)?;
-                let to = anchor_shape(model, &location.to, id, dec)?;
-                let mut distance = separation(&from, &to, id, dec)?;
-                for (shape, at) in [(&from, location.from.at), (&to, location.to.at)] {
-                    if let Some(radius) = side(shape, at) {
-                        distance = &distance + &radius;
-                    }
-                }
-                match dec.sign(&distance) {
-                    Outcome::Proven(StrictSign::Positive) => {}
-                    Outcome::Refused(refusal) => return Err(refusal),
-                    Outcome::NotExact(inexact) => return Err(Refusal::from(inexact)),
-                    Outcome::Proven(StrictSign::Negative) | Outcome::ProvenCoincident(_) => {
-                        return Err(refuse(id, "the two ends are not apart"));
-                    }
-                }
-                Some(distance)
-            }
-            ItemKind::Datum(_) | ItemKind::Tolerance(_) | ItemKind::Texture(_) => None,
-        });
-    }
-    Ok(values)
+    pmi.items
+        .iter()
+        .map(|item| Ok(dimension(model, item, dec)?.map(|measured| measured.value)))
+        .collect()
 }

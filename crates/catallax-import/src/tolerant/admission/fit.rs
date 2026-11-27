@@ -1124,6 +1124,8 @@ fn check_body_under(
                 }
                 for (use_index, usage) in boundary.edges.iter().enumerate() {
                     let edge = edges[usage.edge].as_ref().expect("active source edge");
+                    let [start, end] = body.edges[usage.edge].vertices;
+                    let closed = start == end;
                     let associated = match (edge.source_curve, surface_entity) {
                         (Some(curve), Some(surface)) => match pcurves(context, curve, surface, dec)
                         {
@@ -1337,7 +1339,7 @@ fn check_body_under(
                                 plane.as_ref().expect("plane").project(fit_target)
                             }
                             (Some(surface), _) => {
-                                surface.project(fit_target.point_mm, seed, dec)?
+                                surface.project_for_trim(fit_target.point_mm, seed, closed, dec)?
                             }
                             _ => unreachable!("face carrier established"),
                         };
@@ -1519,6 +1521,7 @@ fn check_body_under(
                             let mut fit = trace::Fit {
                                 curve: &edge.carrier,
                                 surface: surface.as_ref().expect("native trace surface"),
+                                closed,
                                 precision: body.options.initial_mm.to_f64_nearest(),
                                 maximum_residual: 0.0,
                                 samples: 0,

@@ -263,6 +263,7 @@ dependencies = [
  "catallax-shapes",
  "catallax-step",
  "catallax-topology",
+ "libm",
  "serde",
  "serde_json",
  "sha2",

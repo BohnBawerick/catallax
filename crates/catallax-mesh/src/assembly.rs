@@ -13,7 +13,7 @@ use std::{
 };
 
 use catallax_numbers::{Ball, MarkLog, Refusal};
-use catallax_topology::{EdgeId, FaceId, Loop, Model, VertexId};
+use catallax_topology::{EdgeId, FaceId, VertexId};
 
 use crate::{
     EdgeMesh, FaceMesh, Mesh, Triangle, UnavailableControl,
@@ -68,6 +68,13 @@ impl<'a> Positions<'a> {
 
     pub(crate) fn push(&mut self, position: [f64; 3]) {
         self.local.push(position);
+    }
+
+    /// Grows a face-local point lattice without discarding its previous samples.
+    pub(crate) fn grow_tail(&mut self, start: usize, count: usize) -> &mut [[f64; 3]] {
+        let start = start - self.base;
+        self.local.resize(start + count, [0.0; 3]);
+        &mut self.local[start..]
     }
 
     /// Drops the face's own vertices from index `len` on.
@@ -139,8 +146,8 @@ impl<'a> FaceDraft<'a> {
     /// The finished face, recording the earlier chords it was built against.
     pub(crate) fn finish(
         self,
-        model: &Model,
         face: FaceId,
+        shared: BTreeSet<usize>,
         prior: &Chords,
     ) -> Result<FaceResult, Refusal> {
         let DraftMesh {
@@ -153,16 +160,6 @@ impl<'a> FaceDraft<'a> {
         let Ok([report]) = <[FaceMesh; 1]>::try_from(faces) else {
             return Err(failure("a face builder must report its face exactly once"));
         };
-        let mut shared = BTreeSet::new();
-        for &boundary in &model.face(face).loops {
-            if let Loop::Coedges(coedges) = model.loop_(boundary) {
-                for &coedge in coedges {
-                    if let Some(&edge) = self.edges.get(&model.coedge(coedge).edge) {
-                        shared.extend(self.mesh.edges[edge].vertices.iter().copied());
-                    }
-                }
-            }
-        }
         let relies_on = chords_among(prior, &shared);
         Ok(FaceResult {
             face,
@@ -327,6 +324,7 @@ mod tests {
     use super::*;
     use catallax_numbers::Rational;
     use catallax_shapes::Pose;
+    use catallax_topology::Model;
 
     fn face(face: FaceId, base: usize, own: &[[f64; 3]], triangles: &[[usize; 3]]) -> FaceResult {
         FaceResult {

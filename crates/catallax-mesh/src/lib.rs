@@ -52,6 +52,17 @@ pub use reuse::FaceCache;
 mod ruled;
 mod triangulate;
 
+/// Evidence used when building a face display.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FaceLevel {
+    /// Visual sampling without a certified deviation.
+    Preview,
+    /// A complete positional bound for display, without an export certificate.
+    Bounded,
+    /// Certified display geometry built from the exact model.
+    Proven,
+}
+
 /// Display meshing controls. Lengths use the model's millimetres.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeshOptions {

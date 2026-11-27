@@ -15,6 +15,31 @@ use super::{Uv, align, failure, quantize_turn};
 mod pipe_normal;
 use pipe_normal::PipeNormal;
 
+/// Tensor stations chosen without evaluating a surface point.
+pub(crate) struct FixedLattice {
+    knots: [Vec<f64>; 2],
+    parts: [usize; 2],
+    sizes: [usize; 2],
+}
+
+impl FixedLattice {
+    pub(crate) fn into_axes(self) -> [Vec<f64>; 2] {
+        std::array::from_fn(|axis| {
+            let knots = &self.knots[axis];
+            let mut values = Vec::with_capacity(self.sizes[axis]);
+            let count = self.parts[axis];
+            for &[lo, hi] in knots.array_windows::<2>() {
+                let width = hi - lo;
+                for i in 0..count {
+                    values.push(lo + width * (i as f64 / count as f64));
+                }
+            }
+            values.push(*knots.last().expect("fixed spline domain"));
+            values
+        })
+    }
+}
+
 pub(crate) enum SplineNormals<'a> {
     Carrier,
     // Preserve the proof order and seeds of the existing finite spline charts.
@@ -1597,7 +1622,7 @@ impl SplineChart {
         angular_rates: [Interval; 2],
         max_vertices: usize,
         dec: &mut Decider,
-    ) -> Result<[Vec<f64>; 2], Refusal> {
+    ) -> Result<FixedLattice, Refusal> {
         let knots: [Vec<_>; 2] = std::array::from_fn(|axis| {
             let mut knots: Vec<_> = self
                 .spans
@@ -1643,17 +1668,11 @@ impl SplineChart {
             let widths = counts.map(|count| point(1.0 / count as f64));
             let angular_axis = (0..2).find(|&axis| (widths[axis] * point(rates[axis])).hi() > 1.0);
             if angular_axis.is_none() && chord_bound_interval(widths, &coefficients).hi() <= limit {
-                return Ok(std::array::from_fn(|axis| {
-                    let mut values = Vec::with_capacity(sizes[axis]);
-                    let count = counts[axis];
-                    for pair in knots[axis].windows(2) {
-                        for i in 0..count {
-                            values.push(pair[0] + (pair[1] - pair[0]) * (i as f64 / count as f64));
-                        }
-                    }
-                    values.push(*knots[axis].last().expect("fixed spline domain"));
-                    values
-                }));
+                return Ok(FixedLattice {
+                    knots,
+                    parts: counts,
+                    sizes,
+                });
             }
             let axis = angular_axis.unwrap_or_else(|| {
                 let pure = [
@@ -2246,6 +2265,48 @@ mod tests {
     use super::*;
     use catallax_numbers::Real;
     use catallax_shapes::Point3;
+
+    #[test]
+    fn fixed_lattice_refinement_keeps_coarse_stations_at_the_same_coordinates() {
+        let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+        let controls = [[0, 0], [0, 2], [2, 0], [2, 2]]
+            .map(|[x, y]| Point3::new(x.into(), y.into(), Real::zero()));
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [2, 2],
+            controls.to_vec(),
+            [1, 1, 1, 2].map(Real::from_i64).to_vec(),
+            &mut dec,
+        )
+        .unwrap();
+        let chart = SplineChart::new(
+            &surface,
+            [false; 2],
+            [None; 2],
+            false,
+            None,
+            SplineNormals::Carrier,
+            &mut dec,
+        )
+        .unwrap();
+        let angular = [point(0.0); 2];
+        let coarse = chart
+            .fixed_lattice(&Rational::from_i64(100), angular, 100_000, &mut dec)
+            .unwrap()
+            .into_axes();
+        let fine = chart
+            .fixed_lattice(&Rational::one().mul_pow2(-10), angular, 100_000, &mut dec)
+            .unwrap()
+            .into_axes();
+        for (old, new) in coarse.iter().zip(&fine) {
+            assert!(new.len() > old.len());
+            let stride = (new.len() - 1) / (old.len() - 1);
+            let new_coarse_sites = new.iter().step_by(stride).map(|p| p.to_bits());
+            assert!(old.iter().map(|p| p.to_bits()).eq(new_coarse_sites));
+        }
+    }
 
     #[test]
     fn periodic_lift_checks_both_spans_at_the_join() {

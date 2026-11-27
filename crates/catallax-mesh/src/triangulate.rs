@@ -17,7 +17,7 @@ use spade::{
 };
 
 use crate::{
-    FaceMesh, Mesh, MeshOptions, Triangle,
+    FaceLevel, FaceMesh, Mesh, MeshOptions, Triangle,
     assembly::{Assembly, FaceDraft, Positions},
     chart::{
         self, Chart, CollarBridge, FixedTrim, NormalProof, SplineChart, Uv, align, chord_bound, key,
@@ -2245,7 +2245,7 @@ fn face_mesh(
                 for &c in cs {
                     let c = model.coedge(c);
                     let edge = &draft.mesh.edges[draft.edges[&c.edge]];
-                    if chart.spline().is_some() && level != Level::Preview {
+                    if chart.spline().is_some() && level != FaceLevel::Preview {
                         trim_error = trim_error.max(edge.max_chord_error.clone());
                     }
                     let trim = chart.trim(c.edge);
@@ -2415,7 +2415,7 @@ fn face_mesh(
         collapsed_station: chart.collapsed_station(),
         ruled: is_ruled,
         stretch,
-        unproved: level == Level::Preview && chart.spline().is_some() && !protect_band,
+        unproved: level == FaceLevel::Preview && chart.spline().is_some() && !protect_band,
         positions: &mut draft.mesh.positions,
         rails: draft.rails,
         cdt: Cdt::new(),
@@ -2490,7 +2490,7 @@ fn face_mesh(
         face: face_id,
         triangles: start..draft.mesh.triangles.len(),
         max_chord_error: max_chord_error.max(trim_error),
-        max_aspect_ratio: (level != Level::Preview).then_some(max_aspect_ratio),
+        max_aspect_ratio: (level != FaceLevel::Preview).then_some(max_aspect_ratio),
         max_angular_deviation,
     });
     Ok(())
@@ -2898,17 +2898,10 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Level {
-    Preview,
-    Bounded,
-    Proven,
-}
-
 #[derive(Clone, Copy)]
 struct Plan<'a> {
     options: &'a MeshOptions,
-    level: Level,
+    level: FaceLevel,
 }
 
 pub(crate) fn shared_spline_preview(
@@ -2960,7 +2953,7 @@ pub(crate) fn shared_spline_preview(
             body,
             Plan {
                 options: &options,
-                level: Level::Preview,
+                level: FaceLevel::Preview,
             },
             None,
             None,
@@ -3014,7 +3007,7 @@ pub(crate) fn build(
         body,
         Plan {
             options,
-            level: Level::Proven,
+            level: FaceLevel::Proven,
         },
         junction,
         previous.as_ref(),
@@ -3045,7 +3038,7 @@ pub(crate) fn build_position(
         body,
         Plan {
             options,
-            level: Level::Bounded,
+            level: FaceLevel::Bounded,
         },
         Some(junction),
         None,
@@ -3065,7 +3058,96 @@ fn build_junction(
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
     let Plan { options, level } = plan;
     let faces = model.faces_of_body(body);
-    let mut junction = junction.unwrap_or_default();
+    let junction = junction.unwrap_or_default();
+    let FaceInputs {
+        boundaries,
+        mut charts,
+        junction,
+    } = prepare_face_inputs(model, body, &faces, options, junction, dec)?;
+    let mut assembly = Assembly::new(&boundaries);
+    let mut enclosures = BTreeMap::new();
+    let mut removed = 0;
+    for face in faces {
+        let mut local_options = charts
+            .get(&face)
+            .and_then(|chart| chart.chord_goal.as_ref())
+            .map(|chord| MeshOptions {
+                chord_tolerance: chord.clone(),
+                ..options.clone()
+            });
+        if removed != 0 {
+            local_options
+                .get_or_insert_with(|| options.clone())
+                .max_vertices -= removed;
+        }
+        let options = local_options.as_ref().unwrap_or(options);
+        let reused = previous
+            .map(|previous| previous.plan_face(model, face, &boundaries, &assembly, options, dec))
+            .transpose()?
+            .flatten();
+        if let Some(reuse) = reused {
+            let result = reuse.emit(dec)?;
+            // Reuse copies compact positions. Keep the same resource allowance
+            // for subsequent faces as when their predecessors were built.
+            removed += result.uncompacted - result.positions.len();
+            if let Some(capture) = &mut capture {
+                capture.face(&result, options, true);
+            }
+            if !assembly.push(result)? {
+                return Err(failure("a cached face conflicts with the faces before it"));
+            }
+            continue;
+        }
+        let shared = Shared {
+            model,
+            boundaries: &boundaries,
+            junction: Some(&junction),
+            prior: assembly.prior(),
+        };
+        let edge_samples = boundaries.face_edge_samples(model, face);
+        let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
+        build_face(
+            shared,
+            face,
+            &mut charts,
+            &mut draft,
+            Plan { options, level },
+            dec,
+        )?;
+        let result = draft.finish(face, edge_samples, assembly.prior())?;
+        if let Some(capture) = &mut capture {
+            capture.face(&result, options, false);
+        }
+        if !assembly.push(result)? {
+            return Err(failure(
+                "a face built in order conflicts with the faces before it",
+            ));
+        }
+    }
+    let (mut mesh, marks) = assembly.finish(boundaries);
+    if model.body(body).kind == catallax_topology::BodyKind::Surface {
+        check_surface(model, body, &mesh)?;
+    } else {
+        check_closed(&mesh)?;
+    }
+    compact(&mut mesh);
+    Ok((mesh, marks))
+}
+
+struct FaceInputs {
+    boundaries: Boundaries,
+    charts: BTreeMap<FaceId, Chart>,
+    junction: crate::junction::Junction,
+}
+
+fn prepare_face_inputs(
+    model: &Model,
+    body: BodyId,
+    faces: &[FaceId],
+    options: &MeshOptions,
+    mut junction: crate::junction::Junction,
+    dec: &mut Decider,
+) -> Result<FaceInputs, Refusal> {
     let fitted = |face: FaceId| junction.contains(face);
     let mut charts = faces
         .iter()
@@ -3112,72 +3194,11 @@ fn build_junction(
         }
     }
     let boundaries = edges::sample(model, body, &charts, Some(&junction), options, dec)?;
-    let mut assembly = Assembly::new(&boundaries);
-    let mut enclosures = BTreeMap::new();
-    let mut removed = 0;
-    for face in faces {
-        let mut local_options = charts
-            .get(&face)
-            .and_then(|chart| chart.chord_goal.as_ref())
-            .map(|chord| MeshOptions {
-                chord_tolerance: chord.clone(),
-                ..options.clone()
-            });
-        if removed != 0 {
-            local_options
-                .get_or_insert_with(|| options.clone())
-                .max_vertices -= removed;
-        }
-        let options = local_options.as_ref().unwrap_or(options);
-        let reused = previous
-            .map(|previous| previous.face(model, face, &boundaries, &assembly, options, dec))
-            .transpose()?
-            .flatten();
-        if let Some(result) = reused {
-            // Reuse copies compact positions. Keep the same resource allowance
-            // for subsequent faces as when their predecessors were built.
-            removed += result.uncompacted - result.positions.len();
-            if let Some(capture) = &mut capture {
-                capture.face(&result, options, true);
-            }
-            if !assembly.push(result)? {
-                return Err(failure("a cached face conflicts with the faces before it"));
-            }
-            continue;
-        }
-        let shared = Shared {
-            model,
-            boundaries: &boundaries,
-            junction: Some(&junction),
-            prior: assembly.prior(),
-        };
-        let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
-        build_face(
-            shared,
-            face,
-            &mut charts,
-            &mut draft,
-            Plan { options, level },
-            dec,
-        )?;
-        let result = draft.finish(model, face, assembly.prior())?;
-        if let Some(capture) = &mut capture {
-            capture.face(&result, options, false);
-        }
-        if !assembly.push(result)? {
-            return Err(failure(
-                "a face built in order conflicts with the faces before it",
-            ));
-        }
-    }
-    let (mut mesh, marks) = assembly.finish(boundaries);
-    if model.body(body).kind == catallax_topology::BodyKind::Surface {
-        check_surface(model, body, &mesh)?;
-    } else {
-        check_closed(&mesh)?;
-    }
-    compact(&mut mesh);
-    Ok((mesh, marks))
+    Ok(FaceInputs {
+        boundaries,
+        charts,
+        junction,
+    })
 }
 
 /// What every face of one body shares while it is built.
@@ -3206,7 +3227,7 @@ fn build_face(
     } = shared;
     let Plan { options, level } = plan;
     if let Some(junction) = junction.filter(|junction| junction.contains(face)) {
-        return junction.triangulate(face, draft, options, level == Level::Bounded);
+        return junction.triangulate(face, draft, options, level == FaceLevel::Bounded);
     }
     if let Surface::Plane(plane) = &charts[&face].surface {
         return crate::planar::build(model, face, plane, draft, options, dec).map_err(|mut e| {
@@ -3345,7 +3366,7 @@ pub(crate) fn build_preview(
             body,
             Plan {
                 options: &options,
-                level: Level::Preview,
+                level: FaceLevel::Preview,
             },
             junction,
             None,

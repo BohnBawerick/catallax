@@ -216,8 +216,20 @@ impl<'a> Patch<'a> {
                 break;
             }
             let (_, [du, dv]) = self.jet(uv);
-            let Some(delta) = solve_gram(du, dv, [dot(du, residual), dot(dv, residual)]) else {
-                break;
+            let rhs = [dot(du, residual), dot(dv, residual)];
+            let delta = if let Some(delta) = solve_gram(du, dv, rhs) {
+                delta
+            } else {
+                // At a collapsed edge, one tangent vanishes but the other
+                // still moves the iterate away from the singular boundary.
+                let lengths = [dot(du, du), dot(dv, dv)];
+                let axis = usize::from(lengths[1] > lengths[0]);
+                if positive(lengths[axis]).is_none() {
+                    break;
+                }
+                let mut delta = [0.0; 2];
+                delta[axis] = rhs[axis] / lengths[axis];
+                delta
             };
             let mut improved = false;
             let mut step = 1.0;

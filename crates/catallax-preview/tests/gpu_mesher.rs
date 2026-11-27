@@ -128,10 +128,12 @@ fn dx12_dispatch_smoke() {
                 .iter()
                 .all(|v| v.normal.map(f32::to_bits) == [0., 0., 1., 0.].map(f32::to_bits))
         );
-        let area: f32 = indices
-            .chunks_exact(3)
+        let (triangles, remainder) = indices.as_chunks::<3>();
+        assert!(remainder.is_empty());
+        let area: f32 = triangles
+            .iter()
             .map(|t| {
-                let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertices[i as usize].position);
+                let [a, b, c] = t.map(|i| vertices[i as usize].position);
                 ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 0.5
             })
             .sum();
@@ -338,7 +340,7 @@ fn assert_geometry(
                 face.face
             );
         }
-        for t in draw_indices.chunks_exact(3) {
+        for t in draw_indices.as_chunks::<3>().0 {
             for i in 0..3 {
                 let (a, b) = (key(t[i]), key(t[(i + 1) % 3]));
                 assert_ne!(a, b, "face {:?}: collapsed triangle edge", face.face);

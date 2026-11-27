@@ -5,7 +5,7 @@ triangulates each face's trimmed UV domain, uploads one binary32 copy of each
 shared edge sample, and submits one compute pass. Use `PreviewVertex::layout()`
 and each successful face's `Uint32` index range to draw the returned buffers on
 that device. Positions are relative to the binary64 body origin. Production
-code never maps either buffer.
+code never reads back either buffer.
 
 Planes and cylinders evaluate their carriers in WGSL. Other carriers use
 sampled grids for now; `FaceDraw::sampled_grid` distinguishes these draws. The

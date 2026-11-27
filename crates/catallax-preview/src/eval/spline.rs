@@ -1,11 +1,13 @@
 use bytemuck::{Pod, Zeroable};
 
 pub(crate) const WGSL: &str = include_str!("spline.wgsl");
+pub(crate) const MAX_DEGREE: usize = 12;
 
 /// Layout of `SplineNet` in WGSL. Offsets count elements, not bytes. The
 /// control array contains `[w*x, w*y, w*z, w]` in u-major, v-minor order;
-/// the knot array contains both expanded knot vectors. Degrees are at most 8
-/// per axis. The converted knot vectors must preserve every nonzero span.
+/// the knot array contains both expanded knot vectors. Degrees are at most 12
+/// per axis, including overlap saddle carriers. The converted knot vectors
+/// must preserve every nonzero span.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(crate) struct Net {

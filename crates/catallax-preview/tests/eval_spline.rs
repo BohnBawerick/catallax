@@ -1,19 +1,25 @@
 //! Read back the same WGSL fragment the mesher will use. Set
 //! `CATALLAX_SPLINE_ADAPTER=cpu` or `hardware` to require that adapter class.
+//! Set `P5_SOURCES` and `P5_SELECTION` to include the held-out STEP rows.
 
 #[path = "../src/eval/spline.rs"]
 mod spline;
 
-use std::{fs, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use bytemuck::{Pod, Zeroable, cast_slice};
+use catallax_features::ImportFiles;
 use catallax_numbers::Decider;
 use catallax_preview::gpu::Gpu;
 use catallax_recipe::Recipe;
 use catallax_shapes::{BSplineSurface, SplineSupport, Surface};
 use serde_json::Value;
 
-use spline::Net;
+use spline::{MAX_DEGREE, Net};
 
 const HARNESS: &str = r#"
 struct Query {
@@ -121,7 +127,7 @@ impl Carrier {
         let [ku, kv] = self.knots.each_ref().map(Vec::as_slice);
         let i = span(ku, p, self.count[0], uv[0]);
         let j = span(kv, q, self.count[1], uv[1]);
-        let mut rows = [[0.0; 4]; 9];
+        let mut rows = [[0.0; 4]; MAX_DEGREE + 1];
         let mut v_slopes = rows;
         for a in 0..=p {
             let offset = (i - p + a) * self.count[1] + j - q;
@@ -163,7 +169,7 @@ fn de_boor(
     t: f64,
     controls: &[[f64; 4]],
 ) -> ([f64; 4], [f64; 4]) {
-    let mut value = [[0.0; 4]; 9];
+    let mut value = [[0.0; 4]; MAX_DEGREE + 1];
     let mut slope = value;
     value[..=p].copy_from_slice(controls);
     for level in 1..=p {
@@ -209,7 +215,7 @@ impl Batch {
         let [p, q] = carrier.degree;
         let [u, v] = carrier.count;
         assert!(
-            p <= 8 && q <= 8 && carrier.size > 0.0,
+            p <= MAX_DEGREE && q <= MAX_DEGREE && carrier.size > 0.0,
             "{name}: {p}x{q}, {u}x{v}"
         );
         let net = Net {
@@ -329,8 +335,8 @@ impl Batch {
     }
 }
 
-// Public exact rows in the phase-5 display pass. The held-out STEP rows use
-// private input files and cannot be reconstructed from the public manifest.
+// Exact rows in the phase-5 display pass. Held-out STEP bytes are supplied
+// separately; the kernel verifies them against the public corpus manifest.
 const DISPLAY_ROWS: &str = "
     P0-crossing-pipes P1-bracket P1-drafted-bracket loft-ruled-fillet-r1_4
     fillet-partial-oblique fillet-sphere-cylinder loft-ruled-fillet-r1_10
@@ -354,8 +360,23 @@ const DISPLAY_ROWS: &str = "
     fillet-variable-zero-end fillet-cylinder-rim
 ";
 
-fn recipe(root: &Path, row: &Value) -> Recipe {
-    let mut value = if let Some(path) = row["recipe"].as_str() {
+const HELD_OUT_ROWS: &str = "
+    abc-00000858 abc-00001883 abc-00001130 abc-00001664 abc-00001285
+    abc-00001344 abc-00001237 abc-00001453 abc-00001534 abc-00001427
+    abc-00001260 abc-00001533 abc-00001006 abc-00000938 abc-00001339
+";
+
+fn recipe(root: &Path, row: &Value, hash: Option<&str>) -> Recipe {
+    let mut value = if let Some(hash) = hash {
+        serde_json::json!({
+            "format": "catallax-recipe/3",
+            "name": row["id"],
+            "steps": [{"id": "imported", "op": "import_step",
+                "file": {"name": "part.step", "sha256": hash},
+                "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}}],
+            "result": "imported",
+        })
+    } else if let Some(path) = row["recipe"].as_str() {
         serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()
     } else if let Some(path) = row["cases"].as_str() {
         fs::read_to_string(root.join(path))
@@ -388,11 +409,55 @@ fn corpus(batch: &mut Batch) {
     let manifest: Value =
         serde_json::from_str(include_str!("../../../tools/predictor/corpus.json")).unwrap();
     let rows = manifest["rows"].as_array().unwrap();
-    for id in DISPLAY_ROWS.split_whitespace() {
+    let sources = match (
+        std::env::var_os("P5_SOURCES"),
+        std::env::var_os("P5_SELECTION"),
+    ) {
+        (Some(sources), Some(selection)) => {
+            let members: Vec<(String, PathBuf)> =
+                serde_json::from_slice(&fs::read(selection).unwrap()).unwrap();
+            Some((
+                PathBuf::from(sources),
+                members.into_iter().collect::<BTreeMap<_, _>>(),
+            ))
+        }
+        (None, None) => {
+            eprintln!("Held-out STEP rows not supplied (P5_SOURCES and P5_SELECTION)");
+            None
+        }
+        _ => panic!("set both P5_SOURCES and P5_SELECTION"),
+    };
+    let held_out = sources
+        .iter()
+        .flat_map(|_| HELD_OUT_ROWS.split_whitespace());
+    for id in DISPLAY_ROWS.split_whitespace().chain(held_out) {
         let row = rows.iter().find(|row| row["id"] == id).unwrap();
-        let recipe = recipe(&root, row);
-        let built = catallax_features::evaluate(&recipe, &mut Decider::default())
-            .unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        let source = if let Some(model) = row["import"]["model"].as_str() {
+            let (root, files) = sources.as_ref().unwrap();
+            let path = files
+                .get(model)
+                .unwrap_or_else(|| panic!("{id}: missing corpus selection"));
+            let bytes = fs::read(root.join(path)).unwrap();
+            Some((row["import"]["sha256"].as_str().unwrap(), bytes))
+        } else {
+            None
+        };
+        let recipe = recipe(&root, row, source.as_ref().map(|(hash, _)| *hash));
+        let files = source
+            .iter()
+            .map(|(hash, bytes)| ((*hash).to_owned(), bytes.as_slice()))
+            .collect::<ImportFiles<'_>>();
+        let built = std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(8 * 1024 * 1024)
+                .spawn_scoped(scope, || {
+                    catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
+                })
+                .unwrap()
+                .join()
+                .unwrap()
+        })
+        .unwrap_or_else(|e| panic!("{id}: {e:?}"));
         for (index, face) in built
             .model
             .faces_of_body(built.result)

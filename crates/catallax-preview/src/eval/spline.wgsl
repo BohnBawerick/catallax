@@ -20,9 +20,9 @@ struct SplineSample {
 
 struct SplineBasis {
     first: u32,
-    value: array<f32, 9>,
+    value: array<f32, 13>,
     // Scaled degree-(p-1) weights for adjacent control differences.
-    difference: array<f32, 8>,
+    difference: array<f32, 12>,
 }
 
 // Find the right-hand span at interior knots, and the left-hand span at the
@@ -70,8 +70,8 @@ fn spline_scaled(v: vec3f) -> vec3f {
     return v / m;
 }
 
-// Direct evaluation, with at most 9×3 control reads for the 8×2 case.
-// Both axes can use the same basis routine (including when a net is transposed).
+// Direct evaluation only visits the active (degree_u + 1) × (degree_v + 1)
+// controls. Both axes use the same basis routine, including transposed nets.
 fn spline_sample(net: SplineNet, uv: vec2f) -> SplineSample {
     let u = spline_basis(net.knot_u_offset, net.degree_u, net.count_u, uv.x);
     let v = spline_basis(net.knot_v_offset, net.degree_v, net.count_v, uv.y);

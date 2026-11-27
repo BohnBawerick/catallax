@@ -44,6 +44,7 @@ fn spline_basis(offset: u32, degree: u32, count: u32, parameter: f32) -> SplineB
     while spline_knots[offset + span] == hi { span -= 1u; }
 
     var basis: SplineBasis;
+    basis.first = span - degree;
     basis.value[0] = 1.0;
     // Cox–de Boor on the nonzero span. At the last level, use the degree-(p-1)
     // basis to get the derivative without differentiating a sampled position.

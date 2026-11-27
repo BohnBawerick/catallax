@@ -1,8 +1,8 @@
 use super::*;
 use crate::{fit, pcurve, uv, wire::Side};
 use catallax_intersect::CurveTrace;
-use catallax_topology::CoedgeId;
 use catallax_numbers::Ball;
+use catallax_topology::CoedgeId;
 use std::collections::BTreeSet;
 
 pub(super) struct Analytic {

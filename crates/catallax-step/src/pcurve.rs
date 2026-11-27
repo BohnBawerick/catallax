@@ -496,9 +496,11 @@ fn horner<'a, const N: usize>(
     parameter: &Jet<N>,
 ) -> Jet<N> {
     let leading = values.next_back().expect("nonempty curve polynomial");
-    values.rev().fold(Jet::constant(leading.clone()), |jet, value| {
-        jet.mul(parameter).add_constant(value)
-    })
+    values
+        .rev()
+        .fold(Jet::constant(leading.clone()), |jet, value| {
+            jet.mul(parameter).add_constant(value)
+        })
 }
 
 fn ellipse_basis(t: &Ball, dec: &Decider) -> Result<[Ball; 2], Refusal> {
@@ -1461,14 +1463,16 @@ impl uv::Parametric for Piece<'_> {
         let ellipse = matches!(self.curve, LocalCurve::Ellipse { .. })
             .then(|| ellipse_basis(domain, dec))
             .transpose()?;
-        let coordinates = self.curve.coefficients::<1>(domain, ellipse.as_ref(), dec)?;
+        let coordinates = self
+            .curve
+            .coefficients::<1>(domain, ellipse.as_ref(), dec)?;
         if !self.projection.map.regular(&coordinates) {
             return Ok(None);
         }
         let controls = self.coefficients(center, true, dec)?;
-        let coordinates = self
-            .curve
-            .coefficients::<{ fit::DEGREE + 2 }>(domain, ellipse.as_ref(), dec)?;
+        let coordinates =
+            self.curve
+                .coefficients::<{ fit::DEGREE + 2 }>(domain, ellipse.as_ref(), dec)?;
         let [.., remainder] = self.projection.map.inverse(
             &coordinates,
             scalar(0, domain.precision()),

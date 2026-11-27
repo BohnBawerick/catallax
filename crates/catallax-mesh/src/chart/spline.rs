@@ -20,6 +20,7 @@ pub(crate) enum SplineNormals<'a> {
     // Preserve the proof order and seeds of the existing finite spline charts.
     Patch,
     Saddle,
+    Mitre,
     Pipe(&'a RollingPipe),
 }
 
@@ -708,11 +709,14 @@ impl SplineChart {
             _ => None,
         };
         let mut rail_spans = Vec::new();
-        let pieces = if saddle {
+        let pieces = if saddle || matches!(normals, SplineNormals::Mitre) {
+            // Mitres need local Bernstein bounds before sizing fixed rail
+            // cells. Over the whole apex span the weight bound over-samples
+            // both rails, even far from the apex.
             let mut pieces = Vec::new();
             for span in rational_spans(surface, dec)? {
                 let halves = span.bisect(0, dec)?;
-                if span.domain()[1].each_ref() == source_domain[1] {
+                if saddle && span.domain()[1].each_ref() == source_domain[1] {
                     let [lo, hi] = source_domain[0];
                     let knots = [
                         &span.domain()[0][0],
@@ -1582,6 +1586,90 @@ impl SplineChart {
     ) -> ([f64; 3], Interval) {
         let position = replacement.unwrap_or_else(|| enclosed.map(|value| value.mid()));
         (position, vertex_residual(position, enclosed))
+    }
+
+    /// Use one tensor subdivision on a complete finite trim. Knot lines are
+    /// constraints, so every facet stays within a span and the rail vertices
+    /// already size the cells touching the trim.
+    pub(crate) fn fixed_lattice(
+        &self,
+        limit: &Rational,
+        angular_rates: [Interval; 2],
+        max_vertices: usize,
+        dec: &mut Decider,
+    ) -> Result<[Vec<f64>; 2], Refusal> {
+        let knots: [Vec<_>; 2] = std::array::from_fn(|axis| {
+            let mut knots: Vec<_> = self
+                .spans
+                .iter()
+                .flat_map(|span| span.bounds[axis])
+                .collect();
+            knots.sort_unstable_by(f64::total_cmp);
+            knots.dedup();
+            knots
+        });
+        let coefficients = self
+            .spans
+            .iter()
+            .map(|span| span.rational.chord_coefficients())
+            .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
+            .ok_or_else(|| failure("fixed trim has no spans"))?;
+        let rates: [f64; 2] = std::array::from_fn(|axis| {
+            if angular_rates[axis].hi() == 0.0 {
+                return 0.0;
+            }
+            self.spans
+                .iter()
+                .map(|span| {
+                    (span.rational.first_derivative_bounds()[axis] * angular_rates[axis]).hi()
+                })
+                .fold(0.0, f64::max)
+        });
+        if rates.iter().any(|rate| !rate.is_finite()) {
+            return Err(failure("fixed trim angular spacing exceeds binary64"));
+        }
+        let limit = Interval::from_rational(limit).lo();
+        let mut counts = [2usize; 2];
+        loop {
+            dec.check_deadline()?;
+            let sizes: [usize; 2] = std::array::from_fn(|axis| {
+                (knots[axis].len() - 1)
+                    .saturating_mul(counts[axis])
+                    .saturating_add(1)
+            });
+            if sizes[0].saturating_mul(sizes[1]) > max_vertices {
+                return Err(failure("fixed trim lattice reached max_vertices"));
+            }
+            let widths = counts.map(|count| point(1.0 / count as f64));
+            let angular_axis = (0..2).find(|&axis| (widths[axis] * point(rates[axis])).hi() > 1.0);
+            if angular_axis.is_none() && chord_bound_interval(widths, &coefficients).hi() <= limit {
+                return Ok(std::array::from_fn(|axis| {
+                    let mut values = Vec::with_capacity(sizes[axis]);
+                    let count = counts[axis];
+                    for pair in knots[axis].windows(2) {
+                        for i in 0..count {
+                            values.push(pair[0] + (pair[1] - pair[0]) * (i as f64 / count as f64));
+                        }
+                    }
+                    values.push(*knots[axis].last().expect("fixed spline domain"));
+                    values
+                }));
+            }
+            let axis = angular_axis.unwrap_or_else(|| {
+                let pure = [
+                    coefficients[0] * widths[0].square(),
+                    coefficients[2] * widths[1].square(),
+                ];
+                match pure[0].hi().total_cmp(&pure[1].hi()) {
+                    std::cmp::Ordering::Less => 1,
+                    std::cmp::Ordering::Greater => 0,
+                    std::cmp::Ordering::Equal => usize::from(counts[1] < counts[0]),
+                }
+            });
+            counts[axis] = counts[axis]
+                .checked_mul(2)
+                .ok_or_else(|| failure("fixed trim lattice size overflow"))?;
+        }
     }
 
     pub(crate) fn seed_grid(

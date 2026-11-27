@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::BTreeMap};
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::{
-    BSplineSurface, RollingPipe,
+    BSplineCurve, BSplineSurface, RollingPipe,
     tessellation::{
         RationalSpan, chord_bound_interval, rational_spans, triangle_chord_bound_interval,
     },
@@ -39,6 +39,7 @@ pub(crate) enum NormalProof {
 
 pub(crate) struct SplineChart {
     spans: Vec<Span>,
+    rail_spans: Vec<RailSpan>,
     seams: Vec<Seam>,
     periodic: [bool; 2],
     source_domain: [[f64; 2]; 2],
@@ -49,6 +50,54 @@ pub(crate) struct SplineChart {
     // A chart lives for one mesh request. The edge plan uses a projection
     // goal at least as strict as the face that consumes it.
     edge_projections: RefCell<BTreeMap<[u64; 3], EdgeProjection>>,
+    position_boxes: RefCell<BTreeMap<[u64; 2], [Interval; 3]>>,
+}
+
+pub(crate) struct RailSpan {
+    domain: [Rational; 2],
+    knots: [f64; 3],
+    curves: [RationalSpan; 2],
+}
+
+pub(crate) struct RailSample {
+    pub(crate) xyz: [Interval; 3],
+    uv: Uv,
+    chart_offset: Interval,
+}
+
+impl RailSpan {
+    pub(crate) fn curve(&self, row: usize) -> &RationalSpan {
+        &self.curves[row]
+    }
+
+    pub(crate) fn sample(
+        &self,
+        row: usize,
+        parameter: Interval,
+        dec: &mut Decider,
+    ) -> Result<RailSample, Refusal> {
+        let curve = self.curve(row);
+        let xyz = curve.evaluate_box([parameter, point(0.0)], dec)?;
+        let [lo, mid, hi] = self.knots.map(point);
+        dec.charge_work(4)?;
+        let u = quantize_turn((lo + parameter * (hi - lo)).mid()).clamp(lo.lo(), hi.hi());
+        let u = point(u);
+        // The chart rounds each knot independently, including the bisection.
+        // Bound the displacement between the rail parameter and the chart UV.
+        let on_curve = if u.hi() <= mid.lo() {
+            ((u - lo) / (mid - lo)) * point(0.5)
+        } else {
+            point(0.5) + ((u - mid) / (hi - mid)) * point(0.5)
+        };
+        let delta = on_curve - parameter;
+        let chart_offset =
+            point(delta.lo().abs().max(delta.hi().abs())) * curve.first_derivative_bounds()[0];
+        Ok(RailSample {
+            xyz,
+            uv: [u.mid(), row as f64],
+            chart_offset,
+        })
+    }
 }
 
 struct EdgeProjection {
@@ -72,6 +121,93 @@ struct Span {
     normal_rows: RefCell<BTreeMap<[u64; 3], NormalRow>>,
     shared_normals: RefCell<BTreeMap<[u64; 3], [Interval; 3]>>,
     angular_cones: RefCell<BTreeMap<[u64; 3], [Interval; 3]>>,
+    direction_cones: RefCell<BTreeMap<[u64; 4], Option<DirectionCone>>>,
+}
+
+#[derive(Clone, Copy)]
+struct DirectionCone {
+    axis: [Interval; 3],
+    sine: Interval,
+    cosine: Interval,
+}
+
+#[derive(Clone, Copy)]
+struct AngularCheck {
+    direction: [Interval; 3],
+    sine: Interval,
+    cosine: Interval,
+}
+
+impl DirectionCone {
+    fn from_box(bounds: [Interval; 3], dec: &mut Decider) -> Result<Option<Self>, Refusal> {
+        if bounds.iter().any(|x| !x.is_finite()) {
+            return Ok(None);
+        }
+        let centre = bounds.map(|x| point(x.mid()));
+        dec.charge_work(8)?;
+        let radius = length(std::array::from_fn(|i| {
+            let delta = bounds[i] - centre[i];
+            point(delta.lo().abs().max(delta.hi().abs()))
+        }));
+        let norm = length(centre);
+        if !norm.is_finite() || !radius.is_finite() || radius.hi() >= norm.lo() {
+            return Ok(None);
+        }
+        // A ray tangent to the enclosing ball makes the largest angle to
+        // its centre. Its sine is radius divided by the centre's length.
+        let sine = (radius / norm).hi();
+        if sine >= 1.0 {
+            return Ok(None);
+        }
+        let sine = point(sine);
+        let cosine = (point(1.0) - sine.square()).sqrt().unwrap();
+        Ok(Some(Self {
+            axis: centre.map(|x| x / norm),
+            sine,
+            cosine,
+        }))
+    }
+
+    fn admits(&self, angle: AngularCheck, dec: &mut Decider) -> Result<bool, Refusal> {
+        if self.cosine.lo() <= angle.cosine.hi() {
+            return Ok(false);
+        }
+        dec.charge_work(5)?;
+        let dot = (0..3).fold(point(0.0), |dot, i| dot + self.axis[i] * angle.direction[i]);
+        // cos(requested angle minus the cone radius)
+        let required = self.cosine * angle.cosine + self.sine * angle.sine;
+        Ok(dot.lo() >= required.hi())
+    }
+}
+
+impl AngularCheck {
+    fn new(
+        direction: [Interval; 3],
+        cosine: Option<Interval>,
+        dec: &mut Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        let Some(cosine) = cosine.filter(|x| x.hi() > 0.0 && x.hi() < 1.0) else {
+            return Ok(None);
+        };
+        dec.charge_work(4)?;
+        let norm = length(direction);
+        if norm.lo() <= 0.0 || !norm.is_finite() {
+            return Ok(None);
+        }
+        let cosine = point(cosine.hi());
+        let sine = (point(1.0) - cosine.square()).sqrt().unwrap();
+        Ok(Some(Self {
+            direction: direction.map(|x| x / norm),
+            sine,
+            cosine,
+        }))
+    }
+}
+
+fn length(vector: [Interval; 3]) -> Interval {
+    (vector[0].square() + vector[1].square() + vector[2].square())
+        .sqrt()
+        .expect("nonnegative square sum")
 }
 
 struct Seam {
@@ -86,6 +222,7 @@ struct NormalFootprint {
     // Each inequality is nonnegative on the triangle, in local span UV.
     sides: Option<[[Interval; 3]; 3]>,
     clip_first: bool,
+    angle: Option<AngularCheck>,
 }
 
 #[derive(Clone, Copy)]
@@ -153,6 +290,7 @@ impl Span {
             normal_rows: RefCell::default(),
             shared_normals: RefCell::default(),
             angular_cones: RefCell::default(),
+            direction_cones: RefCell::default(),
         };
         span.normal = span.normal_box([full; 2], dec)?;
         Ok(span)
@@ -324,12 +462,14 @@ impl Span {
         let [lo, hi] = v;
         // The midpoint uniquely identifies a dyadic cell within the unit interval.
         let middle = lo.midpoint(hi);
+        dec.charge_traversal(1)?;
         if let Some(&row) = self.normal_rows.borrow().get(&key(middle)) {
             return Ok(Some(row));
         }
         if lo == 0.0 && hi.to_bits() == 1.0_f64.to_bits() {
             let row = self.rational.quadratic_normal_row(u, dec)?;
             if let Some(row) = row {
+                dec.charge_traversal(1)?;
                 self.normal_rows.borrow_mut().insert(key(middle), row);
             }
             return Ok(row);
@@ -351,10 +491,39 @@ impl Span {
             children[0][level] = work[0];
             children[1][last] = work[last];
         }
+        dec.charge_traversal(2)?;
         let mut rows = self.normal_rows.borrow_mut();
         rows.insert(key(start.midpoint(center)), children[0]);
         rows.insert(key(center.midpoint(end)), children[1]);
         Ok(Some(children[usize::from(lo >= center)]))
+    }
+
+    // A v split narrows the spread between control directions. A u split
+    // narrows the uncertainty of each control direction.
+    fn split_axis(&self, [u, v]: [Interval; 2], dec: &mut Decider) -> Result<usize, Refusal> {
+        let fallback = usize::from(v.width() > u.width());
+        let Some(row) = self.normal_row(u, [v.lo(), v.hi()], dec)? else {
+            return Ok(fallback);
+        };
+        dec.charge_work(5 * 10)?;
+        let norm = |xyz: [f64; 3]| libm::sqrt(xyz.into_iter().map(|x| x * x).sum());
+        let mut first = None;
+        let (mut along_u, mut along_v) = (0.0_f64, 0.0_f64);
+        for control in row {
+            let centre = control.map(|x| x.mid());
+            let length = norm(centre);
+            if !length.is_finite() || length == 0.0 {
+                return Ok(fallback);
+            }
+            let direction = centre.map(|x| x / length);
+            let reference = *first.get_or_insert(direction);
+            along_u = along_u.max(norm(control.map(|x| x.width() * 0.5)) / length);
+            along_v = along_v.max(norm(std::array::from_fn(|i| direction[i] - reference[i])));
+        }
+        if !along_u.is_finite() || !along_v.is_finite() {
+            return Ok(fallback);
+        }
+        Ok(usize::from(along_v * 0.5 > along_u))
     }
 
     fn shared_normal(
@@ -430,6 +599,28 @@ impl Span {
         self.angular_cones.borrow_mut().insert(key, cone);
         Ok(cone)
     }
+
+    fn direction_cone(
+        &self,
+        uv: [Interval; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<DirectionCone>, Refusal> {
+        let [u, v] = uv;
+        let key = [
+            u.lo().to_bits(),
+            u.hi().to_bits(),
+            v.lo().to_bits(),
+            v.hi().to_bits(),
+        ];
+        dec.charge_traversal(1)?;
+        if let Some(&cone) = self.direction_cones.borrow().get(&key) {
+            return Ok(cone);
+        }
+        dec.charge_traversal(2)?;
+        let cone = DirectionCone::from_box(self.angular_cone(uv, dec)?, dec)?;
+        self.direction_cones.borrow_mut().insert(key, cone);
+        Ok(cone)
+    }
 }
 
 fn normal_cone_axis(row: &NormalRow) -> Option<(usize, f64)> {
@@ -462,6 +653,22 @@ fn dyadic_cell(range: Interval) -> Interval {
     let lo = (range.lo() / step).floor() * step;
     let hi = (range.hi() / step).ceil() * step;
     Interval::new(lo.min(range.lo()), hi.max(range.hi())).unwrap()
+}
+
+fn enclosing_cell(range: Interval, dec: &mut Decider) -> Result<Interval, Refusal> {
+    const BINS: u32 = 128;
+    dec.charge_work(3)?;
+    let first = ((range.lo() * f64::from(BINS)) as u32).min(BINS - 1);
+    let last = ((range.hi() * f64::from(BINS)).ceil() as u32)
+        .saturating_sub(1)
+        .max(first);
+    let width = 1 << (u32::BITS - (first ^ last).leading_zeros());
+    let first = first & !(width - 1);
+    Ok(Interval::new(
+        f64::from(first) / f64::from(BINS),
+        f64::from(first + width) / f64::from(BINS),
+    )
+    .unwrap())
 }
 
 impl SplineChart {
@@ -500,10 +707,30 @@ impl SplineChart {
             SplineNormals::Pipe(pipe) => Some(PipeNormal::new(pipe, dec)?),
             _ => None,
         };
+        let mut rail_spans = Vec::new();
         let pieces = if saddle {
             let mut pieces = Vec::new();
             for span in rational_spans(surface, dec)? {
-                for half in span.bisect(0, dec)? {
+                let halves = span.bisect(0, dec)?;
+                if span.domain()[1].each_ref() == source_domain[1] {
+                    let [lo, hi] = source_domain[0];
+                    let knots = [
+                        &span.domain()[0][0],
+                        &halves[0].domain()[0][1],
+                        &span.domain()[0][1],
+                    ]
+                    .map(|end| quantize_turn(((end - lo) / (hi - lo)).to_f64_nearest()));
+                    dec.charge_traversal(1)?;
+                    rail_spans.push(RailSpan {
+                        domain: span.domain()[0].clone(),
+                        knots,
+                        curves: [
+                            span.boundary_curve(false, dec)?,
+                            span.boundary_curve(true, dec)?,
+                        ],
+                    });
+                }
+                for half in halves {
                     pieces.extend(half.bisect(1, dec)?);
                 }
             }
@@ -568,6 +795,7 @@ impl SplineChart {
         }
         Ok(Self {
             spans,
+            rail_spans,
             seams,
             periodic,
             source_domain: source_domain.map(|bounds| bounds.map(Rational::to_f64_nearest)),
@@ -580,7 +808,51 @@ impl SplineChart {
                 1.0
             },
             edge_projections: RefCell::default(),
+            position_boxes: RefCell::default(),
         })
+    }
+
+    pub(crate) fn checked_rail_spans(
+        &self,
+        curve: &BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Option<&[RailSpan]>, Refusal> {
+        if self.rail_spans.is_empty() {
+            return Ok(None);
+        }
+        let mut spans = self.rail_spans.iter();
+        for (_, knots) in curve.spans() {
+            dec.charge_traversal(1)?;
+            if spans
+                .next()
+                .is_none_or(|span| span.domain.each_ref() != knots)
+            {
+                return Ok(None);
+            }
+        }
+        Ok(spans.next().is_none().then_some(&self.rail_spans))
+    }
+
+    pub(crate) fn admit_rail_sample(
+        &self,
+        sample: &RailSample,
+        position: [f64; 3],
+        goal: f64,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        dec.charge_work(3)?;
+        let residual = vertex_residual(position, sample.xyz) + sample.chart_offset;
+        if residual.hi() <= goal {
+            dec.charge_traversal(1)?;
+            self.edge_projections.borrow_mut().insert(
+                position.map(f64::to_bits),
+                EdgeProjection {
+                    uv: [sample.uv[0].rem_euclid(1.0), sample.uv[1]],
+                    residual: Some(residual),
+                },
+            );
+        }
+        Ok(())
     }
 
     fn lifts(&self, bounds: [[f64; 2]; 2]) -> impl Iterator<Item = Uv> + use<> {
@@ -700,13 +972,26 @@ impl SplineChart {
     }
 
     pub(crate) fn evaluate(&self, uv: Uv, dec: &mut Decider) -> Result<[Interval; 3], Refusal> {
+        let key = uv.map(f64::to_bits);
+        if self.subdivide_normals {
+            dec.charge_traversal(1)?;
+            if let Some(&position) = self.position_boxes.borrow().get(&key) {
+                return Ok(position);
+            }
+        }
         let span = self
             .spans
             .iter()
             .find(|span| span.contains(uv))
             .ok_or_else(|| failure("spline sample lies outside its chart"))?;
-        span.rational
-            .evaluate_box(span.local_box(uv.map(|value| [value; 2])), dec)
+        let position = span
+            .rational
+            .evaluate_box(span.local_box(uv.map(|value| [value; 2])), dec)?;
+        if self.subdivide_normals && self.position_boxes.borrow().len() < 32_768 {
+            dec.charge_traversal(1)?;
+            self.position_boxes.borrow_mut().insert(key, position);
+        }
+        Ok(position)
     }
 
     pub(crate) fn triangulation_stretch(&self) -> f64 {
@@ -837,17 +1122,11 @@ impl SplineChart {
             return Ok(false);
         };
         let canonical = |uv: Uv| [uv[0].rem_euclid(1.0), uv[1]];
-        let left_position = self
-            .evaluate(canonical(left), dec)?
-            .map(|value| value.mid());
-        let right_position = self
-            .evaluate(canonical(right), dec)?
-            .map(|value| value.mid());
+        let (left_position, left_error) = self.vertex(canonical(left), None, dec)?;
+        let (right_position, right_error) = self.vertex(canonical(right), None, dec)?;
+        let (_, base_error) = self.vertex(canonical(base), Some(samples[1]), dec)?;
         let positions = [samples[1], left_position, right_position];
-        let mut residual = 0.0_f64;
-        for (uv, position) in [base, left, right].into_iter().zip(positions) {
-            residual = residual.max(self.residual(canonical(uv), position, dec)?.hi());
-        }
+        let mut residual = base_error.hi().max(left_error.hi()).max(right_error.hi());
         if !self.collar_bridge_fits(
             CollarBridge {
                 rail,
@@ -874,8 +1153,8 @@ impl SplineChart {
         if !self.seam_within([base, middle, tip], chord, seam_cosine, dec)? {
             return Ok(false);
         }
-        let tip_position = self.evaluate(tip, dec)?.map(|value| value.mid());
-        residual = residual.max(self.residual(tip, tip_position, dec)?.hi());
+        let (tip_position, tip_error) = self.vertex(tip, None, dec)?;
+        residual = residual.max(tip_error.hi());
         for (apex, position) in [(left, left_position), (right, right_position)] {
             let mut uv = [base, tip, apex];
             let mut points = [samples[1], tip_position, position];
@@ -1279,7 +1558,10 @@ impl SplineChart {
         replacement: Option<[f64; 3]>,
         dec: &mut Decider,
     ) -> Result<([f64; 3], Interval), Refusal> {
-        if self.patch_sampling
+        if self.subdivide_normals && replacement.is_some() {
+            dec.charge_traversal(1)?;
+        }
+        if (self.patch_sampling || self.subdivide_normals)
             && let Some(position) = replacement
             && let Some(projection) = self
                 .edge_projections
@@ -1305,10 +1587,15 @@ impl SplineChart {
     pub(crate) fn seed_grid(
         &self,
         limit: &Rational,
+        angle: Option<&Rational>,
         max_vertices: usize,
         dec: &mut Decider,
     ) -> Result<Vec<Uv>, Refusal> {
         let limit = Interval::from_rational(limit).lo();
+        let angular_cosine = angle
+            .filter(|_| self.subdivide_normals)
+            .map(|limit| crate::controls::cosine_enclosure(&limit.mul_pow2(-1), dec))
+            .transpose()?;
         let mut total = 0usize;
         let mut grids = Vec::with_capacity(self.spans.len());
         'spans: for span in &self.spans {
@@ -1388,6 +1675,35 @@ impl SplineChart {
                     best = vertices(counts);
                 }
                 columns += 1;
+            }
+            if counts[1] <= 2
+                && let Some(cosine) = angular_cosine.filter(|c| c.hi() > 0.0 && c.hi() < 1.0)
+            {
+                let unit = Interval::new(0.0, 1.0).unwrap();
+                let mut rows = counts[1];
+                while rows < 4 {
+                    let mut fits = true;
+                    for index in 0..rows {
+                        dec.charge_traversal(1)?;
+                        let range = Interval::new(
+                            index as f64 / rows as f64,
+                            (index + 1) as f64 / rows as f64,
+                        )
+                        .unwrap();
+                        if span
+                            .direction_cone([unit, range], dec)?
+                            .is_none_or(|cone| cone.cosine.lo() < cosine.hi())
+                        {
+                            fits = false;
+                            break;
+                        }
+                    }
+                    if fits || vertices([counts[0], 2 * rows]) > remaining {
+                        break;
+                    }
+                    rows *= 2;
+                }
+                counts[1] = counts[1].max(rows);
             }
             if self.patch_sampling && vertices(counts) > remaining {
                 continue;
@@ -1488,8 +1804,13 @@ impl SplineChart {
         cosine: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<NormalProof, Refusal> {
+        let angle = if self.subdivide_normals {
+            AngularCheck::new(direction, cosine, dec)?
+        } else {
+            None
+        };
         for (span, bounds, shift) in self.cover(bounds) {
-            if normals_agree(direction, span.normal, cosine, dec)? {
+            if angle.is_none() && normals_agree(direction, span.normal, cosine, dec)? {
                 continue;
             }
             let intersection = std::array::from_fn(|i| {
@@ -1515,6 +1836,17 @@ impl SplineChart {
             }
             if self.has_normal_cover() {
                 let unit = [Interval::new(0.0, 1.0).unwrap(); 2];
+                if let Some(angle) = angle {
+                    let cell = [
+                        enclosing_cell(local[0], dec)?,
+                        enclosing_cell(local[1], dec)?,
+                    ];
+                    if let Some(cone) = span.direction_cone(cell, dec)?
+                        && cone.admits(angle, dec)?
+                    {
+                        continue;
+                    }
+                }
                 if triangle.is_some() {
                     dec.charge_work(12)?;
                 }
@@ -1538,8 +1870,15 @@ impl SplineChart {
                     rectangle: local,
                     sides,
                     clip_first: triangle.is_some_and(|triangle| triangle.clip_first),
+                    angle,
                 };
-                if cosine.is_some_and(|value| value.lo() > 0.0)
+                let result = normal_subcells(span, unit, &target, direction, cosine, 0, dec)?;
+                if result == NormalProof::Proven {
+                    continue;
+                }
+                // A facet proved by the cells needs no separate vertex check.
+                if result != NormalProof::Violation
+                    && cosine.is_some_and(|value| value.lo() > 0.0)
                     && let Some(triangle) = triangle
                 {
                     for i in 0..3 {
@@ -1551,10 +1890,7 @@ impl SplineChart {
                         }
                     }
                 }
-                match normal_subcells(span, unit, &target, direction, cosine, 0, dec)? {
-                    NormalProof::Proven => continue,
-                    result => return Ok(result),
-                }
+                return Ok(result);
             }
             // Whole-cell certificates can serve adjacent facets with different
             // trim triangles. Fall back to the triangle's tighter rectangle.
@@ -1606,7 +1942,7 @@ fn normal_subcells(
             },
         );
     }
-    let axis = usize::from(uv[1].width() > uv[0].width());
+    let axis = span.split_axis(uv, dec)?;
     let range = uv[axis];
     let middle = range.mid();
     if middle <= range.lo() || middle >= range.hi() {
@@ -1630,6 +1966,12 @@ fn normal_subcells(
             )
         };
         if target.clip_first && outside_triangle(dec)? {
+            continue;
+        }
+        if let Some(angle) = target.angle
+            && let Some(cone) = span.direction_cone(child, dec)?
+            && cone.admits(angle, dec)?
+        {
             continue;
         }
         let angular = cosine.is_some_and(|value| value.hi() > 0.0);

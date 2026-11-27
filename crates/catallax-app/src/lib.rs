@@ -66,7 +66,7 @@ use catallax_features::{
     BuildError, Built, EvaluationCheckpoint, ImportFiles, evaluate, evaluate_incremental,
     evaluate_incremental_with_files,
 };
-use catallax_mesh::{Mesh, MeshOptions, mesh_body};
+use catallax_mesh::{FaceCache, Mesh, MeshOptions, mesh_body, mesh_body_cached};
 use catallax_numbers::{Answer, Decider, Refusal, operation_budget_active, with_operation_budget};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
@@ -131,6 +131,63 @@ pub struct IncrementalApplicationBody {
     pub display: Answer<Mesh>,
     /// Picking names of that result.
     pub names: Names,
+    face_cache: FaceCache,
+}
+
+impl IncrementalApplicationBody {
+    /// Edits the retained recipe, reusing its unchanged steps and certified faces.
+    ///
+    /// The checkpoint and display must be the unmodified results of the
+    /// previous build. Changed display options start a new face cache.
+    pub fn edit(
+        &self,
+        recipe: &Recipe,
+        options: &MeshOptions,
+        decider: &mut Decider,
+    ) -> Result<Self, Error> {
+        bounded_build(|| {
+            let checkpoint = evaluate_incremental(recipe, Some(self.checkpoint.clone()), decider)
+                .map_err(Error::Build)?;
+            Self::from_checkpoint(checkpoint, Some(self), options, decider)
+        })
+    }
+
+    /// Physical face meshes prepared by this request, excluding cache hits.
+    pub fn meshed_faces(&self) -> usize {
+        self.face_cache.meshed_faces()
+    }
+
+    /// Physical face meshes retained from the previous checked result.
+    pub fn reused_faces(&self) -> usize {
+        self.face_cache.reused_faces()
+    }
+
+    fn from_checkpoint(
+        checkpoint: EvaluationCheckpoint,
+        previous: Option<&Self>,
+        options: &MeshOptions,
+        decider: &mut Decider,
+    ) -> Result<Self, Error> {
+        let built = checkpoint.built();
+        check_result(built)?;
+        let previous = previous.map(|body| {
+            (
+                &body.checkpoint.built().model,
+                &body.display.value,
+                &body.face_cache,
+            )
+        });
+        let (display, face_cache) =
+            mesh_body_cached(&built.model, built.result, options, previous, decider)
+                .map_err(Error::Display)?;
+        let names = result_names(&built.model, built.result);
+        Ok(Self {
+            checkpoint,
+            display,
+            names,
+            face_cache,
+        })
+    }
 }
 
 /// A checked exact result and picking names, without an unrequested display mesh.
@@ -394,12 +451,7 @@ pub fn build_incremental(
 ) -> Result<IncrementalApplicationBody, Error> {
     bounded_build(|| {
         let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
-        let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
-        Ok(IncrementalApplicationBody {
-            checkpoint,
-            display,
-            names,
-        })
+        IncrementalApplicationBody::from_checkpoint(checkpoint, None, options, decider)
     })
 }
 
@@ -417,12 +469,7 @@ pub fn build_incremental_with_files(
     bounded_build(|| {
         let checkpoint = evaluate_incremental_with_files(recipe, prefix, files, decider)
             .map_err(Error::Build)?;
-        let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
-        Ok(IncrementalApplicationBody {
-            checkpoint,
-            display,
-            names,
-        })
+        IncrementalApplicationBody::from_checkpoint(checkpoint, None, options, decider)
     })
 }
 

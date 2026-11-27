@@ -11,6 +11,7 @@ on:
       - 'crates/catallax-step/**'
       - 'crates/catallax-cli/examples/rounded_step.rs'
       - 'crates/catallax-cli/examples/edit_answer.rs'
+      - 'crates/catallax-cli/examples/edit_display.rs'
       - 'tools/checks/edit_speed.py'
       - 'tools/checks/test_edit_speed.py'
       - 'tools/checks/check_edit_date.py'
@@ -156,6 +157,7 @@ jobs:
           sparse-checkout: |
             .github/actions/rust-toolchain/
             crates/catallax-cli/examples/edit_answer.rs
+            crates/catallax-cli/examples/edit_display.rs
             tools/checks/edit_speed.py
             tools/checks/test_edit_speed.py
             tools/checks/check_edit_date.py
@@ -223,10 +225,13 @@ jobs:
           chmod 700 "$XDG_RUNTIME_DIR"
       - name: Build identical native probes and the two application executables
         run: |
+          for revision in baseline candidate; do
+            cp workflow/crates/catallax-cli/examples/edit_display.rs "$revision/crates/catallax-cli/examples/edit_display.rs"
+          done
           cp workflow/crates/catallax-cli/examples/edit_answer.rs baseline/crates/catallax-cli/examples/edit_answer.rs
           cp workflow/crates/catallax-cli/examples/edit_answer.rs candidate/crates/catallax-cli/examples/edit_answer.rs
           for revision in baseline candidate; do
-            cargo build --manifest-path "$revision/Cargo.toml" --locked --release -p catallax-cli --example edit_answer --bin catallax-verify -j 2
+            cargo build --manifest-path "$revision/Cargo.toml" --locked --release -p catallax-cli --example edit_answer --example edit_display --bin catallax-verify -j 2
           done
           python3 workflow/tools/checks/edit_speed.py build --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - name: Pair the five released edits and compare every answer

@@ -360,7 +360,7 @@ const EXPECTED: [(usize, usize, Expect); 78] = [
     (1, 2, ENVELOPE),    // collar P2 standing in the tray / lattice bracket P6 beside the tray
     (1, 3, TOLERANT),    // collar P2 standing in the tray / housing P5 upright beyond the tray
     (1, 4, Exact("27")), // collar P2 standing in the tray / pin of radius 7 in the housing bore
-    (1, 5, Unresolved("app.relation-gap")), // collar P2 standing in the tray / boss P3 turned beside the tray
+    (1, 5, Unresolved("numbers.operation-budget")), // collar P2 standing in the tray / boss P3 turned beside the tray
     (1, 6, Unresolved("numbers.operation-budget")), // collar P2 standing in the tray / boss P3 turned into the tray corner
     (1, 7, Exact("78")),                            // collar P2 standing in the tray / bracket P1
     (1, 8, Exact("179/2")), // collar P2 standing in the tray / pin of radius 7/2 in the bracket bore

@@ -10,6 +10,7 @@ on:
       - 'tools/release/rebuild-corpus.jsonl'
       - 'tools/release/rebuild-answers.json'
       - 'tools/release/release.py'
+      - 'tools/release/record_topology.py'
       - '.claude/skills/verify-catallax/scripts/**'
       - '.github/workflows/name-stability.yml'
   push:
@@ -22,6 +23,7 @@ on:
       - 'tools/release/rebuild-corpus.jsonl'
       - 'tools/release/rebuild-answers.json'
       - 'tools/release/release.py'
+      - 'tools/release/record_topology.py'
       - '.claude/skills/verify-catallax/scripts/**'
       - '.github/workflows/name-stability.yml'
   workflow_dispatch:

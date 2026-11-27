@@ -405,7 +405,10 @@ def comparable(manifest):
     return result
 
 
-def compare(left, right):
+def compare(left, right, project=None):
+    if project is None:
+        def project(manifest, _request):
+            return comparable(manifest)
     a, b = [json.loads(Path(path).read_text()) for path in (left, right)]
     failures = []
     if len(a['cases']) != len(b['cases']):
@@ -423,7 +426,7 @@ def compare(left, right):
             cause = 'internal-error'
         elif px != py:
             cause = 'input-mismatch'
-        elif comparable(manifests[0]) != comparable(manifests[1]):
+        elif project(manifests[0], px) != project(manifests[1], py):
             cause = 'manifest'
         elif a['config']['binary_sha256'] == b['config']['binary_sha256'] and x['response']['work'] != y['response']['work']:
             cause = 'work-mismatch'

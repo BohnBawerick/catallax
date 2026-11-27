@@ -39,11 +39,12 @@ jobs:
           fi
           echo "affected=$affected" >> "$GITHUB_OUTPUT"
 
-  capture:
+  capture-main:
     needs: select
     if: needs.select.outputs.affected == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # A cold single-worker capture took 50 min on hosted runners.
+    timeout-minutes: 80
     env:
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
@@ -63,9 +64,6 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: main
           persist-credentials: false
-      - name: Exercise the display gate
-        working-directory: head
-        run: python3 -B -m unittest discover -s tools/display-diff -p test_check.py
       - uses: ./head/.github/actions/rust-toolchain
         with:
           toolchain: stable
@@ -90,11 +88,99 @@ jobs:
         with:
           path: ${{ runner.temp }}/display-main
           key: ${{ steps.baseline.outputs.cache-primary-key }}
-      - name: Capture the PR head at 1 and 4 workers
-        working-directory: head
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: display-main
+          path: ${{ runner.temp }}/display-main/1.jsonl
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record job elapsed time
+        if: ${{ always() && steps.started.outcome == 'success' }}
+        env:
+          STARTED: ${{ steps.started.outputs.epoch }}
+          CACHE_HIT: ${{ steps.baseline.outputs.cache-hit }}
         run: |
-          python3 -B tools/display-diff/check.py capture "$RUNNER_TEMP/display-head" --collector interface --threads 1 --threads 4
-          echo "Head capture (both worker counts): ${SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "Main job: $(($(date +%s) - STARTED))s (baseline cache hit: ${CACHE_HIT:-false})." >> "$GITHUB_STEP_SUMMARY"
+
+  capture-head:
+    needs: select
+    if: needs.select.outputs.affected == 'true'
+    runs-on: ubuntu-24.04
+    # The hosted head runs took 50 min cold (1 worker) and 40 min warm
+    # (4 workers). Budget for a cold build in both jobs, plus headroom.
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        workers: [1, 4]
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      WORKERS: ${{ matrix.workers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: stable
+      - name: Capture head at ${{ matrix.workers }} workers
+        run: |
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/display-target"
+          python3 -B tools/display-diff/check.py capture "$RUNNER_TEMP/display-head" --collector interface --threads "$WORKERS"
+          echo "Head capture ($WORKERS workers): ${SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: display-head-${{ matrix.workers }}
+          path: ${{ runner.temp }}/display-head/${{ matrix.workers }}.jsonl
+          if-no-files-found: error
+          retention-days: 14
+
+  capture:
+    needs: [select, capture-main, capture-head]
+    if: ${{ !cancelled() && (needs.select.result != 'success' || needs.select.outputs.affected == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require successful captures
+        env:
+          SELECT: ${{ needs.select.result }}
+          MAIN: ${{ needs.capture-main.result }}
+          HEAD: ${{ needs.capture-head.result }}
+        run: |
+          if [[ "$SELECT" != success || "$MAIN" != success || "$HEAD" != success ]]; then
+            echo "::error::Display prerequisites failed (select: $SELECT, main: $MAIN, head: $HEAD)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: main
+          persist-credentials: false
+      - name: Exercise the display gate
+        working-directory: head
+        run: python3 -B -m unittest discover -s tools/display-diff -p test_check.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: display-main
+          path: ${{ runner.temp }}/display-main
+      - uses: actions/download-artifact@v4
+        with:
+          name: display-head-1
+          path: ${{ runner.temp }}/display-head
+      - uses: actions/download-artifact@v4
+        id: head-four
+        with:
+          name: display-head-4
+          path: ${{ runner.temp }}/display-head
       - name: Require display answers to match
         run: |
           flags=()
@@ -106,18 +192,11 @@ jobs:
           fi
           python3 -B head/tools/display-diff/check.py compare "$RUNNER_TEMP/display-main" "$RUNNER_TEMP/display-head" --gate "${flags[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.head-four.outcome == 'success' }}
         with:
           name: display-captures
           path: |
             ${{ runner.temp }}/display-main/*.jsonl
             ${{ runner.temp }}/display-head/*.jsonl
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 14
-      - name: Record job elapsed time
-        if: ${{ always() && steps.started.outcome == 'success' }}
-        env:
-          STARTED: ${{ steps.started.outputs.epoch }}
-          CACHE_HIT: ${{ steps.baseline.outputs.cache-hit }}
-        run: |
-          echo "Display job: $(($(date +%s) - STARTED))s (baseline cache hit: ${CACHE_HIT:-false})." >> "$GITHUB_STEP_SUMMARY"

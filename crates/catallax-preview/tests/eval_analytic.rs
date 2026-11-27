@@ -1,6 +1,6 @@
 //! Compares the actual compute evaluator with an independent binary64 chart evaluation.
-// Set CATALLAX_ANALYTIC_CORPUS=1 to add the predictor corpus. Imported
-// rows need CATALLAX_ANALYTIC_SOURCES, a JSON object from model IDs to STEP paths.
+// Set CATALLAX_ANALYTIC_ROW to a predictor corpus row ID. Imported rows use
+// CATALLAX_ANALYTIC_SOURCES (STEP directory) and CATALLAX_ANALYTIC_SELECTION.
 #[path = "../src/eval/analytic.rs"]
 mod analytic;
 
@@ -192,74 +192,97 @@ fn case_recipe(text: &str, id: &str) -> serde_json::Value {
         .take()
 }
 
-fn corpus(mut visit: impl FnMut(&str, &catallax_features::Built)) {
+fn corpus_row(id: &str, mut visit: impl FnMut(&Surface, &str)) {
     use serde_json::{Value, json};
     use std::{fs, path::Path};
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: Value =
         serde_json::from_str(include_str!("../../../tools/predictor/corpus.json")).unwrap();
-    let sources: Value = std::env::var_os("CATALLAX_ANALYTIC_SOURCES")
-        .map_or(Value::Null, |path| {
-            serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
-        });
-    let mut exact = 0;
-    let mut refused = 0;
-    let mut missing = 0;
-    for row in manifest["rows"].as_array().unwrap() {
-        let id = row["id"].as_str().unwrap();
-        let mut files = catallax_features::ImportFiles::new();
-        let bytes;
-        let mut recipe = if let Some(path) = row["recipe"].as_str() {
-            serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()
-        } else if let Some(path) = row["cases"].as_str() {
-            case_recipe(
-                &fs::read_to_string(root.join(path)).unwrap(),
-                row["case"].as_str().unwrap(),
-            )
-        } else if let Some(model) = row["import"]["model"].as_str() {
-            let Some(path) = sources[model].as_str() else {
-                assert!(sources.is_null(), "No supplied STEP path for {model}");
-                missing += 1;
-                continue;
-            };
-            let hash = row["import"]["sha256"].as_str().unwrap();
-            bytes = fs::read(path).unwrap();
-            files.insert(hash.into(), bytes.as_slice());
-            json!({"format": "catallax-recipe/3", "name": id, "steps": [{
+    let row = manifest["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == id)
+        .unwrap_or_else(|| panic!("Unknown corpus row {id}"));
+    let mut files = catallax_features::ImportFiles::new();
+    let bytes;
+    let mut recipe = if let Some(path) = row["recipe"].as_str() {
+        serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()
+    } else if let Some(path) = row["cases"].as_str() {
+        case_recipe(
+            &fs::read_to_string(root.join(path)).unwrap(),
+            row["case"].as_str().unwrap(),
+        )
+    } else if let Some(model) = row["import"]["model"].as_str() {
+        let path = std::env::var_os("CATALLAX_ANALYTIC_SOURCES")
+            .zip(std::env::var_os("CATALLAX_ANALYTIC_SELECTION"))
+            .and_then(|(dir, selection)| {
+                let entries: Vec<(String, std::path::PathBuf)> =
+                    serde_json::from_slice(&fs::read(selection).unwrap()).unwrap();
+                entries
+                    .into_iter()
+                    .find(|(key, _)| key == model)
+                    .map(|(_, name)| Path::new(&dir).join(name))
+            });
+        let Some(path) = path.filter(|path| path.is_file()) else {
+            eprintln!("Corpus {id}: missing source");
+            return;
+        };
+        let hash = row["import"]["sha256"].as_str().unwrap();
+        bytes = fs::read(path).unwrap();
+        files.insert(hash.into(), bytes.as_slice());
+        json!({"format": "catallax-recipe/3", "name": id, "steps": [{
                 "id": "imported", "op": "import_step",
                 "file": {"name": "part.step", "sha256": hash},
                 "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
             }], "result": "imported"})
-        } else {
-            assert!(row["inline"].is_object(), "{id}: missing recipe");
-            row["inline"].clone()
-        };
-        if let Some(steps) = row["append"].as_array() {
-            recipe["steps"]
-                .as_array_mut()
-                .unwrap()
-                .extend(steps.iter().cloned());
-            recipe["result"] = row["result"].clone();
+    } else {
+        assert!(row["inline"].is_object(), "{id}: missing recipe");
+        row["inline"].clone()
+    };
+    if let Some(steps) = row["append"].as_array() {
+        recipe["steps"]
+            .as_array_mut()
+            .unwrap()
+            .extend(steps.iter().cloned());
+        recipe["result"] = row["result"].clone();
+    }
+    if row["format"].is_string() {
+        recipe["format"] = row["format"].clone();
+    }
+    let recipe = Recipe::parse(&recipe.to_string()).unwrap_or_else(|e| panic!("{id}: {e:?}"));
+    use catallax_features::{EvaluationOutcome, evaluate_incremental_outcome};
+    // Feature evaluation verifies imported bytes against the recipe digest.
+    match evaluate_incremental_outcome(&recipe, None, &files, &mut Decider::default()) {
+        Ok(EvaluationOutcome::Exact(checkpoint)) => {
+            eprintln!("Corpus {id}: exact");
+            body_faces(checkpoint.built(), visit);
         }
-        if row["format"].is_string() {
-            recipe["format"] = row["format"].clone();
-        }
-        let recipe = Recipe::parse(&recipe.to_string()).unwrap_or_else(|e| panic!("{id}: {e:?}"));
-        match catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default()) {
-            Ok(built) => {
-                exact += 1;
-                visit(id, &built);
+        Ok(EvaluationOutcome::Numerical(result)) => {
+            eprintln!("Corpus {id}: fitted");
+            for face in &result.body().definition().faces {
+                visit(&face.surface, &face.key);
             }
-            Err(reason) => {
-                refused += 1;
-                eprintln!("{id}: no exact faces ({reason})");
+        }
+        Err(reason) => {
+            let reason = reason.to_string();
+            assert!(!reason.contains("sha256 mismatch"), "{id}: {reason}");
+            eprintln!("Corpus {id}: refused ({reason})");
+        }
+    }
+}
+
+fn body_faces(built: &catallax_features::Built, mut visit: impl FnMut(&Surface, &str)) {
+    let model = &built.model;
+    for &lump in &model.body(built.result).lumps {
+        for &shell in &model.lump(lump).shells {
+            for &face in &model.shell(shell).faces {
+                let surface = model.geom().surface(model.face(face).surface);
+                visit(surface, &format!("{face:?}"));
             }
         }
     }
-    eprintln!(
-        "Corpus: {exact} exact rows, {refused} without an exact body, {missing} missing STEP sources"
-    );
 }
 
 fn fixtures() -> Vec<Case> {
@@ -309,9 +332,6 @@ fn fixtures() -> Vec<Case> {
         let built = evaluate(&Recipe::parse(input).unwrap(), &mut Decider::default())
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         add_body(name, &built);
-    }
-    if std::env::var_os("CATALLAX_ANALYTIC_CORPUS").is_some() {
-        corpus(add_body);
     }
 
     let r = Real::from_i64;
@@ -436,7 +456,29 @@ fn analytic_compute_matches_binary64_charts() {
         Some(other) => panic!("Unknown CATALLAX_ANALYTIC_ADAPTER: {other}"),
     }
 
-    let cases = fixtures();
+    let row = std::env::var("CATALLAX_ANALYTIC_ROW").ok();
+    let cases = if let Some(id) = &row {
+        let mut cases = Vec::new();
+        corpus_row(id, |surface, key| {
+            for same in [true, false] {
+                if let Some(definition) = Definition::from_surface(surface, [13.0, -4.0, 9.0], same)
+                {
+                    cases.push(Case {
+                        name: format!("{id} {key}"),
+                        definition,
+                        same,
+                    });
+                }
+            }
+        });
+        if cases.is_empty() {
+            eprintln!("Compared 0 samples across 0 oriented faces");
+            return;
+        }
+        cases
+    } else {
+        fixtures()
+    };
     let faces: Vec<AnalyticSurface> = cases.iter().map(|case| case.definition.upload()).collect();
     let mut samples = Vec::new();
     let mut expected = Vec::new();
@@ -500,19 +542,21 @@ fn analytic_compute_matches_binary64_charts() {
         }
         start = end;
     }
-    for kind in [
-        Kind::Cone,
-        Kind::Sphere,
-        Kind::Torus,
-        Kind::Sweep,
-        Kind::Pipe,
-        Kind::Ruled,
-        Kind::LinearFillet,
-    ] {
-        assert!(
-            cases.iter().any(|case| case.definition.kind == kind),
-            "missing {kind:?}"
-        );
+    if row.is_none() {
+        for kind in [
+            Kind::Cone,
+            Kind::Sphere,
+            Kind::Torus,
+            Kind::Sweep,
+            Kind::Pipe,
+            Kind::Ruled,
+            Kind::LinearFillet,
+        ] {
+            assert!(
+                cases.iter().any(|case| case.definition.kind == kind),
+                "missing {kind:?}"
+            );
+        }
     }
     eprintln!(
         "Compared {} samples across {} oriented faces",

@@ -9,6 +9,9 @@ use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 use serde_json::json;
 
+#[path = "generator_fillet_display/saddle_fit.rs"]
+mod saddle_fit;
+
 fn cylinder(id: &str, x: &str) -> serde_json::Value {
     json!({"id":id,"op":"cylinder","radius":"5","height":"12",
         "pose":{"rotation":["1","0","0","0"],"translation":[x,"0","0"]}})
@@ -298,6 +301,7 @@ fn assert_viewport_levels(kind: &str, recipe: &Recipe) {
         let body = catallax_app::build(recipe, &options, &mut Decider::default()).unwrap();
         let display_ms = started.elapsed().as_secs_f64() * 1000.0;
         assert_closed(&case, &body.display.value, &options);
+        saddle_fit::check(&case, &body.built.model, &body.display.value);
         let (preview, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
             preview_mesh_body(
                 &body.built.model,

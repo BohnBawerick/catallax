@@ -1015,14 +1015,16 @@ impl FaceBuilder<'_, '_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
-            let angular_pipe = self.options.angular_deviation.is_some()
+            let angular = self.options.angular_deviation.is_some();
+            let angular_band = angular && self.protects_band();
+            let angular_pipe = angular
                 && matches!(
                     self.chart.surface,
                     Surface::BSpline(SplineSupport::RollingPipe(_))
                 );
-            // The radial normal proof guides angular pipe refinement from the
-            // full-chord grid. Every resulting facet is checked against both limits.
-            let chord = if spline.patch_sampling() || angular_pipe {
+            // Angular bands can use the split chord proof during refinement.
+            // Without it, leave room for triangles spanning the fixed collar.
+            let chord = if spline.patch_sampling() || angular_pipe || angular_band {
                 self.options.chord_tolerance.clone()
             } else {
                 self.options.chord_tolerance.mul_pow2(-1)
@@ -1034,7 +1036,12 @@ impl FaceBuilder<'_, '_> {
                     .max_vertices
                     .saturating_sub(self.positions.len())
             };
-            let mut grid = spline.seed_grid(&chord, remaining, self.dec)?;
+            let mut grid = spline.seed_grid(
+                &chord,
+                self.options.angular_deviation.as_ref(),
+                remaining,
+                self.dec,
+            )?;
             for uv in &mut grid {
                 *uv = self.chart.canonical(*uv);
                 if let Some(band) = self.band {

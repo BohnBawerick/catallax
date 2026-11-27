@@ -301,6 +301,12 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "derivative_rows",
         Kind::Guarded,
     ),
+    // Computing the second differences and their hulls spends decision work.
+    (
+        "catallax-shapes/src/tessellation/rational.rs",
+        "quadratic_hulls",
+        Kind::Guarded,
+    ),
     ("catallax-intersect/src/chart.rs", "balls", Kind::Guarded),
     // Uncharged for a rational constant; guarded where an enclosure fills it.
     ("catallax-intersect/src/chart.rs", "interval", Kind::Guarded),

@@ -33,7 +33,7 @@ mod number;
 pub mod numerical;
 mod partial;
 mod pcurve;
-/// Manufacturing information written as AP242 semantic PMI.
+/// Manufacturing information written as AP242 PMI.
 pub mod pmi;
 mod poles;
 mod rational_atlas;
@@ -193,9 +193,7 @@ pub fn write_step<W: Write>(
     })
 }
 
-/// Writes one body as a STEP AP242 file with its manufacturing information
-/// as semantic PMI: datums, dimensions with limits, geometric tolerances and
-/// surface textures on the faces they apply to, and the part's notes.
+/// Writes one body as a STEP AP242 file with its [`pmi::Pmi`].
 ///
 /// Every dimension's nominal value is measured from the exact geometry, so
 /// [`pmi::Size::nominal`] and [`pmi::Location::nominal`] are not read. The

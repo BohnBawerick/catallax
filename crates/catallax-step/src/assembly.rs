@@ -99,7 +99,7 @@ fn invalid(detail: &str) -> Refusal {
 /// Surface colour for a part definition, in STEP's normalized sRGB channels.
 pub type Colour = [Rational; 3];
 
-/// A kernel part definition with optional appearance and semantic PMI.
+/// A kernel part definition with optional appearance and PMI.
 pub struct Part<'a> {
     /// Model containing the part. Different definitions may use different models.
     pub model: &'a Model,
@@ -107,7 +107,7 @@ pub struct Part<'a> {
     pub body: BodyId,
     /// Colour inherited by all occurrences of this definition.
     pub colour: Option<Colour>,
-    /// Manufacturing information attached to faces in this model.
+    /// Manufacturing information in this part's local coordinates.
     pub pmi: Option<&'a Pmi<FaceId>>,
 }
 

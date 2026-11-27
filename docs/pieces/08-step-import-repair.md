@@ -299,62 +299,70 @@ The movement is proven for the whole file. A changed length moves a face by at m
 
 ## Manufacturing information
 
-`read_step_pmi(bytes)` reads a file's AP242 semantic PMI into a
-`catallax_step::pmi::Pmi<String>`. Faces are named by the entity of their
-`ADVANCED_FACE`, such as `#17`: the face keys an import of the same bytes
-reports. It reads what [piece 7 writes](07-step-export.md#manufacturing-information)
-and the common forms of the CAx-IF recommended practices, in any length unit.
+`read_step_pmi(bytes)` returns a `StepPmi`. Its `pmi` field holds the items,
+part notes and saved views. Faces use the same `ADVANCED_FACE` entity keys as
+geometry import of the same bytes, such as `#17`. The reader converts recognised
+length units exactly. The supported encodings are listed in the
+[STEP writer contract](07-step-export.md#manufacturing-information).
 
-A dimension's nominal is the value the file states, in millimetres. The reader
-does not compare it with the geometry; the caller measures the imported body
-with `catallax_step::pmi::nominals` and decides.
+A dimension's nominal is the value the file states, in millimetres or degrees.
+To compare it with geometry, measure the imported body with
+`catallax_step::pmi::nominals`.
 
 A dimension with the `theoretical` note reads as basic (`Limits::Basic`). A
 diameter on a feature that carries the attribute `hole depth` with the value
 `through` reads with `Size::through` set.
 
-Nothing is guessed. An item the reader cannot represent in full is left out
-and listed in `StepPmi::skipped` with its entity, type and reason: an angular
-dimension, a dimension along a path, a reference dimension or one with
-another modifier or note, a datum target other than a placed
-target on one planar face, a common datum, a tolerance with a modifier other
-than a material condition, a datum reference with a modifier other than a
-material boundary, an item on geometry other than faces. A datum that only
-datum targets set up, with no `DATUM_FEATURE` naming its faces, is skipped
-with its targets. A composite frame's lower segment is skipped with its upper. A
-tolerance is skipped if no accepted datum defines the letter it refers to.
+`StepPmi::skipped` gives the entity, type and reason for each unsupported or
+malformed item the reader detects. Examples include an angular size, a
+dimension along a path, a reference dimension, a common datum, or a control
+with an unsupported modifier or a non-face attachment. The reader also skips
+semantic text with an unknown variable name or an attachment to the whole part
+or a PMI item. A datum needs a `DATUM_FEATURE` naming its faces. If a defining
+target is invalid, the reader skips that datum and controls that depend on it.
+A composite requires an unambiguous ASME Y14.5-2018 declaration on its part.
+If the frame is refused, its lower segment is skipped with the upper.
 A datum skipped because its faces already carry a datum does not reserve
 its letter. A later datum on a different feature can define that letter.
-The only refusal is a file that is not readable Part 21 text.
+The standalone reader refuses only unreadable Part 21 input.
 
-Saved views come back in `Pmi::views`: one per `CAMERA_MODEL_D3` in a
-draughting model, with its camera in millimetres and the items whose callouts
-it holds. A callout can present several items, including a datum through its
-datum feature and a composite through either of its segments. View membership
-lists each resolved item once. `StepPmi::graphics` keeps graphical-only
-callouts with their strokes, annotation planes, face attachments, optional
-equivalent Unicode text and view names. Clipped cameras and off-centre or
-rotated windows produce a diagnostic. Assembly import reads semantic PMI per part and reports skipped presentation
-against its part.
+`Pmi::views` contains one view per supported `CAMERA_MODEL_D3` in a draughting
+model. Each view lists its camera and the resolved items its callouts present.
+Membership lists each item once, even when multiple associations resolve to it.
+A callout can present several items, including a datum through its datum
+feature and a composite through either segment. `StepPmi::graphics` keeps
+callouts with no semantic match or with unread semantic associations. These
+records include polylines and annotation planes in part millimetres, any
+resolved face attachments, recorded equivalent Unicode text and view names.
+The reader diagnoses unsupported strokes, nonidentity or ambiguous geometry
+mappings, clipped cameras, and off-centre or rotated windows.
 
-`cargo run -p catallax-import --example step_pmi -- part.step` prints what a
-file reads as and every item left out.
+Assembly import groups semantic items by part and requires a unique leaf owner
+and attachments on that part. It reports omitted saved views and graphics in
+the parts' `skipped` lists.
+
+`cargo run -p catallax-import --example step_pmi -- part.step` prints the items,
+views, graphical callouts and diagnostics.
 
 ## Editing manufacturing information in place
 
-`patch_step_pmi(bytes, &[PmiEdit])` edits a file's PMI in its own records and
-copies every other byte, so the assembly, colours, other annotations and
-records no Catallax reader knows stay as written. `ToleranceValue` gives a
-geometric tolerance a new value as a length measure under a fresh number above
-the file's highest, then replaces the magnitude reference. Select the tolerance
-by its source entity from the owning part's `StepPmi::sources`. No edits give back
-the same bytes.
+`patch_step_pmi(bytes, &[PmiEdit])` copies the input byte for byte when the edit
+list is empty. The supported edit, `PmiEdit::ToleranceValue`, changes the
+magnitude of an `ItemKind::Tolerance` to a positive value in millimetres. Look
+up the item name in the owning part's `StepPmi::sources` and pass that source
+entity as the edit's selector.
 
-The patch refuses with `step.pmi-patch` if it finds an unproven dependency on
-the tolerance or its zone, or if the new value lacks an exact decimal in the
-file's unit. The patched file must read back as the edited PMI, and every
-untouched record must match the original bytes.
-`StepPmi::sources` names the entity each item was read from.
+An edit requires UTF-8 Part 21 text with one `DATA` section and an unshared,
+plain `LENGTH_MEASURE_WITH_UNIT`. The new magnitude must have an exact decimal
+in the original unit. The patch replaces the magnitude reference, removes the
+old measure and gives the new measure a fresh entity number. It copies the
+remaining bytes, including unrelated assembly, colour, annotation and opaque
+records.
+
+The patch refuses with `step.pmi-patch` before returning output if safety
+cannot be proved, including when a callout or other dependent record could
+retain the old value. Read-back must match the requested edit and preserve the
+other PMI on each edited part.
 
 ## Immutable source
 

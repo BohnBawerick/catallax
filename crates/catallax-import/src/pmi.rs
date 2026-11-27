@@ -1,16 +1,7 @@
-//! Manufacturing information read from a STEP file's AP242 semantic PMI.
+//! AP242 manufacturing information in a STEP file.
 //!
-//! [`read_step_pmi`] returns the datums, dimensions, geometric tolerances and
-//! surface textures a file attaches to faces, keyed by the entity names of its
-//! `ADVANCED_FACE`s (`#17`), which are the face keys an import of the same
-//! bytes reports. It reads the forms `catallax_step::write_step_with_pmi`
-//! writes and the common forms of the CAx-IF recommended practices.
-//!
-//! Nothing is guessed. An item this reader cannot represent in full, such as
-//! an angular size, an explicit area datum target or a tolerance with a
-//! modifier it does not know, is left out and listed in [`StepPmi::skipped`]
-//! with its entity and the reason. A datum whose target is left out is left
-//! out too, with every item that refers to it.
+//! Use [`read_step_pmi`] to get a [`StepPmi`] report and [`patch_step_pmi`]
+//! to apply source-record edits.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,14 +22,14 @@ use catallax_step::pmi::{
 
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph, Param, parse};
-use crate::recognize::{length_measure, placement_reference, unit_millimetres};
+use crate::recognize::{Vec3, length_measure, placement_reference, unit_millimetres};
 
 /// The manufacturing information of a STEP file.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct StepPmi {
     /// What was read, with faces named by their entity, such as `#17`.
     pub pmi: Pmi<String>,
-    /// Items in the file that were not read.
+    /// Diagnostics for unsupported or malformed items and presentation.
     pub skipped: Vec<SkippedPmi>,
     /// Graphics without a semantic item and graphics whose associations include
     /// an unread semantic item.
@@ -199,10 +190,8 @@ fn decode(raw: &str) -> Option<String> {
         } else {
             let (width, body) = if let Some(body) = tail.strip_prefix("\\X2\\") {
                 (4, body)
-            } else if let Some(body) = tail.strip_prefix("\\X4\\") {
-                (8, body)
             } else {
-                return None;
+                (8, tail.strip_prefix("\\X4\\")?)
             };
             let (encoded, after) = body.split_once("\\X0\\")?;
             if encoded.is_empty() || encoded.len() % width != 0 {
@@ -2535,7 +2524,7 @@ impl<'a> Reader<'a> {
         &self,
         occurrences: &[u64],
         scale: &Rational,
-    ) -> Result<(String, Vec<Vec<[Rational; 3]>>), String> {
+    ) -> Result<(String, Vec<Vec<Vec3>>), String> {
         let mut kind = String::new();
         let mut strokes = Vec::new();
         for id in occurrences {

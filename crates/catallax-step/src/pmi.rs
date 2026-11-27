@@ -1,10 +1,7 @@
-//! Manufacturing information on a part, written to STEP as AP242 semantic PMI.
+//! Manufacturing information on a part, written to STEP as AP242 PMI.
 //!
-//! A [`Pmi`] is a list of [`Item`]s: datums, dimensions with their limits,
-//! geometric tolerances and surface textures, each attached to the faces it
-//! applies to, plus the notes that belong to the whole part. The type is
-//! generic over the face key: a writer takes model faces, a reader returns
-//! the entity names of the file's faces.
+//! [`Pmi`] is generic over the face key. The writer takes model face handles
+//! and the reader returns STEP entity names.
 //!
 //! A dimension carries no nominal value on the way out. The writer measures
 //! it from the exact geometry ([`nominals`]), so a file never states a size

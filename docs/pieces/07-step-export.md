@@ -145,11 +145,10 @@ cylinder's cut, which keeps an arc's circle parameter equal on both faces.
 
 `write_step_with_pmi(model, body, &StepOptions, &pmi, dec, out)` writes one body
 as [`write_step`](#writing) does and adds its manufacturing information as AP242
-semantic PMI. A `pmi::Pmi<FaceId>` lists datums, sizes, distances, geometric
-tolerances and surface textures by the model faces they apply to, with the
-part's general tolerance, material and notes. An empty `Pmi` writes the bytes
-`write_step` writes. The entity forms follow the CAx-IF recommended practices
-for the representation of PMI in AP242, version 4.1.
+PMI. A `pmi::Pmi<FaceId>` carries face-attached items, part notes and saved views.
+`write_step_assembly` takes the same input for each part through `assembly::Part::pmi`.
+An empty `Pmi` writes the bytes `write_step` writes. The entity forms follow the
+CAx-IF recommended practices for the representation of PMI in AP242, version 4.1.
 
 The writer measures every dimension. `pmi::nominals(model, &pmi, dec)` reads a
 diameter or radius off a cylinder and a distance between planes and cylinder
@@ -175,27 +174,32 @@ Every `ADVANCED_FACE` of a PMI file carries the name `face-<index>-<n>`, and
 | a through hole | a user defined attribute `hole depth` with the value `through` on the feature its diameter is on (`Size::through`). AP242 edition 1 has no hole entity, and the recommended practices give a compound feature as separate dimensions with no relation between them (section 5.1.9), so the depth is an attribute |
 | a thread | a user defined attribute `thread` with the designation, such as `M6x1 - 6H`, on the feature its diameter is on (`Size::thread`). AP242 edition 1 has no thread entity. Only a diameter is threaded, and the designation is plain text of at most 40 characters |
 | a geometric tolerance | the characteristic's entity. A characteristic that always has datums, such as perpendicularity, is a subtype of `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and stays a plain instance; position or a profile with datums, and any tolerance with a material condition, is a complex instance with `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and `GEOMETRIC_TOLERANCE_WITH_MODIFIERS`; one `DATUM_SYSTEM` per datum sequence; a diameter zone is a `TOLERANCE_ZONE` of form `cylindrical or circular` |
-| a position control | `PositionControl` with a single frame and a projected zone or a datum material boundary; a plain single position is a geometric tolerance. Each segment is a `POSITION_TOLERANCE` with its own modifiers and `DATUM_SYSTEM`. A composite frame is two of them on one aspect, upper first, related by a `GEOMETRIC_TOLERANCE_RELATIONSHIP` named `composite` (recommended practices, section 6.9.9). A datum boundary is a `SIMPLE_DATUM_REFERENCE_MODIFIER` in the reference's compartment (6.9.7). A projected zone is a `PROJECTED_ZONE_DEFINITION` on the cylindrical zone, with the height and an aspect on the planar faces where the zone starts (6.9.2.2) |
+| a position control | `PositionControl` carries a composite frame or a single frame with a projected zone or datum material boundary. Use `ItemKind::Tolerance` for a plain single position. Each segment is a `POSITION_TOLERANCE` with its own material modifier and ordered datum references when supplied. A composite has two segments on one aspect, related upper to lower by a `GEOMETRIC_TOLERANCE_RELATIONSHIP` named `composite` (section 6.9.9). A datum boundary is a `SIMPLE_DATUM_REFERENCE_MODIFIER` in the datum reference compartment (6.9.7). A `PROJECTED_ZONE_DEFINITION` on the cylindrical zone records the height and links to the planar entry faces (6.9.2.2). |
 | a datum target | a `PLACED_DATUM_TARGET_FEATURE` described `point`, `line`, `circle` or `rectangle` with its number, related to its `DATUM` as a `datum target` and to an aspect on its one planar face by a `FEATURE_FOR_DATUM_TARGET_RELATIONSHIP`. Its placement is an `orientation` frame whose z is the face's outward normal and whose x is the line or rectangle direction, with `target length`, `target width` or `target diameter` beside it (6.6.1, 6.6.3). The datum keeps its `DATUM_FEATURE` on the faces it declares |
 | a surface texture | `SURFACE_TEXTURE_REPRESENTATION` with the parameter as a measure in micrometres, under a `surface_condition` property of the feature whose description is the process condition |
-| a face note or knurl | semantic text (recommended practices, section 7.4.2): a `PROPERTY_DEFINITION` named `semantic text` on an aspect of its own on the faces, with one `DESCRIPTIVE_REPRESENTATION_ITEM` holding the whole `FaceNote`, or one named `knurl designation` holding a `Knurl`'s designation. AP242 has no knurl entity, so a knurl is text a person reads; only a reader that knows the variable name gets the knurl kind back. The part counts `number of semantic text notes` and those on geometry, part and PMI (7.4.3) only when it has text, and text is not a semantic PMI element |
-| a surface texture's drawing | a `DRAUGHTING_CALLOUT` named after the item: polylines in a `GEOMETRIC_CURVE_SET` named `surface roughness` that draw a leader to a point on the faces, the ISO 1302 symbol of the process condition and the requirement, such as `Ra 1.6`, in stroked 3 mm text. By default the drawing faces the front. In a saved view it faces the camera. One `DRAUGHTING_MODEL_ITEM_ASSOCIATION` identifies the finish's semantic property. A second links the drawing to the texture's own face aspect |
-| a shown item's drawing | a `DRAUGHTING_CALLOUT` in a plane facing the saved-view camera: a leader from a point on its first face to a framed label in stroked text, such as `A`, `⌀8 H7` or `POS\|⌀0.4(M)\|A\|D(M)\|B`, in a `GEOMETRIC_CURVE_SET` named for its type (section 8.4). A `DRAUGHTING_MODEL_ITEM_ASSOCIATION` ties it to the datum feature, size or tolerance segments it presents. Saved views support datums, unthreaded diameter sizes, single position tolerances and surface textures |
+| a face note or knurl | A `PROPERTY_DEFINITION` named `semantic text` on a separate aspect of the attached faces (section 7.4.2). One `DESCRIPTIVE_REPRESENTATION_ITEM` holds the entire text. Its name is empty for `FaceNote` and `knurl designation` for `Knurl`. This preserves editable text and face attachments. Recovering the knurl kind requires a reader that recognises that name. The writer counts these items separately from semantic PMI under the text-note validation properties (section 7.4.3) and emits no drawn callout for either kind. |
+| a surface texture's drawing | A `DRAUGHTING_CALLOUT` named after the item. Polylines in a `GEOMETRIC_CURVE_SET` named `surface roughness` draw the leader, the ISO 1302 process symbol and the requirement, such as `Ra 1.6`, in stroked 3 mm text. A finish omitted from all saved views gets a front-facing drawing. In a saved view the drawing faces the camera. One `DRAUGHTING_MODEL_ITEM_ASSOCIATION` identifies the finish's semantic property. A second links the drawing to the texture's own face aspect. |
+| a shown item's drawing | A `DRAUGHTING_CALLOUT` in a plane facing the saved-view camera. A leader runs from a face on the item's first feature to a framed label in stroked text in a named `GEOMETRIC_CURVE_SET` (section 8.4). A `DRAUGHTING_MODEL_ITEM_ASSOCIATION` ties the drawing to the datum feature, diameter size or position tolerance. Saved views can show datums, unthreaded diameter sizes, plain position tolerances (`ItemKind::Tolerance` with `Characteristic::Position`) and surface textures. |
 | a saved view | `Pmi::views`: a `DRAUGHTING_MODEL` named for the view, holding the callouts it shows, an identity mapping of the part shape and a `CAMERA_MODEL_D3` with the authored view name. The mapped shape uses an AP242 Edition 1 curve style with an empty color and no font or width override, preserving the part’s appearance. Draughting model names are unique across the file, including assembly leaves. The camera's frame has its origin at the eye, z along the view and x across it; its `VIEW_VOLUME` is `.PARALLEL.` or `.CENTRAL.` with the view distance and a `PLANAR_BOX` at that depth. A `MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP` ties the view to the model of all callouts (section 9.4) |
 | validation properties | `pmi validation property` properties (recommended practices, section 10). On the product definition shape: the number of semantic PMI elements, of dimensional locations, dimensional sizes, geometric tolerances, composite tolerances, datums, datum targets and annotations. On each `DATUM` and `DIMENSIONAL_LOCATION`: its equivalent Unicode string, such as `DTM\wA` or `DIM\w15±0.1`. On each callout, through a `CHARACTERIZED_ITEM_WITHIN_REPRESENTATION`: its equivalent Unicode string, such as `SRFMRRN\w\w\w\wRa 1.6`, its polyline curve length and its polyline centre point. AP242 edition 1, the edition the file declares, allows no property on a `DIMENSIONAL_SIZE` or a geometric tolerance, so those have none |
 | an item's name | `ID_ATTRIBUTE`, or the name of a geometric tolerance |
 | part notes | user defined attributes of the product definition named `general tolerance`, `material` and `note 1`, `note 2`, ... |
 
-An `APPLIED_DOCUMENT_REFERENCE` declares the part's dimensioning standard.
-The default is ISO 1101:2017. Set `PartNotes::standard` to
-`Some(DimensioningStandard::AsmeY14_5_2018)` to export a composite position
-frame. Export refuses concentricity, coaxiality and symmetry controls under
-that selection. The reader requires the ASME declaration for a composite frame
-and reports missing or conflicting declarations.
+When a part has PMI items or an explicit standard, an `APPLIED_DOCUMENT_REFERENCE`
+declares its dimensioning standard. The default is ISO 1101:2017. Set
+`PartNotes::standard` to `Some(DimensioningStandard::AsmeY14_5_2018)` to export a
+composite position frame. Export refuses concentricity, coaxiality and symmetry
+controls under that selection.
 
-The NIST STEP File Analyzer 5.54 reported no error on the P1 bracket file before
-the callout and the validation properties were added. The file has not been
-through it since. OpenCASCADE 7.9 and 8.0 read its datums, dimensions and
+A projected zone requires a positive height and one planar entry face per
+controlled cylinder, in feature order. Each entry meets the cylinder and its
+outward normal gives the projection direction. The checker requires a clear
+outward ray through the entry's shell, even beyond the stated height. It
+refuses if a face blocks the ray or if it cannot prove the ray clear.
+
+The recorded NIST STEP File Analyzer 5.54 result found no error on the P1 bracket
+file before callouts and validation properties were added. OpenCASCADE 7.9 and
+8.0 read the bracket's datums, dimensions and
 geometric tolerances and the part notes. They have no reader for
 `SURFACE_TEXTURE_REPRESENTATION`. OpenCASCADE 8.0 reads the texture's callout as
 a `DimensionPresentation` on the bore, with its lines and annotation plane, so
@@ -205,10 +209,8 @@ into the bore's diameter instead, so the callout has an aspect of its own. The
 recommended practices allow only `theoretical` and `auxiliary` as a dimension's
 note, so the texture is not repeated there.
 
-Each saved view places labels inside its window in camera coordinates. A surface finish without a
-saved view still has a drawing. The camera uses the CAx-IF convention of placing
-the projection point at the frame origin and writing the eye in the frame
-placement.
+Each saved view places labels inside its window in camera coordinates. The
+projection point is at the camera frame origin.
 
 | Code | When |
 | --- | --- |

@@ -43,7 +43,7 @@ mod part21;
 mod planar_arithmetic;
 mod planar_deviation;
 mod planar_incidence;
-/// Manufacturing information read from a file's AP242 semantic PMI.
+/// Read and edit AP242 manufacturing information.
 pub mod pmi;
 mod recognize;
 /// The tolerance a Catallax numerical export records in its file.

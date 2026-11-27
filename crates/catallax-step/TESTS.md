@@ -219,13 +219,16 @@ The saved-view test writes the P1 items unchanged with two views, one parallel
 and one in perspective. With `CATALLAX_PMI_OUT` set, the test writes both
 standalone views as `c4c-bore-view.step` and `c4c-top-view.step` and the
 combined `c4c-saved-views.step`. It checks the AP242 Edition 1 draughting model
-rules WR2 and UR1 and reads back each view's camera, window and visible items. An independent walk of the emitted
-records checks the datum feature and tolerance associations, each plane, and
-the extent of the labels and finish symbols along both screen dimensions. A
-handwritten fixture with no equivalent Unicode property checks graphical-only
-strokes, plane, attachment and view membership. Mutations check that a
-callout can present more than one semantic item and that malformed cameras
-produce diagnostics.
+rules WR2 and UR1 and reads back each view's camera, window and visible items.
+An independent walk of the emitted records checks the datum feature and
+tolerance associations, each plane and the extent of the labels and finish
+symbols along both screen dimensions. A handwritten fixture with no equivalent
+Unicode property checks graphical-only strokes, plane, attachment and view
+membership. Mutations check callouts linked to multiple semantic items and
+diagnostics for malformed cameras.
+
+SolidDraft's saved-view workflow and hosted NIST verification of the new PMI
+and source-patch fixtures remain integration acceptance under S-2I and S-4I.
 
 ## Exact oracles
 

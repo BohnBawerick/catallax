@@ -143,7 +143,11 @@ fn latitude_jets_match_the_written_curve_in_both_directions() {
         let fast = piece(projection.latitude_speed(&curve));
         let generic = piece(None);
         let domain = ball(&(-1).into(), 128).hull(&ball(&1.into(), 128));
-        assert!(fast.regular(&domain, &dec).unwrap());
+        let (_, remainder) = fast
+            .span_coefficients(&scalar(0, 128), &domain, &dec)
+            .unwrap()
+            .unwrap();
+        assert!(remainder.iter().all(Ball::is_exact_zero));
         let derivatives = fast.coefficients::<9>(&domain, false, &dec).unwrap();
         assert_eq!(derivatives[1][0].lo(), direction.into());
         assert_eq!(derivatives[1][0].hi(), direction.into());
@@ -215,7 +219,7 @@ fn open_conic_jets_are_the_written_parametrizations() {
         )
         .unwrap();
         let local = open_conic(hyperbola).local(&frame, 128);
-        let [x, y, z] = local.coefficients::<3>(&at(t), &dec).unwrap();
+        let [x, y, z] = local.coefficients::<3>(&at(t), None, &dec).unwrap();
         // Value, then first derivative and half the second, per coordinate.
         let (value, first, second) = if hyperbola {
             (

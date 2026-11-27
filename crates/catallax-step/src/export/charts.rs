@@ -1,6 +1,7 @@
 use super::*;
 use crate::{fit, pcurve, uv, wire::Side};
 use catallax_intersect::CurveTrace;
+use catallax_numbers::Ball;
 use catallax_topology::CoedgeId;
 use std::collections::BTreeSet;
 
@@ -298,6 +299,15 @@ impl Exporter<'_> {
         input: EdgeInput<'_>,
         topology: &mut super::Topology,
     ) -> Result<Id, Refusal> {
+        Ball::with_series_reciprocals(|| self.chart_edge_fit(id, input, topology))
+    }
+
+    fn chart_edge_fit(
+        &mut self,
+        id: EdgeId,
+        input: EdgeInput<'_>,
+        topology: &mut super::Topology,
+    ) -> Result<Id, Refusal> {
         let state = self.chart_state.as_ref().expect("chart edge state");
         let active = &topology.chart.as_ref().expect("chart edge topology").faces;
         let coaxial_circles = state.plan.coaxial_circles;
@@ -379,6 +389,7 @@ impl Exporter<'_> {
         };
         let mut coedges = [None; 2];
         let mut pcurves = [None; 2];
+        let mut previous_fit = None;
         for (index, use_) in uses.into_iter().take(count).enumerate() {
             let (face, coedge) = use_.unwrap();
             let definition = &self.chart_state.as_ref().unwrap().plan.faces[&face];
@@ -441,8 +452,21 @@ impl Exporter<'_> {
                 }
                 _ => None,
             };
+            let fit_key = (surface_id, sides, seam);
             let fit = if let Some(line) = line {
                 line
+            } else if let Geometry::Rail(rail) = input.geometry {
+                rail.fit(ends, self.digits())
+            } else if let Some((key, from, to, coedge)) = &previous_fit
+                && *key == fit_key
+                && *from == start.point
+                && *to == end.point
+            {
+                topology.chart.as_ref().unwrap().associations[coedge]
+                    .fit
+                    .as_ref()
+                    .unwrap()
+                    .clone()
             } else {
                 let mut pieces = Vec::with_capacity(curves.len());
                 for (piece, curve) in curves.iter().enumerate() {
@@ -511,10 +535,13 @@ impl Exporter<'_> {
                         ],
                     });
                 }
-                match input.geometry {
-                    Geometry::Rail(rail) => rail.fit(ends, self.digits()),
-                    _ => uv::fit(&pieces, self.digits(), &tolerance, budget, self.dec)?,
+                let fit = uv::fit(&pieces, self.digits(), &tolerance, budget, self.dec)?;
+                if index == 0 && count == 2 {
+                    // The fit is reusable only for the same written chart,
+                    // lift and endpoints. Face-local repairs happen later.
+                    previous_fit = Some((fit_key, start.point, end.point, coedge));
                 }
+                fit
             };
             let geometry = &self.surfaces[&surface_id];
             let extent = (0..3).fold(Rational::zero(), |sum, i| {

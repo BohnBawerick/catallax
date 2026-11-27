@@ -16,16 +16,18 @@
 //! that edge. Only the faces themselves are touched, never a Boolean of the
 //! whole body.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_boolean::{BoolOp, boolean, face_contains_point};
+use catallax_boolean::{face_contains_point, subtract_with_history};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces};
 use catallax_numbers::{Answer, Answered, Decider, Rational, Refusal};
 use catallax_shapes::{Plane, PointId, RPoint3, RVector3, Surface};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, block_in_frame};
 
 use super::{boundary_cuts, carrier_pieces, on_span, runs, same_point};
-use crate::queries::{SectionArc, SectionCurves, SectionPlane, SectionSolid, perpendicular, sign};
+use crate::queries::{
+    SectionArc, SectionCurves, SectionPlane, SectionSolid, SectionSource, perpendicular, sign,
+};
 
 pub(crate) fn cut_solid(
     model: &Model,
@@ -40,6 +42,8 @@ pub(crate) fn cut_solid(
             SectionSolid {
                 model: scratch,
                 body,
+                face_sources: BTreeMap::new(),
+                edge_sources: BTreeMap::new(),
             },
             model.body(body).marks.clone(),
         ));
@@ -77,11 +81,65 @@ pub(crate) fn cut_solid(
         &corner,
         &[a.plus(&a), b.plus(&b), n.scaled(&reach)],
     )?;
-    let cut = boolean(&mut scratch, body, tool, BoolOp::Subtract, dec).map_err(|e| e.refusal)?;
+    let (cut, history) =
+        subtract_with_history(&mut scratch, body, tool, dec).map_err(|e| e.refusal)?;
+    let tool_faces = scratch.faces_of_body(tool);
+    let tool_edges = scratch.edges_of_body(tool);
+    let mut edge_sources: BTreeMap<_, Vec<_>> = history
+        .edges
+        .into_iter()
+        .map(|(edge, originals)| {
+            (
+                edge,
+                originals
+                    .into_iter()
+                    .filter(|id| !tool_edges.contains(id))
+                    .map(SectionSource::Original)
+                    .collect(),
+            )
+        })
+        .collect();
+    let face_sources = history
+        .faces
+        .into_iter()
+        .map(|(face, originals)| {
+            let mut is_cap = false;
+            let mut sources: Vec<_> = originals
+                .into_iter()
+                .filter_map(|id| {
+                    if tool_faces.contains(&id) {
+                        is_cap = true;
+                        None
+                    } else {
+                        Some(SectionSource::Original(id))
+                    }
+                })
+                .collect();
+            if is_cap {
+                sources.push(SectionSource::Cap(face));
+                for &loop_id in &scratch.face(face).loops {
+                    if let Loop::Coedges(coedges) = scratch.loop_(loop_id) {
+                        for &coedge in coedges {
+                            let edge = scratch.coedge(coedge).edge;
+                            let sources = edge_sources
+                                .get_mut(&edge)
+                                .expect("subtraction records all result edges");
+                            if sources.last() != Some(&SectionSource::Cap(face)) {
+                                sources.push(SectionSource::Cap(face));
+                            }
+                        }
+                    }
+                }
+            }
+            (face, sources)
+        })
+        .collect();
     Ok(Answer::with_marks(
         SectionSolid {
             model: scratch,
             body: cut.body,
+            face_sources,
+            edge_sources,
         },
         cut.marks,
     ))

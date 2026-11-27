@@ -410,13 +410,26 @@ pub fn face_contains<P: Clone + Into<Point3>>(
     point: &P,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    face_contains_with(model, face, point, dec, region::locate)
+    face_contains_with(model, face, point, None, dec, region::locate)
+}
+
+/// Membership of a stored exact point, preserving its support incidence facts.
+/// The point must belong to `model`; the face trim is still checked.
+pub fn face_contains_point(
+    model: &mut Model,
+    face: FaceId,
+    point: catallax_shapes::PointId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let position = model.geom().position(point);
+    face_contains_with(model, face, &position, Some(point), dec, region::locate)
 }
 
 fn face_contains_with<P: Clone + Into<Point3>>(
     model: &mut Model,
     face: FaceId,
     point: &P,
+    stored: Option<catallax_shapes::PointId>,
     dec: &mut Decider,
     locate: impl FnOnce(
         &mut Model,
@@ -466,9 +479,11 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     {
         return Ok(false);
     }
-    let p = model
-        .geom_mut()
-        .add_point(catallax_shapes::PointDef::Explicit(point.clone()));
+    let p = stored.unwrap_or_else(|| {
+        model
+            .geom_mut()
+            .add_point(catallax_shapes::PointDef::Explicit(point.clone()))
+    });
     if matches!(
         model.geom().surface(surface),
         catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(_))
@@ -497,6 +512,15 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     if let Some(inside) = region::prism_face(model, face, p, dec)? {
         return Ok(inside);
     }
+    // The incidence proves the point is on this support. The ray that
+    // found it is not a useful seed for constructing a trim probe.
+    let p = if stored.is_some() {
+        model
+            .geom_mut()
+            .add_point(catallax_shapes::PointDef::Explicit(point))
+    } else {
+        p
+    };
     Ok(!matches!(
         locate(model, face, p, dec)?,
         region::Location::Outside

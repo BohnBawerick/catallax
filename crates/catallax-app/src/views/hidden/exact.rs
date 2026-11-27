@@ -88,6 +88,22 @@ fn in_plane(
         }));
         return Ok(Some(vec![cut]));
     }
+    if let Form::OpenConic(open) = &stroke.form {
+        let points = open.plane_points(&plane.origin, &plane.normal, dec)?;
+        return Ok(points.map(|points| {
+            let geom = scratch.geom_mut();
+            let surface = geom.add_surface(Surface::Plane(plane));
+            points
+                .into_iter()
+                .map(|point| {
+                    geom.add_point(PointDef::Meet(Meet {
+                        of: MeetOf::CurveSurface(stroke.curve, surface),
+                        position: Position::Closed(point),
+                    }))
+                })
+                .collect()
+        }));
+    }
     let hits = intersect_curve_plane_points(scratch.geom_mut(), stroke.curve, plane, dec)?;
     marks.extend(&hits.marks);
     Ok(hits.value)
@@ -198,6 +214,17 @@ pub(super) fn folds(
     marks: &mut MarkLog,
     dec: &mut Decider,
 ) -> Result<Vec<PointId>, Refusal> {
+    if let Form::OpenConic(open) = &a.form {
+        return if open.edge_on {
+            Ok(open
+                .folds(d, dec)?
+                .into_iter()
+                .map(|p| scratch.geom_mut().add_point(PointDef::Explicit(p)))
+                .collect())
+        } else {
+            Ok(Vec::new())
+        };
+    }
     let Form::Conic {
         center,
         edge_on: true,
@@ -229,6 +256,45 @@ fn outline_ends(
     Ok(points)
 }
 
+/// A plane extruding a projected line along the view.
+fn sheet_plane(form: &Form, d: &Vector3) -> Option<(Point3, Vector3)> {
+    match form {
+        Form::Line { origin, dir } => Some((origin.clone(), dir.cross(d))),
+        Form::Conic {
+            center,
+            normal,
+            edge_on: true,
+            ..
+        } => Some((center.clone(), normal.clone())),
+        Form::OpenConic(open) if open.edge_on => Some((open.origin.clone(), open.normal.clone())),
+        _ => None,
+    }
+}
+
+/// B against A's extrusion plane, then along the view onto A.
+fn conic_cuts(
+    scratch: &mut Model,
+    a: &Stroke,
+    b: &Stroke,
+    d: &Vector3,
+    marks: &mut MarkLog,
+    dec: &mut Decider,
+) -> Result<Option<Vec<PointId>>, Refusal> {
+    let Some((origin, normal)) = sheet_plane(&a.form, d) else {
+        return Ok(None);
+    };
+    let Some(on_b) = in_plane(scratch, b, origin, normal.clone(), marks, dec)? else {
+        return Ok(None);
+    };
+    let m = normal.cross(d);
+    let mut points = Vec::new();
+    for q in on_b {
+        let q = scratch.geom().position(q);
+        points.extend(over(scratch, a, &q, m.clone(), marks, dec)?);
+    }
+    Ok(Some(points))
+}
+
 /// Exact cut points on `a` where its projection meets `b`'s, or `None` when
 /// the pair needs the binary64 search. Points may lie outside either span;
 /// the caller filters them.
@@ -243,27 +309,8 @@ pub(super) fn cuts(
     if matches!(a.form, Form::Spline) {
         return Ok(None);
     }
-    match &b.form {
-        Form::Line { origin, dir } => {
-            let normal = dir.cross(d);
-            match in_plane(scratch, a, origin.clone(), normal.clone(), marks, dec)? {
-                Some(points) => Ok(Some(points)),
-                None => {
-                    let m = normal.cross(d);
-                    let mut points = Vec::new();
-                    for q in outline_ends(scratch, b, d, marks, dec)? {
-                        points.extend(over(scratch, a, &q, m.clone(), marks, dec)?);
-                    }
-                    Ok(Some(points))
-                }
-            }
-        }
-        Form::Conic {
-            center,
-            normal,
-            edge_on: true,
-            ..
-        } => match in_plane(scratch, a, center.clone(), normal.clone(), marks, dec)? {
+    if let Some((origin, normal)) = sheet_plane(&b.form, d) {
+        return match in_plane(scratch, a, origin, normal.clone(), marks, dec)? {
             Some(points) => Ok(Some(points)),
             None => {
                 let m = normal.cross(d);
@@ -273,35 +320,24 @@ pub(super) fn cuts(
                 }
                 Ok(Some(points))
             }
-        },
+        };
+    }
+    match &b.form {
         Form::Conic {
             center: cb,
             normal: nb,
             radius_sq: rb,
             edge_on: false,
         } => match &a.form {
-            Form::Line { .. } | Form::Conic { edge_on: true, .. } => {
+            Form::Line { .. } | Form::Conic { edge_on: true, .. } | Form::OpenConic(_)
+                if sheet_plane(&a.form, d).is_some() =>
+            {
                 if let Some(radius_sq) = rb
                     && let Some(points) = circle_at_line_end(scratch, a, cb, nb, radius_sq, d, dec)?
                 {
                     return Ok(Some(points));
                 }
-                // B against A's extrusion plane, then along the view onto A.
-                let (origin, normal) = match &a.form {
-                    Form::Line { origin, dir } => (origin.clone(), dir.cross(d)),
-                    Form::Conic { center, normal, .. } => (center.clone(), normal.clone()),
-                    Form::Spline => unreachable!("a spline stroke returned above"),
-                };
-                let Some(on_b) = in_plane(scratch, b, origin, normal.clone(), marks, dec)? else {
-                    return Ok(None);
-                };
-                let m = normal.cross(d);
-                let mut points = Vec::new();
-                for q in on_b {
-                    let q = scratch.geom().position(q);
-                    points.extend(over(scratch, a, &q, m.clone(), marks, dec)?);
-                }
-                Ok(Some(points))
+                conic_cuts(scratch, a, b, d, marks, dec)
             }
             Form::Conic {
                 center: ca,
@@ -346,6 +382,7 @@ pub(super) fn cuts(
             }
             _ => Ok(None),
         },
-        Form::Spline => Ok(None),
+        Form::OpenConic(_) => conic_cuts(scratch, a, b, d, marks, dec),
+        _ => Ok(None),
     }
 }

@@ -37,7 +37,7 @@ use super::float::{above, cross, dot, shifted_knots, unit, unit_direction};
 use super::hidden::geo::{Geo, Span, decompose, restrict};
 use super::hidden::{HiddenLineView, ViewStroke};
 use crate::ApplicationBody;
-use crate::queries::{QueryRefusal, query, sign};
+use crate::queries::{QueryRefusal, drawing_query, sign};
 
 /// Code of the mark an answer carries when a drawing curve was fitted. Its
 /// bound is the largest [`ContourFit::tolerance_mm`]: a measured value, not
@@ -944,7 +944,8 @@ pub fn edge_drawing(
     edge: EdgeId,
     dec: &mut Decider,
 ) -> Result<Answer<DrawnCurve>, QueryRefusal> {
-    query(model, &[body], || {
+    drawing_query(model, &[body], || {
+        dec.check_deadline()?;
         if !model.edges_of_body(body).contains(&edge) {
             return Err(Refusal::new(
                 "app.curve-edge",
@@ -966,7 +967,8 @@ pub fn face_drawing_loops(
     face: FaceId,
     dec: &mut Decider,
 ) -> Result<Answer<Vec<Vec<DrawnEdge>>>, QueryRefusal> {
-    query(model, &[body], || {
+    drawing_query(model, &[body], || {
+        dec.check_deadline()?;
         if !model.faces_of_body(body).contains(&face) {
             return Err(Refusal::new(
                 "app.loop-face",

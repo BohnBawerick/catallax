@@ -109,7 +109,7 @@ The [Checkpoint 3 recount](archive/checkpoints/checkpoint-3-coverage.md) records
 | Q4 | Closest point on a curve or surface | B | 0.5 | 0.5 | Closest point on any curve or surface. Change 12. |
 | Q5 | Bounds, curvature and local surface analysis | B | 0.5 | 0.5 | Bounds, curvature and local surface analysis on general input. Change 12. |
 | Q6 | Clash, clearance and minimum distance between solids | O | 0.5 | 0.5 | No pair answers "unresolved" outside the stated tolerance, including distant and nested pairs. Change 12 widens 3.3. |
-| Q7 | Hidden-line views | O | 0 | 0 | SolidDraft uses exact kernel section curves, silhouettes and hidden-line views in place of mesh outlines. Existing 3.1. |
+| Q7 | Hidden-line views | O | 0 | 0 | SolidDraft uses exact kernel section curves, silhouettes and hidden-line views in place of mesh outlines. `section_solid` produces a capped body for a view of an inclined cut. Existing 3.1. |
 | Q8 | Mesh Booleans and decimation | S | 0 | 0 | Mesh Booleans and decimation on general input, not a first build. Change 3. |
 
 ## Historical totals, not a new recount

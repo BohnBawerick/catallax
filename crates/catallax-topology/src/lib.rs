@@ -30,7 +30,7 @@ mod transform;
 mod wire;
 
 pub use bezier_extrusion::BezierExtrusionBand;
-pub use build::{block, cone, cylinder, empty, sphere, torus};
+pub use build::{block, block_in_frame, cone, cylinder, empty, sphere, torus};
 pub use entity::{
     Body, BodyId, BodyKind, Coedge, CoedgeId, Edge, EdgeId, Face, FaceId, Loop, LoopId, Lump,
     LumpId, Sense, Shell, ShellId, Tolerance, Vertex, VertexId, Wire,

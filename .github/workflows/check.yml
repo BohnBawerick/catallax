@@ -169,6 +169,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest@0.9.148
+      - name: Provision the Vulkan software adapter for preview correctness tests
+        if: contains(needs.select.outputs.packages, 'catallax-preview')
+        run: sudo apt-get install -y mesa-vulkan-drivers
       - name: Release test partition
         env:
           SHARD: ${{ matrix.shard }}

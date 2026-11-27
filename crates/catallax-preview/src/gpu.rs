@@ -1,160 +1,163 @@
-//! The graphics-card device shared by the unproved preview routes.
-use catallax_numbers::Refusal;
+//! Compute on the renderer's device and queue. The preview never maps a buffer.
+
 use wgpu::util::DeviceExt;
 
-/// A wgpu adapter and device for unproved preview work. It owns no proof
-/// state and its results are display values only.
-pub struct Gpu {
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    name: String,
+use crate::mesher::{GpuRefusal, MeshBuffers, PreviewVertex};
+
+const SHADER: &str = concat!(
+    include_str!("mesher/compute.wgsl"),
+    include_str!("mesher/analytic.wgsl"),
+    include_str!("mesher/grid.wgsl"),
+);
+const GROUP_SIZE: u32 = 64;
+
+pub(crate) struct Gpu {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pipeline: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+    pub(crate) storage_bytes: usize,
+    pub(crate) index_bytes: usize,
+    groups_per_axis: u32,
 }
 
 impl Gpu {
-    /// Opens the high-performance adapter. `disabled` selects no device, so
-    /// callers can exercise their processor route deliberately. The error is
-    /// the reason code: `preview.gpu-disabled`, `preview.no-adapter: ...` or
-    /// `preview.no-device: ...`.
-    pub fn new(disabled: bool) -> Result<Self, String> {
-        if disabled {
-            return Err("preview.gpu-disabled".into());
+    pub(crate) async fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<Self, GpuRefusal> {
+        let limits = device.limits();
+        if limits.max_storage_buffers_per_shader_stage < 4
+            || limits.max_compute_invocations_per_workgroup < GROUP_SIZE
+            || limits.max_compute_workgroup_size_x < GROUP_SIZE
+            || limits.max_compute_workgroups_per_dimension == 0
+        {
+            return Err(GpuRefusal::UnsupportedDevice);
         }
-        pollster::block_on(async {
-            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-            let adapter = instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    ..Default::default()
-                })
-                .await
-                .map_err(|e| format!("preview.no-adapter: {e}"))?;
-            let info = adapter.get_info();
-            let (device, queue) = adapter
-                .request_device(&wgpu::DeviceDescriptor::default())
-                .await
-                .map_err(|e| format!("preview.no-device: {e}"))?;
-            Ok(Self {
-                device,
-                queue,
-                name: format!("{} {:?} {:?}", info.name, info.backend, info.device_type),
-            })
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Catallax preview mesher"),
+            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Catallax preview mesher"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("mesh"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        if let Some(error) = scope.pop().await {
+            return Err(GpuRefusal::Shader(error.to_string()));
+        }
+        let layout = pipeline.get_bind_group_layout(0);
+        Ok(Self {
+            device: device.clone(),
+            queue: queue.clone(),
+            pipeline,
+            layout,
+            storage_bytes: limits
+                .max_buffer_size
+                .min(limits.max_storage_buffer_binding_size)
+                .min(u64::from(u32::MAX)) as usize,
+            index_bytes: limits.max_buffer_size.min(u32::MAX as u64) as usize,
+            groups_per_axis: limits.max_compute_workgroups_per_dimension,
         })
     }
 
-    /// Adapter name, backend and device type.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub(crate) fn max_vertices(&self) -> usize {
+        (self.storage_bytes / size_of::<PreviewVertex>()).min(
+            (u64::from(self.groups_per_axis).pow(2) * u64::from(GROUP_SIZE)).min(u32::MAX as u64)
+                as usize,
+        )
     }
 
-    /// Compiles a WGSL compute pipeline. A validation failure is the typed
-    /// refusal `preview.shader`, never a silent fallback.
-    pub(crate) fn pipeline(
+    pub(crate) async fn dispatch(
         &self,
-        source: &str,
-        entry: &str,
-    ) -> Result<wgpu::ComputePipeline, Refusal> {
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("unproved field preview"),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
-            });
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("unproved preview"),
-                layout: None,
-                module: &shader,
-                entry_point: Some(entry),
-                compilation_options: Default::default(),
-                cache: None,
-            });
-        if let Some(error) = pollster::block_on(self.device.pop_error_scope()) {
-            return Err(Refusal::new("preview.shader", error.to_string()));
-        }
-        Ok(pipeline)
-    }
-
-    /// Waits for submitted work and maps `readback`. Device loss, a timeout or
-    /// a failed mapping is the typed refusal `preview.gpu-device`.
-    pub(crate) fn read<T: bytemuck::Pod>(
-        &self,
-        readback: &wgpu::Buffer,
-        bytes: u64,
-    ) -> Result<Vec<T>, Refusal> {
-        let device = |e: String| Refusal::new("preview.gpu-device", e);
-        let slice = readback.slice(..bytes);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        self.device
-            .poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: Some(std::time::Duration::from_secs(120)),
-            })
-            .map_err(|e| device(e.to_string()))?;
-        rx.recv()
-            .map_err(|e| device(e.to_string()))?
-            .map_err(|e| device(e.to_string()))?;
-        let mapped = slice.get_mapped_range();
-        let result = bytemuck::cast_slice(&mapped).to_vec();
-        drop(mapped);
-        readback.unmap();
-        Ok(result)
-    }
-
-    /// Runs one entry point once over fresh storage buffers bound in order,
-    /// and reads back buffer `output`. Used by the throwaway viewer.
-    pub fn dispatch<T: bytemuck::Pod>(
-        &self,
-        source: &str,
-        entry: &str,
-        data: &[&[u8]],
-        output: usize,
-        groups: [u32; 3],
-    ) -> Result<Vec<T>, Refusal> {
-        let pipeline = self.pipeline(source, entry)?;
-        let buffers: Vec<_> = data
-            .iter()
-            .map(|bytes| {
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("unproved preview buffer"),
-                        contents: bytes,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                    })
-            })
-            .collect();
-        let buffer = &buffers[output];
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("unproved preview readback"),
-            size: buffer.size(),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        inputs: &[u8],
+        positions: &[u8],
+        surfaces: &[u8],
+        indices: &[u8],
+        vertex_count: u32,
+    ) -> Result<MeshBuffers, GpuRefusal> {
+        let oom = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let input = self.upload("Catallax preview UVs", inputs, wgpu::BufferUsages::STORAGE);
+        let positions = self.upload(
+            "Catallax preview edge and grid positions",
+            positions,
+            wgpu::BufferUsages::STORAGE,
+        );
+        let surfaces = self.upload(
+            "Catallax preview surface parameters",
+            surfaces,
+            wgpu::BufferUsages::STORAGE,
+        );
+        let index = self.upload(
+            "Catallax preview indices",
+            indices,
+            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_SRC,
+        );
+        let vertex = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Catallax preview vertices"),
+            size: u64::from(vertex_count) * size_of::<PreviewVertex>() as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
+        let buffers = [&input, &positions, &surfaces, &vertex];
         let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
-            layout: &pipeline.get_bind_group_layout(0),
-            entries: &buffers
-                .iter()
-                .enumerate()
-                .map(|(i, buffer)| wgpu::BindGroupEntry {
-                    binding: i as u32,
-                    resource: buffer.as_entire_binding(),
-                })
-                .collect::<Vec<_>>(),
+            layout: &self.layout,
+            entries: &std::array::from_fn::<_, 4, _>(|binding| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buffers[binding].as_entire_binding(),
+            }),
         });
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
-            pass.set_pipeline(&pipeline);
+            pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &group, &[]);
-            pass.dispatch_workgroups(groups[0], groups[1], groups[2]);
+            let groups = vertex_count.div_ceil(GROUP_SIZE);
+            let x = groups.min(self.groups_per_axis);
+            pass.dispatch_workgroups(x, groups.div_ceil(x), 1);
         }
-        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, buffer.size());
         self.queue.submit([encoder.finish()]);
-        self.read(&readback, buffer.size())
+        let validation = validation.pop();
+        let oom = oom.pop();
+        if let Some(error) = validation.await.or(oom.await) {
+            return Err(GpuRefusal::Device(error.to_string()));
+        }
+        Ok(MeshBuffers {
+            vertex,
+            index,
+            vertex_count,
+        })
+    }
+
+    fn upload(&self, label: &str, contents: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents,
+                usage,
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mesher_shaders_validate() {
+        let module = naga::front::wgsl::parse_str(super::SHADER)
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(super::SHADER)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
     }
 }

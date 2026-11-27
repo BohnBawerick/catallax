@@ -94,7 +94,7 @@ fn spline_preview_keeps_the_retained_control_nets() {
         for v in 0..nv {
             for u in 0..nu {
                 let p = &source.controls()[u * nv + v];
-                let q = [&p.x, &p.y, &p.z].map(|r| r.to_f64());
+                let q = [&p.x, &p.y, &p.z].map(|r| r.display_value().unwrap());
                 let q = std::array::from_fn(|i| q[i] - result.origin[i]);
                 assert_eq!(net.points[v * nu + u], q);
             }
@@ -102,4 +102,76 @@ fn spline_preview_keeps_the_retained_control_nets() {
         count += 1;
     }
     assert!(count > 0);
+}
+
+#[test]
+fn parallel_cylinder_seams_refine_wide_retained_root_selectors() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P0/seam.json")).unwrap();
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    let (display, work) = with_operation_budget(0, || {
+        display_description(&built, &DisplayOptions::default())
+    });
+    let desc = display.unwrap().description;
+    assert_eq!((work.used, work.uncharged, work.exhausted), (0, 0, false));
+    let mut incident = vec![0; desc.edges.len()];
+    for face in &desc.faces {
+        if matches!(face.surface, DisplaySurface::Cylinder { .. }) {
+            for edge in face.loops.iter().flat_map(|l| &l.uses) {
+                incident[edge.edge] += 1;
+            }
+        }
+    }
+    let mut sides = [false; 2];
+    for (edge, uses) in desc.edges.iter().zip(incident) {
+        if uses != 2 {
+            continue;
+        }
+        for p in &edge.points {
+            let [x, y, _] = std::array::from_fn(|i| p[i] + desc.origin[i]);
+            assert!((x - 2.0).abs() < 1e-8, "{p:?}");
+            assert!((y.abs() - 21.0_f64.sqrt()).abs() < 1e-8, "{p:?}");
+            sides[usize::from(y > 0.0)] = true;
+        }
+    }
+    assert_eq!(sides, [true; 2]);
+}
+
+#[test]
+fn descending_sections_and_tangent_intersections_keep_their_edges() {
+    let fixture = include_str!("../../../parts/fillets/cases.jsonl");
+    for case in ["partial-oblique", "unequal-mitres"] {
+        let row = fixture
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|row| row["id"] == case)
+            .unwrap();
+        let recipe = Recipe::parse(&row["recipe"].to_string()).unwrap();
+        let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+        let (display, work) = with_operation_budget(0, || {
+            display_description(&built, &DisplayOptions::default())
+        });
+        let desc = display
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"))
+            .description;
+        assert_eq!((work.used, work.uncharged, work.exhausted), (0, 0, false));
+        for sampled in &desc.edges {
+            let edge = built.model.edge(sampled.edge);
+            let geom = built.model.geom();
+            for (end, actual) in [
+                (edge.start, sampled.points.first().unwrap()),
+                (edge.end, sampled.points.last().unwrap()),
+            ] {
+                if let Some(end) = end {
+                    let point = geom.position(built.model.vertex(end).point);
+                    let expected =
+                        [&point.x, &point.y, &point.z].map(|v| v.display_value().unwrap());
+                    assert_eq!(
+                        *actual,
+                        std::array::from_fn(|i| expected[i] - desc.origin[i])
+                    );
+                }
+            }
+        }
+    }
 }

@@ -48,7 +48,7 @@ pub(super) fn net(s: &BSplineSurface, origin: Xyz) -> Option<DisplaySpline> {
         for u in 0..nu {
             let i = u * nv + v;
             points.push(sub(point(&s.controls()[i])?, origin));
-            weights.push(positive(s.weights()[i].to_f64())?);
+            weights.push(positive(scalar(&s.weights()[i]))?);
         }
     }
     let [u, v] = s.knots();
@@ -90,8 +90,8 @@ impl<'a> Patch<'a> {
 
     pub(super) fn at(&mut self, uv: [f64; 2]) -> Xyz {
         let [u, v] = &mut self.axes;
-        let (u0, bu) = u.at(uv[0]);
-        let (v0, bv) = v.at(uv[1]);
+        let (u0, bu) = u.at(uv[0].clamp(self.bounds[0][0], self.bounds[0][1]));
+        let (v0, bv) = v.at(uv[1].clamp(self.bounds[1][0], self.bounds[1][1]));
         let mut p = [0.0; 3];
         let mut sum = 0.0;
         for (j, &v) in bv.iter().enumerate() {
@@ -207,7 +207,7 @@ impl SplineEdge {
                 .collect::<Option<_>>()?,
             weights: curve
                 .weights()
-                .map(|w| positive(w.to_f64()))
+                .map(|w| positive(scalar(w)))
                 .collect::<Option<_>>()?,
         })
     }

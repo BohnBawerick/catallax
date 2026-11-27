@@ -1,9 +1,9 @@
 use std::{collections::BTreeMap, f64::consts::TAU};
 
-use catallax_shapes::{Curve, SurfaceId};
+use catallax_shapes::{Curve, SplineSupport, Surface, SurfaceId};
 use catallax_topology::{EdgeId, Model, Sense, VertexId};
 
-use super::{DisplayFrame, DisplayOptions, DisplaySurface, Xyz, evaluate::*, spline};
+use super::{DisplayFrame, DisplayOptions, DisplaySurface, Xyz, evaluate::*, sections, spline};
 
 pub(super) struct Reader<'a> {
     pub model: &'a Model,
@@ -14,7 +14,7 @@ pub(super) struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    pub(super) fn edge(&self, id: EdgeId, incident: &[SurfaceId], max: usize) -> Option<Vec<Xyz>> {
+    pub(super) fn edge(&self, id: EdgeId, max: usize) -> Option<Vec<Xyz>> {
         if max < 2 {
             return None;
         }
@@ -31,61 +31,53 @@ impl Reader<'_> {
             Curve::Line(_) => vec![ends[0]?, ends[1]?],
             Curve::Circle(c) => {
                 let f = frame(&c.center, &c.normal, &c.ref_dir, origin)?;
-                let r = positive(libm::sqrt(c.radius_sq.to_f64()))?;
+                let r = positive(libm::sqrt(scalar(&c.radius_sq)))?;
                 round_edge(f, [r, r], ends, tolerance, max)?
             }
             Curve::Ellipse(c) => {
                 let f = frame(&c.center, &c.normal, &c.major_dir, origin)?;
-                let r = [&c.major_sq, &c.minor_sq].map(|r| libm::sqrt(r.to_f64()));
+                let r = [&c.major_sq, &c.minor_sq].map(|r| libm::sqrt(scalar(r)));
                 round_edge(f, [positive(r[0])?, positive(r[1])?], ends, tolerance, max)?
             }
             Curve::BSpline(c) => {
                 spline::SplineEdge::new(c, origin)?.samples(ends, tolerance, max)?
             }
             Curve::Intersection(c) => {
-                let [a, b] = c.surfaces.map(|i| self.surfaces.get(&i));
+                let [a, b] = c.surfaces.map(|i| &self.surfaces[&i]);
                 let [s, t] = c.surfaces.map(|i| geom.surface(i));
-                let witness = sub(point(&geom.position(c.witness))?, origin);
-                Intersection::new(Projector::new(a?, Some(s))?, Projector::new(b?, Some(t))?)
-                    .trace(ends, witness, 1.0, tolerance, max)?
-            }
-            Curve::PatchSection(c) => {
-                let (carrier, [start, end]) = c.first_cell();
-                let seed_net = spline::net(carrier, origin)?;
-                let mut seed = spline::Patch::new(&seed_net)?;
-                let uv = |a: &[catallax_numbers::Real; 2]| a.each_ref().map(|u| u.to_f64());
-                let witness = seed.at(uv(start));
-                let next = seed.at(uv(end));
-                let source = c.surface().surface();
-                let cutting = describe(&source, origin)?;
-                let patch = incident.iter().find_map(|id| match self.surfaces.get(id) {
-                    Some(s @ DisplaySurface::BSpline(_)) => Some((s, geom.surface(*id))),
+                let cap = match (s, t, a, b, ends) {
+                    (
+                        Surface::BSpline(SplineSupport::SplineFillet(_)),
+                        Surface::Plane(_),
+                        DisplaySurface::BSpline(net),
+                        plane,
+                        [Some(p), Some(q)],
+                    )
+                    | (
+                        Surface::Plane(_),
+                        Surface::BSpline(SplineSupport::SplineFillet(_)),
+                        plane,
+                        DisplaySurface::BSpline(net),
+                        [Some(p), Some(q)],
+                    ) => sections::fillet_cap(net, plane, [p, q], tolerance, max),
                     _ => None,
-                });
-                let owned;
-                let (patch, original) = if let Some((patch, source)) = patch {
-                    (patch, Some(source))
-                } else {
-                    owned = DisplaySurface::BSpline(seed_net);
-                    (&owned, None)
                 };
-                let mut trace = Intersection::new(
-                    Projector::new(&cutting, Some(&source))?,
-                    Projector::new(patch, original)?,
-                );
-                let (_, tangent) = trace.correct(witness, tolerance * 0.01)?;
-                let sense = if dot(tangent, sub(next, witness)) < 0.0 {
-                    -1.0
+                if let Some(points) = cap {
+                    points
                 } else {
-                    1.0
-                };
-                trace.trace(ends, witness, sense, tolerance, max)?
+                    let witness = sub(point(&geom.position(c.witness))?, origin);
+                    Intersection::new(Projector::new(a, Some(s))?, Projector::new(b, Some(t))?)
+                        .trace(ends, witness, 1.0, tolerance, max)?
+                }
             }
+            Curve::PatchSection(c) => sections::branch(c, ends, origin, tolerance, max)?,
             Curve::PatchPair(c) => {
                 let [a, b] = c.carriers();
                 let a = DisplaySurface::BSpline(spline::net(a, origin)?);
                 let b = DisplaySurface::BSpline(spline::net(b, origin)?);
-                let [u, v, _, _] = c.first_parameters().each_ref().map(|u| u.to_f64());
+                let [u, v, _, _] = c.first_parameters().each_ref().map(scalar);
+                finite(u)?;
+                finite(v)?;
                 let mut a = Projector::new(&a, None)?;
                 let witness = a.jet([u, v]).0;
                 Intersection::new(a, Projector::new(&b, None)?)
@@ -93,6 +85,9 @@ impl Reader<'_> {
             }
             _ => return None,
         };
+        if points.len() > max {
+            return None;
+        }
         if reverse {
             points.reverse();
         }
@@ -168,7 +163,7 @@ pub(super) fn sample_span(
         {
             return out(b, q);
         }
-        if depth >= 32 || mid <= a || mid >= b {
+        if depth >= 32 || mid == a || mid == b {
             return None;
         }
         visit(at, [a, mid], [p, m], tolerance, out, depth + 1)?;
@@ -206,9 +201,10 @@ impl<'a> Intersection<'a> {
                 residuals[i] = dot(normals[i], sub(q, p));
             }
             let [a, b] = normals;
+            let tangent = cross(a, b);
             if residuals.iter().all(|v| v.abs() <= accuracy) {
                 self.seeds = seeds;
-                return Some((p, unit(cross(a, b))?));
+                return (norm(tangent) > 1e-12).then(|| (p, unit(tangent).unwrap()));
             }
             let [x, y] = solve_gram(a, b, residuals)?;
             p = add(p, add(scale(a, x), scale(b, y)));
@@ -218,6 +214,28 @@ impl<'a> Intersection<'a> {
 
     fn trace(
         mut self,
+        ends: [Option<Xyz>; 2],
+        witness: Xyz,
+        sense: f64,
+        tolerance: f64,
+        max: usize,
+    ) -> Option<Vec<Xyz>> {
+        if let Some(points) = self.walk(ends, witness, sense, tolerance, max) {
+            return Some(points);
+        }
+        // A finite arc can end at a tangency where the intersection has no
+        // usable first tangent. Start at its regular end in that case.
+        if !matches!(ends, [Some(a), Some(b)] if a != b) {
+            return None;
+        }
+        self.seeds = [None, None];
+        let mut points = self.walk([ends[1], ends[0]], witness, -sense, tolerance, max)?;
+        points.reverse();
+        Some(points)
+    }
+
+    fn walk(
+        &mut self,
         ends: [Option<Xyz>; 2],
         witness: Xyz,
         sense: f64,

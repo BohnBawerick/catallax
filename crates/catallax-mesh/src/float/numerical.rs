@@ -186,7 +186,7 @@ fn sample(
         Curve::Line(_) => out(end, ends[1]),
         Curve::Circle(c) => {
             let f = frame(&c.center, &c.normal, &c.ref_dir, origin)?;
-            let radius = positive(libm::sqrt(c.radius_sq.to_f64()))?;
+            let radius = positive(libm::sqrt(scalar(&c.radius_sq)))?;
             let span = end - start;
             let step = libm::sqrt(8.0 * tolerance / radius).min(TAU / 8.0);
             let count = libm::ceil(span.abs() / step) as usize;

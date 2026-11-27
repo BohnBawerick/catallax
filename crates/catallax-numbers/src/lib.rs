@@ -50,6 +50,7 @@ mod poly;
 mod profile;
 #[cfg(feature = "work-profile")]
 pub use profile::{WorkProfileRow, with_work_profile};
+mod display;
 mod quadratic;
 mod rational;
 mod real;

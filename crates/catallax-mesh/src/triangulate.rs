@@ -2008,12 +2008,7 @@ impl FaceBuilder<'_, '_> {
                         angular_limit,
                         self.dec,
                     )?;
-                    let ratio = ratio.ok_or_else(|| {
-                        let constraints = f.adjacent_edges().map(|e| e.is_constraint_edge());
-                        failure(format!(
-                            "display triangle has zero area: vertices={vertices:?} uv={uvs:?} xyz={positions:?} constraints={constraints:?}"
-                        ))
-                    })?;
+                    let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
                     (ratio, angular_reached)
                 };
                 let mut angle_violation = false;
@@ -2203,14 +2198,19 @@ fn ruled(model: &Model, face: FaceId, chart: &Chart, options: &MeshOptions) -> b
 }
 
 fn face_mesh(
-    model: &Model,
+    shared: Shared<'_>,
     face_id: FaceId,
     chart: &Chart,
     draft: &mut FaceDraft<'_>,
     plan: Plan<'_>,
-    prior_chords: &BTreeSet<(usize, usize)>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let Shared {
+        model,
+        junction,
+        prior,
+        ..
+    } = shared;
     let Plan { options, level } = plan;
     let face = model.face(face_id);
     let fixed = chart.fixed.as_ref();
@@ -2228,6 +2228,7 @@ fn face_mesh(
     let mut trim_error = Rational::zero();
     let mut projected = Vec::new();
     let mut parameters = BTreeMap::new();
+    let meridians = crate::bounded::fixed_meridians(model, face_id, chart, draft, junction, dec)?;
     let goal = options.chord_tolerance.mul_pow2(-6).to_f64_nearest();
     let mut project = |index, seed, dec: &mut Decider| -> Result<Uv, Refusal> {
         let position = draft.mesh.positions[index];
@@ -2239,7 +2240,11 @@ fn face_mesh(
             parameters.insert(index, uv);
             Ok(uv)
         } else {
-            Ok(chart.project(position))
+            let mut uv = chart.project(position);
+            if let Some(&u) = meridians.get(&index) {
+                uv[0] = u;
+            }
+            Ok(uv)
         }
     };
     for &l in &face.loops {
@@ -2430,7 +2435,7 @@ fn face_mesh(
         interior_left: BTreeSet::new(),
         collar_edges: BTreeSet::new(),
         protected_band: None,
-        prior_chords,
+        prior_chords: prior,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
         hessian,
@@ -3207,7 +3212,7 @@ fn build_face(
         model,
         boundaries,
         junction,
-        prior,
+        ..
     } = shared;
     let Plan { options, level } = plan;
     if let Some(junction) = junction.filter(|junction| junction.contains(face)) {
@@ -3233,7 +3238,7 @@ fn build_face(
         return Ok(());
     }
     let positions = draft.mesh.positions.len();
-    match face_mesh(model, face, chart, draft, plan, prior, dec) {
+    match face_mesh(shared, face, chart, draft, plan, dec) {
         Err(error)
             if error.code == "mesh.precision-or-budget"
                 && crate::periodic::eligible(model, face, chart, options) =>

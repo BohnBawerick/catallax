@@ -4,11 +4,12 @@
 //! the intersection list they feed are described in docs/M8-LATER-CUTS.md.
 
 use catallax_features::{BuildError, Built, evaluate};
+use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::{Recipe, StepId};
 use catallax_shapes::{ROLLING_ENVELOPE_TARGET_NM, SplineSupport, Surface};
 use catallax_topology::{BodyId, envelope_rows};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 const APPLICATION_ALLOWANCE: u64 = 20_000_000;
 
@@ -66,6 +67,48 @@ fn a_cut_that_misses_the_part_keeps_and_remeasures_every_fitted_face() {
         // The same check on the same retained data gives the same bound.
         assert_eq!(&measured, recorded);
         assert!(recorded <= &target);
+    }
+}
+
+#[test]
+fn the_disjoint_cut_preserves_torus_trims_at_coarse_and_fine_viewport_levels() {
+    let (built, exhausted) = build(include_str!("fixtures/p5-later-cuts/k12-far-disjoint.json"));
+    assert!(!exhausted);
+    let built = built.unwrap();
+    for chord in ["0.276318656627", "0.017269916039"] {
+        let options = MeshOptions {
+            chord_tolerance: Rational::parse(chord).unwrap(),
+            angular_deviation: Some(Rational::parse("0.2617993877991494").unwrap()),
+            ..MeshOptions::default()
+        };
+        let mesh = mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .value;
+        assert!(mesh.faces.iter().all(|face| {
+            !face.triangles.is_empty() && face.max_chord_error <= options.chord_tolerance
+        }));
+        let mut chords = BTreeMap::new();
+        for triangle in &mesh.triangles {
+            for i in 0..3 {
+                let [a, b] = [i, (i + 1) % 3].map(|j| triangle.vertices[j]);
+                let uses = chords.entry((a.min(b), a.max(b))).or_insert((0, 0));
+                uses.0 += 1;
+                uses.1 += if a < b { 1 } else { -1 };
+            }
+        }
+        assert!(
+            mesh.edges
+                .iter()
+                .all(|edge| edge.vertices.windows(2).all(|pair| {
+                    let (a, b) = (pair[0], pair[1]);
+                    chords.get(&(a.min(b), a.max(b))) == Some(&(2, 0))
+                }))
+        );
     }
 }
 

@@ -1,12 +1,16 @@
 //! Nonperiodic minor-angle lifts for toroidal bands and contractible patches.
 
-use catallax_numbers::{Decider, Rational, Refusal, Sign};
-use catallax_shapes::Surface;
+use std::collections::BTreeMap;
+
+use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign};
+use catallax_shapes::{Curve, Surface};
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::{
+    assembly::FaceDraft,
     chart::{self, Chart, Uv, align},
     edges::Boundaries,
+    junction::Junction,
 };
 
 fn rings(
@@ -149,6 +153,66 @@ pub(crate) fn minor_angle_center(
         return Ok(None);
     }
     Ok(Some(center))
+}
+
+/// A rounded point on a torus meridian can project a few ulps off its
+/// constant major angle. Near fixed junction chords those false bends make
+/// refinement converge to facets with no area. Use the circle's proved
+/// meridian plane for all its samples, including shared corner vertices.
+pub(crate) fn fixed_meridians(
+    model: &Model,
+    face: FaceId,
+    chart: &Chart,
+    draft: &FaceDraft<'_>,
+    junction: Option<&Junction>,
+    dec: &mut Decider,
+) -> Result<BTreeMap<usize, f64>, Refusal> {
+    let mut result = BTreeMap::new();
+    let (Surface::Torus(torus), Some(junction), &[boundary]) =
+        (&chart.surface, junction, model.face(face).loops.as_slice())
+    else {
+        return Ok(result);
+    };
+    let Loop::Coedges(coedges) = model.loop_(boundary) else {
+        return Ok(result);
+    };
+    if !coedges
+        .iter()
+        .any(|&coedge| junction.seed(model.coedge(coedge).edge).is_some())
+    {
+        return Ok(result);
+    }
+
+    let zero = |value: Real, dec: &mut Decider| match dec.sign(&value) {
+        Outcome::ProvenCoincident(_) => Ok(true),
+        Outcome::Proven(_) | Outcome::NotExact(_) => Ok(false),
+        Outcome::Refused(error) => Err(error),
+    };
+    for &coedge in coedges {
+        let edge = model.coedge(coedge).edge;
+        let Curve::Circle(circle) = model.geom().curve(model.edge(edge).curve) else {
+            continue;
+        };
+        if !zero(circle.normal.dot(&torus.axis), dec)? {
+            continue;
+        }
+        let offset = circle.center.minus(&torus.center);
+        if !zero(offset.dot(&torus.axis), dec)?
+            || !zero(offset.dot(&circle.normal), dec)?
+            || !zero(offset.norm_squared() - torus.major.square(), dec)?
+            || !zero(&circle.radius_sq - &torus.minor.square(), dec)?
+        {
+            continue;
+        }
+        let center = &circle.center;
+        let [x, y, z] = [&center.x, &center.y, &center.z]
+            .map(|coordinate| dec.enclose_at(coordinate, chart::BITS));
+        let u = chart.project(chart::position(&[x?, y?, z?])?)[0];
+        for &index in &draft.mesh.edges[draft.edges[&edge]].vertices {
+            result.insert(index, u);
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

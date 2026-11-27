@@ -1,4 +1,6 @@
 //! Compares the actual compute evaluator with an independent binary64 chart evaluation.
+// Set CATALLAX_ANALYTIC_CORPUS=1 to add the predictor corpus. Imported
+// rows need CATALLAX_ANALYTIC_SOURCES, a JSON object from model IDs to STEP paths.
 #[path = "../src/eval/analytic.rs"]
 mod analytic;
 
@@ -130,6 +132,14 @@ fn point(face: &Definition, [u, v]: [f64; 2]) -> V {
                 ),
             )
         }
+        Kind::LinearFillet => {
+            let t = 1.0 - u;
+            let scale = (a + (b - a) * v) / (t * t + 2.0 * c * u * t + u * u);
+            add(
+                add(p, mul(v, axis)),
+                add(mul(scale * t * t, x), mul(scale * u * u, y)),
+            )
+        }
     }
 }
 
@@ -147,11 +157,19 @@ fn reference(face: &Definition, same: bool, [u, v]: [f64; 2]) -> (V, V) {
         Kind::Sphere => sub(p, xyz(origin)),
         Kind::Torus => sub(p, add(xyz(origin), mul(radii[0], radial))),
         _ => {
-            // The stored parametrization is regular, including at periodic wraps.
-            // Use position differences rather than the shader's normal formulas.
+            // At a collapsed fillet row the normal is the interior limit.
+            // Elsewhere use position differences instead of the shader's formulas.
             let h = 1.0e-6;
+            let normal_v = if face.kind == Kind::LinearFillet {
+                0.5
+            } else {
+                v
+            };
             cross(
-                sub(point(face, [u + h, v]), point(face, [u - h, v])),
+                sub(
+                    point(face, [u + h, normal_v]),
+                    point(face, [u - h, normal_v]),
+                ),
                 sub(point(face, [u, v + h]), point(face, [u, v - h])),
             )
         }
@@ -163,6 +181,85 @@ struct Case {
     name: String,
     definition: Definition,
     same: bool,
+}
+
+fn case_recipe(text: &str, id: &str) -> serde_json::Value {
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["id"] == id)
+        .unwrap_or_else(|| panic!("No recipe for case {id}"))["recipe"]
+        .take()
+}
+
+fn corpus(mut visit: impl FnMut(&str, &catallax_features::Built)) {
+    use serde_json::{Value, json};
+    use std::{fs, path::Path};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let manifest: Value =
+        serde_json::from_str(include_str!("../../../tools/predictor/corpus.json")).unwrap();
+    let sources: Value = std::env::var_os("CATALLAX_ANALYTIC_SOURCES")
+        .map_or(Value::Null, |path| {
+            serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+        });
+    let mut exact = 0;
+    let mut refused = 0;
+    let mut missing = 0;
+    for row in manifest["rows"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        let mut files = catallax_features::ImportFiles::new();
+        let bytes;
+        let mut recipe = if let Some(path) = row["recipe"].as_str() {
+            serde_json::from_slice(&fs::read(root.join(path)).unwrap()).unwrap()
+        } else if let Some(path) = row["cases"].as_str() {
+            case_recipe(
+                &fs::read_to_string(root.join(path)).unwrap(),
+                row["case"].as_str().unwrap(),
+            )
+        } else if let Some(model) = row["import"]["model"].as_str() {
+            let Some(path) = sources[model].as_str() else {
+                assert!(sources.is_null(), "No supplied STEP path for {model}");
+                missing += 1;
+                continue;
+            };
+            let hash = row["import"]["sha256"].as_str().unwrap();
+            bytes = fs::read(path).unwrap();
+            files.insert(hash.into(), bytes.as_slice());
+            json!({"format": "catallax-recipe/3", "name": id, "steps": [{
+                "id": "imported", "op": "import_step",
+                "file": {"name": "part.step", "sha256": hash},
+                "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+            }], "result": "imported"})
+        } else {
+            assert!(row["inline"].is_object(), "{id}: missing recipe");
+            row["inline"].clone()
+        };
+        if let Some(steps) = row["append"].as_array() {
+            recipe["steps"]
+                .as_array_mut()
+                .unwrap()
+                .extend(steps.iter().cloned());
+            recipe["result"] = row["result"].clone();
+        }
+        if row["format"].is_string() {
+            recipe["format"] = row["format"].clone();
+        }
+        let recipe = Recipe::parse(&recipe.to_string()).unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        match catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default()) {
+            Ok(built) => {
+                exact += 1;
+                visit(id, &built);
+            }
+            Err(reason) => {
+                refused += 1;
+                eprintln!("{id}: no exact faces ({reason})");
+            }
+        }
+    }
+    eprintln!(
+        "Corpus: {exact} exact rows, {refused} without an exact body, {missing} missing STEP sources"
+    );
 }
 
 fn fixtures() -> Vec<Case> {
@@ -178,24 +275,7 @@ fn fixtures() -> Vec<Case> {
             }
         }
     };
-    for (name, input) in [
-        (
-            "P0 cone",
-            include_str!("../../../parts/P0/general-cone.json"),
-        ),
-        (
-            "P0 torus",
-            include_str!("../../../parts/P0/general-torus.json"),
-        ),
-        ("P2", include_str!("../../../parts/P2-collar.json")),
-        ("P3", include_str!("../../../parts/P3-filleted-boss.json")),
-        (
-            "oblique draft",
-            include_str!("../../catallax-features/tests/fixtures/draft-oblique.json"),
-        ),
-    ] {
-        let built = evaluate(&Recipe::parse(input).unwrap(), &mut Decider::default())
-            .unwrap_or_else(|e| panic!("{name}: {e}"));
+    let mut add_body = |name: &str, built: &catallax_features::Built| {
         let model = &built.model;
         for &lump in &model.body(built.result).lumps {
             for &shell in &model.lump(lump).shells {
@@ -205,6 +285,33 @@ fn fixtures() -> Vec<Case> {
                 }
             }
         }
+    };
+    for (name, input) in [
+        (
+            "P0 sphere",
+            include_str!("../../../parts/P0/equal-cylinder-sphere.json"),
+        ),
+        ("P2", include_str!("../../../parts/P2-collar.json")),
+        ("P3", include_str!("../../../parts/P3-filleted-boss.json")),
+        (
+            "oblique draft",
+            include_str!("../../catallax-features/tests/fixtures/draft-oblique.json"),
+        ),
+        (
+            "zero-end fillet",
+            &case_recipe(
+                include_str!("../../../parts/fillets/cases.jsonl"),
+                "variable-zero-end",
+            )
+            .to_string(),
+        ),
+    ] {
+        let built = evaluate(&Recipe::parse(input).unwrap(), &mut Decider::default())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        add_body(name, &built);
+    }
+    if std::env::var_os("CATALLAX_ANALYTIC_CORPUS").is_some() {
+        corpus(add_body);
     }
 
     let r = Real::from_i64;
@@ -292,7 +399,7 @@ fn grid(kind: Kind) -> (Vec<f32>, Vec<f32>) {
             vec![-0.25, -0.234375, -0.125, 0.0, 0.1875, 0.234375, 0.25],
         ),
         Kind::Torus => (turn(), turn()),
-        Kind::Sweep => (segment(), segment()),
+        Kind::Sweep | Kind::LinearFillet => (segment(), segment()),
         Kind::Pipe | Kind::Ruled => (
             vec![
                 -0.015625, 0.0, 0.015625, 0.375, 1.0, 1.625, 2.0, 3.0, 3.984375, 4.0,
@@ -400,6 +507,7 @@ fn analytic_compute_matches_binary64_charts() {
         Kind::Sweep,
         Kind::Pipe,
         Kind::Ruled,
+        Kind::LinearFillet,
     ] {
         assert!(
             cases.iter().any(|case| case.definition.kind == kind),

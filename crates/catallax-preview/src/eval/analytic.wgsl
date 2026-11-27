@@ -99,7 +99,7 @@ fn eval_analytic(surface: AnalyticSurface, uv: vec2<f32>) -> AnalyticVertex {
             n = (2.0 * dot(first, chord) / dot(chord, chord)) * chord - first;
             p = centre + d[6].y * n;
         }
-        default: { // Oblique draft: a ruled polar section, affine in v.
+        case 5u: { // Oblique draft: a ruled polar section, affine in v.
             let ray = analytic_quarters(uv.x);
             let radial = ray.x * across + ray.y * side;
             let azimuth = -ray.y * across + ray.x * side;
@@ -109,6 +109,21 @@ fn eval_analytic(surface: AnalyticSurface, uv: vec2<f32>) -> AnalyticVertex {
             let du = radius * azimuth + dot(lean, vec2(-ray.y, ray.x)) * radial;
             let dv = axis - k.w * radial;
             p = origin + z * axis + radius * radial;
+            n = normalize(cross(du, dv));
+        }
+        default: { // Linear-radius fillet: arc then station.
+            let u = uv.x;
+            let t = 1.0 - u;
+            let tt = t * t;
+            let uu = u * u;
+            let denominator = tt + (2.0 * k.z) * (t * u) + uu;
+            let offset = (tt * across + uu * side) / denominator;
+            let denominator_du = 2.0 * (u - t) * (1.0 - k.z);
+            let du = 2.0 * (u * side - t * across) - denominator_du * offset;
+            let dv = axis + (k.y - k.x) * offset;
+            p = origin + uv.y * axis + mix(k.x, k.y, uv.y) * offset;
+            // Remove the radius factor before normalizing: a zero-radius
+            // endpoint uses the limit from the interior at the same arc UV.
             n = normalize(cross(du, dv));
         }
     }

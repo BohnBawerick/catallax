@@ -16,6 +16,7 @@ pub enum Kind {
     Sweep,
     Pipe,
     Ruled,
+    LinearFillet,
 }
 
 /// Binary64, body-local inputs before upload. The chart orientation is supplied
@@ -125,6 +126,17 @@ impl Definition {
                     slope,
                 ];
                 Kind::Ruled
+            }
+            Surface::BSpline(SplineSupport::LinearFillet(s)) => {
+                let [first, last] = s.rays().each_ref().map(vector);
+                data[0] = lane(local(&s.edge()[0], body_origin));
+                data[1] = lane(vector(s.along()));
+                let shift = vector(s.shift());
+                data[2] = lane(std::array::from_fn(|i| shift[i] + first[i]));
+                data[3] = lane(std::array::from_fn(|i| shift[i] + last[i]));
+                let [lo, hi] = s.radii().each_ref().map(|r| r.to_f64());
+                data[5] = [lo, hi, ((1.0 + dot(first, last)) * 0.5).sqrt(), 0.0];
+                Kind::LinearFillet
             }
             _ => return None,
         };

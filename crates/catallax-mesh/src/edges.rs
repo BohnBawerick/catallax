@@ -7,7 +7,7 @@ use std::{
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
 use catallax_shapes::{
-    Curve, DisplayCut, FilletCutTrace, SplineBoundary, SplineSupport, Surface,
+    Curve, DisplayCut, FilletCutTrace, SectionTracePiece, SplineBoundary, SplineSupport, Surface,
     tessellation::RationalSpan,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
@@ -435,7 +435,7 @@ impl Sampler<'_, '_> {
                 Ok(acceleration) => Some(acceleration),
                 // Section isolation proves a regular branch. A wide power
                 // enclosure can still include zero; check its subarcs.
-                Err(error) if error.code == "intersect.section-trace-derivative" => None,
+                Err(error) if SectionTracePiece::can_subdivide_jet_refusal(&error) => None,
                 Err(error) => return Err(error),
             }
         };

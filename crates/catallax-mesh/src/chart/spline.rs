@@ -1594,6 +1594,7 @@ impl SplineChart {
     pub(crate) fn fixed_lattice(
         &self,
         limit: &Rational,
+        angular_rates: [Interval; 2],
         max_vertices: usize,
         dec: &mut Decider,
     ) -> Result<[Vec<f64>; 2], Refusal> {
@@ -1613,6 +1614,20 @@ impl SplineChart {
             .map(|span| span.rational.chord_coefficients())
             .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
             .ok_or_else(|| failure("fixed trim has no spans"))?;
+        let rates: [f64; 2] = std::array::from_fn(|axis| {
+            if angular_rates[axis].hi() == 0.0 {
+                return 0.0;
+            }
+            self.spans
+                .iter()
+                .map(|span| {
+                    (span.rational.first_derivative_bounds()[axis] * angular_rates[axis]).hi()
+                })
+                .fold(0.0, f64::max)
+        });
+        if rates.iter().any(|rate| !rate.is_finite()) {
+            return Err(failure("fixed trim angular spacing exceeds binary64"));
+        }
         let limit = Interval::from_rational(limit).lo();
         let mut counts = [2usize; 2];
         loop {
@@ -1626,7 +1641,8 @@ impl SplineChart {
                 return Err(failure("fixed trim lattice reached max_vertices"));
             }
             let widths = counts.map(|count| point(1.0 / count as f64));
-            if chord_bound_interval(widths, &coefficients).hi() <= limit {
+            let angular_axis = (0..2).find(|&axis| (widths[axis] * point(rates[axis])).hi() > 1.0);
+            if angular_axis.is_none() && chord_bound_interval(widths, &coefficients).hi() <= limit {
                 return Ok(std::array::from_fn(|axis| {
                     let mut values = Vec::with_capacity(sizes[axis]);
                     let count = counts[axis];
@@ -1639,15 +1655,17 @@ impl SplineChart {
                     values
                 }));
             }
-            let pure = [
-                coefficients[0] * widths[0].square(),
-                coefficients[2] * widths[1].square(),
-            ];
-            let axis = match pure[0].hi().total_cmp(&pure[1].hi()) {
-                std::cmp::Ordering::Less => 1,
-                std::cmp::Ordering::Greater => 0,
-                std::cmp::Ordering::Equal => usize::from(counts[1] < counts[0]),
-            };
+            let axis = angular_axis.unwrap_or_else(|| {
+                let pure = [
+                    coefficients[0] * widths[0].square(),
+                    coefficients[2] * widths[1].square(),
+                ];
+                match pure[0].hi().total_cmp(&pure[1].hi()) {
+                    std::cmp::Ordering::Less => 1,
+                    std::cmp::Ordering::Greater => 0,
+                    std::cmp::Ordering::Equal => usize::from(counts[1] < counts[0]),
+                }
+            });
             counts[axis] = counts[axis]
                 .checked_mul(2)
                 .ok_or_else(|| failure("fixed trim lattice size overflow"))?;

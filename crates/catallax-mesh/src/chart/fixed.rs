@@ -25,7 +25,7 @@ impl FixedTrim {
         options: &MeshOptions,
         dec: &mut Decider,
     ) -> Result<Option<Self>, Refusal> {
-        let rows = match support {
+        let rows: Vec<_> = match support {
             SplineSupport::RollingMitre(_) => RollingMitreBand::checked(model, face, dec)?
                 .map_err(|undecided| {
                     failure("rolling mitre has no checked trim").keeping_any(undecided)
@@ -60,8 +60,35 @@ impl FixedTrim {
             }
             _ => return Ok(None),
         };
+        let mut angular_rates = [Interval::point(0.0).unwrap(); 2];
+        if let Some(angle) = &options.angular_deviation {
+            for &(edge, row, _, _) in &rows {
+                let axis =
+                    usize::from(matches!(row, BoundaryRow::Negative | BoundaryRow::Positive));
+                for coedge in model.coedges_of_edge(edge) {
+                    let Some((_, other)) = model.owner_of_coedge(coedge) else {
+                        continue;
+                    };
+                    let Surface::Torus(torus) = model.geom().surface(model.face(other).surface)
+                    else {
+                        continue;
+                    };
+                    // The torus tangent speeds per radian are at least R-r
+                    // and r. Bound their total rotation per unit rail length.
+                    // A third of the angular target leaves room for the facet
+                    // spanning the fixed edge, as for ordinary edge samples.
+                    let rate =
+                        &Real::one() / &(&torus.major - &torus.minor) + &Real::one() / &torus.minor;
+                    let rate = dec.enclose_at(&rate, BITS)?.to_interval();
+                    let scaled =
+                        rate * Interval::point(3.0).unwrap() / Interval::from_rational(angle);
+                    angular_rates[axis] = angular_rates[axis].hull(&scaled);
+                }
+            }
+        }
         let axes = spline.fixed_lattice(
             &options.chord_tolerance.mul_pow2(-1),
+            angular_rates,
             options.max_vertices,
             dec,
         )?;

@@ -2198,19 +2198,14 @@ fn ruled(model: &Model, face: FaceId, chart: &Chart, options: &MeshOptions) -> b
 }
 
 fn face_mesh(
-    shared: Shared<'_>,
+    model: &Model,
     face_id: FaceId,
     chart: &Chart,
     draft: &mut FaceDraft<'_>,
     plan: Plan<'_>,
+    prior_chords: &BTreeSet<(usize, usize)>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let Shared {
-        model,
-        junction,
-        prior,
-        ..
-    } = shared;
     let Plan { options, level } = plan;
     let face = model.face(face_id);
     let fixed = chart.fixed.as_ref();
@@ -2228,7 +2223,6 @@ fn face_mesh(
     let mut trim_error = Rational::zero();
     let mut projected = Vec::new();
     let mut parameters = BTreeMap::new();
-    let meridians = crate::bounded::fixed_meridians(model, face_id, chart, draft, junction, dec)?;
     let goal = options.chord_tolerance.mul_pow2(-6).to_f64_nearest();
     let mut project = |index, seed, dec: &mut Decider| -> Result<Uv, Refusal> {
         let position = draft.mesh.positions[index];
@@ -2240,11 +2234,7 @@ fn face_mesh(
             parameters.insert(index, uv);
             Ok(uv)
         } else {
-            let mut uv = chart.project(position);
-            if let Some(&u) = meridians.get(&index) {
-                uv[0] = u;
-            }
-            Ok(uv)
+            Ok(chart.project(position))
         }
     };
     for &l in &face.loops {
@@ -2435,7 +2425,7 @@ fn face_mesh(
         interior_left: BTreeSet::new(),
         collar_edges: BTreeSet::new(),
         protected_band: None,
-        prior_chords: prior,
+        prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
         hessian,
@@ -3212,7 +3202,7 @@ fn build_face(
         model,
         boundaries,
         junction,
-        ..
+        prior,
     } = shared;
     let Plan { options, level } = plan;
     if let Some(junction) = junction.filter(|junction| junction.contains(face)) {
@@ -3238,7 +3228,7 @@ fn build_face(
         return Ok(());
     }
     let positions = draft.mesh.positions.len();
-    match face_mesh(shared, face, chart, draft, plan, dec) {
+    match face_mesh(model, face, chart, draft, plan, prior, dec) {
         Err(error)
             if error.code == "mesh.precision-or-budget"
                 && crate::periodic::eligible(model, face, chart, options) =>

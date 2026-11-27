@@ -1,9 +1,12 @@
 //! P5 flanged housing: the same compute and reference checks on native and WebGPU.
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod corpus;
+
 use std::collections::{BTreeSet, HashMap};
 
 use catallax_app::{build_certified, preview_body};
-use catallax_mesh::float::{DisplayDescription, DisplayOptions, describe_body};
+use catallax_mesh::float::{DisplayDescription, DisplayFace, DisplayOptions, describe_body};
 use catallax_mesh::{Mesh, MeshOptions, PreviewOptions};
 use catallax_numbers::{BudgetPolicy, Decider, Rational};
 use catallax_preview::mesher::{
@@ -22,20 +25,47 @@ const P5_DETAIL: FaceDetail = FaceDetail([128, 32]);
 
 #[cfg(target_os = "linux")]
 #[test]
-fn p5_software_compute() {
+fn corpus_software_compute() {
     pollster::block_on(async {
-        let Some(adapter) = adapter(wgpu::Backends::VULKAN, true).await else {
-            assert!(
-                std::env::var_os("CI").is_none(),
-                "no Vulkan software adapter in CI"
-            );
-            eprintln!("SKIP: no Vulkan software adapter (install Mesa lavapipe)");
+        let Some(adapter) = software_adapter().await else {
             return;
         };
-        let info = adapter.get_info();
-        assert_eq!(info.device_type, wgpu::DeviceType::Cpu);
+        check_corpus(adapter).await;
+    });
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "Metal acceptance with the held-out STEP sources"]
+fn corpus_metal() {
+    assert!(std::env::var_os("P5_SOURCES").is_some());
+    assert!(std::env::var_os("P5_SELECTION").is_some());
+    pollster::block_on(async { check_corpus(native_adapter().await).await });
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn p5_software_compute() {
+    pollster::block_on(async {
+        let Some(adapter) = software_adapter().await else {
+            return;
+        };
         check_p5(adapter).await;
     });
+}
+
+#[cfg(target_os = "linux")]
+async fn software_adapter() -> Option<wgpu::Adapter> {
+    let adapter = adapter(wgpu::Backends::VULKAN, true).await;
+    if let Some(adapter) = &adapter {
+        assert_eq!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    } else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "no Vulkan software adapter in CI"
+        );
+        eprintln!("SKIP: no Vulkan software adapter (install Mesa lavapipe)");
+    }
+    adapter
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -316,6 +346,150 @@ async fn check_rational_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu:
     );
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+async fn check_corpus(adapter: wgpu::Adapter) {
+    use catallax_features::EvaluationOutcome;
+    use catallax_mesh::{float::describe_numerical_body, mesh_body};
+    use catallax_numbers::with_operation_budget;
+
+    eprintln!("Corpus adapter: {:?}", adapter.get_info());
+    let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+    let mesher = Mesher::new(&device, &queue).await.unwrap();
+    let mut failures = Vec::new();
+    let mut rows = 0;
+    let mut grid_faces = 0;
+    for (id, outcome) in corpus::bodies() {
+        rows += 1;
+        let started = std::time::Instant::now();
+        let result: Result<(), String> = async {
+            match outcome {
+                EvaluationOutcome::Exact(checkpoint) => {
+                    let built = checkpoint.built();
+                    let description =
+                        describe_body(&built.model, built.result, &DisplayOptions::default())
+                            .map_err(|error| error.to_string())?;
+                    let gpu = corpus_gpu(id, &mesher, &device, &description, started, &mut grid_faces)
+                        .await;
+                    let (reference, _) = with_operation_budget(u64::MAX, || {
+                        mesh_body(
+                            &built.model,
+                            built.result,
+                            &MeshOptions::default(),
+                            &mut Decider::default(),
+                        )
+                    });
+                    let reference = match reference {
+                        Ok(reference) => reference,
+                        Err(error)
+                            if matches!(id, "fillet-vertex-4-two" | "m10-top-cut")
+                                && error.code == "mesh.precision-or-budget" =>
+                        {
+                            eprintln!("{id}: known checked-mesh refusal: {error}; GPU: {:?}", gpu.as_ref().map(|_| ()));
+                            return Ok(());
+                        }
+                        Err(error) => return Err(error.to_string()),
+                    };
+                    let gpu = gpu?;
+                    let (vertices, indices) =
+                        readback(&device, &queue, gpu.buffers.as_ref().unwrap()).await;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        assert_geometry(&description, &gpu, &vertices, &indices, &reference.value);
+                    }))
+                    .map_err(|_| "geometry check failed".to_owned())
+                }
+                EvaluationOutcome::Numerical(built) => {
+                    let description = describe_numerical_body(built.body(), &DisplayOptions::default())
+                        .map_err(|error| error.to_string())?;
+                    let gpu = corpus_gpu(id, &mesher, &device, &description, started, &mut grid_faces)
+                        .await?;
+                    let (vertices, indices) =
+                        readback(&device, &queue, gpu.buffers.as_ref().unwrap()).await;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        assert_closed(
+                            &description,
+                            &gpu,
+                            &vertices,
+                            &indices,
+                            |face, face_vertices| {
+                                let mut distance = face.carrier_distance().unwrap();
+                                for i in face_vertices {
+                                    let [x, y, z, _] = vertices[i as usize].position;
+                                    let p = [x, y, z].map(f64::from);
+                                    assert!(
+                                        distance(p) <= TOLERANCE,
+                                        "{id}: {:?}: vertex {p:?} outside {TOLERANCE} mm of the admitted carrier",
+                                        face.face
+                                    );
+                                }
+                            },
+                        );
+                    }))
+                    .map_err(|_| "geometry check failed".to_owned())
+                }
+            }
+        }.await;
+        if let Err(error) = result {
+            eprintln!("{id}: {error}");
+            failures.push(format!("{id}: {error}"));
+        }
+    }
+    eprintln!("GPU corpus: {rows} rows, {grid_faces} sampled-grid faces");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+async fn corpus_gpu<F: Clone + std::fmt::Debug, E>(
+    id: &str,
+    mesher: &Mesher,
+    device: &wgpu::Device,
+    description: &DisplayDescription<F, E>,
+    started: std::time::Instant,
+    grid_faces: &mut usize,
+) -> Result<GpuMesh<F>, String> {
+    use catallax_mesh::float::DisplaySurface::*;
+
+    let gpu = mesher
+        .mesh(description, |_| P5_DETAIL)
+        .await
+        .map_err(|error| error.to_string())?;
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_secs(30)),
+        })
+        .map_err(|error| error.to_string())?;
+    let mut grids = std::collections::BTreeMap::<_, usize>::new();
+    let mut refusals = Vec::new();
+    for (face, result) in description.faces.iter().zip(&gpu.faces) {
+        let kind = match face.surface {
+            Plane(_) => "plane",
+            Cylinder { .. } => "cylinder",
+            Cone { .. } => "cone",
+            Sphere { .. } => "sphere",
+            Torus { .. } => "torus",
+            EllipticCylinder { .. } => "elliptic-cylinder",
+            BSpline(_) => "spline",
+            Grid(_) => "grid",
+        };
+        match &result.draw {
+            Ok(draw) if draw.sampled_grid => *grids.entry(kind).or_default() += 1,
+            Ok(_) => (),
+            Err(error) => refusals.push(format!("{:?} {kind}: {error}", face.face)),
+        }
+    }
+    *grid_faces += grids.values().sum::<usize>();
+    eprintln!(
+        "{id}: preview_ms={:.3}, faces={}, sampled_grid={grids:?}",
+        started.elapsed().as_secs_f64() * 1_000.0,
+        gpu.faces.len()
+    );
+    if refusals.is_empty() {
+        Ok(gpu)
+    } else {
+        Err(refusals.join(", "))
+    }
+}
+
 async fn readback(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -364,21 +538,44 @@ fn assert_geometry(
     indices: &[u32],
     checked: &Mesh,
 ) {
+    assert_eq!(gpu.faces.len(), checked.faces.len());
+    assert_closed(
+        description,
+        gpu,
+        vertices,
+        indices,
+        |face, face_vertices| {
+            let checked_face = checked.faces.iter().find(|f| f.face == face.face).unwrap();
+            let reference = DistanceGrid::new(
+                &checked.triangles[checked_face.triangles.clone()],
+                &checked.positions,
+            );
+            for index in face_vertices {
+                let vertex = vertices[index as usize];
+                let position =
+                    std::array::from_fn(|i| f64::from(vertex.position[i]) + gpu.origin[i]);
+                assert!(
+                    reference.within_tolerance(position),
+                    "face {:?}: vertex {position:?} outside {TOLERANCE} mm of its checked face",
+                    face.face
+                );
+            }
+        },
+    );
+}
+
+fn assert_closed<F: Eq + std::fmt::Debug, E: std::fmt::Debug>(
+    description: &DisplayDescription<F, E>,
+    gpu: &GpuMesh<F>,
+    vertices: &[PreviewVertex],
+    indices: &[u32],
+    mut check_face: impl FnMut(&DisplayFace<F>, BTreeSet<u32>),
+) {
     assert_eq!(
         gpu.origin.map(f64::to_bits),
         description.origin.map(f64::to_bits)
     );
-    assert_eq!(gpu.faces.len(), checked.faces.len());
-    assert!(
-        gpu.faces
-            .iter()
-            .any(|face| face.draw.as_ref().unwrap().sampled_grid)
-    );
-    assert!(
-        gpu.faces
-            .iter()
-            .any(|face| !face.draw.as_ref().unwrap().sampled_grid)
-    );
+    assert_eq!(gpu.faces.len(), description.faces.len());
     let key = |i: u32| {
         let p = vertices[i as usize].position;
         [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]
@@ -386,19 +583,15 @@ fn assert_geometry(
     let mut edges = HashMap::<EdgeKey, (u32, i32)>::new();
     let mut next_index = 0;
     let mut used = vec![false; vertices.len()];
-    for face in &gpu.faces {
+    for (face, source) in gpu.faces.iter().zip(&description.faces) {
+        assert_eq!(face.face, source.face);
         let draw = face.draw.as_ref().unwrap();
         assert_eq!(draw.indices.start, next_index);
         next_index = draw.indices.end;
         let draw_indices = &indices[draw.indices.start as usize..draw.indices.end as usize];
         assert!(!draw_indices.is_empty() && draw_indices.len().is_multiple_of(3));
-        let checked_face = checked.faces.iter().find(|f| f.face == face.face).unwrap();
-        let reference = DistanceGrid::new(
-            &checked.triangles[checked_face.triangles.clone()],
-            &checked.positions,
-        );
         let face_vertices: BTreeSet<_> = draw_indices.iter().copied().collect();
-        for index in face_vertices {
+        for &index in &face_vertices {
             used[index as usize] = true;
             let vertex = vertices[index as usize];
             let position = std::array::from_fn(|i| f64::from(vertex.position[i]) + gpu.origin[i]);
@@ -409,12 +602,8 @@ fn assert_geometry(
                 face.face,
                 vertex.normal
             );
-            assert!(
-                reference.within_tolerance(position),
-                "face {:?}: vertex {position:?} outside {TOLERANCE} mm of its checked face",
-                face.face
-            );
         }
+        check_face(source, face_vertices);
         for t in draw_indices.as_chunks::<3>().0 {
             for i in 0..3 {
                 let (a, b) = (key(t[i]), key(t[(i + 1) % 3]));

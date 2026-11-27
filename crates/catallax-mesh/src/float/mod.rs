@@ -60,6 +60,20 @@ pub struct DisplayFace<F = FaceId> {
     pub loops: Vec<DisplayLoop>,
 }
 
+impl<F> DisplayFace<F> {
+    /// Distance to a point on the binary64 carrier, ignoring the trims.
+    /// The input position is body-relative. The result bounds the minimum
+    /// distance from above; it is not a certified deviation bound.
+    pub fn carrier_distance(&self) -> Option<impl FnMut([f64; 3]) -> f64 + '_> {
+        let mut carrier = Projector::new(&self.surface, None)?;
+        Some(move |position| {
+            let uv = carrier.project(position, None);
+            let (point, _) = carrier.jet(uv);
+            evaluate::norm(sub(position, point))
+        })
+    }
+}
+
 /// Consecutive oriented uses around a boundary loop.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DisplayLoop {

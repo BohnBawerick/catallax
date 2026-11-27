@@ -470,6 +470,10 @@ impl MPoly {
             .collect()
     }
 
+    pub(crate) fn definition_terms(&self) -> impl Iterator<Item = (&Monomial, &Rational)> {
+        self.terms.iter()
+    }
+
     pub(crate) fn into_terms(self) -> impl ExactSizeIterator<Item = (Monomial, Rational)> {
         self.terms.into_iter()
     }

@@ -55,6 +55,17 @@ impl PatchSectionBranch {
     pub fn charts(&self) -> &[RationalPatch] {
         &self.charts
     }
+
+    /// Ordered graph cells, as `(chart index, solved axis, UV bounds, ends)`.
+    /// All parameters are in the retained chart's knot coordinates.
+    #[allow(clippy::type_complexity)]
+    pub fn display_cells(
+        &self,
+    ) -> impl Iterator<Item = (usize, usize, &[[Rational; 2]; 2], &[[Real; 2]; 2])> {
+        self.cells
+            .iter()
+            .map(|cell| (cell.chart, cell.solved, &cell.domain, &cell.ends))
+    }
     fn span(&self, cell: &ArcCell) -> &Span {
         &self.charts[cell.chart].data.spans[cell.span]
     }

@@ -37,6 +37,7 @@ pub use display::{
 };
 mod edges;
 mod evaluate;
+pub mod float;
 mod junction;
 mod periodic;
 mod planar;

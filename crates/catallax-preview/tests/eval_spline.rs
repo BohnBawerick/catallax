@@ -12,7 +12,7 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable, cast_slice};
-use catallax_features::ImportFiles;
+use catallax_features::{EvaluationOutcome, ImportFiles};
 use catallax_numbers::Decider;
 use catallax_preview::gpu::Gpu;
 use catallax_recipe::Recipe;
@@ -337,8 +337,8 @@ impl Batch {
     }
 }
 
-// Exact rows in the phase-5 display pass. Held-out STEP bytes are supplied
-// separately; the kernel verifies them against the public corpus manifest.
+// Exact and fitted rows in the phase-5 display pass. Held-out STEP bytes are
+// supplied separately; the kernel verifies them against the corpus manifest.
 const DISPLAY_ROWS: &str = "
     P0-crossing-pipes P1-bracket P1-drafted-bracket loft-ruled-fillet-r1_4
     fillet-partial-oblique fillet-sphere-cylinder loft-ruled-fillet-r1_10
@@ -360,6 +360,11 @@ const DISPLAY_ROWS: &str = "
     fillet-boss-rim P0-near-miss fillet-cone-base fillet-cone-top
     fillet-narrow-cone P0-equal-cylinder-sphere P2-collar fillet-variable-linear
     fillet-variable-zero-end fillet-cylinder-rim
+";
+
+const FITTED_ROWS: &str = "
+    rim-five-r7.99 rim-five-r7.9 rim-five-r5 rim-six-r3.99 rim-six-r2
+    rim-six-r1_2 rim-six-r1 loft-smooth-fillet-r1_10 rim-five-r1
 ";
 
 const HELD_OUT_ROWS: &str = "
@@ -406,6 +411,22 @@ fn recipe(root: &Path, row: &Value, hash: Option<&str>) -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
+fn add_face(batch: &mut Batch, row: &str, index: usize, surface: &Surface) {
+    let Surface::BSpline(support) = surface else {
+        return;
+    };
+    if let SplineSupport::RationalAtlas(atlas) = support {
+        for (chart, entry) in atlas.charts().iter().enumerate() {
+            batch.add(
+                format!("{row}/{index}/{chart}"),
+                Carrier::stored(entry.patch().carrier()),
+            );
+        }
+    } else {
+        batch.add(format!("{row}/{index}"), Carrier::stored(support.carrier()));
+    }
+}
+
 fn corpus(batch: &mut Batch) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: Value =
@@ -423,23 +444,35 @@ fn corpus(batch: &mut Batch) {
                 members.into_iter().collect::<BTreeMap<_, _>>(),
             ))
         }
-        (None, None) => {
-            eprintln!("Held-out STEP rows not supplied (P5_SOURCES and P5_SELECTION)");
-            None
-        }
+        (None, None) => None,
         _ => panic!("set both P5_SOURCES and P5_SELECTION"),
     };
-    let held_out = sources
-        .iter()
-        .flat_map(|_| HELD_OUT_ROWS.split_whitespace());
-    for id in DISPLAY_ROWS.split_whitespace().chain(held_out) {
+    let mut exact = 0;
+    let mut fitted = 0;
+    let mut missing = 0;
+    for (id, expect_fitted) in DISPLAY_ROWS
+        .split_whitespace()
+        .chain(HELD_OUT_ROWS.split_whitespace())
+        .map(|id| (id, false))
+        .chain(FITTED_ROWS.split_whitespace().map(|id| (id, true)))
+    {
         let row = rows.iter().find(|row| row["id"] == id).unwrap();
         let source = if let Some(model) = row["import"]["model"].as_str() {
-            let (root, files) = sources.as_ref().unwrap();
-            let path = files
-                .get(model)
-                .unwrap_or_else(|| panic!("{id}: missing corpus selection"));
-            let bytes = fs::read(root.join(path)).unwrap();
+            let Some((root, path)) = sources
+                .as_ref()
+                .and_then(|(root, files)| files.get(model).map(|path| (root, path)))
+            else {
+                missing += 1;
+                continue;
+            };
+            let bytes = match fs::read(root.join(path)) {
+                Ok(bytes) => bytes,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    missing += 1;
+                    continue;
+                }
+                Err(e) => panic!("{id}: cannot read held-out source: {e}"),
+            };
             Some((row["import"]["sha256"].as_str().unwrap(), bytes))
         } else {
             None
@@ -453,36 +486,46 @@ fn corpus(batch: &mut Batch) {
             std::thread::Builder::new()
                 .stack_size(8 * 1024 * 1024)
                 .spawn_scoped(scope, || {
-                    catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
+                    catallax_features::evaluate_incremental_outcome(
+                        &recipe,
+                        None,
+                        &files,
+                        &mut Decider::default(),
+                    )
                 })
                 .unwrap()
                 .join()
                 .unwrap()
         })
         .unwrap_or_else(|e| panic!("{id}: {e:?}"));
-        for (index, face) in built
-            .model
-            .faces_of_body(built.result)
-            .into_iter()
-            .enumerate()
-        {
-            let Surface::BSpline(support) =
-                built.model.geom().surface(built.model.face(face).surface)
-            else {
-                continue;
-            };
-            if let SplineSupport::RationalAtlas(atlas) = support {
-                for (chart, entry) in atlas.charts().iter().enumerate() {
-                    batch.add(
-                        format!("{id}/{index}/{chart}"),
-                        Carrier::stored(entry.patch().carrier()),
+        match built {
+            EvaluationOutcome::Exact(checkpoint) if !expect_fitted => {
+                exact += 1;
+                let built = checkpoint.built();
+                for (index, face) in built
+                    .model
+                    .faces_of_body(built.result)
+                    .into_iter()
+                    .enumerate()
+                {
+                    add_face(
+                        batch,
+                        id,
+                        index,
+                        built.model.geom().surface(built.model.face(face).surface),
                     );
                 }
-            } else {
-                batch.add(format!("{id}/{index}"), Carrier::stored(support.carrier()));
             }
+            EvaluationOutcome::Numerical(built) if expect_fitted => {
+                fitted += 1;
+                for (index, face) in built.body().definition().faces.iter().enumerate() {
+                    add_face(batch, id, index, &face.surface);
+                }
+            }
+            _ => panic!("{id}: corpus build grade changed"),
         }
     }
+    eprintln!("Display corpus: {exact} exact, {fitted} fitted, {missing} held-out sources missing");
 }
 
 #[test]

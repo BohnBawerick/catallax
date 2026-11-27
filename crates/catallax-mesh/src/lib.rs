@@ -19,7 +19,7 @@
 //! every returned triangle and ring segment. Angular controls compare rounded
 //! facets with normal enclosures over their whole parameter triangles.
 
-use std::{io::Write, ops::Range};
+use std::{collections::BTreeMap, io::Write, ops::Range};
 
 use catallax_numbers::{Answered, Decider, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
@@ -52,6 +52,21 @@ mod reuse;
 pub use reuse::FaceCache;
 mod ruled;
 mod triangulate;
+
+/// Evidence used when building a face display.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FaceLevel {
+    /// Visual sampling without a certified deviation.
+    Preview,
+    /// A complete positional bound for display, without an export certificate.
+    Bounded,
+    /// Certified display geometry built from the exact model.
+    Proven,
+}
+
+impl FaceLevel {
+    const ALL: [Self; 3] = [Self::Preview, Self::Bounded, Self::Proven];
+}
 
 /// Display meshing controls. Lengths use the model's millimetres.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,6 +258,149 @@ pub fn mesh_body_cached(
     Ok((answer, FaceCache::new(options.clone(), capture)))
 }
 
+/// The point identities and certified topology of a retained B-rep.
+///
+/// Count queries do not emit render buffers. Emission consumes the schedule
+/// instead of tracing edges or triangulating faces again.
+pub struct FaceLevelPlan<'a> {
+    model: &'a Model,
+    expansion: Option<&'a catallax_topology::ChartExpansion>,
+    schedule: triangulate::MeshSchedule,
+    counts: [BTreeMap<FaceId, usize>; 3],
+}
+
+impl FaceLevelPlan<'_> {
+    /// Number of distinct indices referenced by this logical face at `level`.
+    /// Shared edge samples count once within the face, even across chart cells.
+    pub fn point_count(&self, face: FaceId, level: FaceLevel) -> Option<usize> {
+        self.counts[level as usize].get(&face).copied()
+    }
+
+    /// Assembles the certified mesh from the retained samples and topology.
+    pub fn emit(self) -> Answered<Mesh> {
+        self.emit_at(FaceLevel::Proven)
+    }
+
+    /// Emits the earliest retained display schedule, without a proof claim.
+    pub fn emit_preview(self) -> Result<PreviewMesh, Refusal> {
+        Ok(PreviewMesh::from_mesh(
+            self.emit_at(FaceLevel::Preview)?.value,
+        ))
+    }
+
+    /// Emits the retained positional schedule and its complete deviation bound.
+    pub fn emit_bounded(self) -> Result<DisplayMesh, Refusal> {
+        let answer = self.emit_at(FaceLevel::Bounded)?;
+        Ok(display::rendering(
+            answer.value,
+            answer.marks,
+            "complete-cell chord bounds on the retained face schedule",
+        ))
+    }
+
+    /// Emits independently selected logical face levels. All incident faces
+    /// use the same shared edge samples, regardless of the selection.
+    pub fn emit_selected(
+        self,
+        level: impl FnMut(FaceId) -> FaceLevel,
+    ) -> Result<PreviewMesh, Refusal> {
+        Ok(PreviewMesh::from_mesh(self.emit_selected_at(level)?.value))
+    }
+
+    fn emit_at(self, level: FaceLevel) -> Answered<Mesh> {
+        self.emit_selected_at(|_| level)
+    }
+
+    fn emit_selected_at(self, mut level: impl FnMut(FaceId) -> FaceLevel) -> Answered<Mesh> {
+        let Some(expansion) = self.expansion else {
+            return self.schedule.emit_selected(self.model, level);
+        };
+        let choices: BTreeMap<_, _> = self.counts[FaceLevel::Proven as usize]
+            .keys()
+            .map(|&face| (face, level(face)))
+            .collect();
+        let mut answer = self
+            .schedule
+            .emit_selected(self.model, |face| choices[&expansion.face(face)])?;
+        rational_atlas::remap(self.model, expansion, &mut answer.value)?;
+        Ok(answer)
+    }
+}
+
+/// Runs shared-edge sampling and face refinement once before render emission.
+///
+/// Earlier admissible rounds reuse the same samples as the final certified
+/// round. A face that needs its final topology at every level reports the
+/// same count at each level.
+/// The preview and positional targets are ten and two times the requested
+/// chord, respectively. Optional facet controls apply to the certified mesh.
+pub fn plan_face_levels<'a>(
+    model: &'a Model,
+    body: BodyId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<FaceLevelPlan<'a>, Refusal> {
+    prepare_face_levels(model, body, options, None, dec)
+}
+
+/// Cost of planning one physical face, excluding shared edge preparation.
+#[derive(Clone, Debug)]
+pub struct FacePreflight {
+    /// The face in the planned topology, which may be an expanded chart cell.
+    pub face: FaceId,
+    /// Physical carrier of the planned face.
+    pub kind: catallax_shapes::SurfaceKind,
+    /// Time from preparing face-local inputs through retaining its topology.
+    pub elapsed: std::time::Duration,
+    /// Charged work during that interval, when an operation budget is active.
+    pub work: u64,
+}
+
+/// Like [`plan_face_levels`], with per-carrier measurements for a benchmark.
+pub fn plan_face_levels_profiled<'a>(
+    model: &'a Model,
+    body: BodyId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<(FaceLevelPlan<'a>, Vec<FacePreflight>), Refusal> {
+    let mut profile = Vec::new();
+    let plan = prepare_face_levels(model, body, options, Some(&mut profile), dec)?;
+    Ok((plan, profile))
+}
+
+fn prepare_face_levels<'a>(
+    model: &'a Model,
+    body: BodyId,
+    options: &MeshOptions,
+    profile: Option<&mut Vec<FacePreflight>>,
+    dec: &mut Decider,
+) -> Result<FaceLevelPlan<'a>, Refusal> {
+    validate_mesh_options(options)?;
+    let expansion = model
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells());
+    let prepared = expansion.and_then(|cover| {
+        catallax_numbers::reuse_operation_enclosures();
+        rational_atlas::expanded_surface(model, body, cover)
+    });
+    let (mesh_model, mesh_body) = prepared.as_ref().map_or_else(
+        || (model, expansion.map_or(body, |cover| cover.body())),
+        |(model, body)| (model, *body),
+    );
+    let schedule = triangulate::prepare(mesh_model, mesh_body, options, None, true, profile, dec)?;
+    let counts = FaceLevel::ALL.map(|level| {
+        schedule.point_counts(level, |face| {
+            expansion.map_or(face, |cover| cover.face(face))
+        })
+    });
+    Ok(FaceLevelPlan {
+        model,
+        expansion,
+        schedule,
+        counts,
+    })
+}
+
 fn mesh_body_impl(
     model: &Model,
     body: BodyId,
@@ -271,6 +429,11 @@ fn mesh_body_checked(
     {
         return rational_atlas::build(model, body, expansion, options, edit, dec);
     }
+    validate_mesh_options(options)?;
+    triangulate::build(model, body, options, edit, dec)
+}
+
+fn validate_mesh_options(options: &MeshOptions) -> Result<(), Refusal> {
     if options
         .angular_deviation
         .as_ref()
@@ -295,7 +458,7 @@ fn mesh_body_checked(
             "chord tolerance must be positive and max_vertices at least four",
         ));
     }
-    triangulate::build(model, body, options, edit, dec)
+    Ok(())
 }
 
 fn failure(detail: impl Into<String>) -> Refusal {

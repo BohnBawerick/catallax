@@ -316,6 +316,68 @@ fn primitives_close_at_seams_poles_and_apices_with_bounded_chords() {
 }
 
 #[test]
+fn prepared_levels_match_emitted_counts_and_direct_proof() {
+    use std::collections::BTreeSet;
+
+    use crate::{FaceLevel, plan_face_levels};
+
+    let mut model = Model::new();
+    let body = topology::torus(&mut model, 3.into(), 1.into(), &Pose::identity()).unwrap();
+    let options = options();
+    let (direct, direct_work) = catallax_numbers::with_operation_budget(u64::MAX, || {
+        mesh_body(&model, body, &options, &mut Decider::default())
+    });
+    let direct = direct.unwrap();
+    let mut previous_points = BTreeMap::new();
+    for level in FaceLevel::ALL {
+        let (result, work) = catallax_numbers::with_operation_budget(u64::MAX, || {
+            let plan = plan_face_levels(&model, body, &options, &mut Decider::default())?;
+            let predicted = model
+                .faces_of_body(body)
+                .into_iter()
+                .map(|face| (face, plan.point_count(face, level).unwrap()))
+                .collect::<BTreeMap<_, _>>();
+            let geometry = match level {
+                FaceLevel::Preview => plan.emit_preview()?,
+                FaceLevel::Bounded => plan.emit_bounded()?.geometry,
+                FaceLevel::Proven => {
+                    let emitted = plan.emit()?;
+                    assert_eq!(emitted.value, direct.value);
+                    assert_eq!(emitted.marks, direct.marks);
+                    let obj = |mesh: &Mesh| {
+                        let mut bytes = Vec::new();
+                        mesh.write_obj(&mut bytes).unwrap();
+                        bytes
+                    };
+                    assert_eq!(obj(&emitted.value), obj(&direct.value));
+                    crate::PreviewMesh::from_mesh(emitted.value)
+                }
+            };
+            Ok::<_, catallax_numbers::Refusal>((predicted, geometry))
+        });
+        assert!(!work.exhausted && work.used <= direct_work.used);
+        let (predicted, geometry) = result.unwrap();
+        for face in geometry.faces {
+            let indices = geometry.triangles[face.triangles]
+                .iter()
+                .flat_map(|triangle| triangle.vertices)
+                .collect::<BTreeSet<_>>();
+            assert_eq!(predicted[&face.face], indices.len());
+            let points = indices
+                .into_iter()
+                .map(|i| geometry.positions[i].map(f64::to_bits))
+                .collect::<BTreeSet<_>>();
+            if let Some(previous) = previous_points.insert(face.face, points.clone()) {
+                assert!(
+                    previous.is_subset(&points),
+                    "{level:?} moved a retained point"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn reused_unchanged_mesh_equals_fresh_mesh_including_seams_and_controls() {
     let mut model = Model::new();
     let bodies = [

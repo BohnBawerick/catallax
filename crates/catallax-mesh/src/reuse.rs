@@ -106,6 +106,84 @@ pub(crate) struct Previous<'a> {
     chords: BTreeMap<(usize, usize), usize>,
 }
 
+pub(crate) struct ReusePlan<'a> {
+    face: FaceId,
+    base: usize,
+    peak: usize,
+    uncompacted: usize,
+    report: &'a FaceMesh,
+    positions: &'a [[f64; 3]],
+    triangles: &'a [Triangle],
+    controls: &'a [crate::UnavailableControl],
+    remap: BTreeMap<usize, usize>,
+    interior: BTreeSet<usize>,
+    shared: BTreeSet<usize>,
+    relies_on: Chords,
+}
+
+impl ReusePlan<'_> {
+    /// Copies a matching face into the new body without evaluating its surface.
+    pub(crate) fn emit(self, dec: &mut Decider) -> Result<FaceResult, Refusal> {
+        let Self {
+            face,
+            base,
+            peak,
+            uncompacted,
+            report: old,
+            positions: source_positions,
+            triangles,
+            controls,
+            mut remap,
+            interior,
+            shared,
+            relies_on,
+        } = self;
+        // Preserve the original position order, including periodic chart
+        // copies that survived compaction. Only boundary indices are shared.
+        let mut positions = Vec::with_capacity(interior.len());
+        for vertex in interior {
+            dec.charge_work(1)?;
+            remap.insert(vertex, base + positions.len());
+            positions.push(source_positions[vertex]);
+        }
+        dec.charge_work((triangles.len() as u64).saturating_mul(3))?;
+        let mut copied = Vec::with_capacity(triangles.len());
+        for triangle in triangles {
+            dec.check_deadline()?;
+            copied.push(Triangle {
+                vertices: triangle.vertices.map(|vertex| remap[&vertex]),
+                face,
+            });
+        }
+        dec.charge_work(1)?;
+        let mut report = old.clone();
+        report.face = face;
+        report.triangles = 0..copied.len();
+        let mut unavailable_controls = Vec::new();
+        for control in controls {
+            dec.charge_work(1)?;
+            if control.face == old.face {
+                let mut control = control.clone();
+                control.face = face;
+                unavailable_controls.push(control);
+            }
+        }
+        Ok(FaceResult {
+            face,
+            base,
+            peak,
+            uncompacted,
+            positions,
+            triangles: copied,
+            lower: [None, None],
+            report,
+            unavailable_controls,
+            shared,
+            relies_on,
+        })
+    }
+}
+
 fn same_point(a: &Point3, b: &Point3) -> bool {
     a.x.same_definition(&b.x) && a.y.same_definition(&b.y) && a.z.same_definition(&b.z)
 }
@@ -328,10 +406,9 @@ impl<'a> Previous<'a> {
         Ok(relied_on)
     }
 
-    /// A cached face for `face`, when an old face has the same definition, the
-    /// same shared samples and the same earlier chords between them. The
-    /// assembly checks the chords again when it places the result.
-    pub(crate) fn face(
+    /// Finds a face with matching definition, shared samples and earlier chords
+    /// without copying its point or triangle buffers.
+    pub(crate) fn plan_face(
         &self,
         model: &Model,
         face: FaceId,
@@ -339,7 +416,7 @@ impl<'a> Previous<'a> {
         assembly: &Assembly,
         options: &MeshOptions,
         dec: &mut Decider,
-    ) -> Result<Option<FaceResult>, Refusal> {
+    ) -> Result<Option<ReusePlan<'_>>, Refusal> {
         for (index, old) in self.mesh.faces.iter().enumerate() {
             dec.charge_work(1)?;
             let record = if let Some(records) = self.records {
@@ -353,7 +430,7 @@ impl<'a> Previous<'a> {
             } else {
                 None
             };
-            let Some(mut remap) = self.boundary_map(old, model, face, boundaries, dec)? else {
+            let Some(remap) = self.boundary_map(old, model, face, boundaries, dec)? else {
                 continue;
             };
             let relies_on = self.relied_on(index, &remap, dec)?;
@@ -381,45 +458,17 @@ impl<'a> Previous<'a> {
             if uncompacted < interior.len() || peak > options.max_vertices.saturating_sub(base) {
                 continue;
             }
-            // Preserve the original position order, including periodic chart
-            // copies that survived compaction. Only boundary indices are shared.
-            let mut positions = Vec::with_capacity(interior.len());
-            for vertex in interior {
-                dec.charge_work(1)?;
-                remap.insert(vertex, base + positions.len());
-                positions.push(self.positions[vertex]);
-            }
-            dec.charge_work((triangles.len() as u64).saturating_mul(3))?;
-            let mut copied = Vec::with_capacity(triangles.len());
-            for triangle in triangles {
-                dec.check_deadline()?;
-                copied.push(Triangle {
-                    vertices: triangle.vertices.map(|vertex| remap[&vertex]),
-                    face,
-                });
-            }
-            dec.charge_work(1)?;
-            let mut report = old.clone();
-            report.face = face;
-            report.triangles = 0..copied.len();
-            let mut unavailable_controls = Vec::new();
-            for control in &self.mesh.unavailable_controls {
-                dec.charge_work(1)?;
-                if control.face == old.face {
-                    let mut control = control.clone();
-                    control.face = face;
-                    unavailable_controls.push(control);
-                }
-            }
-            return Ok(Some(FaceResult {
+            return Ok(Some(ReusePlan {
                 face,
                 base,
                 peak,
                 uncompacted,
-                positions,
-                triangles: copied,
-                report,
-                unavailable_controls,
+                report: old,
+                positions: self.positions,
+                triangles,
+                controls: &self.mesh.unavailable_controls,
+                remap,
+                interior,
                 shared,
                 relies_on,
             }));

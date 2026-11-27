@@ -17,8 +17,8 @@ use spade::{
 };
 
 use crate::{
-    FaceMesh, Mesh, MeshOptions, Triangle,
-    assembly::{Assembly, FaceDraft, Positions},
+    FaceLevel, FaceMesh, Mesh, MeshOptions, Triangle,
+    assembly::{Assembly, FaceDraft, FaceVariant, Positions},
     chart::{
         self, Chart, CollarBridge, FixedTrim, NormalProof, SplineChart, Uv, align, chord_bound, key,
     },
@@ -112,6 +112,32 @@ impl BandCut {
         uv[0] += libm::ceil(left - uv[0]);
         uv
     }
+}
+
+#[derive(Default)]
+struct EarlierRound {
+    triangles: Vec<Triangle>,
+    chord: f64,
+}
+
+impl EarlierRound {
+    fn push(&mut self, triangle: Triangle, bound: f64) {
+        self.triangles.push(triangle);
+        self.chord = self.chord.max(bound);
+    }
+}
+
+// A positional level need not prove a normal angle, but it must not emit a
+// collapsed facet. Test the rounded coordinates with outward intervals.
+fn separated_facet([a, b, c]: [[f64; 3]; 3]) -> bool {
+    let point = |x| Interval::point(x).expect("finite mesh sample");
+    let delta = |v: [f64; 3]| std::array::from_fn::<_, 3, _>(|i| point(v[i]) - point(a[i]));
+    let u = delta(b);
+    let v = delta(c);
+    [(1, 2), (2, 0), (0, 1)].into_iter().any(|(i, j)| {
+        let cross = u[i] * v[j] - u[j] * v[i];
+        cross.is_finite() && !cross.contains_zero()
+    })
 }
 
 struct FaceBuilder<'a, 'p> {
@@ -1664,8 +1690,16 @@ impl FaceBuilder<'_, '_> {
         &mut self,
         face: FaceId,
         sense: Sense,
+        lower: Option<&mut [Option<FaceVariant>; 2]>,
     ) -> Result<(Vec<Triangle>, Rational, Rational, Option<Rational>), Refusal> {
         let filtered_tolerance = Interval::from_rational(&self.options.chord_tolerance);
+        let mut lower = lower;
+        let goals = lower.as_ref().map(|_| {
+            [
+                &self.options.chord_tolerance * &Rational::from_i64(10),
+                self.options.chord_tolerance.mul_pow2(1),
+            ]
+        });
         let spline = self.chart.spline();
         let fixed = self.chart.fixed.is_some();
         let collapsed_station = self.collapsed_station.is_some();
@@ -1710,6 +1744,10 @@ impl FaceBuilder<'_, '_> {
             let mut triangles = Vec::new();
             let mut maximum = Rational::zero();
             let mut aspect = Rational::zero();
+            let mut earlier = lower
+                .as_ref()
+                .filter(|lower| lower[1].is_none())
+                .map(|_| EarlierRound::default());
             for f in self.cdt.inner_faces() {
                 if protect_band {
                     self.dec.charge_traversal(1)?;
@@ -1768,6 +1806,7 @@ impl FaceBuilder<'_, '_> {
                     }));
                 }
                 if self.rails.contains_triangle(vertices) {
+                    earlier = None;
                     let point = self.ear_point(&uvs, center)?;
                     pending.insert(key(point), point);
                     continue;
@@ -1795,6 +1834,7 @@ impl FaceBuilder<'_, '_> {
                     }
                 }
                 if split {
+                    earlier = None;
                     continue;
                 }
                 // A later CDT round does not move an unchanged spline facet.
@@ -1808,6 +1848,12 @@ impl FaceBuilder<'_, '_> {
                     vertices = certificate_key;
                     if sense == Sense::Reversed {
                         vertices.swap(1, 2);
+                    }
+                    if let Some(earlier) = &mut earlier {
+                        earlier.push(
+                            Triangle { vertices, face },
+                            error.to_f64_nearest().next_up(),
+                        );
                     }
                     triangles.push(Triangle { vertices, face });
                     continue;
@@ -1848,6 +1894,20 @@ impl FaceBuilder<'_, '_> {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
                 };
+                if earlier.is_some() {
+                    if !filtered.is_finite()
+                        || filtered.hi() > goals.as_ref().unwrap()[0].to_f64_nearest()
+                        || !separated_facet(vertices.map(|i| self.positions[i]))
+                    {
+                        earlier = None;
+                    } else if let Some(earlier) = &mut earlier {
+                        let mut vertices = certificate_key;
+                        if sense == Sense::Reversed {
+                            vertices.swap(1, 2);
+                        }
+                        earlier.push(Triangle { vertices, face }, filtered.hi());
+                    }
+                }
                 if !fixed && let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
                         crate::controls::length_squared(
@@ -2142,6 +2202,29 @@ impl FaceBuilder<'_, '_> {
                     },
                 ));
             }
+            if let (Some(mut earlier), Some(goals), Some(lower)) =
+                (earlier, &goals, lower.as_deref_mut())
+                && earlier.chord.is_finite()
+            {
+                let chord = chart::q(earlier.chord).max(maximum);
+                let slot = if chord <= goals[1] {
+                    Some(1)
+                } else if chord <= goals[0] && lower[0].is_none() {
+                    Some(0)
+                } else {
+                    None
+                };
+                if let Some(slot) = slot
+                    && !earlier.triangles.is_empty()
+                {
+                    earlier.triangles.sort_unstable_by_key(|t| t.vertices);
+                    lower[slot] = Some(FaceVariant {
+                        triangles: earlier.triangles,
+                        chord,
+                        local_slots: Vec::new(),
+                    });
+                }
+            }
             if let Some(trim) = trim {
                 let mut accepted = BTreeMap::new();
                 for (key, point) in pending {
@@ -2206,7 +2289,11 @@ fn face_mesh(
     prior_chords: &BTreeSet<(usize, usize)>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let Plan { options, level } = plan;
+    let Plan {
+        options,
+        level,
+        capture_lower,
+    } = plan;
     let face = model.face(face_id);
     let fixed = chart.fixed.as_ref();
     let mut sense = fixed.map_or(face.sense, |trim| trim.sense);
@@ -2245,7 +2332,7 @@ fn face_mesh(
                 for &c in cs {
                     let c = model.coedge(c);
                     let edge = &draft.mesh.edges[draft.edges[&c.edge]];
-                    if chart.spline().is_some() && level != Level::Preview {
+                    if chart.spline().is_some() && level != FaceLevel::Preview {
                         trim_error = trim_error.max(edge.max_chord_error.clone());
                     }
                     let trim = chart.trim(c.edge);
@@ -2415,7 +2502,7 @@ fn face_mesh(
         collapsed_station: chart.collapsed_station(),
         ruled: is_ruled,
         stretch,
-        unproved: level == Level::Preview && chart.spline().is_some() && !protect_band,
+        unproved: level == FaceLevel::Preview && chart.spline().is_some() && !protect_band,
         positions: &mut draft.mesh.positions,
         rails: draft.rails,
         cdt: Cdt::new(),
@@ -2435,11 +2522,15 @@ fn face_mesh(
     if fixed.is_none() {
         builder.grid()?;
     }
+    let lower = capture_lower.then_some(&mut draft.lower);
     let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
-        builder.finish(face_id, sense).map_err(|mut e| {
+        builder.finish(face_id, sense, lower).map_err(|mut e| {
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
+    for variant in draft.lower.iter_mut().flatten() {
+        variant.chord = variant.chord.clone().max(trim_error.clone());
+    }
     let start = draft.mesh.triangles.len();
     if fixed.is_some() && options.angular_deviation.is_some() {
         draft
@@ -2490,7 +2581,7 @@ fn face_mesh(
         face: face_id,
         triangles: start..draft.mesh.triangles.len(),
         max_chord_error: max_chord_error.max(trim_error),
-        max_aspect_ratio: (level != Level::Preview).then_some(max_aspect_ratio),
+        max_aspect_ratio: (level != FaceLevel::Preview).then_some(max_aspect_ratio),
         max_angular_deviation,
     });
     Ok(())
@@ -2538,6 +2629,7 @@ pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
     check_boundary(&mesh.triangles, &BTreeSet::new())
 }
 
+#[cfg(test)]
 pub(crate) fn check_surface(model: &Model, body: BodyId, mesh: &Mesh) -> Result<(), Refusal> {
     check_surface_faces(model, model.faces_of_body(body), mesh)
 }
@@ -2898,17 +2990,11 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Level {
-    Preview,
-    Bounded,
-    Proven,
-}
-
 #[derive(Clone, Copy)]
 struct Plan<'a> {
     options: &'a MeshOptions,
-    level: Level,
+    level: FaceLevel,
+    capture_lower: bool,
 }
 
 pub(crate) fn shared_spline_preview(
@@ -2960,10 +3046,9 @@ pub(crate) fn shared_spline_preview(
             body,
             Plan {
                 options: &options,
-                level: Level::Preview,
+                level: FaceLevel::Preview,
+                capture_lower: false,
             },
-            None,
-            None,
             None,
             dec,
         )
@@ -2983,6 +3068,18 @@ pub(crate) fn build(
     edit: Option<crate::reuse::Edit<'_, '_>>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
+    prepare(model, body, options, edit, false, None, dec)?.emit(model, FaceLevel::Proven)
+}
+
+pub(crate) fn prepare(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    edit: Option<crate::reuse::Edit<'_, '_>>,
+    capture_lower: bool,
+    profile: Option<&mut Vec<crate::FacePreflight>>,
+    dec: &mut Decider,
+) -> Result<MeshSchedule, Refusal> {
     let faces = model.faces_of_body(body);
     let use_spline_charts = faces.iter().all(|&face| {
         let surface = model.geom().surface(model.face(face).surface);
@@ -3009,19 +3106,22 @@ pub(crate) fn build(
         })
         .map(|input| crate::reuse::Previous::new(input, dec))
         .transpose()?;
-    let (value, marks) = build_junction(
+    prepare_junction(
         model,
         body,
         Plan {
             options,
-            level: Level::Proven,
+            level: FaceLevel::Proven,
+            capture_lower,
         },
         junction,
-        previous.as_ref(),
-        edit.and_then(|edit| edit.capture),
+        ScheduleOutput {
+            previous: previous.as_ref(),
+            cached: edit.and_then(|edit| edit.capture),
+            profile,
+        },
         dec,
-    )?;
-    Ok(Answer { value, marks })
+    )
 }
 
 pub(crate) fn build_position(
@@ -3045,11 +3145,10 @@ pub(crate) fn build_position(
         body,
         Plan {
             options,
-            level: Level::Bounded,
+            level: FaceLevel::Bounded,
+            capture_lower: false,
         },
         Some(junction),
-        None,
-        None,
         dec,
     )
 }
@@ -3059,13 +3158,168 @@ fn build_junction(
     body: BodyId,
     plan: Plan<'_>,
     junction: Option<crate::junction::Junction>,
-    previous: Option<&crate::reuse::Previous<'_>>,
-    mut capture: Option<&mut crate::reuse::Capture>,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
-    let Plan { options, level } = plan;
+    let answer = prepare_junction(model, body, plan, junction, ScheduleOutput::default(), dec)?
+        .emit(model, FaceLevel::Proven)?;
+    Ok((answer.value, answer.marks))
+}
+
+#[derive(Default)]
+struct ScheduleOutput<'a, 'b> {
+    previous: Option<&'a crate::reuse::Previous<'a>>,
+    cached: Option<&'b mut crate::reuse::Capture>,
+    profile: Option<&'b mut Vec<crate::FacePreflight>>,
+}
+
+fn prepare_junction(
+    model: &Model,
+    body: BodyId,
+    plan: Plan<'_>,
+    junction: Option<crate::junction::Junction>,
+    mut output: ScheduleOutput<'_, '_>,
+    dec: &mut Decider,
+) -> Result<MeshSchedule, Refusal> {
+    let options = plan.options;
     let faces = model.faces_of_body(body);
-    let mut junction = junction.unwrap_or_default();
+    let junction = junction.unwrap_or_default();
+    let FaceInputs {
+        boundaries,
+        mut charts,
+        junction,
+    } = prepare_face_inputs(model, body, &faces, options, junction, dec)?;
+    let mut assembly = Assembly::new(&boundaries);
+    let mut enclosures = BTreeMap::new();
+    let mut removed = 0;
+    for &face in &faces {
+        let start = output.profile.as_ref().map(|_| {
+            (
+                std::time::Instant::now(),
+                catallax_numbers::current_operation_work().used,
+            )
+        });
+        let mut local_options = charts
+            .get(&face)
+            .and_then(|chart| chart.chord_goal.as_ref())
+            .map(|chord| MeshOptions {
+                chord_tolerance: chord.clone(),
+                ..options.clone()
+            });
+        if removed != 0 {
+            local_options
+                .get_or_insert_with(|| options.clone())
+                .max_vertices -= removed;
+        }
+        let options = local_options.as_ref().unwrap_or(options);
+        let reused = output
+            .previous
+            .map(|previous| previous.plan_face(model, face, &boundaries, &assembly, options, dec))
+            .transpose()?
+            .flatten();
+        if let Some(reuse) = reused {
+            let result = reuse.emit(dec)?;
+            // Reuse copies compact positions. Keep the same resource allowance
+            // for subsequent faces as when their predecessors were built.
+            removed += result.uncompacted - result.positions.len();
+            if let Some(capture) = &mut output.cached {
+                capture.face(&result, options, true);
+            }
+            if !assembly.push(result)? {
+                return Err(failure("a cached face conflicts with the faces before it"));
+            }
+            continue;
+        }
+        let shared = Shared {
+            model,
+            boundaries: &boundaries,
+            junction: Some(&junction),
+            prior: assembly.prior(),
+        };
+        let edge_samples = boundaries.face_edge_samples(model, face);
+        let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
+        build_face(
+            shared,
+            face,
+            &mut charts,
+            &mut draft,
+            Plan { options, ..plan },
+            dec,
+        )?;
+        let result = draft.finish(face, edge_samples, assembly.prior())?;
+        if let Some(capture) = &mut output.cached {
+            capture.face(&result, options, false);
+        }
+        if !assembly.push(result)? {
+            return Err(failure(
+                "a face built in order conflicts with the faces before it",
+            ));
+        }
+        if let (Some((start, work)), Some(profile)) = (start, &mut output.profile) {
+            profile.push(crate::FacePreflight {
+                face,
+                kind: model.geom().surface(model.face(face).surface).kind(),
+                elapsed: start.elapsed(),
+                work: catallax_numbers::current_operation_work().used - work,
+            });
+        }
+    }
+    Ok(MeshSchedule {
+        boundaries,
+        assembly,
+        surface: (model.body(body).kind == catallax_topology::BodyKind::Surface).then_some(faces),
+    })
+}
+
+/// A proved face schedule. Body-space render buffers do not exist until emission.
+pub(crate) struct MeshSchedule {
+    boundaries: Boundaries,
+    assembly: Assembly,
+    surface: Option<Vec<FaceId>>,
+}
+
+impl MeshSchedule {
+    pub(crate) fn point_counts(
+        &self,
+        level: FaceLevel,
+        logical_face: impl Fn(FaceId) -> FaceId,
+    ) -> BTreeMap<FaceId, usize> {
+        self.assembly.point_counts(level, logical_face)
+    }
+
+    pub(crate) fn emit(self, model: &Model, level: FaceLevel) -> Answered<Mesh> {
+        self.emit_selected(model, |_| level)
+    }
+
+    pub(crate) fn emit_selected(
+        self,
+        model: &Model,
+        level: impl FnMut(FaceId) -> FaceLevel,
+    ) -> Answered<Mesh> {
+        let (mut mesh, marks) = self.assembly.finish_selected(self.boundaries, level);
+        if let Some(faces) = self.surface {
+            check_surface_faces(model, faces, &mesh)?;
+        } else {
+            check_closed(&mesh)?;
+        }
+        compact(&mut mesh);
+        Ok(Answer { value: mesh, marks })
+    }
+}
+
+struct FaceInputs {
+    boundaries: Boundaries,
+    charts: BTreeMap<FaceId, Chart>,
+    junction: crate::junction::Junction,
+}
+
+fn prepare_face_inputs(
+    model: &Model,
+    body: BodyId,
+    faces: &[FaceId],
+    options: &MeshOptions,
+    mut junction: crate::junction::Junction,
+    dec: &mut Decider,
+) -> Result<FaceInputs, Refusal> {
     let fitted = |face: FaceId| junction.contains(face);
     let mut charts = faces
         .iter()
@@ -3112,72 +3366,11 @@ fn build_junction(
         }
     }
     let boundaries = edges::sample(model, body, &charts, Some(&junction), options, dec)?;
-    let mut assembly = Assembly::new(&boundaries);
-    let mut enclosures = BTreeMap::new();
-    let mut removed = 0;
-    for face in faces {
-        let mut local_options = charts
-            .get(&face)
-            .and_then(|chart| chart.chord_goal.as_ref())
-            .map(|chord| MeshOptions {
-                chord_tolerance: chord.clone(),
-                ..options.clone()
-            });
-        if removed != 0 {
-            local_options
-                .get_or_insert_with(|| options.clone())
-                .max_vertices -= removed;
-        }
-        let options = local_options.as_ref().unwrap_or(options);
-        let reused = previous
-            .map(|previous| previous.face(model, face, &boundaries, &assembly, options, dec))
-            .transpose()?
-            .flatten();
-        if let Some(result) = reused {
-            // Reuse copies compact positions. Keep the same resource allowance
-            // for subsequent faces as when their predecessors were built.
-            removed += result.uncompacted - result.positions.len();
-            if let Some(capture) = &mut capture {
-                capture.face(&result, options, true);
-            }
-            if !assembly.push(result)? {
-                return Err(failure("a cached face conflicts with the faces before it"));
-            }
-            continue;
-        }
-        let shared = Shared {
-            model,
-            boundaries: &boundaries,
-            junction: Some(&junction),
-            prior: assembly.prior(),
-        };
-        let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
-        build_face(
-            shared,
-            face,
-            &mut charts,
-            &mut draft,
-            Plan { options, level },
-            dec,
-        )?;
-        let result = draft.finish(model, face, assembly.prior())?;
-        if let Some(capture) = &mut capture {
-            capture.face(&result, options, false);
-        }
-        if !assembly.push(result)? {
-            return Err(failure(
-                "a face built in order conflicts with the faces before it",
-            ));
-        }
-    }
-    let (mut mesh, marks) = assembly.finish(boundaries);
-    if model.body(body).kind == catallax_topology::BodyKind::Surface {
-        check_surface(model, body, &mesh)?;
-    } else {
-        check_closed(&mesh)?;
-    }
-    compact(&mut mesh);
-    Ok((mesh, marks))
+    Ok(FaceInputs {
+        boundaries,
+        charts,
+        junction,
+    })
 }
 
 /// What every face of one body shares while it is built.
@@ -3204,9 +3397,9 @@ fn build_face(
         junction,
         prior,
     } = shared;
-    let Plan { options, level } = plan;
+    let Plan { options, level, .. } = plan;
     if let Some(junction) = junction.filter(|junction| junction.contains(face)) {
-        return junction.triangulate(face, draft, options, level == Level::Bounded);
+        return junction.triangulate(face, draft, options, level == FaceLevel::Bounded);
     }
     if let Surface::Plane(plane) = &charts[&face].surface {
         return crate::planar::build(model, face, plane, draft, options, dec).map_err(|mut e| {
@@ -3234,6 +3427,7 @@ fn build_face(
                 && crate::periodic::eligible(model, face, chart, options) =>
         {
             draft.mesh.positions.truncate(positions);
+            draft.lower = [None, None];
             crate::periodic::build(model, face, chart, draft, options, dec)
         }
         other => other,
@@ -3345,11 +3539,10 @@ pub(crate) fn build_preview(
             body,
             Plan {
                 options: &options,
-                level: Level::Preview,
+                level: FaceLevel::Preview,
+                capture_lower: false,
             },
             junction,
-            None,
-            None,
             dec,
         )?;
         return Ok(crate::PreviewMesh::from_mesh(mesh));

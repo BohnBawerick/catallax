@@ -13,10 +13,10 @@ use std::{
 };
 
 use catallax_numbers::{Ball, MarkLog, Refusal};
-use catallax_topology::{EdgeId, FaceId, Loop, Model, VertexId};
+use catallax_topology::{EdgeId, FaceId, VertexId};
 
 use crate::{
-    EdgeMesh, FaceMesh, Mesh, Triangle, UnavailableControl,
+    EdgeMesh, FaceLevel, FaceMesh, Mesh, Triangle, UnavailableControl,
     edges::{Boundaries, Position, Rails},
     failure,
 };
@@ -70,6 +70,13 @@ impl<'a> Positions<'a> {
         self.local.push(position);
     }
 
+    /// Grows a face-local point lattice without discarding its previous samples.
+    pub(crate) fn grow_tail(&mut self, start: usize, count: usize) -> &mut [[f64; 3]] {
+        let start = start - self.base;
+        self.local.resize(start + count, [0.0; 3]);
+        &mut self.local[start..]
+    }
+
     /// Drops the face's own vertices from index `len` on.
     pub(crate) fn truncate(&mut self, len: usize) {
         self.peak = self.peak.max(self.local.len());
@@ -111,6 +118,7 @@ pub(crate) struct FaceDraft<'a> {
     pub(crate) exact_positions: &'a BTreeMap<usize, Position>,
     pub(crate) enclosures: &'a mut BTreeMap<usize, [Ball; 3]>,
     pub(crate) rails: &'a Rails,
+    pub(crate) lower: [Option<FaceVariant>; 2],
 }
 
 impl<'a> FaceDraft<'a> {
@@ -133,14 +141,15 @@ impl<'a> FaceDraft<'a> {
             exact_positions: &shared.exact_positions,
             enclosures,
             rails: &shared.rails,
+            lower: [None, None],
         }
     }
 
     /// The finished face, recording the earlier chords it was built against.
     pub(crate) fn finish(
         self,
-        model: &Model,
         face: FaceId,
+        shared: BTreeSet<usize>,
         prior: &Chords,
     ) -> Result<FaceResult, Refusal> {
         let DraftMesh {
@@ -153,16 +162,6 @@ impl<'a> FaceDraft<'a> {
         let Ok([report]) = <[FaceMesh; 1]>::try_from(faces) else {
             return Err(failure("a face builder must report its face exactly once"));
         };
-        let mut shared = BTreeSet::new();
-        for &boundary in &model.face(face).loops {
-            if let Loop::Coedges(coedges) = model.loop_(boundary) {
-                for &coedge in coedges {
-                    if let Some(&edge) = self.edges.get(&model.coedge(coedge).edge) {
-                        shared.extend(self.mesh.edges[edge].vertices.iter().copied());
-                    }
-                }
-            }
-        }
         let relies_on = chords_among(prior, &shared);
         Ok(FaceResult {
             face,
@@ -171,6 +170,7 @@ impl<'a> FaceDraft<'a> {
             uncompacted: positions.local.len(),
             positions: positions.local,
             triangles,
+            lower: self.lower,
             report,
             unavailable_controls,
             shared,
@@ -194,6 +194,7 @@ pub(crate) struct FaceResult {
     /// Local storage still occupied when the face was placed.
     pub(crate) uncompacted: usize,
     pub(crate) triangles: Vec<Triangle>,
+    pub(crate) lower: [Option<FaceVariant>; 2],
     /// Chord, aspect and angular evidence for the face.
     pub(crate) report: FaceMesh,
     pub(crate) unavailable_controls: Vec<UnavailableControl>,
@@ -204,7 +205,88 @@ pub(crate) struct FaceResult {
     pub(crate) relies_on: Chords,
 }
 
+/// A complete earlier triangulation of the same face sample schedule.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FaceVariant {
+    pub(crate) triangles: Vec<Triangle>,
+    pub(crate) chord: catallax_numbers::Rational,
+    pub(crate) local_slots: Vec<usize>,
+}
+
 impl FaceResult {
+    fn variant(&self, level: FaceLevel) -> Option<&FaceVariant> {
+        match level {
+            FaceLevel::Preview => self.lower[0].as_ref().or(self.lower[1].as_ref()),
+            FaceLevel::Bounded => self.lower[1].as_ref(),
+            FaceLevel::Proven => None,
+        }
+    }
+
+    fn keep_nested_variants(&mut self, boundary: usize) {
+        if self.lower.iter().all(Option::is_none) {
+            return;
+        }
+        let signature = |triangles: &[Triangle]| {
+            let mut edges = BTreeMap::<_, u8>::new();
+            for triangle in triangles {
+                for i in 0..3 {
+                    let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                    let bit = if a < b { 1 } else { 2 };
+                    let directions = edges.entry((a.min(b), a.max(b))).or_default();
+                    if a == b || *directions & bit != 0 {
+                        return None;
+                    }
+                    *directions |= bit;
+                }
+            }
+            let mut rim = Chords::new();
+            let mut chords = Chords::new();
+            for ((a, b), directions) in edges {
+                match directions {
+                    1 => {
+                        rim.insert((a, b));
+                    }
+                    2 => {
+                        rim.insert((b, a));
+                    }
+                    _ if b < boundary => {
+                        chords.insert((a, b));
+                    }
+                    _ => {}
+                }
+            }
+            Some((rim, chords))
+        };
+        let Some((rim, chords)) = signature(&self.triangles) else {
+            self.lower = [None, None];
+            return;
+        };
+        let points = |triangles: &[Triangle]| {
+            triangles
+                .iter()
+                .flat_map(|triangle| triangle.vertices)
+                .collect::<BTreeSet<_>>()
+        };
+        let mut available = points(&self.triangles);
+        for variant in self.lower.iter_mut().rev() {
+            let Some(candidate) = variant else { continue };
+            let candidate_points = points(&candidate.triangles);
+            if !candidate_points.is_subset(&available)
+                || !signature(&candidate.triangles)
+                    .is_some_and(|(r, c)| r == rim && c.is_subset(&chords))
+            {
+                *variant = None;
+            } else {
+                candidate.local_slots.extend(
+                    candidate_points
+                        .range(boundary..)
+                        .map(|&vertex| vertex - self.base),
+                );
+                available = candidate_points;
+            }
+        }
+    }
+
     /// Chords between shared samples that this face uses on two triangles.
     fn chords(&self, boundary: usize) -> Chords {
         let mut once = Chords::new();
@@ -236,31 +318,30 @@ fn chords_among(chords: &Chords, vertices: &BTreeSet<usize>) -> Chords {
     among
 }
 
-/// The body mesh after its shared edge samples, built face by face in order.
+/// Ordered face schedules against one set of body boundary samples.
 pub(crate) struct Assembly {
     boundary: usize,
-    positions: Vec<[f64; 3]>,
-    triangles: Vec<Triangle>,
-    faces: Vec<FaceMesh>,
-    unavailable_controls: Vec<UnavailableControl>,
+    next: usize,
+    facets: usize,
+    faces: Vec<FaceResult>,
     prior: Chords,
 }
 
 impl Assembly {
     pub(crate) fn new(boundaries: &Boundaries) -> Self {
+        let boundary = boundaries.mesh.positions.len();
         Self {
-            boundary: boundaries.mesh.positions.len(),
-            positions: Vec::new(),
-            triangles: Vec::new(),
+            boundary,
+            next: boundary,
+            facets: 0,
             faces: Vec::new(),
-            unavailable_controls: Vec::new(),
             prior: Chords::new(),
         }
     }
 
     /// The index the next face's first own vertex receives.
     pub(crate) fn base(&self) -> usize {
-        self.boundary + self.positions.len()
+        self.next
     }
 
     /// Chords between shared samples emitted by the faces placed so far.
@@ -272,53 +353,132 @@ impl Assembly {
     /// when the chords it relied on differ from those emitted so far; the
     /// caller then builds the face again in order. A triangle index outside
     /// the shared samples and the face's own vertices is refused.
-    pub(crate) fn push(&mut self, result: FaceResult) -> Result<bool, Refusal> {
+    pub(crate) fn push(&mut self, mut result: FaceResult) -> Result<bool, Refusal> {
         if chords_among(&self.prior, &result.shared) != result.relies_on {
             return Ok(false);
         }
-        let base = self.base();
         let local = result.base..result.base + result.positions.len();
-        let start = self.triangles.len();
-        self.triangles.reserve(result.triangles.len());
-        for triangle in &result.triangles {
-            let mut vertices = triangle.vertices;
-            for vertex in &mut vertices {
-                if *vertex >= self.boundary {
-                    if !local.contains(vertex) {
-                        self.triangles.truncate(start);
-                        return Err(failure(
-                            "a face mesh references a vertex outside its shared edges and its own samples",
-                        ));
-                    }
-                    *vertex = *vertex - result.base + base;
-                }
-            }
-            self.triangles.push(Triangle {
-                vertices,
-                face: triangle.face,
-            });
+        if result
+            .triangles
+            .iter()
+            .flat_map(|triangle| triangle.vertices)
+            .any(|vertex| vertex >= self.boundary && !local.contains(&vertex))
+        {
+            return Err(failure(
+                "a face mesh references a vertex outside its shared edges and its own samples",
+            ));
         }
         self.prior.extend(result.chords(self.boundary));
-        self.positions.extend(result.positions);
-        let mut report = result.report;
-        report.triangles = start + report.triangles.start..start + report.triangles.end;
-        self.faces.push(report);
-        self.unavailable_controls
-            .extend(result.unavailable_controls);
+        result.keep_nested_variants(self.boundary);
+        self.next += result.positions.len();
+        self.facets += result.triangles.len();
+        self.faces.push(result);
         Ok(true)
     }
 
-    /// The assembled mesh, after the shared samples and edge polylines.
+    /// Counts distinct vertex identities across all physical cells of each face.
+    pub(crate) fn point_counts(
+        &self,
+        level: FaceLevel,
+        logical_face: impl Fn(FaceId) -> FaceId,
+    ) -> BTreeMap<FaceId, usize> {
+        let mut vertices = BTreeMap::<_, BTreeSet<_>>::new();
+        let mut base = self.boundary;
+        for face in &self.faces {
+            let triangles = face
+                .variant(level)
+                .map_or(face.triangles.as_slice(), |v| &v.triangles);
+            let points = vertices.entry(logical_face(face.face)).or_default();
+            points.extend(
+                triangles
+                    .iter()
+                    .flat_map(|triangle| triangle.vertices)
+                    .map(|vertex| place_vertex(vertex, self.boundary, face.base, base)),
+            );
+            base += face.positions.len();
+        }
+        vertices
+            .into_iter()
+            .map(|(face, points)| (face, points.len()))
+            .collect()
+    }
+
+    /// Emits the ordered mesh after the shared samples and edge polylines.
     pub(crate) fn finish(self, boundaries: Boundaries) -> (Mesh, MarkLog) {
+        self.finish_selected(boundaries, |_| FaceLevel::Proven)
+    }
+
+    pub(crate) fn finish_selected(
+        self,
+        boundaries: Boundaries,
+        mut level: impl FnMut(FaceId) -> FaceLevel,
+    ) -> (Mesh, MarkLog) {
         let Boundaries {
             mut mesh, marks, ..
         } = boundaries;
         debug_assert_eq!(mesh.positions.len(), self.boundary);
-        mesh.positions.extend(self.positions);
-        mesh.triangles.extend(self.triangles);
-        mesh.faces.extend(self.faces);
-        mesh.unavailable_controls.extend(self.unavailable_controls);
+        if self
+            .faces
+            .iter()
+            .all(|face| face.lower.iter().all(Option::is_none))
+        {
+            mesh.positions.reserve(self.next - self.boundary);
+            mesh.triangles.reserve(self.facets);
+        }
+        mesh.faces.reserve(self.faces.len());
+        for mut face in self.faces {
+            let base = mesh.positions.len();
+            let start = mesh.triangles.len();
+            let selected = match level(face.face) {
+                FaceLevel::Preview => face.lower[0].take().or_else(|| face.lower[1].take()),
+                FaceLevel::Bounded => face.lower[1].take(),
+                FaceLevel::Proven => None,
+            };
+            let mut report = face.report;
+            if let Some(variant) = selected {
+                report.triangles = 0..variant.triangles.len();
+                report.max_chord_error = variant.chord;
+                report.max_aspect_ratio = None;
+                report.max_angular_deviation = None;
+                mesh.positions
+                    .extend(variant.local_slots.iter().map(|&slot| face.positions[slot]));
+                mesh.triangles
+                    .extend(variant.triangles.into_iter().map(|mut triangle| {
+                        triangle.vertices = triangle.vertices.map(|vertex| {
+                            if vertex < self.boundary {
+                                vertex
+                            } else {
+                                base + variant
+                                    .local_slots
+                                    .binary_search(&(vertex - face.base))
+                                    .expect("planned facet has a retained sample")
+                            }
+                        });
+                        triangle
+                    }));
+            } else {
+                mesh.triangles
+                    .extend(face.triangles.into_iter().map(|mut triangle| {
+                        triangle.vertices = triangle
+                            .vertices
+                            .map(|vertex| place_vertex(vertex, self.boundary, face.base, base));
+                        triangle
+                    }));
+                mesh.positions.extend(face.positions);
+            }
+            report.triangles = start + report.triangles.start..start + report.triangles.end;
+            mesh.faces.push(report);
+            mesh.unavailable_controls.extend(face.unavailable_controls);
+        }
         (mesh, marks)
+    }
+}
+
+fn place_vertex(vertex: usize, boundary: usize, face_base: usize, body_base: usize) -> usize {
+    if vertex < boundary {
+        vertex
+    } else {
+        vertex - face_base + body_base
     }
 }
 
@@ -327,6 +487,7 @@ mod tests {
     use super::*;
     use catallax_numbers::Rational;
     use catallax_shapes::Pose;
+    use catallax_topology::Model;
 
     fn face(face: FaceId, base: usize, own: &[[f64; 3]], triangles: &[[usize; 3]]) -> FaceResult {
         FaceResult {
@@ -339,6 +500,7 @@ mod tests {
                 .iter()
                 .map(|&vertices| Triangle { vertices, face })
                 .collect(),
+            lower: [None, None],
             report: FaceMesh {
                 face,
                 triangles: 0..triangles.len(),

@@ -224,11 +224,12 @@ fn cut_to_pole(
     mut rim: Vec<Node>,
     source: &NativeSurface,
     carrier: &Carrier,
-    same_sense: bool,
+    closure: (bool, Option<(usize, f64)>),
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<Vec<Node>, Refusal> {
     let failure = || failure("single periodic rim has no finite collapsed pole");
+    let (same_sense, vertex_loop) = closure;
     let [first, last] = [rim[0].uv, rim.last().unwrap().uv];
     let periods = source.periods();
     let axis = (0..2)
@@ -262,7 +263,7 @@ fn cut_to_pole(
             .max_by(|&i, &j| (b[i] - a[i]).abs().total_cmp(&(b[j] - a[j]).abs()))
             .unwrap();
         let t = a[i] / (a[i] - b[i]);
-        if !t.is_finite() || t <= 0.0 {
+        if !t.is_finite() || t == 0.0 || (t < 0.0 && vertex_loop.is_none()) {
             return Err(failure());
         }
         h + t * step
@@ -276,7 +277,14 @@ fn cut_to_pole(
             return Err(failure());
         }
     }
-    let mesh = push(body, pole, options)?;
+    let mesh = if let Some((index, tolerance)) = vertex_loop {
+        if distance(pole, body.positions[index]) > tolerance.max(rounding) {
+            return Err(failure());
+        }
+        index
+    } else {
+        push(body, pole, options)?
+    };
     let mut far = uv;
     far[axis] = last[axis];
     rim.extend([Node { uv: far, mesh }, Node { uv, mesh }]);
@@ -701,12 +709,19 @@ fn build(
             && winding.len() == 1
             && let Some(source) = surface
         {
+            let mut poles = face.loops.iter().filter_map(|boundary| boundary.vertex);
+            let explicit = poles.next().filter(|_| poles.next().is_none()).map(|i| {
+                (
+                    vertices[i],
+                    body.vertices()[i].tolerance_mm().to_f64_nearest(),
+                )
+            });
             loops.push(cut_to_pole(
                 &mut mesh,
                 winding.pop().unwrap(),
                 source,
                 &carrier,
-                face.same_sense,
+                (face.same_sense, explicit),
                 &face_options,
                 dec,
             )?);

@@ -327,3 +327,71 @@ fn a_reopened_rolling_ball_rim_previews_within_the_request_allowance() {
     assert_ne!(coarse.triangles, preview.triangles);
     assert!(coarse.faces.iter().all(|face| !face.triangles.is_empty()));
 }
+
+#[test]
+fn a_periodic_conical_face_closes_at_its_declared_vertex() {
+    let source = br"ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('conical pole'),'2;1');
+FILE_NAME('cone.step','',(''),(''),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
+ENDSEC;
+DATA;
+#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(0.,0.,1.));
+#3=CARTESIAN_POINT('',(1.,0.,1.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=DIRECTION('',(1.,0.,0.));
+#6=AXIS2_PLACEMENT_3D('',#1,#4,#5);
+#7=AXIS2_PLACEMENT_3D('',#2,#4,#5);
+#8=CONICAL_SURFACE('',#6,0.,0.7853981633974483);
+#9=PLANE('',#7);
+#10=CIRCLE('',#7,1.);
+#11=VERTEX_POINT('',#3);
+#12=EDGE_CURVE('',#11,#11,#10,.T.);
+#13=ORIENTED_EDGE('',*,*,#12,.T.);
+#14=ORIENTED_EDGE('',*,*,#12,.F.);
+#15=EDGE_LOOP('',(#13));
+#16=EDGE_LOOP('',(#14));
+#17=VERTEX_POINT('',#1);
+#18=VERTEX_LOOP('',#17);
+#19=FACE_OUTER_BOUND('',#15,.T.);
+#20=FACE_OUTER_BOUND('',#16,.T.);
+#21=FACE_BOUND('',#18,.T.);
+#22=ADVANCED_FACE('',(#20,#21),#8,.T.);
+#23=ADVANCED_FACE('',(#19),#9,.T.);
+#24=CLOSED_SHELL('',(#22,#23));
+#25=MANIFOLD_SOLID_BREP('',#24);
+#26=( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );
+#27=( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#26))
+REPRESENTATION_CONTEXT('','') );
+#28=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#25),#27);
+ENDSEC;
+END-ISO-10303-21;";
+    let import = tolerant::admission::import_step(
+        source,
+        &sha256_hex(source),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let view = preview_tolerant_body(
+        &import,
+        0,
+        &PreviewOptions::from(&catallax_mesh::MeshOptions::default()),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let lateral = view.faces.iter().find(|face| face.face == "#22").unwrap();
+    let mut touches_apex = false;
+    for triangle in &view.triangles[lateral.triangles.clone()] {
+        for i in triangle.vertices {
+            let [x, y, z] = view.positions[i];
+            assert!((-1e-12..=1.0 + 1e-12).contains(&z));
+            assert!((x.hypot(y) - z).abs() < 1e-12);
+            touches_apex |= z.abs() < 1e-12;
+        }
+    }
+    assert!(touches_apex);
+    assert!((volume(&view) - std::f64::consts::PI / 3.0).abs() < 0.1);
+}

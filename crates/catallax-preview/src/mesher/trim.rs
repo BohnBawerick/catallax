@@ -566,9 +566,8 @@ fn join_band(
         let d = (p.uv[axis] - a_last.uv[axis]) / period;
         (d - d.round()).abs()
     };
-    let start = b
-        .points
-        .take(b.points.len() - 1)
+    let start = b.points[..b.points.len() - 1]
+        .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))
         .unwrap()

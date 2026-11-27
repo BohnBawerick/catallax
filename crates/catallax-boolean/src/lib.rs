@@ -512,6 +512,15 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     if let Some(inside) = region::prism_face(model, face, p, dec)? {
         return Ok(inside);
     }
+    // The incidence proves the point is on this support. The ray that
+    // found it is not a useful seed for constructing a trim probe.
+    let p = if stored.is_some() {
+        model
+            .geom_mut()
+            .add_point(catallax_shapes::PointDef::Explicit(point))
+    } else {
+        p
+    };
     Ok(!matches!(
         locate(model, face, p, dec)?,
         region::Location::Outside

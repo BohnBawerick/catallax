@@ -17,8 +17,8 @@ use catallax_numbers::{Decider, Rational, Refusal, refund_on_refusal};
 use spade::Triangulation;
 
 use super::imported::{
-    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, grid_face, insert, push,
-    seed_rectangles,
+    Cdt, FaceOutput, GRID_TRIM_REFUSAL, Node, SourceChart, SurfaceSamples, finish_face, grid_face,
+    insert, push, seed_rectangles,
 };
 use crate::{PreviewEdge, PreviewMesh, PreviewOptions};
 
@@ -431,9 +431,17 @@ pub fn preview_tolerant_body(
     if index >= import.bodies().len() {
         return Err(failure("body index is out of range"));
     }
-    refund_on_refusal(|| build(import, index, options, None, dec)).or_else(|_| {
+    let mut edge_detail = BTreeMap::new();
+    refund_on_refusal(|| build(import, index, options, None, &mut edge_detail, dec)).or_else(|_| {
         super::coarsen(options, dec, |divisions, _, dec| {
-            build(import, index, options, Some(divisions), dec)
+            build(
+                import,
+                index,
+                options,
+                Some(divisions),
+                &mut edge_detail,
+                dec,
+            )
         })
     })
 }
@@ -443,6 +451,7 @@ fn build(
     index: usize,
     options: &PreviewOptions,
     grid: Option<u32>,
+    edge_detail: &mut BTreeMap<usize, u32>,
     dec: &mut Decider,
 ) -> Result<PreviewMesh<String, String>, Refusal> {
     let body = import.bodies()[index].definition();
@@ -471,7 +480,7 @@ fn build(
         .map(|vertex| push(&mut mesh, point(&vertex.source.point)?, options))
         .collect::<Result<Vec<_>, _>>()?;
     let mut edges = BTreeMap::new();
-    for edge in body.edges() {
+    for (edge_index, edge) in body.edges().iter().enumerate() {
         let Some(trim) = first_trim.get(edge.name.as_str()) else {
             continue;
         };
@@ -509,7 +518,15 @@ fn build(
             )
         };
         let samples = if let Some(divisions) = grid {
-            grid_edge(&carrier, ends, divisions, &mut mesh, options, dec)?
+            let detail = edge_detail.get(&edge_index).copied().unwrap_or(divisions);
+            grid_edge(
+                &carrier,
+                ends,
+                detail.max(divisions),
+                &mut mesh,
+                options,
+                dec,
+            )?
         } else {
             edge_samples(
                 &carrier,
@@ -754,7 +771,7 @@ fn build(
             }
         }
         if let Some(divisions) = grid {
-            grid_face(
+            if let Err(refusal) = grid_face(
                 &face.name,
                 face.same_sense,
                 &carrier,
@@ -764,7 +781,30 @@ fn build(
                 divisions,
                 &face_options,
                 dec,
-            )?;
+            ) {
+                if refusal.code == GRID_TRIM_REFUSAL {
+                    // A coarser face grid cannot separate its trim chords.
+                    // Refine the incident edges for the next whole-body
+                    // attempt, so every face still sees the same samples.
+                    let incident: std::collections::BTreeSet<_> = face
+                        .loops
+                        .iter()
+                        .flat_map(|ring| &ring.edges)
+                        .map(|usage| usage.edge)
+                        .filter(|&i| {
+                            let edge = &body.edges()[i];
+                            !edge.degenerate && !matches!(edge.curve, Curve::Line(..))
+                        })
+                        .collect();
+                    for edge in incident {
+                        edge_detail
+                            .entry(edge)
+                            .and_modify(|n| *n *= 2)
+                            .or_insert(64);
+                    }
+                }
+                return Err(refusal);
+            }
             continue;
         }
         let mut cdt = Cdt::new();

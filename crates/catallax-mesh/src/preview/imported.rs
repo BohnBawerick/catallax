@@ -547,6 +547,8 @@ fn seed(
         .map_err(|e| failure(format!("source chart triangulation: {e}")))
 }
 
+pub(super) const GRID_TRIM_REFUSAL: &str = "mesh.tolerant-grid-trim";
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn grid_face(
     name: &str,
@@ -590,10 +592,13 @@ pub(super) fn grid_face(
                 continue;
             }
             if !cdt.can_add_constraint(a, b) {
-                return Err(failure(format!(
-                    "face {name}: sampled source trim constraints cross in {} rings",
-                    loops.len(),
-                )));
+                return Err(Refusal::new(
+                    GRID_TRIM_REFUSAL,
+                    format!(
+                        "face {name}: sampled source trim constraints cross in {} rings",
+                        loops.len()
+                    ),
+                ));
             }
             cdt.add_constraint(a, b);
         }
@@ -661,11 +666,14 @@ pub(super) fn grid_face(
         });
     }
     if mesh.triangles.len() == start {
-        return Err(failure(format!(
-            "face {name}: sampled source face has no previewable interior ({} rings, {} chart triangles)",
-            loops.len(),
-            cdt.num_inner_faces(),
-        )));
+        return Err(Refusal::new(
+            GRID_TRIM_REFUSAL,
+            format!(
+                "face {name}: sampled source face has no previewable interior ({} rings, {} chart triangles)",
+                loops.len(),
+                cdt.num_inner_faces(),
+            ),
+        ));
     }
     mesh.triangles[start..].sort_unstable_by_key(|triangle| triangle.vertices);
     mesh.faces.push(PreviewFace {

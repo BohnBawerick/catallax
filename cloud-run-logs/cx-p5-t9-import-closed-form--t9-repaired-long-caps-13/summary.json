@@ -1,0 +1,82 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-repaired-long-caps-13",
+ "repo": "BohnBawerick/catallax",
+ "sha": "ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+ "script_exit_code": 0,
+ "seconds": 3365,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-repaired-long-caps-13",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' 'H4sIAAAAAAAA/+19a3fjNpJoPutXIExvhkooWfKzW4lm1u1WEk+6231sd2b3eHx5aBGyGFOkBiD9iOP/vqcKBRAgKdvdncfsXfODLZJ... ",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "echo \"923eb17c...  $work/kit.tar.gz\" | sha256sum -c",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "tar -xzp -C \"$KIT\" -f \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-resolved-validity.sh\" ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 \"$KIT\" \"$OWNER\" \"$SCRATCH\" 00006613",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script sha256 matched. Script exit 0; run.log has no 'test result:' lines (script runs a release build and python census steps, not cargo test), so test counts are 0. Rust stable 1.100.0; cargo fetch ok. Skipped files over 50 MB in /home/user/t9-repaired-long-caps-13: bin/candidate (162672152 bytes), bin/written-check (138593896 bytes). Skipped dirs: target, venv, corpus. Copied captures and skip.json to out/. T9 lines (cut to 300 chars):\nT9BASELINE {\"capture\": \"/home/user/t9-repaired-long-caps-13/captures/00006613\", \"cpu_seconds\": 726.5496479999999, \"files\": {\"document.step\": [\"79039f699b6677ffff3b886a85add71e1bdc2d2d605baeac1c4fe991ee737e83\", [0, 1, 2, 3, 4, 5, 6, 7, 8], \"selected_document\"]}, \"model\": \"00006613\", \"outcome\": {\"bodi\nT9BASELINECOMPLETE 1 of 1\nT9CANDIDATE ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7\nT9LONGPAIR {\"after\": {\"files\": {\"document.step\": [\"71cddc2076aa6086d2f1f01230dd4785efaaac653a96c927447c37570b701835\", [0, 1, 2, 3, 4, 5, 6, 7, 8], \"selected_document\"]}, \"open_checkpoint_sha256\": \"5d219aaf3c79a52decd685086dd196a707f0b95b51fd7d0d48defc10ca65e20a\", \"outcome\": {\"bodies\": [{\"body\": 0, \"\nT9LONGPAIRCOMPLETE 1 of 1\n"
+}

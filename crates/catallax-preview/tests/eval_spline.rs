@@ -2,6 +2,8 @@
 //! `CATALLAX_SPLINE_ADAPTER=cpu` or `hardware` to require that adapter class.
 //! Set `P5_SOURCES` and `P5_SELECTION` to include the held-out STEP rows.
 
+#![cfg(not(target_arch = "wasm32"))]
+
 #[path = "../src/eval/spline.rs"]
 mod spline;
 
@@ -14,10 +16,10 @@ use std::{
 use bytemuck::{Pod, Zeroable, cast_slice};
 use catallax_features::{EvaluationOutcome, ImportFiles};
 use catallax_numbers::Decider;
-use catallax_preview::gpu::Gpu;
 use catallax_recipe::Recipe;
 use catallax_shapes::{BSplineSurface, SplineSupport, Surface};
 use serde_json::Value;
+use wgpu::util::DeviceExt;
 
 use spline::{MAX_DEGREE, Net};
 
@@ -272,21 +274,80 @@ impl Batch {
             .push((name, carrier.size, start..self.queries.len()));
     }
 
-    fn compare(&self, gpu: &Gpu) {
-        let result: Vec<Answer> = gpu
-            .dispatch(
-                &[spline::WGSL, HARNESS].concat(),
-                "evaluate",
-                &[
-                    cast_slice(&self.controls),
-                    cast_slice(&self.knots),
-                    cast_slice(&self.queries),
-                    cast_slice(&vec![Answer::zeroed(); self.queries.len()]),
-                ],
-                3,
-                [(self.queries.len() as u32).div_ceil(64), 1, 1],
-            )
-            .unwrap_or_else(|e| panic!("{}: {}", e.code, e.detail));
+    async fn compare(&self, adapter: &wgpu::Adapter) {
+        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Spline evaluation test"),
+            source: wgpu::ShaderSource::Wgsl([spline::WGSL, HARNESS].concat().into()),
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Spline evaluation test"),
+            layout: None,
+            module: &shader,
+            entry_point: Some("evaluate"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        assert!(
+            scope.pop().await.is_none(),
+            "spline pipeline validation failed"
+        );
+        let input = |contents| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+        let output = |usage| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: (self.queries.len() * std::mem::size_of::<Answer>()) as u64,
+                usage,
+                mapped_at_creation: false,
+            })
+        };
+        let readback = output(wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ);
+        let answers = output(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC);
+        let buffers = [
+            input(cast_slice(&self.controls)),
+            input(cast_slice(&self.knots)),
+            input(cast_slice(&self.queries)),
+            answers,
+        ];
+        let entries = std::array::from_fn::<_, 4, _>(|i| wgpu::BindGroupEntry {
+            binding: i as u32,
+            resource: buffers[i].as_entire_binding(),
+        });
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &entries,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups((self.queries.len() as u32).div_ceil(64), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&buffers[3], 0, &readback, 0, readback.size());
+        let submission = queue.submit([encoder.finish()]);
+        let slice = readback.slice(..);
+        let (send, recv) = futures_channel::oneshot::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = send.send(result);
+        });
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(std::time::Duration::from_secs(30)),
+            })
+            .unwrap();
+        recv.await.unwrap().unwrap();
+        let mapped = slice.get_mapped_range().unwrap();
+        let result: &[Answer] = cast_slice(&mapped);
         assert_eq!(result.len(), self.expected.len());
         let mut worst = [0.0_f64; 2];
         for (name, size, range) in &self.faces {
@@ -326,9 +387,12 @@ impl Batch {
                 worst[i] = worst[i].max(face[i]);
             }
         }
+        let info = adapter.get_info();
         eprintln!(
-            "{}: {} nets, {} samples, worst position/size {:.3e}, normal chord {:.3e}",
-            gpu.name(),
+            "{} {:?} {:?}: {} nets, {} samples, worst position/size {:.3e}, normal chord {:.3e}",
+            info.name,
+            info.backend,
+            info.device_type,
             self.faces.len(),
             result.len(),
             worst[0],
@@ -530,21 +594,41 @@ fn corpus(batch: &mut Batch) {
 
 #[test]
 fn stored_splines_match_binary64() {
+    pollster::block_on(check_stored_splines());
+}
+
+async fn check_stored_splines() {
     let required = std::env::var("CATALLAX_SPLINE_ADAPTER").ok();
-    let gpu = match Gpu::new(false) {
-        Ok(gpu) => gpu,
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    let software = required.as_deref() == Some("cpu");
+    if software {
+        descriptor.backends = wgpu::Backends::VULKAN;
+    }
+    let instance = wgpu::Instance::new(descriptor);
+    let adapter = match instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: software,
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(adapter) => adapter,
         Err(reason) if required.is_none() => {
             eprintln!("SKIP spline readback: {reason}");
             return;
         }
         Err(reason) => panic!("{reason}"),
     };
+    let info = adapter.get_info();
     match required.as_deref() {
-        Some("cpu") => assert!(gpu.name().ends_with(" Cpu"), "{}", gpu.name()),
+        Some("cpu") => assert_eq!(info.device_type, wgpu::DeviceType::Cpu, "{info:?}"),
         Some("hardware") => assert!(
-            gpu.name().ends_with(" IntegratedGpu") || gpu.name().ends_with(" DiscreteGpu"),
-            "{}",
-            gpu.name()
+            matches!(
+                info.device_type,
+                wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::DiscreteGpu
+            ),
+            "{info:?}"
         ),
         None => (),
         Some(value) => panic!("unknown CATALLAX_SPLINE_ADAPTER={value}"),
@@ -587,5 +671,5 @@ fn stored_splines_match_binary64() {
         size: 3.0_f64.sqrt(),
     };
     batch.add("degree-8x2-net-257x3".to_owned(), large);
-    batch.compare(&gpu);
+    batch.compare(&adapter).await;
 }

@@ -392,7 +392,6 @@ impl PackedMesh {
         let params = match surface::pack(
             face,
             trim.bounds,
-            detail,
             &mut self.positions,
             self.max_positions,
             &mut self.knots,

@@ -206,6 +206,7 @@ async fn check_p5(adapter: wgpu::Adapter) {
     let gpu = Mesher::new(&device, &queue).await.unwrap();
     check_rational_patch(&gpu, &device, &queue).await;
     check_ellipse_patch(&gpu, &device, &queue).await;
+    check_analytic_patches(&gpu, &device, &queue).await;
     let recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
     let mut dec = Decider::new(BudgetPolicy {
         max_work: 20_000_000,
@@ -298,6 +299,52 @@ async fn check_rational_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu:
     let p = [20. / 13., 1., 16. / 13., 1.];
     let n = [-3., 0., 7., 0.].map(|x| x / 58_f32.sqrt());
     check_patch(gpu, device, queue, &description, FaceDetail([3, 2]), p, n).await;
+}
+
+async fn check_analytic_patches(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu::Queue) {
+    use catallax_mesh::float::{DisplayFrame, DisplaySurface};
+
+    let frame = DisplayFrame {
+        origin: [0.; 3],
+        x: [1., 0., 0.],
+        y: [0., 1., 0.],
+        z: [0., 0., 1.],
+    };
+    let d = std::f32::consts::FRAC_1_SQRT_2;
+    let cases = [
+        (
+            DisplaySurface::Cone { frame, slope: 0.5 },
+            [2., 4.],
+            [[1., 0., 2.], [0., 1., 2.], [0., 2., 4.], [2., 0., 4.]],
+            [1.5 * d, 1.5 * d, 3., 1.],
+            [d, d, -0.5, 0.].map(|x| x / 1.25_f32.sqrt()),
+        ),
+        (
+            DisplaySurface::Sphere {
+                frame,
+                radius: std::f64::consts::SQRT_2,
+            },
+            [-0.125, 0.125],
+            [[1., 0., -1.], [0., 1., -1.], [0., 1., 1.], [1., 0., 1.]],
+            [1., 1., 0., 1.],
+            [d, d, 0., 0.],
+        ),
+        (
+            DisplaySurface::Torus {
+                frame,
+                major: 3.,
+                minor: 1.,
+            },
+            [-0.25, 0.25],
+            [[3., 0., -1.], [0., 3., -1.], [0., 3., 1.], [3., 0., 1.]],
+            [4. * d, 4. * d, 0., 1.],
+            [d, d, 0., 0.],
+        ),
+    ];
+    for (surface, v, points, p, n) in cases {
+        let description = rectangular_patch(surface, [[0., 0.25], v], points);
+        check_patch(gpu, device, queue, &description, FaceDetail([2, 2]), p, n).await;
+    }
 }
 
 async fn check_ellipse_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -511,7 +558,12 @@ async fn corpus_gpu<F: Clone + std::fmt::Debug, E>(
             Grid(_) => "grid",
         };
         match &result.draw {
-            Ok(draw) if draw.sampled_grid => *grids.entry(kind).or_default() += 1,
+            Ok(draw) if draw.sampled_grid => {
+                *grids.entry(kind).or_default() += 1;
+                if !matches!(face.surface, Grid(_)) {
+                    refusals.push(format!("{:?} {kind}: unexpectedly sampled", face.face));
+                }
+            }
             Ok(_) => (),
             Err(error) => refusals.push(format!("{:?} {kind}: {error}", face.face)),
         }

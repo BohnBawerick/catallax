@@ -9,6 +9,7 @@ const SHADER: &str = concat!(
     include_str!("mesher/analytic.wgsl"),
     include_str!("mesher/grid.wgsl"),
     include_str!("eval/spline.wgsl"),
+    include_str!("eval/analytic.wgsl"),
 );
 const GROUP_SIZE: u32 = 64;
 

@@ -1,17 +1,19 @@
 use catallax_mesh::float::{DisplayFace, DisplayFrame, DisplaySpline, DisplaySurface};
 
+use crate::eval::analytic::Kind;
+
 use super::{FaceRefusal, SurfaceParams, position32, scalar32};
 
 type Bounds = [[f64; 2]; 2];
 
 pub(super) const GRID: u32 = 2;
 const SPLINE: u32 = 3;
+const ANALYTIC: u32 = 4;
 const MAX_SPLINE_DEGREE: usize = 12;
 
 pub(super) fn pack<F>(
     face: &DisplayFace<F>,
     bounds: Bounds,
-    detail: [u32; 2],
     positions: &mut Vec<[f32; 4]>,
     max_positions: usize,
     knots: &mut Vec<f32>,
@@ -32,6 +34,19 @@ pub(super) fn pack<F>(
         }
         DisplaySurface::EllipticCylinder { frame, radii } => {
             params = cylinder(frame, radii[0], Some(radii[1]), bounds, span)?;
+        }
+        DisplaySurface::Cone { frame, slope } => {
+            params = analytic(frame, Kind::Cone, *slope, None, bounds)?;
+        }
+        DisplaySurface::Sphere { frame, radius } => {
+            params = analytic(frame, Kind::Sphere, *radius, None, bounds)?;
+        }
+        DisplaySurface::Torus {
+            frame,
+            major,
+            minor,
+        } => {
+            params = analytic(frame, Kind::Torus, *major, Some(*minor), bounds)?;
         }
         DisplaySurface::Grid(grid) => {
             let source_span = face.bounds.map(|[lower, upper]| upper - lower);
@@ -68,16 +83,6 @@ pub(super) fn pack<F>(
             let offsets = pack_knots(spline, bounds, face.periods, knots, max_knots, &mut params)?;
             params.spline = pack_spline(spline, positions, max_positions, offsets)?;
         }
-        surface => {
-            // Transitional sampler for surfaces that do not yet have a WGSL
-            // evaluator. The GPU still evaluates preview vertices and normals.
-            let size = detail.map(|n| (n as usize).saturating_add(1).max(2));
-            let count = check_grid(size, positions, max_positions)?;
-            params.mode = grid_mode(positions.len(), size);
-            params.y = [1.0, 1.0, 0.0, 0.0];
-            positions.reserve(count);
-            sample_analytic(surface, bounds, size, positions)?;
-        }
     }
     params.origin[3] = facing;
     Ok(params)
@@ -98,6 +103,35 @@ fn cylinder(
         y: vector(frame.y, span[0])?,
         z: vector(frame.z.map(|z| z * span[1]), f64::from(rx))?,
         mode: [1, ry.to_bits(), 0, 0],
+        ..Default::default()
+    })
+}
+
+fn analytic(
+    frame: &DisplayFrame,
+    kind: Kind,
+    first: f64,
+    second: Option<f64>,
+    [[u0, u1], [v0, v1]]: Bounds,
+) -> Result<SurfaceParams, FaceRefusal> {
+    let k0 = radius32(first)?;
+    let k1 = second.map(radius32).transpose()?.unwrap_or(0.0);
+    let v_base = if kind == Kind::Torus {
+        v0.rem_euclid(1.0)
+    } else {
+        v0
+    };
+    Ok(SurfaceParams {
+        origin: position32(frame.origin)?,
+        x: vector(frame.x, f64::from(k0))?,
+        y: vector(frame.y, f64::from(k1))?,
+        z: vector(frame.z, v1 - v0)?,
+        mode: [
+            ANALYTIC + kind as u32,
+            scalar32(u0.rem_euclid(1.0))?.to_bits(),
+            scalar32(v_base)?.to_bits(),
+            scalar32(u1 - u0)?.to_bits(),
+        ],
         ..Default::default()
     })
 }
@@ -138,51 +172,6 @@ fn vector(v: [f64; 3], w: f64) -> Result<[f32; 4], FaceRefusal> {
 
 fn point(frame: &DisplayFrame, x: f64, y: f64, z: f64) -> [f64; 3] {
     std::array::from_fn(|i| frame.origin[i] + x * frame.x[i] + y * frame.y[i] + z * frame.z[i])
-}
-
-fn tick(bounds: Bounds, axis: usize, i: usize, count: usize) -> f64 {
-    if i + 1 == count {
-        bounds[axis][1]
-    } else {
-        bounds[axis][0] + (bounds[axis][1] - bounds[axis][0]) * (i as f64 / (count - 1) as f64)
-    }
-}
-
-fn sample_analytic(
-    surface: &DisplaySurface,
-    bounds: Bounds,
-    size: [usize; 2],
-    positions: &mut Vec<[f32; 4]>,
-) -> Result<(), FaceRefusal> {
-    let frame = match surface {
-        DisplaySurface::Cone { frame, .. }
-        | DisplaySurface::Sphere { frame, .. }
-        | DisplaySurface::Torus { frame, .. } => frame,
-        _ => unreachable!("only unsupported analytic carriers are sampled here"),
-    };
-    let azimuths: Vec<_> = (0..size[0])
-        .map(|u| (tick(bounds, 0, u, size[0]).rem_euclid(1.0) * std::f64::consts::TAU).sin_cos())
-        .collect();
-    for v in 0..size[1] {
-        let v = tick(bounds, 1, v, size[1]);
-        let [rx, ry, z] = match surface {
-            DisplaySurface::Cone { slope, .. } => [v * slope, v * slope, v],
-            DisplaySurface::Sphere { radius, .. } => {
-                let (sin, cos) = (v.rem_euclid(1.0) * std::f64::consts::TAU).sin_cos();
-                [radius * cos, radius * cos, radius * sin]
-            }
-            DisplaySurface::Torus { major, minor, .. } => {
-                let (sin, cos) = (v.rem_euclid(1.0) * std::f64::consts::TAU).sin_cos();
-                let r = major + minor * cos;
-                [r, r, minor * sin]
-            }
-            _ => unreachable!(),
-        };
-        for &(sin, cos) in &azimuths {
-            positions.push(position32(point(frame, rx * cos, ry * sin, z))?);
-        }
-    }
-    Ok(())
 }
 
 fn pack_spline(

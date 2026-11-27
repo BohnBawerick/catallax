@@ -7,7 +7,9 @@ and each successful face's `Uint32` index range to draw the returned buffers on
 that device. Positions are relative to the binary64 body origin. Production
 code never reads back either buffer.
 
-Planes, cylinders and tensor-product spline carriers evaluate in WGSL.
+Planes, circular and elliptic cylinders, cones, spheres, tori, and tensor-product
+spline carriers evaluate in WGSL. Sweeps and fillets stored as spline supports
+use the same tensor-product evaluator.
 `FaceDraw::sampled_grid` marks draws that interpolate uploaded samples instead.
 The lattice density is chosen per face. It does not split shared trim chords or promise
 a geometric bound. `preview_or_cpu` calls the existing CPU preview on device

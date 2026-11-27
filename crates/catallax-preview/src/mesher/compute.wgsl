@@ -43,6 +43,7 @@ fn mesh(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) g
             let sample = spline_sample(surface.spline, wrapped);
             vertex = Vertex(vec4(sample.position, 1.0), vec4(sample.normal, 0.0));
         }
+        case 4u, 5u, 6u: { vertex = analytic_face(surface, input.uv); }
         default: { vertex = grid(surface, input.uv); }
     }
     if input.boundary != 0xffffffffu {

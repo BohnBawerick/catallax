@@ -205,6 +205,7 @@ async fn check_p5(adapter: wgpu::Adapter) {
         .unwrap();
     let gpu = Mesher::new(&device, &queue).await.unwrap();
     check_rational_patch(&gpu, &device, &queue).await;
+    check_ellipse_patch(&gpu, &device, &queue).await;
     let recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
     let mut dec = Decider::new(BudgetPolicy {
         max_work: 20_000_000,
@@ -273,43 +274,76 @@ async fn check_p5(adapter: wgpu::Adapter) {
 }
 
 async fn check_rational_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu::Queue) {
+    use catallax_mesh::float::{DisplaySpline, DisplaySurface};
+
+    let description = rectangular_patch(
+        DisplaySurface::BSpline(DisplaySpline {
+            degree: [2, 1],
+            knots: [vec![8., 8., 8., 14., 14., 14.], vec![-3., -3., 1., 1.]],
+            size: [3, 2],
+            points: vec![
+                [0., 0., 0.],
+                [2., 0., 2.],
+                [4., 0., 0.],
+                [0., 2., 0.],
+                [2., 2., 2.],
+                [4., 2., 0.],
+            ],
+            weights: Some(vec![1., 2., 1., 1., 2., 1.]),
+        }),
+        [[8., 14.], [-3., 1.]],
+        [[0., 0., 0.], [4., 0., 0.], [4., 2., 0.], [0., 2., 0.]],
+    );
+    // At (1/3, 1/2), the weighted Bernstein numerators are [4, 8, 1].
+    let p = [20. / 13., 1., 16. / 13., 1.];
+    let n = [-3., 0., 7., 0.].map(|x| x / 58_f32.sqrt());
+    check_patch(gpu, device, queue, &description, FaceDetail([3, 2]), p, n).await;
+}
+
+async fn check_ellipse_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu::Queue) {
+    use catallax_mesh::float::{DisplayFrame, DisplaySurface};
+
+    let description = rectangular_patch(
+        DisplaySurface::EllipticCylinder {
+            frame: DisplayFrame {
+                origin: [0.; 3],
+                x: [1., 0., 0.],
+                y: [0., 1., 0.],
+                z: [0., 0., 1.],
+            },
+            radii: [3., 2.],
+        },
+        [[0., 0.25], [0., 2.]],
+        [[3., 0., 0.], [0., 2., 0.], [0., 2., 2.], [3., 0., 2.]],
+    );
+    let p = [3. / 2_f32.sqrt(), 2. / 2_f32.sqrt(), 1., 1.];
+    let n = [2., 3., 0., 0.].map(|x| x / 13_f32.sqrt());
+    check_patch(gpu, device, queue, &description, FaceDetail([2, 2]), p, n).await;
+}
+
+fn rectangular_patch(
+    surface: catallax_mesh::float::DisplaySurface,
+    bounds: [[f64; 2]; 2],
+    points: [[f64; 3]; 4],
+) -> DisplayDescription<u32, u32> {
     use catallax_mesh::float::{
-        DISPLAY_DESCRIPTION_VERSION, DisplayEdge, DisplayEdgeUse, DisplayFace, DisplayLoop,
-        DisplaySpline, DisplaySurface, DisplayTrimSample,
+        DISPLAY_DESCRIPTION_VERSION, DisplayEdge, DisplayEdgeUse, DisplayLoop, DisplayTrimSample,
     };
 
-    let corners = [[8., -3.], [14., -3.], [14., 1.], [8., 1.], [8., -3.]];
-    let description = DisplayDescription {
+    let [[u0, u1], [v0, v1]] = bounds;
+    let corners = [[u0, v0], [u1, v0], [u1, v1], [u0, v1], [u0, v0]];
+    DisplayDescription {
         version: DISPLAY_DESCRIPTION_VERSION,
         origin: [0.; 3],
         edges: vec![DisplayEdge {
             edge: 0,
-            points: vec![
-                [0., 0., 0.],
-                [4., 0., 0.],
-                [4., 2., 0.],
-                [0., 2., 0.],
-                [0., 0., 0.],
-            ],
+            points: [points[0], points[1], points[2], points[3], points[0]].to_vec(),
         }],
         faces: vec![DisplayFace {
             face: 0,
             reversed: false,
-            surface: DisplaySurface::BSpline(DisplaySpline {
-                degree: [2, 1],
-                knots: [vec![8., 8., 8., 14., 14., 14.], vec![-3., -3., 1., 1.]],
-                size: [3, 2],
-                points: vec![
-                    [0., 0., 0.],
-                    [2., 0., 2.],
-                    [4., 0., 0.],
-                    [0., 2., 0.],
-                    [2., 2., 2.],
-                    [4., 2., 0.],
-                ],
-                weights: Some(vec![1., 2., 1., 1., 2., 1.]),
-            }),
-            bounds: [[8., 14.], [-3., 1.]],
+            surface,
+            bounds,
             periods: [None; 2],
             loops: vec![DisplayLoop {
                 uses: vec![DisplayEdgeUse {
@@ -323,20 +357,25 @@ async fn check_rational_patch(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu:
                 vertex: None,
             }],
         }],
-    };
-    let mesh = gpu
-        .mesh(&description, |_| FaceDetail([3, 2]))
-        .await
-        .unwrap();
+    }
+}
+
+async fn check_patch(
+    gpu: &Mesher,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    description: &DisplayDescription<u32, u32>,
+    detail: FaceDetail,
+    p: [f32; 4],
+    n: [f32; 4],
+) {
+    let mesh = gpu.mesh(description, |_| detail).await.unwrap();
     assert!(!mesh.faces[0].draw.as_ref().unwrap().sampled_grid);
     let (vertices, _) = readback(device, queue, &mesh.buffers.unwrap()).await;
-    // At (1/3, 1/2), the weighted Bernstein numerators are [4, 8, 1].
-    let p = [20. / 13., 1., 16. / 13., 1.];
-    let n = [-3., 0., 7., 0.].map(|x| x / 58_f32.sqrt());
     let vertex = vertices
         .iter()
         .find(|v| v.position.iter().zip(p).all(|(&a, b)| (a - b).abs() < 1e-5))
-        .expect("missing rational patch interior vertex");
+        .expect("missing patch interior vertex");
     assert!(
         vertex
             .normal
@@ -594,7 +633,8 @@ fn assert_closed<F: Eq + std::fmt::Debug, E: std::fmt::Debug>(
         for &index in &face_vertices {
             used[index as usize] = true;
             let vertex = vertices[index as usize];
-            let position = std::array::from_fn(|i| f64::from(vertex.position[i]) + gpu.origin[i]);
+            let position: [f64; 3] =
+                std::array::from_fn(|i| f64::from(vertex.position[i]) + gpu.origin[i]);
             let length_sq = vertex.normal[..3].iter().map(|x| x * x).sum::<f32>();
             assert!(
                 (length_sq - 1.0).abs() < 1e-4,

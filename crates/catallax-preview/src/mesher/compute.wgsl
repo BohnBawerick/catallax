@@ -38,7 +38,9 @@ fn mesh(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) g
         case 0u: { vertex = plane(surface, input.uv); }
         case 1u: { vertex = cylinder(surface, input.uv); }
         case 3u: {
-            let sample = spline_sample(surface.spline, input.uv);
+            let uv = surface.x.xy + input.uv * surface.y.xy;
+            let wrapped = select(uv, fract(uv), surface.z.xy != vec2(0.0));
+            let sample = spline_sample(surface.spline, wrapped);
             vertex = Vertex(vec4(sample.position, 1.0), vec4(sample.normal, 0.0));
         }
         default: { vertex = grid(surface, input.uv); }

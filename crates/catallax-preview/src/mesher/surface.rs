@@ -28,14 +28,10 @@ pub(super) fn pack<F>(
             params.z = vector(frame.z, 0.0)?;
         }
         DisplaySurface::Cylinder { frame, radius } => {
-            if !radius.is_finite() || *radius <= 0.0 {
-                return Err(FaceRefusal::InvalidSurface);
-            }
-            params.mode[0] = 1;
-            params.origin = position32(point(frame, 0.0, 0.0, bounds[1][0]))?;
-            params.x = vector(frame.x, bounds[0][0].rem_euclid(1.0))?;
-            params.y = vector(frame.y, span[0])?;
-            params.z = vector(frame.z.map(|z| z * span[1]), *radius)?;
+            params = cylinder(frame, *radius, None, bounds, span)?;
+        }
+        DisplaySurface::EllipticCylinder { frame, radii } => {
+            params = cylinder(frame, radii[0], Some(radii[1]), bounds, span)?;
         }
         DisplaySurface::Grid(grid) => {
             let source_span = face.bounds.map(|[lower, upper]| upper - lower);
@@ -69,8 +65,8 @@ pub(super) fn pack<F>(
         }
         DisplaySurface::BSpline(spline) => {
             params.mode[0] = SPLINE;
-            params.spline =
-                pack_spline(spline, bounds, positions, max_positions, knots, max_knots)?;
+            let offsets = pack_knots(spline, bounds, face.periods, knots, max_knots, &mut params)?;
+            params.spline = pack_spline(spline, positions, max_positions, offsets)?;
         }
         surface => {
             // Transitional sampler for surfaces that do not yet have a WGSL
@@ -85,6 +81,36 @@ pub(super) fn pack<F>(
     }
     params.origin[3] = facing;
     Ok(params)
+}
+
+fn cylinder(
+    frame: &DisplayFrame,
+    radius: f64,
+    second_radius: Option<f64>,
+    bounds: Bounds,
+    span: [f64; 2],
+) -> Result<SurfaceParams, FaceRefusal> {
+    let rx = radius32(radius)?;
+    let ry = second_radius.map(radius32).transpose()?.unwrap_or(0.0);
+    Ok(SurfaceParams {
+        origin: position32(point(frame, 0.0, 0.0, bounds[1][0]))?,
+        x: vector(frame.x, bounds[0][0].rem_euclid(1.0))?,
+        y: vector(frame.y, span[0])?,
+        z: vector(frame.z.map(|z| z * span[1]), f64::from(rx))?,
+        mode: [1, ry.to_bits(), 0, 0],
+        ..Default::default()
+    })
+}
+
+fn radius32(radius: f64) -> Result<f32, FaceRefusal> {
+    if !radius.is_finite() || radius <= 0.0 {
+        return Err(FaceRefusal::InvalidSurface);
+    }
+    let radius = scalar32(radius)?;
+    if radius == 0.0 {
+        return Err(FaceRefusal::GpuRange);
+    }
+    Ok(radius)
 }
 
 fn grid_mode(first: usize, size: [usize; 2]) -> [u32; 4] {
@@ -131,8 +157,7 @@ fn sample_analytic(
     let frame = match surface {
         DisplaySurface::Cone { frame, .. }
         | DisplaySurface::Sphere { frame, .. }
-        | DisplaySurface::Torus { frame, .. }
-        | DisplaySurface::EllipticCylinder { frame, .. } => frame,
+        | DisplaySurface::Torus { frame, .. } => frame,
         _ => unreachable!("only unsupported analytic carriers are sampled here"),
     };
     let azimuths: Vec<_> = (0..size[0])
@@ -151,7 +176,6 @@ fn sample_analytic(
                 let r = major + minor * cos;
                 [r, r, minor * sin]
             }
-            DisplaySurface::EllipticCylinder { radii: [x, y], .. } => [*x, *y, v],
             _ => unreachable!(),
         };
         for &(sin, cos) in &azimuths {
@@ -163,11 +187,9 @@ fn sample_analytic(
 
 fn pack_spline(
     spline: &DisplaySpline,
-    bounds: Bounds,
     controls: &mut Vec<[f32; 4]>,
     max_controls: usize,
-    knots: &mut Vec<f32>,
-    max_knots: usize,
+    [ku, kv]: [u32; 2],
 ) -> Result<[u32; 8], FaceRefusal> {
     let [nu, nv] = spline.size;
     let [du, dv] = spline.degree;
@@ -179,7 +201,6 @@ fn pack_spline(
         return Err(FaceRefusal::MeshSize);
     }
     let control_offset = controls.len() as u32;
-    let [ku, kv] = pack_knots(spline, bounds, knots, max_knots)?;
     controls.reserve(count);
     // The description is U-fastest, while spline_sample reads V-fastest.
     for u in 0..nu {
@@ -212,8 +233,10 @@ fn pack_spline(
 fn pack_knots(
     spline: &DisplaySpline,
     bounds: Bounds,
+    periods: [Option<f64>; 2],
     packed: &mut Vec<f32>,
     limit: usize,
+    params: &mut SurfaceParams,
 ) -> Result<[u32; 2], FaceRefusal> {
     let mut offsets = [0; 2];
     for (axis, &[lower, upper]) in bounds.iter().enumerate() {
@@ -229,24 +252,33 @@ fn pack_knots(
         }
         let lo = knots[degree];
         let hi = knots[n];
-        let tolerance = (hi - lo) * 1e-10;
-        if lower < lo - tolerance || upper > hi + tolerance {
-            return Err(FaceRefusal::UnsupportedTrim);
-        }
+        let span = hi - lo;
+        let tolerance = span * 1e-10;
+        let (knot_base, knot_span) = if lower < lo - tolerance || upper > hi + tolerance {
+            if periods[axis].is_none_or(|p| (span - p).abs() > tolerance) {
+                return Err(FaceRefusal::UnsupportedTrim);
+            }
+            params.x[axis] = scalar32(((lower - lo) / span).rem_euclid(1.0))?;
+            params.y[axis] = scalar32((upper - lower) / span)?;
+            params.z[axis] = 1.0;
+            (lo, span)
+        } else {
+            params.y[axis] = 1.0;
+            (lower, upper - lower)
+        };
         if knots.len() > limit - packed.len() {
             return Err(FaceRefusal::MeshSize);
         }
         offsets[axis] = packed.len() as u32;
         packed.reserve(knots.len());
-        // Match the trim's normalized UVs before converting to binary32.
+        // Keep knots in trim coordinates unless the carrier must wrap.
         let mut previous = f64::NEG_INFINITY;
         let mut previous32 = f32::NEG_INFINITY;
-        let span = upper - lower;
         for &knot in knots {
             if !knot.is_finite() || knot < previous {
                 return Err(FaceRefusal::InvalidSurface);
             }
-            let converted = scalar32((knot - lower) / span)?;
+            let converted = scalar32((knot - knot_base) / knot_span)?;
             if knot > previous && converted <= previous32 {
                 return Err(FaceRefusal::GpuRange);
             }

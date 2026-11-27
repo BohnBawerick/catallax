@@ -12,3 +12,13 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 [[profile.ci.overrides]]
 filter = 'binary_id(catallax-features::m11_spline_fillet) & test(=numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam)'
 slow-timeout = { period = "60s", terminate-after = 20 }
+
+[test-groups]
+large-display = { max-threads = 1 }
+
+# Reserve every slot in the shard, not just the slot in this group.
+[[profile.ci.overrides]]
+filter = 'binary_id(catallax-app::rebuild_work) & test(=large_display_above_target_completes_and_reports_stage_work)'
+test-group = 'large-display'
+threads-required = 'num-test-threads'
+slow-timeout = { period = "60s", terminate-after = 15 }

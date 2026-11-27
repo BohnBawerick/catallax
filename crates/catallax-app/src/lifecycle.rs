@@ -276,16 +276,15 @@ impl Controller {
     pub fn latest(&self) -> Option<Snapshot> {
         self.0.lock().unwrap().latest.clone()
     }
-    /// Geometry to display. A failed or still-constructing edit restores the
-    /// last proved snapshot; its revision never masquerades as the new input.
+    /// Current preview, including an edit whose proof refused. Keep showing
+    /// the last proved revision only until the new edit delivers a preview.
     pub fn displayed(&self) -> Option<Snapshot> {
         let state = self.0.lock().unwrap();
-        match &state.latest {
-            Some(snapshot) if !matches!(snapshot.status, Status::Failed(_)) => {
-                Some(snapshot.clone())
-            }
-            _ => state.last_proved.clone(),
-        }
+        state
+            .latest
+            .as_ref()
+            .or(state.last_proved.as_ref())
+            .cloned()
     }
 
     /// Current model/display proof only. Pending or failed input never falls

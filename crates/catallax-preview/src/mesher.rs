@@ -3,15 +3,12 @@
 use std::{fmt, ops::Range};
 
 use bytemuck::{Pod, Zeroable, cast_slice};
-use catallax_mesh::float::{DISPLAY_DESCRIPTION_VERSION, DisplayDescription, DisplayFace};
+use catallax_mesh::float::{DISPLAY_DESCRIPTION_VERSION, DisplayDescription, DisplayFace, trim};
 use catallax_topology::FaceId;
 
 use crate::gpu::Gpu;
 
 mod surface;
-mod trim;
-
-const NO_BOUNDARY: u32 = u32::MAX;
 
 /// Lattice divisions in U and V. Trim chords are independent of this setting.
 #[derive(Clone, Copy, Debug)]
@@ -97,6 +94,19 @@ impl FaceRefusal {
             Self::InvalidSurface => "preview.invalid-surface",
             Self::GpuRange => "preview.gpu-range",
             Self::MeshSize => "preview.mesh-size",
+        }
+    }
+}
+
+impl From<trim::TrimRefusal> for FaceRefusal {
+    fn from(error: trim::TrimRefusal) -> Self {
+        use trim::TrimRefusal::*;
+        match error {
+            InvalidChart => Self::InvalidChart,
+            UnsupportedTrim => Self::UnsupportedTrim,
+            InvalidTrim(_) => Self::InvalidTrim,
+            MeshSize => Self::MeshSize,
+            InvalidPosition => Self::GpuRange,
         }
     }
 }
@@ -328,6 +338,31 @@ struct PackedMesh {
     max_knots: usize,
 }
 
+impl trim::TrimBoundaries for PackedMesh {
+    fn edge_range(&self, edge: usize) -> Option<Range<u32>> {
+        self.edges.get(edge)?.as_ref().ok().cloned()
+    }
+
+    fn same_position(&self, a: u32, b: u32) -> bool {
+        self.positions[a as usize].map(f32::to_bits) == self.positions[b as usize].map(f32::to_bits)
+    }
+
+    fn position(&self, sample: u32) -> [f64; 3] {
+        let [x, y, z, _] = self.positions[sample as usize];
+        [x, y, z].map(f64::from)
+    }
+
+    fn add_pole(&mut self, position: [f64; 3]) -> Result<u32, trim::TrimRefusal> {
+        if self.positions.len() == self.max_positions {
+            return Err(trim::TrimRefusal::MeshSize);
+        }
+        let index = self.positions.len() as u32;
+        self.positions
+            .push(position32(position).map_err(|_| trim::TrimRefusal::InvalidPosition)?);
+        Ok(index)
+    }
+}
+
 impl PackedMesh {
     fn new<F, K>(gpu: &Gpu, desc: &DisplayDescription<F, K>) -> Self {
         let max_positions = gpu.storage_bytes / size_of::<[f32; 4]>();
@@ -379,20 +414,21 @@ impl PackedMesh {
         if self.surfaces.len() == self.max_surfaces {
             return Err(FaceRefusal::MeshSize);
         }
+        for edge in face.loops.iter().flat_map(|lp| &lp.uses) {
+            self.edges
+                .get(edge.edge)
+                .ok_or(FaceRefusal::InvalidTrim)?
+                .as_ref()
+                .map_err(|&error| error)?;
+        }
         let first = self.positions.len();
-        let trim = match trim::triangulate(
-            face,
-            &self.edges,
-            &mut self.positions,
-            self.max_positions,
-            detail,
-            self.max_vertices - self.inputs.len(),
-            self.max_indices - self.indices.len(),
-        ) {
+        let max_vertices = self.max_vertices - self.inputs.len();
+        let max_indices = self.max_indices - self.indices.len();
+        let trim = match trim::triangulate(face, self, detail, max_vertices, max_indices) {
             Ok(trim) => trim,
             Err(error) => {
                 self.positions.truncate(first);
-                return Err(error);
+                return Err(error.into());
             }
         };
         let first_surface = self.positions.len();
@@ -434,11 +470,11 @@ impl PackedMesh {
         let base = self.inputs.len() as u32;
         let slot = self.surfaces.len() as u32;
         let start = self.indices.len() as u32;
-        self.inputs
-            .extend(trim.vertices.into_iter().map(|mut vertex| {
-                vertex.surface = slot;
-                vertex
-            }));
+        self.inputs.extend(trim.vertices.into_iter().map(|sample| {
+            let mut vertex = InputVertex::new(sample.uv, sample.boundary);
+            vertex.surface = slot;
+            vertex
+        }));
         self.indices
             .extend(trim.indices.into_iter().map(|index| base + index));
         self.surfaces.push(params);

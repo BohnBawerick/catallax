@@ -45,7 +45,7 @@ mod planar;
 pub mod preview;
 pub use preview::{
     PreviewEdge, PreviewFace, PreviewMesh, PreviewOptions, StepPreview, preview_mesh_body,
-    preview_step, preview_tolerant_body,
+    preview_numerical_body, preview_step, preview_tolerant_body,
 };
 mod rational_atlas;
 mod reuse;

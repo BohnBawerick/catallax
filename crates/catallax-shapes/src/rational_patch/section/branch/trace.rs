@@ -4,6 +4,8 @@ use super::*;
 use crate::rational_patch::trace_series::series;
 use catallax_numbers::Ball;
 
+const JET_DERIVATIVE: &str = "section trace jets need a strict transverse derivative enclosure";
+
 /// One ordered subarc in a certified section cell. Its free chart coordinate
 /// varies affinely on [0, 1]; its other coordinate is the cell's unique root.
 #[derive(Clone, Debug)]
@@ -135,6 +137,12 @@ impl PatchSectionBranch {
 }
 
 impl SectionTracePiece {
+    /// Whether a Taylor enclosure stopped because its parameter interval
+    /// was too wide to separate the regular derivative from zero.
+    pub fn can_subdivide_jet_refusal(refusal: &Refusal) -> bool {
+        refusal.code == SECTION_REFUSAL && refusal.detail == JET_DERIVATIVE
+    }
+
     fn cell(&self) -> &ArcCell {
         &self.branch.cells[self.cell]
     }
@@ -291,10 +299,9 @@ impl SectionTracePiece {
                 let residual = series(&self.equation, &parameters, n, bits, dec)?
                     .pop()
                     .unwrap();
-                parameters[cell.solved][n] =
-                    (-&residual).checked_div(&derivative).ok_or_else(|| {
-                        failure("section trace jets need a strict transverse derivative enclosure")
-                    })?;
+                parameters[cell.solved][n] = (-&residual)
+                    .checked_div(&derivative)
+                    .ok_or_else(|| failure(JET_DERIVATIVE))?;
             }
         }
         Ok(parameters)

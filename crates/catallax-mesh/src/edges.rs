@@ -7,7 +7,7 @@ use std::{
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
 use catallax_shapes::{
-    Curve, DisplayCut, FilletCutTrace, SplineBoundary, SplineSupport, Surface,
+    Curve, DisplayCut, FilletCutTrace, SectionTracePiece, SplineBoundary, SplineSupport, Surface,
     tessellation::RationalSpan,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
@@ -256,6 +256,15 @@ struct RailLeaf<'a> {
     bound: Rational,
 }
 
+struct PlanarLeaf {
+    trace: Arc<TracePiece>,
+    spline: Option<Rc<RationalSpan>>,
+    range: [Rational; 2],
+    indices: [usize; 2],
+    endpoints: [Rc<EdgePoint>; 2],
+    depth: u32,
+}
+
 struct Sampler<'a, 'span> {
     piece: EdgePiece<'span>,
     cap: Option<Cap<'a>>,
@@ -269,6 +278,7 @@ struct Sampler<'a, 'span> {
     error: &'a mut Rational,
     exact_positions: Option<&'a mut BTreeMap<usize, Position>>,
     rail: Option<&'a mut Vec<RailLeaf<'span>>>,
+    planar: Option<&'a mut BTreeMap<[usize; 2], PlanarLeaf>>,
     split_leaf: bool,
 }
 
@@ -419,22 +429,30 @@ impl Sampler<'_, '_> {
         let acceleration = if let Some(acceleration) = inherited_acceleration
             && distance(acceleration) <= self.options.chord_tolerance.mul_pow2(-3)
         {
-            acceleration.clone()
+            Some(acceleration.clone())
         } else {
-            self.acceleration(&lo, &hi)?
+            match self.acceleration(&lo, &hi) {
+                Ok(acceleration) => Some(acceleration),
+                // Section isolation proves a regular branch. A wide power
+                // enclosure can still include zero; check its subarcs.
+                Err(error) if SectionTracePiece::can_subdivide_jet_refusal(&error) => None,
+                Err(error) => return Err(error),
+            }
         };
-        let bound = distance(&acceleration);
+        let bound = acceleration.as_ref().map(distance);
         let mid = (&lo + &hi).mul_pow2(-1);
         let middle_point = Rc::new(self.enclose_point(&mid)?);
         let middle = middle_point.position()?;
         self.piece
             .admit_sample(&middle_point, middle, self.options, self.dec)?;
-        let mut small = bound <= self.options.chord_tolerance.mul_pow2(-3);
+        let mut small = bound
+            .as_ref()
+            .is_some_and(|bound| *bound <= self.options.chord_tolerance.mul_pow2(-3));
         if let Some(limit) = &self.options.max_edge_length {
             small &= crate::controls::length_squared(self.positions[first], self.positions[last])
                 <= limit * limit;
         }
-        for incident in self.charts {
+        for incident in self.charts.iter().filter(|_| acceleration.is_some()) {
             let chart = incident.chart;
             if let (Some(spline), Surface::BSpline(support)) = (chart.spline(), &chart.surface) {
                 if small {
@@ -502,7 +520,20 @@ impl Sampler<'_, '_> {
                 self.dec,
             )?;
         }
-        if small && !split_leaf {
+        if let Some(bound) = bound.filter(|_| small && !split_leaf) {
+            if let Some(planar) = &mut self.planar {
+                planar.insert(
+                    [first.min(last), first.max(last)],
+                    PlanarLeaf {
+                        trace: self.piece.trace().expect("a planar trim trace").clone(),
+                        spline: self.spline.clone(),
+                        range: [lo.clone(), hi.clone()],
+                        indices,
+                        endpoints: [a.clone(), b.clone()],
+                        depth,
+                    },
+                );
+            }
             if let Some(rail) = &mut self.rail {
                 rail.push(RailLeaf {
                     piece: self.piece,
@@ -529,7 +560,7 @@ impl Sampler<'_, '_> {
             mid.clone(),
             [first, index],
             depth + 1,
-            Some(&acceleration),
+            acceleration.as_ref(),
             [a, &middle_point],
         )?;
         self.segment(
@@ -537,7 +568,7 @@ impl Sampler<'_, '_> {
             hi,
             [index, last],
             depth + 1,
-            Some(&acceleration),
+            acceleration.as_ref(),
             [&middle_point, b],
         )
     }
@@ -627,6 +658,7 @@ fn plan_collar_rail(
             error: &mut error,
             exact_positions: None,
             rail: Some(&mut children),
+            planar: None,
             split_leaf: true,
         }
         .segment(
@@ -796,13 +828,14 @@ pub(crate) fn sample(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
-    sample_selected(
+    sample_edges(
         model,
         body,
         model.edges_of_body(body),
         charts,
         junction,
         options,
+        true,
         dec,
     )
 }
@@ -814,6 +847,20 @@ pub(crate) fn sample_selected(
     charts: &BTreeMap<catallax_topology::FaceId, Chart>,
     junction: Option<&crate::junction::Junction>,
     options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Boundaries, Refusal> {
+    sample_edges(model, body, selected, charts, junction, options, false, dec)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_edges(
+    model: &Model,
+    body: BodyId,
+    selected: impl IntoIterator<Item = EdgeId>,
+    charts: &BTreeMap<catallax_topology::FaceId, Chart>,
+    junction: Option<&crate::junction::Junction>,
+    options: &MeshOptions,
+    check_crossings: bool,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
     let mut result = Boundaries {
@@ -897,34 +944,12 @@ pub(crate) fn sample_selected(
     } else {
         None
     };
+    let mut planar_leaves = BTreeMap::<EdgeId, BTreeMap<[usize; 2], PlanarLeaf>>::new();
     for edge_id in selected {
-        let local_options = adjacent.get(&edge_id).and_then(|charts| {
-            let chord = charts
-                .iter()
-                .filter_map(|incident| incident.chart.chord_goal.as_ref())
-                .min()?;
-            Some(MeshOptions {
-                chord_tolerance: chord.clone(),
-                ..options.clone()
-            })
-        });
+        let incident = &adjacent[&edge_id];
+        let local_options = edge_options(incident, options);
         let options = local_options.as_ref().unwrap_or(options);
-        let spline_cosine = if adjacent.get(&edge_id).is_some_and(|charts| {
-            charts.iter().any(|incident| {
-                matches!(
-                    incident.chart.surface,
-                    Surface::BSpline(SplineSupport::RollingSaddle(_))
-                )
-            })
-        }) {
-            options
-                .angular_deviation
-                .as_ref()
-                .map(|angle| crate::controls::cosine_enclosure(&angle.mul_pow2(-1), dec))
-                .transpose()?
-        } else {
-            spline_cosine
-        };
+        let spline_cosine = edge_cosine(incident, options, spline_cosine, dec)?;
         if let Some(seed) = junction.and_then(|junction| junction.seed(edge_id)) {
             seeded(model, edge_id, seed, options, dec, &mut result)?;
             continue;
@@ -1011,21 +1036,16 @@ pub(crate) fn sample_selected(
         let needs_spline = adjacent[&edge_id]
             .iter()
             .any(|incident| incident.chart.spline().is_some());
+        let mut leaves = (check_crossings
+            && planar
+            && !matches!(model.geom().curve(edge.curve), Curve::Line(_)))
+        .then(|| planar_leaves.entry(edge_id).or_default());
         for (i, &piece) in pieces.iter().enumerate() {
             let chart_trace = piece.trace();
             let cap = chart_trace
-                .and_then(|piece| piece.fillet_cut())
-                .map(|(trace, forward)| {
-                    let chart = trace.display_chart(dec)?;
-                    let coefficient = chart.acceleration_bound(dec)?.mul_pow2(-1);
-                    Ok::<_, Refusal>(Cap {
-                        trace,
-                        chart,
-                        forward,
-                        coefficient,
-                    })
-                })
-                .transpose()?;
+                .map(|piece| cap(piece, dec))
+                .transpose()?
+                .flatten();
             let hint = |i: usize| {
                 cap.as_ref().map(|cap| {
                     let side = if cap.forward { i } else { 1 - i };
@@ -1087,6 +1107,7 @@ pub(crate) fn sample_selected(
                 error: &mut error,
                 exact_positions: planar.then_some(&mut result.exact_positions),
                 rail: plan_collar.then_some(&mut rail),
+                planar: leaves.as_deref_mut(),
                 split_leaf: false,
             }
             .segment(
@@ -1150,6 +1171,123 @@ pub(crate) fn sample_selected(
             max_chord_error: error,
         });
     }
+    loop {
+        let mut crossings = BTreeSet::new();
+        if check_crossings {
+            for (&face, chart) in charts {
+                if let Surface::Plane(plane) = &chart.surface {
+                    crossings.extend(crate::planar::crossing_edges(
+                        model, face, plane, &result, dec,
+                    )?);
+                }
+            }
+        }
+        if crossings.is_empty() {
+            break;
+        }
+        let mut split = false;
+        for (edge, pair) in crossings {
+            let Some(leaves) = planar_leaves.get_mut(&edge) else {
+                continue;
+            };
+            let Some(leaf) = leaves.remove(&pair) else {
+                continue;
+            };
+            let boundary = &mut result.mesh.edges[result.edges[&edge]];
+            let at = boundary
+                .vertices
+                .windows(2)
+                .position(|ends| [ends[0].min(ends[1]), ends[0].max(ends[1])] == pair)
+                .ok_or_else(|| failure("crossing planar chord is missing from its shared edge"))?;
+            let incident = &adjacent[&edge];
+            let local_options = edge_options(incident, options);
+            let options = local_options.as_ref().unwrap_or(options);
+            let spline_cosine = edge_cosine(incident, options, spline_cosine, dec)?;
+            let mut indices = Vec::new();
+            Sampler {
+                piece: EdgePiece::Trace(&leaf.trace),
+                cap: cap(&leaf.trace, dec)?,
+                spline: leaf.spline,
+                charts: incident,
+                spline_cosine,
+                options,
+                dec,
+                positions: &mut result.mesh.positions,
+                indices: &mut indices,
+                error: &mut boundary.max_chord_error,
+                exact_positions: Some(&mut result.exact_positions),
+                rail: None,
+                planar: Some(leaves),
+                split_leaf: true,
+            }
+            .segment(
+                leaf.range[0].clone(),
+                leaf.range[1].clone(),
+                leaf.indices,
+                leaf.depth,
+                None,
+                leaf.endpoints.each_ref(),
+            )?;
+            indices.pop();
+            if boundary.vertices[at] != leaf.indices[0] {
+                indices.reverse();
+            }
+            boundary.vertices.splice(at + 1..at + 1, indices);
+            split = true;
+        }
+        if !split {
+            return Err(failure("crossing planar trim chords cannot be refined"));
+        }
+    }
     result.rails = Rails::new(&result.mesh.edges);
     Ok(result)
+}
+
+fn cap<'a>(piece: &'a TracePiece, dec: &mut Decider) -> Result<Option<Cap<'a>>, Refusal> {
+    piece
+        .fillet_cut()
+        .map(|(trace, forward)| {
+            let chart = trace.display_chart(dec)?;
+            let coefficient = chart.acceleration_bound(dec)?.mul_pow2(-1);
+            Ok(Cap {
+                trace,
+                chart,
+                forward,
+                coefficient,
+            })
+        })
+        .transpose()
+}
+
+fn edge_options(incident: &[IncidentChart<'_>], options: &MeshOptions) -> Option<MeshOptions> {
+    incident
+        .iter()
+        .filter_map(|chart| chart.chart.chord_goal.as_ref())
+        .min()
+        .map(|chord| MeshOptions {
+            chord_tolerance: chord.clone(),
+            ..options.clone()
+        })
+}
+
+fn edge_cosine(
+    incident: &[IncidentChart<'_>],
+    options: &MeshOptions,
+    cosine: Option<Interval>,
+    dec: &mut Decider,
+) -> Result<Option<Interval>, Refusal> {
+    if incident.iter().any(|chart| {
+        matches!(
+            chart.chart.surface,
+            Surface::BSpline(SplineSupport::RollingSaddle(_))
+        )
+    }) {
+        options
+            .angular_deviation
+            .as_ref()
+            .map(|angle| crate::controls::cosine_enclosure(&angle.mul_pow2(-1), dec))
+            .transpose()
+    } else {
+        Ok(cosine)
+    }
 }

@@ -37,14 +37,16 @@ pub fn describe_numerical_body(
     };
     let mut parameters = Vec::with_capacity(def.edges.len());
     let mut remaining = options.max_edge_points;
-    for e in &def.edges {
-        let mut ts = Vec::new();
-        let mut points = Vec::new();
+    let mut read_edge = |e: &NumericalEdge, force_split, ts: &mut Vec<_>, points: &mut Vec<_>| {
+        remaining += ts.len();
+        ts.clear();
+        points.clear();
         sample(
             e,
             e.vertices.map(|i| vertices[i]),
             origin,
             options.chord_tolerance,
+            force_split,
             &mut |t, p| {
                 if remaining == 0 {
                     return None;
@@ -55,12 +57,41 @@ pub fn describe_numerical_body(
                 Some(())
             },
         )
-        .ok_or_else(|| failed(format!("numerical edge {} could not be sampled", e.key)))?;
+        .ok_or_else(|| failed(format!("numerical edge {} could not be sampled", e.key)))
+    };
+    for e in &def.edges {
+        let mut ts = Vec::new();
+        let mut points = Vec::new();
+        read_edge(e, false, &mut ts, &mut points)?;
         parameters.push(ts);
         result.edges.push(DisplayEdge {
             edge: e.key.clone(),
             points,
         });
+    }
+    // A loop formed from one or two curved edges can meet the chord
+    // allowance without retaining enough nodes to bound an area. Resample
+    // its short edges once, at their shared edge records rather than per use.
+    for row in def.faces.iter().flat_map(|face| &face.loops) {
+        if row
+            .iter()
+            .map(|usage| parameters[usage.edge].len() - 1)
+            .sum::<usize>()
+            >= 3
+        {
+            continue;
+        }
+        for usage in row {
+            let i = usage.edge;
+            if parameters[i].len() < 4 && !matches!(def.edges[i].curve, Curve::Line(_)) {
+                read_edge(
+                    &def.edges[i],
+                    true,
+                    &mut parameters[i],
+                    &mut result.edges[i].points,
+                )?;
+            }
+        }
     }
     let trims = body
         .native_trims()
@@ -173,6 +204,7 @@ fn sample(
     ends: [Xyz; 2],
     origin: Xyz,
     tolerance: f64,
+    force_split: bool,
     out: &mut impl FnMut(f64, Xyz) -> Option<()>,
 ) -> Option<()> {
     let [start, end] = edge.parameters.each_ref().map(Rational::to_f64_nearest);
@@ -189,7 +221,8 @@ fn sample(
             let radius = positive(libm::sqrt(scalar(&c.radius_sq)))?;
             let span = end - start;
             let step = libm::sqrt(8.0 * tolerance / radius).min(TAU / 8.0);
-            let count = libm::ceil(span.abs() / step) as usize;
+            let count =
+                (libm::ceil(span.abs() / step) as usize).max(if force_split { 4 } else { 1 });
             for i in 1..count {
                 let t = start + span * i as f64 / count as f64;
                 let (s, c) = libm::sincos(t);
@@ -224,6 +257,17 @@ fn sample(
                 } else {
                     at(b)
                 };
+                if force_split {
+                    let start = a;
+                    for i in 1..4 {
+                        let t = start + (b - start) * f64::from(i) / 4.0;
+                        if a.min(b) < t && t < a.max(b) {
+                            let r = at(t);
+                            sample_span(&mut at, [a, t], [p, r], tolerance, out)?;
+                            (a, p) = (t, r);
+                        }
+                    }
+                }
                 sample_span(&mut at, [a, b], [p, q], tolerance, out)?;
                 (a, p) = (b, q);
             }

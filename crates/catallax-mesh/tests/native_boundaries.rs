@@ -318,4 +318,185 @@ fn a_reopened_rolling_ball_rim_previews_within_the_request_allowance() {
     // The rim's volume is 317,998.676 mm3; the triangles keep it to a chord.
     let volume = volume(&preview);
     assert!((volume - 317_998.676).abs() < 0.5, "volume {volume}");
+    let (coarse, budget) = with_operation_budget(work.used - 1, || {
+        preview_tolerant_body(import, body, &options, &mut Decider::default())
+    });
+    let coarse = coarse.unwrap();
+    assert!(!budget.exhausted);
+    assert_eq!(coarse.faces.len(), preview.faces.len());
+    assert_ne!(coarse.triangles, preview.triangles);
+    assert!(coarse.faces.iter().all(|face| !face.triangles.is_empty()));
+}
+
+const PERIODIC_CONE: &str = "ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('conical pole'),'2;1');
+FILE_NAME('cone.step','',(''),(''),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
+ENDSEC;
+DATA;
+#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(0.,0.,1.));
+#3=CARTESIAN_POINT('',(1.,0.,1.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=DIRECTION('',(1.,0.,0.));
+#6=AXIS2_PLACEMENT_3D('',#1,#4,#5);
+#7=AXIS2_PLACEMENT_3D('',#2,#4,#5);
+#8=CONICAL_SURFACE('',#6,0.,0.7853981633974483);
+#9=PLANE('',#7);
+#10=CIRCLE('',#7,1.);
+#11=VERTEX_POINT('',#3);
+#12=EDGE_CURVE('',#11,#11,#10,.T.);
+#13=ORIENTED_EDGE('',*,*,#12,.T.);
+#14=ORIENTED_EDGE('',*,*,#12,.F.);
+#15=EDGE_LOOP('',(#13));
+#16=EDGE_LOOP('',(#14));
+#17=VERTEX_POINT('',#1);
+#18=VERTEX_LOOP('',#17);
+#19=FACE_OUTER_BOUND('',#15,.T.);
+#20=FACE_OUTER_BOUND('',#16,.T.);
+#21=FACE_BOUND('',#18,.T.);
+#22=ADVANCED_FACE('',(#20,#21),#8,.T.);
+#23=ADVANCED_FACE('',(#19),#9,.T.);
+#24=CLOSED_SHELL('',(#22,#23));
+#25=MANIFOLD_SOLID_BREP('',#24);
+#26=( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );
+#27=( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#26))
+REPRESENTATION_CONTEXT('','') );
+#28=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#25),#27);
+ENDSEC;
+END-ISO-10303-21;";
+
+#[test]
+fn a_periodic_conical_face_closes_at_its_declared_vertex() {
+    let source = PERIODIC_CONE.as_bytes();
+    let import = tolerant::admission::import_step(
+        source,
+        &sha256_hex(source),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let view = preview_tolerant_body(
+        &import,
+        0,
+        &PreviewOptions::from(&catallax_mesh::MeshOptions::default()),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let lateral = view.faces.iter().find(|face| face.face == "#22").unwrap();
+    let mut touches_apex = false;
+    for triangle in &view.triangles[lateral.triangles.clone()] {
+        for i in triangle.vertices {
+            let [x, y, z] = view.positions[i];
+            assert!((-1e-12..=1.0 + 1e-12).contains(&z));
+            assert!((x.hypot(y) - z).abs() < 1e-12);
+            touches_apex |= z.abs() < 1e-12;
+        }
+    }
+    assert!(touches_apex);
+    assert!((volume(&view) - std::f64::consts::PI / 3.0).abs() < 0.1);
+}
+
+fn cylinder_with_one_rim() -> String {
+    PERIODIC_CONE
+        .replace(
+            "CONICAL_SURFACE('',#6,0.,0.7853981633974483)",
+            "CYLINDRICAL_SURFACE('',#6,1.)",
+        )
+        .replace(
+            "ADVANCED_FACE('',(#20,#21),#8,.T.)",
+            "ADVANCED_FACE('',(#20),#8,.T.)",
+        )
+}
+
+#[test]
+fn a_native_face_with_no_finite_trim_does_not_hide_its_neighbour() {
+    // The valid disk shares its circle with the unbounded cylindrical face.
+    let source = cylinder_with_one_rim();
+    let source = source.as_bytes();
+    let import = tolerant::admission::import_step(
+        source,
+        &sha256_hex(source),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let (preview, work) = with_operation_budget(100_000_000, || {
+        preview_tolerant_body(
+            &import,
+            0,
+            &PreviewOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    let preview = preview.unwrap();
+    assert!(!work.exhausted);
+    let [disk] = preview.faces.as_slice() else {
+        panic!("only the planar disk is drawable: {:?}", preview.faces);
+    };
+    assert_eq!(disk.face, "#23");
+    let area: f64 = preview.triangles[disk.triangles.clone()]
+        .iter()
+        .map(|triangle| {
+            let [a, b, c] = triangle.vertices.map(|i| preview.positions[i]);
+            assert!([a, b, c].into_iter().all(|p| (p[2] - 1.0).abs() < 1e-12));
+            ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 0.5
+        })
+        .sum();
+    assert!(
+        (3.0..std::f64::consts::PI).contains(&area),
+        "disk area {area}"
+    );
+    let (refusal, work) = with_operation_budget(0, || {
+        preview_tolerant_body(
+            &import,
+            0,
+            &PreviewOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(refusal.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}
+
+#[test]
+fn native_edges_remain_drawable_when_no_face_has_a_finite_trim() {
+    let source = cylinder_with_one_rim().replace(
+        "ADVANCED_FACE('',(#19),#9,.T.)",
+        "ADVANCED_FACE('',(#19),#8,.T.)",
+    );
+    let source = source.as_bytes();
+    let import = tolerant::admission::import_step(
+        source,
+        &sha256_hex(source),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let view = preview_tolerant_body(
+        &import,
+        0,
+        &PreviewOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(view.triangles.is_empty());
+    let [edge] = view.edges.as_slice() else {
+        panic!("the two faces share one drawable edge");
+    };
+    assert_eq!(edge.edge, "#12");
+    assert_eq!(edge.vertices.first(), edge.vertices.last());
+    let length: f64 = edge
+        .vertices
+        .windows(2)
+        .map(|pair| {
+            let [a, b] = [view.positions[pair[0]], view.positions[pair[1]]];
+            ((a[0] - b[0]).hypot(a[1] - b[1])).hypot(a[2] - b[2])
+        })
+        .sum();
+    assert!(
+        (6.2..std::f64::consts::TAU).contains(&length),
+        "rim length {length}"
+    );
 }

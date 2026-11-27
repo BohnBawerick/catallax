@@ -836,7 +836,7 @@ fn build(
                 }
             }
             if let Some(divisions) = grid {
-                grid_face(
+                return grid_face(
                     &face.name,
                     face.same_sense,
                     &carrier,

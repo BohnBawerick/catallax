@@ -878,6 +878,9 @@ fn section_inputs(
             }
         }
     }
+    // A disjoint trim can still supply the first occurrence of a carrier
+    // shared by a later pair. Filter finite membership, not carrier discovery.
+    let face_order = [first, second];
     let candidates = |faces: &[FaceId]| {
         faces
             .iter()
@@ -953,10 +956,17 @@ fn section_inputs(
         pass.mandatory.insert(point);
     }
     pass.pruning_model = (prune && !algebraic).then(|| model.clone());
-    let face_pairs: Vec<(FaceId, FaceId)> = first
+    let face_pairs: Vec<_> = face_order[0]
         .iter()
-        .flat_map(|&fa| second.iter().map(move |&fb| (fa, fb)))
-        .filter(|&(fa, fb)| !(multiway && fb <= fa))
+        .flat_map(|&fa| {
+            let first_outside = outside.contains(&fa);
+            let outside = &outside;
+            face_order[1]
+                .iter()
+                .copied()
+                .filter(move |&fb| !multiway || fb > fa)
+                .map(move |fb| ((fa, fb), first_outside || outside.contains(&fb)))
+        })
         .collect();
     // Each pair's support intersection is its own proof. Merging its carriers
     // and points into the pass stays in pair order on this thread; workers
@@ -964,7 +974,7 @@ fn section_inputs(
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("face pairs");
     let mut ahead = catallax_numbers::run_ahead!(dec, face_pairs.len());
-    for (index, &pair) in face_pairs.iter().enumerate() {
+    for (index, &(pair, outside)) in face_pairs.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         ahead.at(index, || {
@@ -975,17 +985,27 @@ fn section_inputs(
                 clip.clone(),
             );
             move |index: usize, dec: &mut Decider| {
+                let (pair, outside) = face_pairs[index];
                 let _ = face_pair(
                     &mut model.clone(),
                     &mut pass.clone(),
-                    face_pairs[index],
+                    pair,
+                    outside,
                     algebraic,
                     clip.as_ref(),
                     dec,
                 );
             }
         });
-        face_pair(model, &mut pass, pair, algebraic, clip.as_ref(), dec)?;
+        face_pair(
+            model,
+            &mut pass,
+            pair,
+            outside,
+            algebraic,
+            clip.as_ref(),
+            dec,
+        )?;
     }
     drop(ahead);
     #[cfg(feature = "work-span")]
@@ -1045,9 +1065,25 @@ fn section_inputs(
             }
         }
     }
-    let surfaces: Vec<SurfaceId> = first
+    // Keep complete support hits to avoid exact curve-pair solves. With a
+    // torus or fitted band, a remote support crossing can require an
+    // undecidable quarter or spline contact, so keep the trimmed scan.
+    let restricted_hits = !outside.is_empty()
+        && (trimmed.has_fitted_band()
+            || face_order.into_iter().flatten().any(|&face| {
+                matches!(
+                    model.geom().surface(model.face(face).surface),
+                    catallax_shapes::Surface::Torus(_)
+                )
+            }));
+    let [support_first, support_second] = if restricted_hits {
+        [first, second]
+    } else {
+        face_order
+    };
+    let surfaces: Vec<SurfaceId> = support_first
         .iter()
-        .chain(second)
+        .chain(support_second)
         .map(|f| model.face(*f).surface)
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -1399,6 +1435,7 @@ fn face_pair(
     model: &mut Model,
     pass: &mut PairPass,
     (fa, fb): (FaceId, FaceId),
+    outside: bool,
     algebraic: bool,
     clip: Option<&[Ball; 3]>,
     dec: &mut Decider,
@@ -1492,7 +1529,8 @@ fn face_pair(
     } = pass;
     // Disjoint and point-only supports have no carrier activity to
     // prove. Cache the optional finite bound only when adding a curve.
-    let mut relevance = None;
+    // An excluded trim still contributes order, but cannot activate a carrier.
+    let mut relevance = outside.then_some(false);
     let mut relevant = |dec: &mut Decider| {
         *relevance.get_or_insert_with(|| match pruning_model {
             Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),

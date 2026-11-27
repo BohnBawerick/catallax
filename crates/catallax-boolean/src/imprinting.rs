@@ -406,59 +406,6 @@ fn cell(
     })
 }
 
-/// Retain the original walks when there is no section on the face, using
-/// the same split edges as its neighbors. A repeated vertex can change the
-/// walk successors, so leave that case to the arrangement.
-fn unsectioned_piece(
-    model: &mut Model,
-    face: FaceId,
-    boundary: &BTreeMap<EdgeId, Vec<(EdgeId, Sense)>>,
-) -> Option<FaceId> {
-    let mut f = model.face(face).clone();
-    let mut starts = BTreeSet::new();
-    let mut walks = Vec::new();
-    for &lp in &f.loops {
-        let Loop::Coedges(coedges) = model.loop_(lp) else {
-            walks.push(None);
-            continue;
-        };
-        let mut walk = Vec::with_capacity(coedges.len());
-        for &coedge in coedges {
-            let c = model.coedge(coedge);
-            let parts = &boundary[&c.edge];
-            if parts.is_empty() {
-                return None;
-            }
-            if c.sense == Sense::Same {
-                walk.extend(parts.iter().copied());
-            } else {
-                walk.extend(parts.iter().rev().map(|&(e, s)| (e, reverse(s))));
-            }
-        }
-        for &(edge, sense) in &walk {
-            if let Some(start) = ends(model, edge, sense).0
-                && !starts.insert(start)
-            {
-                return None;
-            }
-        }
-        walks.push(Some(walk));
-    }
-    if walks.iter().all(Option::is_none) {
-        return Some(face);
-    }
-    for (lp, walk) in f.loops.iter_mut().zip(walks) {
-        if let Some(walk) = walk {
-            let coedges = walk
-                .into_iter()
-                .map(|(edge, sense)| model.add_coedge(Coedge { edge, sense }))
-                .collect();
-            *lp = model.add_loop(Loop::Coedges(coedges));
-        }
-    }
-    Some(model.add_named_face(f, model.face_origins(face).to_vec()))
-}
-
 fn pieces(
     model: &mut Model,
     face: FaceId,
@@ -873,17 +820,6 @@ fn imprint_groups(
     for &(_, faces) in groups {
         let mut group_pieces = Vec::new();
         for &face in faces {
-            let face_outside = graph.outside.contains(&face);
-            if (face_outside || (local && !sections.contains_key(&face)))
-                && let Some(piece) = unsectioned_piece(model, face, &boundary)
-            {
-                if face_outside {
-                    outside.insert(piece);
-                }
-                group_pieces.push(piece);
-                index += 1;
-                continue;
-            }
             #[cfg(feature = "work-span")]
             let _span_task = span_tasks.task();
             let planned = ahead.take_if(

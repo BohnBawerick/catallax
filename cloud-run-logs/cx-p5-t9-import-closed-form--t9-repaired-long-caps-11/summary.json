@@ -1,0 +1,82 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-repaired-long-caps-11",
+ "repo": "BohnBawerick/catallax",
+ "sha": "ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+ "script_exit_code": 0,
+ "seconds": 2742,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-repaired-long-caps-11",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' 'H4sIAAAAAAAA/+19a3fjNpJoPutXIExvhkooWfKzW4lm1u1WEk+6231sd2b3eHx5aBGyGFOkBiD9iOP/vqcKBRAgKdvdncfsXfODLZJAASg",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "echo \"923eb17c...  $work/kit.tar.gz\" | sha256sum -c",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "tar -xzp -C \"$KIT\" -f \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-resolved-validity.sh\" ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 \"$KIT\" \"$OWNER\" \"$SCRATCH\" 00000204",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exit 0; all commands exit 0 because the script uses set -e. run.log has no 'test result:' lines (the script runs a cargo release build plus a T9 baseline/candidate capture, not cargo test), so test counts are 0. Toolchain rustc 1.100.0; cargo fetch succeeded. Output lines: T9BASELINE {\"capture\": \"/home/user/t9-repaired-long-caps-11/captures/00000204\", \"cpu_seconds\": 669.707607, \"files\": {\"document.step\": [\"bbea3fe7260411a443b06582766cae70e5d5410ba040ceaa62ca79e46903f7f4\", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], \"selected_document\"]} | T9BASELINECOMPLETE 1 of 1 | T9CANDIDATE ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 | T9LONGPAIR {\"after\": {\"files\": {\"document.step\": [\"395e5cbd96b044b02758a6d9e114983f87168362ccf44c5b19a02a104a23ee78\", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], \"selected_document\"]}, \"open_checkpoint_sha256\": \"91684317346e7739106b0b9121fa09843a76c05bd6f5e6e426c63f76 | T9LONGPAIRCOMPLETE 1 of 1 |  Copied captures and skip.json to out/ (81M); skipped bin/ (288M), target/, venv/, corpus/; no single file above 50 MB. cmd.sh sha256 verified. t9lines.txt holds the grep output."
+}

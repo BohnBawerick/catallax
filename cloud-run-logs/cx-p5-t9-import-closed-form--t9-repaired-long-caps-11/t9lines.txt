@@ -1,0 +1,5 @@
+T9BASELINE {"capture": "/home/user/t9-repaired-long-caps-11/captures/00000204", "cpu_seconds": 669.707607, "files": {"document.step": ["bbea3fe7260411a443b06582766cae70e5d5410ba040ceaa62ca79e46903f7f4", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], "selected_document"]}
+T9BASELINECOMPLETE 1 of 1
+T9CANDIDATE ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7
+T9LONGPAIR {"after": {"files": {"document.step": ["395e5cbd96b044b02758a6d9e114983f87168362ccf44c5b19a02a104a23ee78", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], "selected_document"]}, "open_checkpoint_sha256": "91684317346e7739106b0b9121fa09843a76c05bd6f5e6e426c63f76
+T9LONGPAIRCOMPLETE 1 of 1

@@ -35,9 +35,9 @@ pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
 pub(crate) use write::emit;
 pub use write::{
     BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, DATUM_TARGET, EDGE_BREAK,
-    FIRST_SIDE, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, MAX_SETBACK,
-    MIN_SETBACK, ORIENTATION, SECOND_SIDE, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD,
-    THREAD_DEPTH, THROUGH, WIDTH,
+    FIRST_SIDE, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, KNURL,
+    MAX_SETBACK, MIN_SETBACK, ORIENTATION, SECOND_SIDE, SEMANTIC_TEXT, TARGET_DIAMETER,
+    TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, WIDTH,
 };
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
@@ -165,6 +165,20 @@ impl<F> Pmi<F> {
                     process: texture.process,
                     feature: feature(&texture.feature)?,
                 }),
+                ItemKind::FaceNote {
+                    text,
+                    feature: faces,
+                } => ItemKind::FaceNote {
+                    text: text.clone(),
+                    feature: feature(faces)?,
+                },
+                ItemKind::Knurl {
+                    designation,
+                    feature: faces,
+                } => ItemKind::Knurl {
+                    designation: designation.clone(),
+                    feature: feature(faces)?,
+                },
                 ItemKind::DatumTarget(target) => ItemKind::DatumTarget(DatumTarget {
                     datum: target.datum.clone(),
                     number: target.number,
@@ -279,6 +293,23 @@ pub enum ItemKind<F> {
     Texture(SurfaceTexture<F>),
     /// A datum target on one face of a declared datum.
     DatumTarget(DatumTarget<F>),
+    /// Free text a person reads, attached to its faces. Written as CAx-IF
+    /// semantic text: an editable string, not a computable requirement.
+    FaceNote {
+        /// The note, one or more lines.
+        text: String,
+        /// The faces it is attached to.
+        feature: Feature<F>,
+    },
+    /// A knurl designation on its faces, such as `RGE 0.8 DIN 82`. Written
+    /// as CAx-IF semantic text under the variable name [`KNURL`]: AP242 has
+    /// no knurl entity, so no reader learns a pitch or pattern from it.
+    Knurl {
+        /// The designation as a drawing writes it.
+        designation: String,
+        /// The knurled faces.
+        feature: Feature<F>,
+    },
     /// A position control with a composite frame, a projected zone or a
     /// datum reference at a material boundary. A plain single position is a
     /// [`GeometricTolerance`], and this variant refuses one.
@@ -308,8 +339,15 @@ impl<F> ItemKind<F> {
             ItemKind::Tolerance(tolerance) => tolerance.features.iter().collect(),
             ItemKind::Texture(texture) => vec![&texture.feature],
             ItemKind::Position(control) => control.features.iter().collect(),
+            ItemKind::FaceNote { feature, .. } | ItemKind::Knurl { feature, .. } => vec![feature],
             ItemKind::DatumTarget(_) => Vec::new(),
         }
+    }
+
+    /// Whether the item is text a person reads rather than semantic PMI. Such
+    /// items are counted apart (recommended practices, section 7.4.3).
+    pub fn is_text(&self) -> bool {
+        matches!(self, ItemKind::FaceNote { .. } | ItemKind::Knurl { .. })
     }
 
     /// Every face the item names: its features' faces, a datum target's face
@@ -954,6 +992,30 @@ impl<'a, F: Ord> PartValidator<'a, F> {
                 }
             }
             ItemKind::Position(control) => self.check_position(control)?,
+            ItemKind::FaceNote { text, .. } => {
+                let lines: Vec<&str> = text.split('\n').collect();
+                if text.trim().is_empty()
+                    || lines.iter().any(|line| line.trim().is_empty())
+                    || text.chars().any(|c| c.is_control() && c != '\n')
+                {
+                    return Err(Rule(
+                        "a face note is lines of text with no empty line or control character",
+                    ));
+                }
+            }
+            ItemKind::Knurl { designation, .. } => {
+                let plain = !designation.trim().is_empty()
+                    && designation.len() <= 60
+                    && designation
+                        .bytes()
+                        .all(|b| b.is_ascii_graphic() || b == b' ')
+                    && !designation.contains(['\'', '\\']);
+                if !plain {
+                    return Err(Rule(
+                        "a knurl designation is plain text of at most 60 characters",
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -1096,6 +1158,7 @@ fn check_features<F: Ord>(kind: &ItemKind<F>) -> Result<(), ItemError<'static>> 
         ItemKind::Tolerance(tolerance) => tolerance.features.iter().try_for_each(check),
         ItemKind::Texture(texture) => check(&texture.feature),
         ItemKind::Position(control) => control.features.iter().try_for_each(check),
+        ItemKind::FaceNote { feature, .. } | ItemKind::Knurl { feature, .. } => check(feature),
         ItemKind::DatumTarget(_) => Ok(()),
     }
 }

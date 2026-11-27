@@ -21,11 +21,11 @@ use catallax_step::pmi::{
     Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, ChamferNominal,
     Characteristic, Datum, DatumRef, DatumTarget, EDGE_BREAK, FIRST_SIDE, Feature,
     GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize,
-    INCLUDED_ANGLE, Item, ItemError, ItemKind, Limits, Location, MAX_SETBACK, MIN_SETBACK,
+    INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location, MAX_SETBACK, MIN_SETBACK,
     MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl, PositionFrame,
-    PositionSegment, Process, ProjectedZone, SECOND_SIDE, Size, SizeKind, SurfaceTexture,
-    TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, TargetArea,
-    TargetKind, WIDTH, off_face,
+    PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, Size, SizeKind,
+    SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH,
+    TargetArea, TargetKind, WIDTH, off_face,
 };
 
 use crate::ImportRefusal;
@@ -1873,6 +1873,61 @@ impl<'a> Reader<'a> {
         })
     }
 
+    /// Editable text on faces (recommended practices, section 7.4): a face
+    /// note whose lines have no variable name, or a knurl designation held
+    /// under [`KNURL`].
+    fn text(&self, id: u64, params: &[Param]) -> Result<Found, String> {
+        let target = reference(params.get(2)).ok_or("it is attached to nothing")?;
+        match self.entity(target).map(Entity::type_name) {
+            Some("PRODUCT_DEFINITION" | "PRODUCT_DEFINITION_SHAPE") => {
+                return Err("a text note on the whole part is not read".into());
+            }
+            _ if self.aspect_params(target).is_none() => {
+                return Err("a text note on a PMI element is not read".into());
+            }
+            _ => {}
+        }
+        let mut lines = Vec::new();
+        for (_, link) in self.sharing_at(id, "PROPERTY_DEFINITION_REPRESENTATION", 0) {
+            let representation = reference(link.get(1))
+                .and_then(|id| self.entity(id))
+                .ok_or("its text is missing")?;
+            for item in references(representation.parts[0].1.get(1)) {
+                let fields = self
+                    .entity(item)
+                    .and_then(|entity| entity.part("DESCRIPTIVE_REPRESENTATION_ITEM"))
+                    .ok_or("its text holds an item that is not a string")?;
+                lines.push((
+                    string(fields.first()).unwrap_or_default(),
+                    string(fields.get(1)).unwrap_or_default(),
+                ));
+            }
+        }
+        let feature = self.one_feature(target)?;
+        let kind = match lines.as_slice() {
+            [] => return Err("it holds no text".into()),
+            [(name, designation)] if name == KNURL => ItemKind::Knurl {
+                designation: designation.clone(),
+                feature,
+            },
+            _ => {
+                if let Some((name, _)) = lines.iter().find(|(name, _)| !name.is_empty()) {
+                    return Err(format!("a text variable `{name}` is not read"));
+                }
+                let text: Vec<&str> = lines.iter().map(|(_, line)| line.as_str()).collect();
+                ItemKind::FaceNote {
+                    text: text.join("\n"),
+                    feature,
+                }
+            }
+        };
+        Ok(Found {
+            order: id,
+            name: self.id_attribute(id),
+            kind,
+        })
+    }
+
     /// A placed datum target (recommended practices, section 6.6): its datum,
     /// its one face, its `orientation` and sizes. The placement's axis must
     /// point out of the face, the point must lie on the face's plane, and the
@@ -2181,6 +2236,7 @@ enum PmiKind {
     Unread(&'static str, &'static str),
     Datum,
     Target,
+    Text,
     Size,
     Location,
     BasicAngle,
@@ -2204,6 +2260,11 @@ fn candidate(id: u64, entity: &Entity) -> Option<Candidate<'_>> {
         PmiKind::Datum
     } else if name == "PLACED_DATUM_TARGET_FEATURE" && entity.parts.len() == 1 {
         PmiKind::Target
+    } else if name == "PROPERTY_DEFINITION"
+        && entity.parts.len() == 1
+        && string(entity.parts[0].1.first()).as_deref() == Some(SEMANTIC_TEXT)
+    {
+        PmiKind::Text
     } else if name == "DIMENSIONAL_SIZE" && entity.parts.len() == 1 {
         PmiKind::Size
     } else if entity.part("ANGULAR_LOCATION").is_some() {
@@ -2249,6 +2310,7 @@ fn read_items<'a>(
             }
             PmiKind::Datum => reader.datum(id),
             PmiKind::Target => reader.target(id, &entity.parts[0].1),
+            PmiKind::Text => reader.text(id, &entity.parts[0].1),
             PmiKind::Size => reader.size(id, &entity.parts[0].1),
             PmiKind::Location => reader.location(id),
             PmiKind::BasicAngle => reader.basic_angle(id, entity.part("ANGULAR_LOCATION").unwrap()),

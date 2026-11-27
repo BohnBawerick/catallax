@@ -441,6 +441,7 @@ fn sorted(pmi: Pmi<FaceId>) -> Pmi<FaceId> {
             ItemKind::Tolerance(tolerance) => tolerance.features.iter_mut().for_each(order),
             ItemKind::Texture(texture) => order(&mut texture.feature),
             ItemKind::Position(control) => control.features.iter_mut().for_each(order),
+            ItemKind::FaceNote { feature, .. } | ItemKind::Knurl { feature, .. } => order(feature),
             ItemKind::DatumTarget(_) => {}
         }
     }
@@ -2554,5 +2555,184 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
         reasons(&skipped).contains("the target point is outside its face"),
         "{}",
         reasons(&skipped)
+    );
+}
+
+/// The C-2B fixture plus a knurl on the boss, a two-line note on the flange top
+/// and a second note on the knurled boss itself.
+fn text_pmi(part: &Bracket, f: &GdtFaces) -> Pmi<FaceId> {
+    let boss = part.round(2, "8", ["30", "25"]);
+    let mut pmi = gdt_pmi(f);
+    pmi.items.extend([
+        item(
+            "Knurl",
+            ItemKind::Knurl {
+                designation: "RGE 0.8 DIN 82".into(),
+                feature: boss.clone(),
+            },
+        ),
+        item(
+            "Flange note",
+            ItemKind::FaceNote {
+                text: "Deburr after knurling\nNo marking on this face".into(),
+                feature: vec![f.flange_top],
+            },
+        ),
+        item(
+            "Boss note",
+            ItemKind::FaceNote {
+                text: "Protect the knurl during plating".into(),
+                feature: boss,
+            },
+        ),
+    ]);
+    pmi
+}
+
+#[test]
+fn knurl_and_face_notes_stay_apart_on_their_faces() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let boss = part.round(2, "8", ["30", "25"]);
+    let pmi = text_pmi(&part, &f);
+    pmi.validate().unwrap();
+    let (file, report) = write(&part, &pmi);
+    if let Ok(directory) = std::env::var("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("c2n-knurl-notes.step"),
+            &file,
+        )
+        .unwrap();
+    }
+    let (back, skipped) = read_back(&file, &report);
+    assert_eq!(skipped, Vec::new());
+
+    // The knurl and the note on the same boss stay two items of their own kinds.
+    let mut sorted_boss = boss.clone();
+    sorted_boss.sort();
+    match kind_of(&back, "Knurl") {
+        ItemKind::Knurl {
+            designation,
+            feature,
+        } => {
+            let mut feature = feature.clone();
+            feature.sort();
+            assert_eq!(
+                (designation.as_str(), feature),
+                ("RGE 0.8 DIN 82", sorted_boss.clone())
+            );
+        }
+        other => panic!("the knurl reads back as {other:?}"),
+    }
+    match kind_of(&back, "Boss note") {
+        ItemKind::FaceNote { text, feature } => {
+            let mut feature = feature.clone();
+            feature.sort();
+            assert_eq!(
+                (text.as_str(), feature),
+                ("Protect the knurl during plating", sorted_boss)
+            );
+        }
+        other => panic!("the boss note reads back as {other:?}"),
+    }
+    assert_eq!(
+        kind_of(&back, "Flange note"),
+        &ItemKind::FaceNote {
+            text: "Deburr after knurling\nNo marking on this face".into(),
+            feature: vec![f.flange_top],
+        }
+    );
+    let mut expected = pmi.clone();
+    for item in &mut expected.items {
+        if let ItemKind::Size(size) = &mut item.kind {
+            size.nominal = Some(q("8"));
+        }
+    }
+    assert_same(back, expected);
+
+    // Text is counted apart from semantic PMI, and none of it is drawn: the
+    // carrier is editable text, not a graphic callout or a tolerance.
+    let counts: Vec<String> = validation_items(&file)
+        .into_values()
+        .flatten()
+        .map(|(_, fields)| fields)
+        .collect();
+    for count in [
+        "'number of semantic pmi elements',12.",
+        "'number of annotations',0.",
+        "'number of semantic text notes',3.",
+        "'number of semantic text notes on part',0.",
+        "'number of semantic text notes on geometry',3.",
+        "'number of semantic text notes on PMI',0.",
+    ] {
+        assert!(counts.iter().any(|fields| fields == count), "{count}");
+    }
+    assert_eq!(
+        file.matches("PROPERTY_DEFINITION('semantic text'").count(),
+        3
+    );
+    assert_eq!(
+        file.matches("DESCRIPTIVE_REPRESENTATION_ITEM('knurl designation','RGE 0.8 DIN 82')")
+            .count(),
+        1
+    );
+    assert!(!file.contains("DRAUGHTING_CALLOUT"));
+
+    // The P1 bracket, which has no text, writes no text counts.
+    let (p1, _) = bracket_pmi(&part);
+    let (p1, _) = write(&part, &p1);
+    assert!(!p1.contains("semantic text"));
+}
+
+#[test]
+fn bad_text_is_refused_and_unknown_text_is_reported() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    for (kind, reason) in [
+        (
+            ItemKind::FaceNote {
+                text: " ".into(),
+                feature: vec![f.flange_top],
+            },
+            "a face note is lines of text",
+        ),
+        (
+            ItemKind::FaceNote {
+                text: "One\n\nThree".into(),
+                feature: vec![f.flange_top],
+            },
+            "a face note is lines of text",
+        ),
+        (
+            ItemKind::Knurl {
+                designation: "RGE 0.8 'DIN' 82".into(),
+                feature: vec![f.flange_top],
+            },
+            "a knurl designation is plain text",
+        ),
+        (
+            ItemKind::Knurl {
+                designation: "RGE 0.8 DIN 82".into(),
+                feature: Vec::new(),
+            },
+            "a feature has no face",
+        ),
+    ] {
+        let mut pmi = gdt_pmi(&f);
+        pmi.items.push(item("Text", kind));
+        let detail = try_write(&part, &pmi).expect_err(reason);
+        assert!(detail.contains(reason), "{detail} lacks {reason}");
+    }
+
+    // A text variable this reader does not know is reported, and the rest stays.
+    let (file, report) = write(&part, &text_pmi(&part, &f));
+    let broken = mutate(&file, "'knurl designation'", "'surface treatment'");
+    let (back, skipped) = read_back(&broken, &report);
+    assert_eq!(back.items.len(), 14);
+    assert!(
+        skipped
+            .iter()
+            .any(|skip| skip.reason == "a text variable `surface treatment` is not read"),
+        "{skipped:?}"
     );
 }

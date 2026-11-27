@@ -84,6 +84,11 @@ pub const TARGET_LENGTH: &str = "target length";
 pub const TARGET_WIDTH: &str = "target width";
 /// The diameter of a circular datum target.
 pub const TARGET_DIAMETER: &str = "target diameter";
+/// The name of the property that carries editable text (recommended
+/// practices, section 7.4.2).
+pub const SEMANTIC_TEXT: &str = "semantic text";
+/// The variable name of a knurl designation held as semantic text.
+pub const KNURL: &str = "knurl designation";
 
 /// The AP242 modifier of a material condition or boundary.
 fn modifier(material: MaterialCondition) -> &'static str {
@@ -863,6 +868,50 @@ impl Emitter<'_> {
             .add("DIRECTION", vec![text("''"), Field::List(xyz)]))
     }
 
+    /// Editable text on an aspect of its own on the faces (recommended
+    /// practices, section 7.4): one descriptive item per line, each with its
+    /// variable name.
+    fn face_text(
+        &mut self,
+        lines: &[(&str, &str)],
+        feature: &[FaceId],
+        item: &str,
+    ) -> Result<(), Refusal> {
+        let aspect = self.graph.add(
+            "SHAPE_ASPECT",
+            vec![
+                quoted(item),
+                text("''"),
+                self.references.product.shape.into(),
+                boolean(true),
+            ],
+        );
+        self.usage(aspect, feature, item)?;
+        let items = lines
+            .iter()
+            .map(|(name, line)| {
+                self.graph.add(
+                    "DESCRIPTIVE_REPRESENTATION_ITEM",
+                    vec![quoted(name), quoted(line)],
+                )
+            })
+            .collect::<Vec<_>>();
+        let property = self.graph.add(
+            "PROPERTY_DEFINITION",
+            vec![quoted(SEMANTIC_TEXT), text("''"), aspect.into()],
+        );
+        let representation = self.graph.add(
+            "REPRESENTATION",
+            vec![text("''"), refs(items), self.references.context.into()],
+        );
+        self.root(
+            "PROPERTY_DEFINITION_REPRESENTATION",
+            vec![property.into(), representation.into()],
+        );
+        self.root("ID_ATTRIBUTE", vec![quoted(item), property.into()]);
+        Ok(())
+    }
+
     /// A placed datum target (recommended practices, section 6.6): its
     /// `orientation` placement and sizes as parameters, its relationship to
     /// its datum, and its relationship to an aspect of its face (6.6.3).
@@ -1301,7 +1350,10 @@ impl Emitter<'_> {
             pmi.items.iter().filter(|item| kind(&item.kind)).count()
         };
         let counts = [
-            ("number of semantic pmi elements", pmi.items.len()),
+            (
+                "number of semantic pmi elements",
+                of(|kind| !kind.is_text()),
+            ),
             (
                 "number of dimensional locations",
                 of(|kind| matches!(kind, ItemKind::Location(_) | ItemKind::BasicAngle { .. })),
@@ -1351,6 +1403,18 @@ impl Emitter<'_> {
             ),
             ("number of annotations", self.annotations),
         ];
+        // Text notes are counted apart, only by a part that has any
+        // (section 7.4.3); all of them are on geometry.
+        let notes = of(ItemKind::is_text);
+        let text_counts = [
+            ("number of semantic text notes", notes),
+            ("number of semantic text notes on part", 0),
+            ("number of semantic text notes on geometry", notes),
+            ("number of semantic text notes on PMI", 0),
+        ];
+        let counts = counts
+            .into_iter()
+            .chain(text_counts.into_iter().filter(|_| notes > 0));
         let items = counts
             .into_iter()
             .map(|(name, count)| {
@@ -1619,6 +1683,14 @@ pub(crate) fn emit(
             }
             ItemKind::Tolerance(tolerance) => emitter.tolerance(tolerance, id)?,
             ItemKind::DatumTarget(target) => emitter.datum_target(target, id)?,
+            ItemKind::FaceNote { text, feature } => {
+                let lines: Vec<(&str, &str)> = text.split('\n').map(|line| ("", line)).collect();
+                emitter.face_text(&lines, feature, id)?;
+            }
+            ItemKind::Knurl {
+                designation,
+                feature,
+            } => emitter.face_text(&[(KNURL, designation)], feature, id)?,
             ItemKind::Position(control) => emitter.position(control, id)?,
             ItemKind::Texture(texture) => {
                 emitter.texture(texture, id, texture_slot)?;

@@ -624,7 +624,9 @@ pub(super) fn dimension(
         | ItemKind::Tolerance(_)
         | ItemKind::Texture(_)
         | ItemKind::DatumTarget(_)
-        | ItemKind::Position(_) => return Ok(None),
+        | ItemKind::Position(_)
+        | ItemKind::FaceNote { .. }
+        | ItemKind::Knurl { .. } => return Ok(None),
     };
     Ok(Some(Measured { value, bevel_angle }))
 }

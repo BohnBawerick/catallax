@@ -207,6 +207,14 @@ a hole or the face edge. Another changes the written file and checks that a bad
 target drops its datum and the controls that need that datum, while the
 independent items stay.
 
+The text test adds a knurl designation and a note to the boss, and a two-line
+note to the flange top. The knurl and the boss note must read back as two items
+of their own kinds on the same faces. The file must count three text notes,
+all on geometry, apart from the twelve semantic items, and draw no callout for
+them. The P1 file, which has no text, must write no text counts. Bad text is
+refused before writing, and a text variable the reader does not know is
+reported while the other items stay.
+
 ## Exact oracles
 
 `verify_exact.py` uses Python's standard-library `fractions.Fraction` only. It independently checks the 170-entity count, the squared rounding-distance bound `1/30000000000`, the large-coordinate error `10^13/3`, a rational alternating-series enclosure of `atan(3/4)`, the two adjacent decimals around `sqrt(2)`, the named quaternion matrix and the intersection equations.

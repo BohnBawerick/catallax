@@ -120,30 +120,32 @@ fn sample_analytic(
     size: [usize; 2],
     positions: &mut Vec<[f32; 4]>,
 ) -> Result<(), FaceRefusal> {
-    let (frame, radii, axial): (_, [f64; 2], fn([f64; 2], f64) -> [f64; 3]) = match surface {
-        DisplaySurface::Cone { frame, slope } => (frame, [*slope, 0.0], |[slope, _], v| {
-            [v * slope, v * slope, v]
-        }),
-        DisplaySurface::Sphere { frame, radius } => (frame, [*radius, 0.0], |[radius, _], v| {
-            let (s, c) = (v.rem_euclid(1.0) * std::f64::consts::TAU).sin_cos();
-            [radius * c, radius * c, radius * s]
-        }),
-        DisplaySurface::Torus {
-            frame,
-            major,
-            minor,
-        } => (frame, [*major, *minor], |[major, minor], v| {
-            let (s, c) = (v.rem_euclid(1.0) * std::f64::consts::TAU).sin_cos();
-            [major + minor * c, major + minor * c, minor * s]
-        }),
-        DisplaySurface::EllipticCylinder { frame, radii } => (frame, *radii, |[x, y], v| [x, y, v]),
+    let frame = match surface {
+        DisplaySurface::Cone { frame, .. }
+        | DisplaySurface::Sphere { frame, .. }
+        | DisplaySurface::Torus { frame, .. }
+        | DisplaySurface::EllipticCylinder { frame, .. } => frame,
         _ => unreachable!("only unsupported analytic carriers are sampled here"),
     };
     let azimuths: Vec<_> = (0..size[0])
         .map(|u| (tick(bounds, 0, u, size[0]).rem_euclid(1.0) * std::f64::consts::TAU).sin_cos())
         .collect();
     for v in 0..size[1] {
-        let [rx, ry, z] = axial(radii, tick(bounds, 1, v, size[1]));
+        let v = tick(bounds, 1, v, size[1]);
+        let [rx, ry, z] = match surface {
+            DisplaySurface::Cone { slope, .. } => [v * slope, v * slope, v],
+            DisplaySurface::Sphere { radius, .. } => {
+                let (sin, cos) = (v.rem_euclid(1.0) * std::f64::consts::TAU).sin_cos();
+                [radius * cos, radius * cos, radius * sin]
+            }
+            DisplaySurface::Torus { major, minor, .. } => {
+                let (sin, cos) = (v.rem_euclid(1.0) * std::f64::consts::TAU).sin_cos();
+                let r = major + minor * cos;
+                [r, r, minor * sin]
+            }
+            DisplaySurface::EllipticCylinder { radii: [x, y], .. } => [*x, *y, v],
+            _ => unreachable!(),
+        };
         for &(sin, cos) in &azimuths {
             positions.push(position32(point(frame, rx * cos, ry * sin, z))?);
         }
@@ -221,9 +223,7 @@ impl Basis {
         }
         let (lo, hi) = (knots[degree], knots[n]);
         let tolerance = (hi - lo) * 1e-10;
-        let period = hi - lo;
-        let periodic = bounds[0][axis] >= lo - tolerance && bounds[1][axis] <= hi + tolerance;
-        if !periodic {
+        if bounds[axis][0] < lo - tolerance || bounds[axis][1] > hi + tolerance {
             return Err(FaceRefusal::UnsupportedTrim);
         }
         let stride = degree + 1;
@@ -236,7 +236,7 @@ impl Basis {
         let mut left = vec![0.0; stride];
         let mut right = vec![0.0; stride];
         for (i, values) in basis.values.chunks_exact_mut(stride).enumerate() {
-            let t = tick(bounds, axis, i, count).clamp(lo, lo + period);
+            let t = tick(bounds, axis, i, count).clamp(lo, hi);
             let span = knots
                 .partition_point(|&k| k <= t)
                 .saturating_sub(1)

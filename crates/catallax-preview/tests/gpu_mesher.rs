@@ -118,8 +118,16 @@ fn dx12_dispatch_smoke() {
         assert_eq!(mesh.faces[0].face, 42);
         assert!(!mesh.faces[0].draw.as_ref().unwrap().sampled_grid);
         let (vertices, indices) = readback(&device, &queue, &mesh.buffers.unwrap()).await;
-        assert!(vertices.iter().any(|v| v.position[..3] == [1., 1.5, 0.]));
-        assert!(vertices.iter().all(|v| v.normal == [0., 0., 1., 0.]));
+        assert!(
+            vertices
+                .iter()
+                .any(|v| v.position.map(f32::to_bits) == [1., 1.5, 0., 1.].map(f32::to_bits))
+        );
+        assert!(
+            vertices
+                .iter()
+                .all(|v| v.normal.map(f32::to_bits) == [0., 0., 1., 0.].map(f32::to_bits))
+        );
         let area: f32 = indices
             .chunks_exact(3)
             .map(|t| {
@@ -151,7 +159,7 @@ async fn adapter(backends: wgpu::Backends, fallback: bool) -> Option<wgpu::Adapt
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: fallback,
-            compatible_surface: None,
+            ..Default::default()
         })
         .await
         .ok()
@@ -261,7 +269,7 @@ async fn readback(
         })
         .unwrap();
     recv.await.unwrap().unwrap();
-    let mapped = slice.get_mapped_range();
+    let mapped = slice.get_mapped_range().unwrap();
     let (vertices, indices) = mapped.split_at(vertex_bytes as usize);
     let vertices = bytemuck::cast_slice::<_, PreviewVertex>(vertices).to_vec();
     let indices = bytemuck::cast_slice::<_, u32>(indices).to_vec();

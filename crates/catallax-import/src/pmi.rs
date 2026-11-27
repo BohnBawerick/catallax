@@ -16,10 +16,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use catallax_numbers::Rational;
 use catallax_shapes::{RPoint3, RVector3};
 use catallax_step::pmi::{
-    Anchor, At, COUNTERBORE, COUNTERSINK, Characteristic, Datum, Feature, GeometricTolerance,
-    HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize, INCLUDED_ANGLE, Item,
-    ItemError, ItemKind, Limits, Location, MaterialCondition, PartNotes, PartValidator, Pmi,
-    Process, Size, SizeKind, SurfaceTexture, THREAD, THREAD_DEPTH, THROUGH,
+    Anchor, At, BEVEL_ANGLE, CHAMFER, COUNTERBORE, COUNTERSINK, ChamferNominal, Characteristic,
+    Datum, EDGE_BREAK, FIRST_SIDE, Feature, GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER,
+    HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize, INCLUDED_ANGLE, Item, ItemError, ItemKind, Limits,
+    Location, MAX_SETBACK, MIN_SETBACK, MaterialCondition, PartNotes, PartValidator, Pmi, Process,
+    SECOND_SIDE, Size, SizeKind, SurfaceTexture, THREAD, THREAD_DEPTH, THROUGH, WIDTH,
 };
 
 use crate::ImportRefusal;
@@ -59,8 +60,7 @@ const ASPECT_PARTS: [&str; 9] = [
 ];
 
 /// Dimension and datum entities this reader knows of and does not read.
-const UNREAD: [(&str, &str); 9] = [
-    ("ANGULAR_LOCATION", "an angle between features is not read"),
+const UNREAD: [(&str, &str); 8] = [
     ("ANGULAR_SIZE", "an angular size is not read"),
     (
         "DIMENSIONAL_LOCATION_WITH_PATH",
@@ -600,6 +600,14 @@ impl<'a> Reader<'a> {
 
     /// The nominal value and limits a dimension states.
     fn dimension_value(&self, id: u64) -> Result<(Option<Rational>, Option<Limits>), String> {
+        self.dimension_value_as(id, Self::length)
+    }
+
+    fn dimension_value_as(
+        &self,
+        id: u64,
+        measure: fn(&Self, u64) -> Option<(String, Rational)>,
+    ) -> Result<(Option<Rational>, Option<Limits>), String> {
         let (mut nominal, mut upper, mut lower) = (None, None, None);
         let mut basic = false;
         for (_, params) in self.sharing_at(id, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION", 0) {
@@ -619,7 +627,7 @@ impl<'a> Reader<'a> {
                         }
                     }
                 }
-                if let Some((name, value)) = self.length(item) {
+                if let Some((name, value)) = measure(self, item) {
                     if name.contains("upper") {
                         upper = Some(value);
                     } else if name.contains("lower") {
@@ -736,7 +744,7 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| format!("the `{name}` attribute is not a length with a known unit"))
     }
 
-    fn hole_angle(&self, item: u64) -> Option<Rational> {
+    fn degrees(&self, item: u64) -> Option<Rational> {
         let measure = self.entity(item)?;
         measure.part("PLANE_ANGLE_MEASURE_WITH_UNIT")?;
         let params = measure.part("MEASURE_WITH_UNIT")?;
@@ -787,7 +795,7 @@ impl<'a> Reader<'a> {
                 HoleHead::Countersink {
                     diameter: self.hole_length(diameter, HEAD_DIAMETER)?,
                     included_angle: self
-                        .hole_angle(angle)
+                        .degrees(angle)
                         .ok_or("the included angle is not in the supported degree unit")?,
                 },
                 aspect,
@@ -837,8 +845,98 @@ impl<'a> Reader<'a> {
         text
     }
 
+    fn planar_feature(&self, aspect: u64, owner: u64) -> Result<Feature<String>, String> {
+        if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != Some(owner) {
+            return Err("a planar dimension's face group belongs to another part".into());
+        }
+        let (feature, derived) = self.end(aspect)?;
+        if derived
+            || !feature.iter().all(|face| {
+                self.face_surface(face)
+                    .is_some_and(|id| self.has(id, "PLANE"))
+            })
+        {
+            return Err("the dimension needs planar faces, not derived shapes".into());
+        }
+        Ok(feature)
+    }
+
+    fn planar_size(&self, id: u64, aspect: u64, name: &str) -> Result<Found, String> {
+        let owner = self
+            .aspect_params(aspect)
+            .and_then(|p| reference(p.get(2)))
+            .ok_or("the planar size has no owning part")?;
+        let links = self.sharing_at(aspect, "SHAPE_ASPECT_RELATIONSHIP", 2);
+        let side = |role| {
+            let mut found = links
+                .iter()
+                .filter(|(_, p)| matches!(p.first(), Some(Param::Str(name)) if name == role));
+            let (_, params) = found
+                .next()
+                .ok_or_else(|| format!("the planar size has no {role}"))?;
+            let target = reference(params.get(3))
+                .filter(|target| *target != aspect)
+                .ok_or("a planar size side names no separate face group")?;
+            if found.next().is_some() {
+                return Err(format!("the planar size has more than one {role}"));
+            }
+            self.planar_feature(target, owner)
+        };
+        let sides = [side(FIRST_SIDE)?, side(SECOND_SIDE)?];
+        let (nominal, limits) = self.dimension_value(id)?;
+        let nominal = nominal.ok_or("the planar size has no nominal length with a known unit")?;
+        let attribute = |name| {
+            self.hole_attribute(aspect, name)?
+                .ok_or_else(|| format!("the planar size has no `{name}` attribute"))
+        };
+        let kind = match name {
+            WIDTH => ItemKind::Width {
+                flats: sides,
+                limits,
+                nominal: Some(nominal),
+            },
+            CHAMFER | EDGE_BREAK => {
+                if limits.is_some() {
+                    return Err("the bevel size carries unsupported dimensional limits".into());
+                }
+                let bevel = self.planar_feature(aspect, owner)?;
+                if name == CHAMFER {
+                    ItemKind::Chamfer {
+                        bevel,
+                        sides,
+                        nominal: Some(ChamferNominal {
+                            setback_mm: nominal,
+                            angle_deg: self
+                                .degrees(attribute(BEVEL_ANGLE)?)
+                                .ok_or("the bevel angle is not in the supported degree unit")?,
+                        }),
+                    }
+                } else {
+                    ItemKind::EdgeBreak {
+                        bevel,
+                        sides,
+                        min_mm: self.hole_length(attribute(MIN_SETBACK)?, MIN_SETBACK)?,
+                        max_mm: self.hole_length(attribute(MAX_SETBACK)?, MAX_SETBACK)?,
+                        nominal: Some(nominal),
+                    }
+                }
+            }
+            _ => unreachable!("planar size was selected by its name"),
+        };
+        Ok(Found {
+            order: id,
+            name: self.id_attribute(id),
+            kind,
+        })
+    }
+
     fn size(&self, id: u64, params: &[Param]) -> Result<Found, String> {
-        let mut kind = match string(params.get(1)).unwrap_or_default().as_str() {
+        let name = string(params.get(1)).unwrap_or_default();
+        let mut kind = match name.as_str() {
+            WIDTH | CHAMFER | EDGE_BREAK => {
+                let aspect = reference(params.first()).ok_or("it names no feature")?;
+                return self.planar_size(id, aspect, &name);
+            }
             "diameter" => SizeKind::Diameter,
             "radius" => SizeKind::Radius,
             other => return Err(format!("a `{other}` size is not read")),
@@ -1021,6 +1119,49 @@ impl<'a> Reader<'a> {
                 limits,
                 nominal,
             }),
+        })
+    }
+
+    fn basic_angle(&self, id: u64, params: &[Param]) -> Result<Found, String> {
+        let (name, a, b) = self.relationship(id).ok_or("it names no two planes")?;
+        if name != "angular distance" {
+            return Err(format!("a `{name}` angular location is not read"));
+        }
+        let (nominal, limits) = self.dimension_value_as(id, |reader, measure| {
+            let params = reader.entity(measure)?.part("REPRESENTATION_ITEM")?;
+            Some((string(params.first())?, reader.degrees(measure)?))
+        })?;
+        if limits != Some(Limits::Basic) {
+            return Err("the angle is not a basic (theoretical) dimension".into());
+        }
+        let nominal = nominal.ok_or("the basic angle is not in the supported degree unit")?;
+        let selection = if params.len() == 1 {
+            params.first()
+        } else {
+            params.get(4)
+        };
+        if !matches!(selection, Some(Param::Enum(relator)) if match relator.as_str() {
+            "SMALL" => nominal < Rational::from_i64(90),
+            "EQUAL" => nominal == Rational::from_i64(90),
+            "LARGE" => nominal > Rational::from_i64(90),
+            _ => false,
+        }) {
+            return Err("the angle selection does not agree with the stated angle".into());
+        }
+        let owner = self
+            .aspect_params(a)
+            .and_then(|p| reference(p.get(2)))
+            .ok_or("the angular location has no owning part")?;
+        Ok(Found {
+            order: id,
+            name: self.id_attribute(id),
+            kind: ItemKind::BasicAngle {
+                planes: [
+                    self.planar_feature(a, owner)?,
+                    self.planar_feature(b, owner)?,
+                ],
+                nominal: Some(nominal),
+            },
         })
     }
 
@@ -1261,9 +1402,9 @@ impl<'a> Reader<'a> {
 /// Reads the manufacturing information of a STEP file.
 ///
 /// Faces are named by entity, such as `#17`: the keys an import of the same
-/// bytes gives its faces. A dimension's [`Size::nominal`] or
-/// [`Location::nominal`] is the value the file states, in millimetres; the
-/// caller decides what to do when the geometry disagrees.
+/// bytes gives its faces. A dimension's nominal is the value the file states,
+/// in millimetres or degrees; the caller decides what to do when the geometry
+/// disagrees.
 ///
 /// Refuses only a file that is not readable Part 21 text. What cannot be
 /// represented is listed in [`StepPmi::skipped`].
@@ -1319,6 +1460,7 @@ enum PmiKind {
     Datum,
     Size,
     Location,
+    BasicAngle,
     Texture,
     Tolerance(Characteristic),
 }
@@ -1339,6 +1481,8 @@ fn candidate(id: u64, entity: &Entity) -> Option<Candidate<'_>> {
         PmiKind::Datum
     } else if name == "DIMENSIONAL_SIZE" && entity.parts.len() == 1 {
         PmiKind::Size
+    } else if entity.part("ANGULAR_LOCATION").is_some() {
+        PmiKind::BasicAngle
     } else if entity.part("DIMENSIONAL_LOCATION").is_some() {
         PmiKind::Location
     } else if name == "SURFACE_TEXTURE_REPRESENTATION" && entity.parts.len() == 1 {
@@ -1378,6 +1522,7 @@ fn read_items<'a>(
             PmiKind::Datum => reader.datum(id),
             PmiKind::Size => reader.size(id, &entity.parts[0].1),
             PmiKind::Location => reader.location(id),
+            PmiKind::BasicAngle => reader.basic_angle(id, entity.part("ANGULAR_LOCATION").unwrap()),
             PmiKind::Texture => reader.texture(id, &entity.parts[0].1),
             PmiKind::Tolerance(characteristic) => reader.tolerance(id, characteristic),
         };

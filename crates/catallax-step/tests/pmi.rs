@@ -12,8 +12,9 @@ use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{HolePart, Recipe, Role};
 use catallax_shapes::{Pose, Surface};
 use catallax_step::pmi::{
-    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HoleHead, HoleSize, Item,
-    ItemKind, Limits, Location, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture, nominals,
+    Anchor, At, ChamferNominal, Characteristic, Datum, Feature, GeometricTolerance, HoleHead,
+    HoleSize, Item, ItemKind, Limits, Location, PartNotes, Pmi, Process, Size, SizeKind,
+    SurfaceTexture, nominals,
 };
 use catallax_step::{StepOptions, write_step_with_pmi};
 use catallax_topology::{BodyId, FaceId, Loop, Model, cylinder};
@@ -428,6 +429,13 @@ fn sorted(pmi: Pmi<FaceId>) -> Pmi<FaceId> {
             ItemKind::Location(location) => {
                 order(&mut location.from.feature);
                 order(&mut location.to.feature);
+            }
+            ItemKind::Width { flats, .. } | ItemKind::BasicAngle { planes: flats, .. } => {
+                flats.iter_mut().for_each(order);
+            }
+            ItemKind::Chamfer { bevel, sides, .. } | ItemKind::EdgeBreak { bevel, sides, .. } => {
+                order(bevel);
+                sides.iter_mut().for_each(order);
             }
             ItemKind::Tolerance(tolerance) => tolerance.features.iter_mut().for_each(order),
             ItemKind::Texture(texture) => order(&mut texture.feature),
@@ -1446,4 +1454,250 @@ fn a_non_equivalent_group_is_not_a_simple_diameter() {
     );
     assert_eq!(imported.pmi.items.len(), 4);
     assert!(!imported.pmi.items.iter().any(|item| item.id == "pattern"));
+}
+
+fn planar_fixture(width: &str, first: &str, second: &str) -> (Bracket, [Feature<FaceId>; 4]) {
+    use serde_json::json;
+
+    let recipe = Recipe::parse(
+        &json!({
+            "format":"catallax-recipe/3", "name":"planar-pmi", "steps":[
+                {"id":"base","op":"block","size":[width,"12","8"],
+                 "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+                {"id":"bevel","op":"chamfer","body":"base","distance":first,"other_distance":second,
+                 "edges":[{"between":[{"step":"base","role":{"side":{"segment":"x_min"}}},
+                                      {"step":"base","role":{"side":{"segment":"y_min"}}}]}]}
+            ], "result":"bevel"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    let part = Bracket {
+        model: built.model,
+        body: built.result,
+    };
+    let bevel: Feature<FaceId> = part
+        .faces()
+        .into_iter()
+        .filter(|id| {
+            let Surface::Plane(plane) = part.model.geom().surface(part.model.face(*id).surface)
+            else {
+                return false;
+            };
+            let [x, y, z] = plane.normal.rational_components().unwrap();
+            !x.is_zero() && !y.is_zero() && z.is_zero()
+        })
+        .collect();
+    assert_eq!(bevel.len(), 1);
+    let sides = [
+        part.planes(0, "0"),
+        part.planes(1, "0"),
+        part.planes(0, width),
+        bevel,
+    ];
+    (part, sides)
+}
+
+fn planar_pmi([x_min, y_min, x_max, bevel]: &[Feature<FaceId>; 4]) -> Pmi<FaceId> {
+    Pmi {
+        items: vec![
+            item(
+                "opposed flats",
+                ItemKind::Width {
+                    flats: [x_min.clone(), x_max.clone()],
+                    limits: Some(Limits::Deviations {
+                        lower: q("-0.1"),
+                        upper: q("0.2"),
+                    }),
+                    nominal: None,
+                },
+            ),
+            item(
+                "chamfer",
+                ItemKind::Chamfer {
+                    bevel: bevel.clone(),
+                    sides: [x_min.clone(), y_min.clone()],
+                    nominal: None,
+                },
+            ),
+            item(
+                "edge break",
+                ItemKind::EdgeBreak {
+                    bevel: bevel.clone(),
+                    sides: [x_min.clone(), y_min.clone()],
+                    min_mm: q("0.5"),
+                    max_mm: q("2.5"),
+                    nominal: None,
+                },
+            ),
+            item(
+                "basic angle",
+                ItemKind::BasicAngle {
+                    planes: [x_min.clone(), bevel.clone()],
+                    nominal: None,
+                },
+            ),
+        ],
+        part: PartNotes::default(),
+    }
+}
+
+fn measured_planar(
+    mut pmi: Pmi<FaceId>,
+    [width, setback, angle, largest, included]: [&str; 5],
+) -> Pmi<FaceId> {
+    for item in &mut pmi.items {
+        match &mut item.kind {
+            ItemKind::Width { nominal, .. } => *nominal = Some(q(width)),
+            ItemKind::Chamfer { nominal, .. } => {
+                *nominal = Some(ChamferNominal {
+                    setback_mm: q(setback),
+                    angle_deg: q(angle),
+                })
+            }
+            ItemKind::EdgeBreak { nominal, .. } => *nominal = Some(q(largest)),
+            ItemKind::BasicAngle { nominal, .. } => *nominal = Some(q(included)),
+            _ => unreachable!(),
+        }
+    }
+    pmi
+}
+
+fn read_planar(file: &str, report: &catallax_step::StepReport) -> Pmi<FaceId> {
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+    let faces = written_faces(file, report);
+    read.pmi
+        .try_map(|_, face| faces.get(face).copied().ok_or_else(|| face.clone()))
+        .unwrap()
+}
+
+#[test]
+fn planar_dimensions_keep_their_roles_and_recompute_after_edit() {
+    let (original, roles) = planar_fixture("10", "2", "2");
+    let pmi = planar_pmi(&roles);
+    let (file, report) = write(&original, &pmi);
+    let read = read_planar(&file, &report);
+    assert_eq!(
+        sorted(read.clone()),
+        sorted(measured_planar(pmi, ["10", "2", "45", "2", "135"]))
+    );
+    assert!(
+        file.lines()
+            .any(|line| line.contains("=ANGULAR_LOCATION(") && line.ends_with(",.LARGE.);"))
+    );
+    assert!(file.contains("PLANE_ANGLE_MEASURE(135.)"));
+    if let Ok(directory) = std::env::var("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("planar-pmi.step"),
+            &file,
+        )
+        .unwrap();
+    }
+
+    let (edited, edited_roles) = planar_fixture("14", "3", "4");
+    // Carry the original PMI, including its now stale values, to the faces
+    // of the edited recipe. The edge break is now outside its explicit bounds.
+    let faces: BTreeMap<_, _> = roles
+        .iter()
+        .zip(&edited_roles)
+        .flat_map(|(old, new)| {
+            assert_eq!(old.len(), new.len());
+            old.iter().copied().zip(new.iter().copied())
+        })
+        .collect();
+    let moved = read
+        .try_map(|_, face| faces.get(face).copied().ok_or(*face))
+        .unwrap();
+    let values = nominals(&edited.model, &moved, &mut Decider::default()).unwrap();
+    let values: Vec<_> = values
+        .into_iter()
+        .map(|value| value.unwrap().as_rational().unwrap())
+        .collect();
+    assert_eq!(values, ["14", "3", "4", "126.869897645844"].map(q));
+    let (file, report) = write(&edited, &moved);
+    assert_eq!(
+        sorted(read_planar(&file, &report)),
+        sorted(measured_planar(
+            moved,
+            ["14", "3", "53.130102354156", "4", "126.869897645844"]
+        )),
+    );
+}
+
+#[test]
+fn malformed_planar_pmi_does_not_hide_other_items() {
+    let (part, roles) = planar_fixture("10", "2", "2");
+    let pmi = planar_pmi(&roles);
+    let (file, _) = write(&part, &pmi);
+    let broken = file
+        .replace(
+            "PROPERTY_DEFINITION('maximum setback',",
+            "PROPERTY_DEFINITION('unknown setback',",
+        )
+        .replace(",.LARGE.);", ",.SMALL.);");
+    let imported = read_step_pmi(broken.as_bytes()).unwrap();
+    assert_eq!(
+        imported
+            .pmi
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["opposed flats", "chamfer"]
+    );
+    assert_eq!(imported.skipped.len(), 2);
+    assert!(
+        imported
+            .skipped
+            .iter()
+            .any(|skip| skip.reason.contains("maximum setback"))
+    );
+    assert!(
+        imported
+            .skipped
+            .iter()
+            .any(|skip| skip.reason.contains("angle selection"))
+    );
+
+    let [x_min, y_min, x_max, bevel] = roles;
+    let break_sides = [x_min.clone(), y_min.clone()];
+    for kind in [
+        ItemKind::Width {
+            flats: [x_min.clone(), y_min.clone()],
+            limits: None,
+            nominal: None,
+        },
+        ItemKind::Chamfer {
+            bevel: bevel.clone(),
+            sides: [x_max.clone(), y_min],
+            nominal: None,
+        },
+        ItemKind::BasicAngle {
+            planes: [x_min, x_max],
+            nominal: None,
+        },
+    ] {
+        let invalid = Pmi {
+            items: vec![item("wrong faces", kind)],
+            part: PartNotes::default(),
+        };
+        let refusal = nominals(&part.model, &invalid, &mut Decider::default()).unwrap_err();
+        assert_eq!(refusal.code, "step.pmi-not-measurable");
+    }
+    let invalid = Pmi {
+        items: vec![item(
+            "wrong bounds",
+            ItemKind::EdgeBreak {
+                bevel,
+                sides: break_sides,
+                min_mm: q("2"),
+                max_mm: q("1"),
+                nominal: None,
+            },
+        )],
+        part: PartNotes::default(),
+    };
+    assert_eq!(invalid.validate().unwrap_err().code, "step.pmi-invalid");
 }

@@ -97,7 +97,7 @@ fn point(face: &Definition, [u, v]: [f64; 2]) -> V {
         }
         Kind::Sweep => {
             let t = 1.0 - u;
-            let profile = if a == 2.0 {
+            let profile = if a < 3.0 {
                 add(mul(t * t, p), add(mul(2.0 * t * u, axis), mul(u * u, x)))
             } else {
                 add(

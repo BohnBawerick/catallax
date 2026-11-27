@@ -63,15 +63,17 @@ use super::float::{
 };
 use super::{ContourFit, Contours, contour_generators, same_point};
 use crate::ApplicationBody;
-use crate::queries::{QueryRefusal, query, sign};
+use crate::queries::{QueryRefusal, drawing_query, sign};
 
 mod cross;
 mod exact;
 pub(super) mod geo;
+mod open_conic;
 mod ray;
 mod surface;
 
 use geo::{Box3, Geo, Sheet, V3};
+use open_conic::OpenConic;
 
 /// Code of the mark a [`HiddenLineView`] carries when a cut was placed by
 /// the binary64 search. Its bound is the largest sheet distance left between
@@ -153,6 +155,7 @@ pub(super) enum Form {
         /// The conic's plane holds the view direction.
         edge_on: bool,
     },
+    OpenConic(OpenConic),
     Spline,
 }
 
@@ -397,6 +400,20 @@ fn carrier(
                 fit: None,
             })
         }
+        form @ (CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. }) => {
+            let ends =
+                ends.ok_or_else(|| Refusal::new("app.view-curve", "an open conic needs two ends"))?;
+            let open = OpenConic::new(form, ends.map(|p| scratch.geom().position(p)), d, dec)?;
+            let geo = open.geo(floor, dec)?;
+            Ok(Carrier {
+                curve,
+                form: Form::OpenConic(open),
+                axes: None,
+                geo,
+                closed: false,
+                fit: None,
+            })
+        }
         CurveForm::BSpline(spline) => {
             let plain = if matches!(scratch.geom().curve(curve), Curve::BSpline(_)) {
                 curve
@@ -408,10 +425,6 @@ fn carrier(
         CurveForm::Branch | CurveForm::PatchSection(_) | CurveForm::PatchPair(_) => {
             fitted_carrier(scratch, curve, ends, floor, marks, dec)
         }
-        _ => Err(Refusal::new(
-            "app.view-curve",
-            "hidden-line views of edges on parabolas and hyperbolas are unfinished",
-        )),
     }
 }
 
@@ -441,6 +454,7 @@ fn stroke(
     let range = match ends {
         None => c.geo.whole(),
         Some(_) if anchored && matches!(c.geo, Geo::Spline { .. }) => c.geo.whole(),
+        Some(_) if matches!(c.form, Form::OpenConic(_)) => [0.0, 1.0],
         Some([a, b]) => {
             let a = point64(&scratch.geom().position(a), floor, dec)?;
             let start = c.geo.param(a);
@@ -574,6 +588,7 @@ fn exact_point(scratch: &Model, s: &Stroke, t: f64, dec: &mut Decider) -> Result
             let [u, w] = s.axes.as_ref().expect("a conic stroke keeps its axes");
             conic_point(center, [u, w], t)
         }
+        Form::OpenConic(open) => open.sample(t),
         Form::Spline => {
             let Curve::BSpline(curve) = scratch.geom().curve(s.curve) else {
                 unreachable!("a spline stroke's carrier is a B-spline");
@@ -1101,7 +1116,7 @@ pub fn hidden_line_view(
     direction: &RVector3,
     dec: &mut Decider,
 ) -> Result<Answer<HiddenLineView>, QueryRefusal> {
-    query(model, &[body], || {
+    drawing_query(model, &[body], || {
         dec.check_deadline()?;
         if direction.is_zero() {
             return Err(Refusal::new("app.view-direction", "view direction is zero"));

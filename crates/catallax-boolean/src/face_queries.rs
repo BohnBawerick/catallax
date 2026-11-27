@@ -53,6 +53,7 @@ impl<'a> PreparedFaceQueries<'a> {
             self.model,
             face,
             point,
+            None,
             dec,
             |model, face, point, dec| match regions
                 .locate_prepared(model, face, point, dec, targets)

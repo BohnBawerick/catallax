@@ -3,11 +3,12 @@
 use std::num::NonZeroUsize;
 use std::time::Instant;
 
-use catallax_app::views::hidden_line_view;
+use catallax_app::queries::{SectionPlane, section_solid};
+use catallax_app::views::{StrokeSource, hidden_line_view, stroke_drawing};
 use catallax_boolean::{BoolOp, boolean};
 use catallax_numbers::{Decider, Rational, set_threads, with_operation_budget};
-use catallax_shapes::{Pose, RVector3, Rotation};
-use catallax_topology::{BodyId, Model, block, cone, cylinder};
+use catallax_shapes::{Pose, RPoint3, RVector3, Rotation, Surface};
+use catallax_topology::{BodyId, Loop, Model, cone, cylinder};
 
 fn vector(x: i64, y: i64, z: i64) -> RVector3 {
     RVector3::new(x.into(), y.into(), z.into())
@@ -47,12 +48,60 @@ fn flange(model: &mut Model, dec: &mut Decider) -> BodyId {
     part
 }
 
-fn section_box(model: &mut Model, normal: &RVector3, dec: &mut Decider) -> BodyId {
-    let rotation =
-        Rotation::from_frame(&normal.to_real(), &vector(0, 0, 1).to_real(), dec).unwrap();
-    let translation = rotation.apply_real(&vector(-100, -100, 0).to_real());
-    let pose = Pose::new(rotation, translation, dec).unwrap();
-    block(model, [200.into(), 200.into(), 100.into()], &pose).unwrap()
+fn check_cap(
+    cut: &catallax_app::queries::SectionSolid,
+    plane: &SectionPlane,
+    view: &catallax_app::views::HiddenLineView,
+    expected_faces: usize,
+) {
+    let model = &cut.model;
+    let n = plane.normal.to_real();
+    let o = plane.origin.to_real();
+    let mut faces = 0;
+    for face in model.faces_of_body(cut.body) {
+        let face = model.face(face);
+        let Surface::Plane(support) = model.geom().surface(face.surface) else {
+            continue;
+        };
+        if !support
+            .normal
+            .cross(&n)
+            .norm_squared()
+            .rational_ref()
+            .is_some_and(Rational::is_zero)
+            || !support
+                .origin
+                .minus(&o)
+                .dot(&n)
+                .rational_ref()
+                .is_some_and(Rational::is_zero)
+        {
+            continue;
+        }
+        assert!(
+            support
+                .normal
+                .dot(&n)
+                .rational_ref()
+                .is_some_and(|q| q > &Rational::zero())
+        );
+        faces += 1;
+        for &lp in &face.loops {
+            let Loop::Coedges(edges) = model.loop_(lp) else {
+                continue;
+            };
+            for &coedge in edges {
+                let edge = model.coedge(coedge).edge;
+                assert!(
+                    view.strokes
+                        .iter()
+                        .any(|s| s.source == StrokeSource::Edge(edge) && s.visible),
+                    "section edge {edge:?} must be visible from the cut side"
+                );
+            }
+        }
+    }
+    assert_eq!(faces, expected_faces);
 }
 
 #[test]
@@ -61,14 +110,21 @@ fn inclined_sections_certify() {
         (
             "flange",
             &[
-                ("straight", [1, 0, 0]),
-                ("135", [1, 1, 0]),
-                ("143.13", [3, 4, 0]),
-                ("144", [12_931_276, 17_798_374, 0]),
+                ("straight", [1, 0, 0], 2),
+                ("135", [1, 1, 0], 2),
+                ("143.13", [3, 4, 0], 3),
+                ("144", [12_931_276, 17_798_374, 0], 3),
             ][..],
         ),
-        ("cylinder", &[("compound", [2, 3, 1])][..]),
-        ("frustum", &[("compound", [2, -3, 1])][..]),
+        ("cylinder", &[("ellipse", [2, 3, 1], 1)][..]),
+        (
+            "frustum",
+            &[
+                ("ellipse", [2, -3, 2], 1),
+                ("hyperbola", [2, -3, 1], 1),
+                ("parabola", [10, 0, 3], 1),
+            ][..],
+        ),
     ] {
         let mut model = Model::new();
         let mut dec = Decider::default();
@@ -78,39 +134,71 @@ fn inclined_sections_certify() {
             "frustum" => cone(&mut model, 8.into(), 5.into(), 10.into(), &at(0, 0, -5)).unwrap(),
             _ => unreachable!(),
         };
-        for &(angle, [x, y, z]) in normals {
-            set_threads(NonZeroUsize::new(1));
-            let normal = vector(x, y, z);
-            let mut model = model.clone();
-            let tool = section_box(&mut model, &normal, &mut dec);
-            let start = Instant::now();
-            let (cut, work) = with_operation_budget(100_000_000, || {
-                boolean(&mut model, body, tool, BoolOp::Subtract, &mut dec)
-            });
-            eprintln!(
-                "{name}/{angle}: cut {} work, {:?}",
-                work.used,
-                start.elapsed()
-            );
-            let cut = match cut {
-                Ok(answer) => answer.body,
-                Err(err) => {
-                    eprintln!("{name}/{angle}: cut refused: {err:?}");
-                    continue;
-                }
+        for &(angle, [x, y, z], cap_faces) in normals {
+            let plane = SectionPlane {
+                origin: RPoint3::origin(),
+                normal: vector(x, y, z),
             };
-            let start = Instant::now();
-            let (view, work) = with_operation_budget(100_000_000, || {
-                hidden_line_view(&model, cut, &normal, &mut dec)
-            });
-            eprintln!(
-                "{name}/{angle}: view {} work, {:?}",
-                work.used,
-                start.elapsed()
-            );
-            match view {
-                Ok(answer) => assert!(answer.value.strokes.iter().any(|stroke| stroke.visible)),
-                Err(err) => eprintln!("{name}/{angle}: view refused: {err:?}"),
+            let mut first = None;
+            for workers in [1, 2, 4, 24] {
+                set_threads(NonZeroUsize::new(workers));
+                let mut dec = Decider::default();
+                let start = Instant::now();
+                let (cut, cut_work) = with_operation_budget(u64::MAX, || {
+                    section_solid(&model, body, &plane, &mut dec)
+                });
+                let cut_time = start.elapsed();
+                let cut = cut
+                    .unwrap_or_else(|e| panic!("{name}/{angle} cut: {e:?}"))
+                    .value;
+                let start = Instant::now();
+                let (view, view_work) = with_operation_budget(u64::MAX, || {
+                    hidden_line_view(&cut.model, cut.body, &plane.normal, &mut dec)
+                });
+                let view_time = start.elapsed();
+                eprintln!(
+                    "{name}/{angle} {workers} workers: cut {} work {:.3} s; view {} work {:.3} s",
+                    cut_work.used,
+                    cut_time.as_secs_f64(),
+                    view_work.used,
+                    view_time.as_secs_f64(),
+                );
+                let view = view.unwrap_or_else(|e| panic!("{name}/{angle} view: {e:?}"));
+                assert!(
+                    !cut_work.exhausted && !view_work.exhausted,
+                    "{name}/{angle}"
+                );
+                check_cap(&cut, &plane, &view.value, cap_faces);
+                let strokes: Vec<_> = view
+                    .value
+                    .strokes
+                    .iter()
+                    .map(|stroke| {
+                        let drawn = stroke_drawing(&view.value, stroke, &mut dec).unwrap();
+                        assert!(drawn.value.fit.is_none());
+                        (
+                            stroke.source,
+                            stroke.visible,
+                            stroke.smooth,
+                            drawn.value.curve,
+                        )
+                    })
+                    .collect();
+                let mut step = Vec::new();
+                catallax_step::write_step(
+                    &cut.model,
+                    &[cut.body],
+                    &Default::default(),
+                    &mut dec,
+                    &mut step,
+                )
+                .unwrap_or_else(|e| panic!("{name}/{angle} STEP: {e:?}"));
+                let record = (strokes, view.marks, step, cut_work.used, view_work.used);
+                if let Some(base) = &first {
+                    assert_eq!(base, &record, "{name}/{angle} with {workers} workers");
+                } else {
+                    first = Some(record);
+                }
             }
         }
     }

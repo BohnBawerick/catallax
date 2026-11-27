@@ -17,7 +17,7 @@
 //! whose boxes they miss. A ray that only grazes the boundary, such as one
 //! running along a face seen edge on, leaves its piece visible.
 
-use catallax_boolean::face_contains;
+use catallax_boolean::{face_contains, face_contains_point};
 use catallax_intersect::numerical_ray::{NumericalRayHit, patch_meetings};
 use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface_with_line_parameter};
 use catallax_numbers::{Decider, MarkLog, Rational, Real, Refusal};
@@ -222,8 +222,7 @@ fn inside(
                 if sign(&at, dec)? <= 0 {
                     continue;
                 }
-                let position = scratch.geom().position(hit.point);
-                if !face_contains(scratch, face, &position, dec)? {
+                if !face_contains_point(scratch, face, hit.point, dec)? {
                     continue;
                 }
                 if hit.contact != Contact::Crossing || on_boundary(scratch, face, hit.point, dec)? {
@@ -324,8 +323,7 @@ pub(super) fn hidden(
             if sign(&at, dec)? <= 0 {
                 continue;
             }
-            let position = scratch.geom().position(hit.point);
-            if !face_contains(scratch, face, &position, dec)? {
+            if !face_contains_point(scratch, face, hit.point, dec)? {
                 continue;
             }
             if hit.contact == Contact::Crossing && !on_boundary(scratch, face, hit.point, dec)? {

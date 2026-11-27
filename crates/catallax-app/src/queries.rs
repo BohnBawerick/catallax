@@ -98,6 +98,15 @@ pub struct SectionCurves {
     pub points: Vec<PointId>,
 }
 
+/// A closed solid clipped to the retained side of a drawing section.
+#[derive(Clone, Debug)]
+pub struct SectionSolid {
+    /// Owns the clipped body. The input model is unchanged.
+    pub model: Model,
+    /// The body on the side opposite the section normal.
+    pub body: BodyId,
+}
+
 /// Orthographic outline generators in model coordinates, before projection.
 #[derive(Clone, Debug)]
 pub struct Silhouette {
@@ -150,10 +159,29 @@ pub(crate) fn query<T>(
     bodies: &[BodyId],
     run: impl FnOnce() -> Answered<T>,
 ) -> Result<Answer<T>, QueryRefusal> {
+    query_with_allowance(model, bodies, DEFAULT_BUILD_WORK, run)
+}
+
+/// Drawing queries have no application work limit. An explicit caller
+/// allowance and the decider's cancellation checkpoints still apply.
+pub(crate) fn drawing_query<T>(
+    model: &Model,
+    bodies: &[BodyId],
+    run: impl FnOnce() -> Answered<T>,
+) -> Result<Answer<T>, QueryRefusal> {
+    query_with_allowance(model, bodies, u64::MAX, run)
+}
+
+fn query_with_allowance<T>(
+    model: &Model,
+    bodies: &[BodyId],
+    allowance: u64,
+    run: impl FnOnce() -> Answered<T>,
+) -> Result<Answer<T>, QueryRefusal> {
     let result = if operation_budget_active() {
         run()
     } else {
-        let (result, work) = with_operation_budget(DEFAULT_BUILD_WORK, run);
+        let (result, work) = with_operation_budget(allowance, run);
         if work.exhausted && result.is_ok() {
             Err(Refusal::new(
                 "application.work-limit",
@@ -212,12 +240,31 @@ pub fn section_curves(
     plane: &SectionPlane,
     dec: &mut Decider,
 ) -> Result<Answer<SectionCurves>, QueryRefusal> {
-    query(model, &[body], || {
+    drawing_query(model, &[body], || {
         dec.check_deadline()?;
         if plane.normal.is_zero() {
             return Err(Refusal::new("app.section-normal", "section normal is zero"));
         }
         crate::views::section::plane_section(model, body, &plane.origin, &plane.normal, dec)
+    })
+}
+
+/// Clip a solid to the negative half-space of a rational plane. The new
+/// planar face caps the cut so a hidden-line view along the normal sees the
+/// section and the geometry behind it. Use [`section_curves`] for the cut
+/// curves alone, including isolated contacts.
+pub fn section_solid(
+    model: &Model,
+    body: BodyId,
+    plane: &SectionPlane,
+    dec: &mut Decider,
+) -> Result<Answer<SectionSolid>, QueryRefusal> {
+    drawing_query(model, &[body], || {
+        dec.check_deadline()?;
+        if plane.normal.is_zero() {
+            return Err(Refusal::new("app.section-normal", "section normal is zero"));
+        }
+        crate::views::section::cut_solid(model, body, plane, dec)
     })
 }
 
@@ -231,7 +278,7 @@ pub fn silhouette(
     direction: &RVector3,
     dec: &mut Decider,
 ) -> Result<Answer<Silhouette>, QueryRefusal> {
-    query(model, &[body], || {
+    drawing_query(model, &[body], || {
         dec.check_deadline()?;
         if direction.is_zero() {
             return Err(Refusal::new(

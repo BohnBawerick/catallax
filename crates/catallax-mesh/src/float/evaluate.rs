@@ -12,13 +12,17 @@ pub(super) fn positive(x: f64) -> Option<f64> {
     (x > 0.0 && x.is_finite()).then_some(x)
 }
 
+pub(super) fn scalar(x: &catallax_numbers::Real) -> f64 {
+    x.display_value().unwrap_or(f64::NAN)
+}
+
 pub(super) fn point(p: &Point3) -> Option<Xyz> {
-    let [x, y, z] = [&p.x, &p.y, &p.z].map(|v| finite(v.to_f64()));
+    let [x, y, z] = [&p.x, &p.y, &p.z].map(|v| finite(scalar(v)));
     Some([x?, y?, z?])
 }
 
 fn vector(p: &Vector3) -> Xyz {
-    [&p.x, &p.y, &p.z].map(|v| v.to_f64())
+    [&p.x, &p.y, &p.z].map(scalar)
 }
 
 pub(super) fn sub(a: Xyz, b: Xyz) -> Xyz {
@@ -110,29 +114,29 @@ pub(super) fn describe(s: &Surface, origin: Xyz) -> Option<DisplaySurface> {
         Surface::Plane(s) => D::Plane(f(&s.origin, &s.normal, &s.ref_dir)?),
         Surface::Cylinder(s) => D::Cylinder {
             frame: f(&s.origin, &s.axis, &s.ref_dir)?,
-            radius: sqrt(s.radius_sq.to_f64())?,
+            radius: sqrt(scalar(&s.radius_sq))?,
         },
         Surface::Cone(s) => D::Cone {
             frame: f(&s.apex, &s.axis, &s.ref_dir)?,
-            slope: positive(s.slope.to_f64())?,
+            slope: positive(scalar(&s.slope))?,
         },
         Surface::Sphere(s) => D::Sphere {
             frame: f(&s.center, &s.axis, &s.ref_dir)?,
-            radius: positive(s.radius.to_f64())?,
+            radius: positive(scalar(&s.radius))?,
         },
         Surface::Torus(s) => D::Torus {
             frame: f(&s.center, &s.axis, &s.ref_dir)?,
-            major: positive(s.major.to_f64())?,
-            minor: positive(s.minor.to_f64())?,
+            major: positive(scalar(&s.major))?,
+            minor: positive(scalar(&s.minor))?,
         },
         Surface::TorusSheet(s) => D::Torus {
             frame: f(&s.center, &s.axis, &s.ref_dir)?,
-            major: positive(s.major.to_f64())?,
-            minor: positive(s.minor.to_f64())?,
+            major: positive(scalar(&s.major))?,
+            minor: positive(scalar(&s.minor))?,
         },
         Surface::EllipticCylinder(s) => D::EllipticCylinder {
             frame: f(&s.origin, &s.axis, &s.major_dir)?,
-            radii: [sqrt(s.major_sq.to_f64())?, sqrt(s.minor_sq.to_f64())?],
+            radii: [sqrt(scalar(&s.major_sq))?, sqrt(scalar(&s.minor_sq))?],
         },
         Surface::BSpline(s) => D::BSpline(spline::net(s.carrier(), origin)?),
         _ => return None,

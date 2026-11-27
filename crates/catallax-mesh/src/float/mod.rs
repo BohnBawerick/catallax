@@ -9,6 +9,7 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 mod edges;
 mod evaluate;
 mod numerical;
+mod sections;
 mod spline;
 
 use evaluate::{Projector, align, anchor, describe, finite, point, positive, sub};
@@ -242,20 +243,9 @@ pub fn describe_body(
     }
 
     let mut surfaces = BTreeMap::new();
-    let mut incident = BTreeMap::<EdgeId, Vec<SurfaceId>>::new();
     for &id in &faces {
         let face = model.face(id);
         read_surface(model, &mut surfaces, face.surface, origin)?;
-        for &boundary in &face.loops {
-            if let Loop::Coedges(uses) = model.loop_(boundary) {
-                for &coedge in uses {
-                    let entries = incident.entry(model.coedge(coedge).edge).or_default();
-                    if !entries.contains(&face.surface) {
-                        entries.push(face.surface);
-                    }
-                }
-            }
-        }
     }
     for &edge in &edges {
         if let catallax_shapes::Curve::Intersection(c) = geom.curve(model.edge(edge).curve) {
@@ -280,8 +270,7 @@ pub fn describe_body(
     let mut edge_index = BTreeMap::new();
     let mut remaining = options.max_edge_points;
     for edge in edges {
-        let supports = incident.get(&edge).map_or(&[][..], Vec::as_slice);
-        let points = reader.edge(edge, supports, remaining).ok_or_else(|| {
+        let points = reader.edge(edge, remaining).ok_or_else(|| {
             failed(format!(
                 "edge {edge:?} ({:?}) could not be sampled",
                 geom.curve(model.edge(edge).curve).kind()

@@ -383,13 +383,13 @@ pub(super) fn check_written_projection(
         .iter()
         .flat_map(|face| faces[face].iter().copied())
         .collect();
-    let mut adjacent = BTreeMap::<Id, Vec<Id>>::new();
-    for &face in faces.values().flatten() {
-        let (bounds, _, _) = written_face(graph, face).ok_or_else(invalid)?;
-        for edge in written_edges(graph, bounds).ok_or_else(invalid)? {
-            adjacent.entry(edge).or_default().push(face);
-        }
-    }
+    let shells: Vec<_> = graph
+        .records()
+        .filter_map(|(kind, fields)| match (kind, fields) {
+            ("CLOSED_SHELL" | "OPEN_SHELL", [_, Field::List(members)]) => Some(members),
+            _ => None,
+        })
+        .collect();
     let direction = target::vector(&zone.direction);
     for (feature, entry) in control.features.iter().zip(&zone.entry_faces) {
         let [entry] = faces[entry].as_slice() else {
@@ -477,13 +477,20 @@ pub(super) fn check_written_projection(
         let (axis, _) = first.ok_or_else(invalid)?;
         let offset = plane.origin.minus(&axis.origin).dot(&normal) / axis.normal.dot(&normal);
         let at = axis.origin.plus(&axis.normal.scaled(&offset));
-        let mut pending = vec![*entry];
-        let mut seen = BTreeSet::new();
-        while let Some(face) = pending.pop() {
-            if !seen.insert(face) {
-                continue;
-            }
-            let (bounds, surface, _) = written_face(graph, face).ok_or_else(invalid)?;
+        let mut owners = shells.iter().filter(|members| {
+            members
+                .iter()
+                .any(|f| matches!(f, Field::Ref(face) if face == entry))
+        });
+        let shell = owners
+            .next()
+            .filter(|_| owners.next().is_none())
+            .ok_or_else(invalid)?;
+        for member in *shell {
+            let Field::Ref(face) = member else {
+                return Err(invalid());
+            };
+            let (_, surface, _) = written_face(graph, *face).ok_or_else(invalid)?;
             let Some(plane) = fields(graph, surface, "PLANE")
                 .and_then(|fields| written_plane(graph, fields.get(1)?))
             else {
@@ -494,17 +501,9 @@ pub(super) fn check_written_projection(
             {
                 continue;
             }
-            let boundary = written_boundary(graph, face).ok_or_else(invalid)?;
+            let boundary = written_boundary(graph, *face).ok_or_else(invalid)?;
             if boundary.contains(&at, dec)? {
                 return Err(invalid());
-            }
-            for edge in written_edges(graph, bounds).ok_or_else(invalid)? {
-                pending.extend(
-                    adjacent[&edge]
-                        .iter()
-                        .copied()
-                        .filter(|id| !seen.contains(id)),
-                );
             }
         }
     }
@@ -553,22 +552,23 @@ fn check_open_entry(
     item: &str,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let bodies = written.is_none().then(|| model.bodies_with_face(entry));
-    let mut pending = vec![entry];
-    let mut visited = BTreeSet::new();
-    while let Some(face) = pending.pop() {
-        if !visited.insert(face)
-            || written.is_some_and(|faces| !faces.contains_key(&face))
-            || bodies.as_ref().is_some_and(|bodies| {
-                face != entry
-                    && !model
-                        .bodies_with_face(face)
-                        .iter()
-                        .any(|body| bodies.contains(body))
-            })
-        {
-            continue;
-        }
+    let shell_faces = model
+        .bodies_with_face(entry)
+        .into_iter()
+        .flat_map(|body| model.body(body).lumps.iter())
+        .flat_map(|&lump| model.lump(lump).shells.iter())
+        .map(|&shell| &model.shell(shell).faces)
+        .filter(|faces| faces.contains(&entry))
+        .filter(|faces| {
+            written.is_none_or(|written| faces.iter().all(|face| written.contains_key(face)))
+        })
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if shell_faces.is_empty() {
+        return Err(refuse(item, "the projected zone entry has no owning shell"));
+    }
+    for face in shell_faces {
         let Surface::Plane(plane) = model.geom().surface(model.face(face).surface) else {
             continue;
         };
@@ -582,11 +582,6 @@ fn check_open_entry(
         if boundary.contains(at, dec)? {
             return Err(refuse(item, "a projected zone's axis meets a closed end"));
         }
-        pending.extend(
-            face_edges(model, face)
-                .flat_map(|edge| model.coedges_of_edge(edge))
-                .filter_map(|coedge| model.owner_of_coedge(coedge).map(|(_, face)| face)),
-        );
     }
     Ok(())
 }

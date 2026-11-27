@@ -55,6 +55,16 @@ pub fn read_step_assembly(
             "SHAPE_DEFINITION_REPRESENTATION" => {
                 let fields = fields(&graph, id, "SHAPE_DEFINITION_REPRESENTATION")?;
                 let shape = reference(fields, 0)?;
+                if graph
+                    .get(&shape)
+                    .is_some_and(|e| e.part("PROPERTY_DEFINITION").is_some())
+                    && reference(fields, 1)
+                        .ok()
+                        .and_then(|id| graph.get(&id))
+                        .is_some_and(|e| e.part("SHAPE_REPRESENTATION_WITH_PARAMETERS").is_some())
+                {
+                    continue;
+                }
                 let shape_fields = self::fields(&graph, shape, "PRODUCT_DEFINITION_SHAPE")?;
                 let definition = reference(shape_fields, 2)?;
                 if !graph

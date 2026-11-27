@@ -4,6 +4,8 @@
 //! Set `CATALLAX_PMI_OUT` to a directory to keep the written file, for a
 //! check in another STEP reader.
 
+mod pmi_strokes;
+
 use std::collections::BTreeMap;
 
 use catallax_features::evaluate;
@@ -2587,6 +2589,51 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
         ItemKind::Position(_)
     ));
 
+    let dangling = mutate(&file, &format!("{record}\n"), "");
+    let (back, skipped) = read_back(&dangling, &report);
+    assert_eq!(
+        ids(&back),
+        ["Bore", "Bore projection", "Datum B", "Datum C", "Datum D"]
+    );
+    assert!(reasons(&skipped).contains(&format!("its datum target {a1} was not read")));
+
+    let written = records(&file);
+    let file_faces = written_faces(&file, &report);
+    for (face, affected) in [
+        (f.holes[0][0], "Bolt pattern"),
+        (f.bore[0], "Bore projection"),
+    ] {
+        let id = file_faces
+            .iter()
+            .find(|(_, native)| **native == face)
+            .unwrap()
+            .0;
+        let surface = references(&written[id]).pop().unwrap();
+        let cylinder = &written[&surface];
+        let (attributes, radius) = cylinder.rsplit_once(',').unwrap();
+        let broken = mutate(
+            &file,
+            &format!("{surface}={cylinder}"),
+            &format!("{surface}={attributes},0.);"),
+        );
+        assert!(radius.ends_with(");"));
+        let (back, skipped) = read_back(&broken, &report);
+        assert!(!ids(&back).contains(&affected.to_owned()));
+        assert!(reasons(&skipped).contains("each one cylinder"));
+
+        let placement = references(cylinder)[0].clone();
+        let broken = mutate(
+            &file,
+            &format!("{surface}={cylinder}"),
+            &format!(
+                "{surface}={}",
+                cylinder.replace(&format!(",{placement},"), &format!(",{id},"))
+            ),
+        );
+        let (back, _) = read_back(&broken, &report);
+        assert!(!ids(&back).contains(&affected.to_owned()));
+    }
+
     // A projected height of zero leaves out that control alone.
     let zones: Vec<&str> = file
         .lines()
@@ -3252,6 +3299,13 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
         }
     }
     let (file, report) = write(&part, &text);
+    let legacy = mutate(&file, r"\X4\0001F600\X0\", r"\X2\D83DDE00\X0\");
+    let (legacy, skipped) = read_back(&legacy, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    assert_eq!(
+        kind_of(&legacy, "Flange note"),
+        kind_of(&text, "Flange note")
+    );
     let unsupported = mutate(&file, r"\X4\0001F600\X0\", r"\PE\\S\*\S\U\S\b");
     let unsupported = read_step_pmi(unsupported.as_bytes()).unwrap();
     assert!(!unsupported.sources.contains_key("Flange note"));
@@ -3526,7 +3580,11 @@ fn saved_views_write_their_callouts_and_read_back() {
             .iter()
             .find(|id| all[*id].starts_with("STYLED_ITEM("))
             .unwrap();
-        style(&all[mapped], "CURVE_STYLE(");
+        let assignment = &references(&all[mapped])[0];
+        assert_eq!(
+            all[assignment],
+            "PRESENTATION_STYLE_ASSIGNMENT((NULL_STYLE(.NULL.)));"
+        );
         let planes: Vec<_> = members
             .into_iter()
             .filter(|id| all[id].starts_with("ANNOTATION_PLANE("))
@@ -3578,18 +3636,37 @@ fn saved_views_write_their_callouts_and_read_back() {
             let symbol = &wire[0];
             let junction = usize::from(name == "Bore finish");
             assert_eq!(numbers(&all[&leader[1]]), numbers(&all[&symbol[junction]]));
-            let glyphs: Vec<_> = wire.iter().skip(1).map(Vec::len).collect();
-            let expected: &[usize] = match name {
-                "Datum A" => &[3, 2],
-                "Datum B" => &[7, 5],
-                "Datum C" => &[8],
-                "Bore diameter" => &[9, 2, 16, 2, 2, 2, 3],
-                "Bore finish" => &[2, 7, 2, 2, 8, 3, 2, 2, 11],
-                "Bore position" => &[7, 9, 12, 2, 9, 2, 9, 2, 2, 9, 2, 9, 2, 3, 2, 2, 7, 5, 2, 8],
-                "Hole position" => &[7, 9, 12, 2, 9, 2, 9, 2, 2, 7, 2, 3, 2, 2, 7, 5, 2, 8],
+            let strokes_in_plane: Vec<Vec<[f64; 2]>> = wire
+                .iter()
+                .map(|path| {
+                    path.iter()
+                        .map(|id| {
+                            let xyz = numbers(&all[id]);
+                            [dot(&xyz, &across), dot(&xyz, &up)]
+                        })
+                        .collect()
+                })
+                .collect();
+            let (decoded, step) = pmi_strokes::label(&strokes_in_plane, name == "Bore finish");
+            let expected = match name {
+                "Datum A" => "A",
+                "Datum B" => "B",
+                "Datum C" => "C",
+                "Bore diameter" => "⌀8 H7",
+                "Bore finish" => "Ra 1.6",
+                "Bore position" => "POS|⌀0.05|A|B|C",
+                "Hole position" => "POS|⌀0.2|A|B|C",
                 _ => panic!("unexpected saved-view label {name}"),
             };
-            assert_eq!(glyphs, expected, "{view} {name}");
+            assert_eq!(decoded, expected, "{view} {name}");
+            if name == "Bore diameter" {
+                let mut altered = strokes_in_plane;
+                let [x, y] = altered[4][0];
+                altered[4] = vec![[x + step, y], [x + 3.0 * step, y]];
+                altered[5] = vec![[x + 2.0 * step, y], [x + 2.0 * step, y + 6.0 * step]];
+                altered[6] = vec![[x + step, y + 6.0 * step], [x + 3.0 * step, y + 6.0 * step]];
+                assert_eq!(pmi_strokes::label(&altered, false).0, "⌀8 I7");
+            }
             let expected_faces: std::collections::BTreeSet<_> = pmi
                 .items
                 .iter()
@@ -3885,6 +3962,64 @@ fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
     let unsupported_callout = read_step_pmi(unsupported_callout.as_bytes()).unwrap();
     assert!(unsupported_callout.graphics.is_empty());
     assert_eq!(unsupported_callout.pmi.views[0].name, "Top");
+
+    let subtype = mutate(source, "DRAUGHTING_CALLOUT(", "SURFACE_CONDITION_CALLOUT(");
+    let subtype = read_step_pmi(subtype.as_bytes()).unwrap();
+    assert!(subtype.graphics.is_empty());
+    assert_eq!(subtype.pmi.views, read.pmi.views);
+    assert!(
+        subtype
+            .skipped
+            .iter()
+            .any(|item| item.kind == "SURFACE_CONDITION_CALLOUT")
+    );
+
+    let complex = mutate(
+        source,
+        "#50=DRAUGHTING_MODEL('Top',(#38,#49),#9);",
+        "#50=(CHARACTERIZED_OBJECT(*,*)CHARACTERIZED_REPRESENTATION()DRAUGHTING_MODEL()REPRESENTATION('Top',(#38,#49),#9));",
+    );
+    let complex = mutate(
+        &complex,
+        "#39=DRAUGHTING_MODEL('',(#38),#9);",
+        "#39=(CHARACTERIZED_OBJECT(*,*)CHARACTERIZED_REPRESENTATION()DRAUGHTING_MODEL()REPRESENTATION('',(#38),#9));",
+    );
+    let complex = read_step_pmi(complex.as_bytes()).unwrap();
+    assert!(complex.skipped.is_empty(), "{:?}", complex.skipped);
+    assert_eq!(complex.pmi.views, read.pmi.views);
+    assert_eq!(complex.graphics, read.graphics);
+
+    let two_units = mutate(
+        source,
+        "ENDSEC;\nEND-ISO",
+        "#90=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT($,.METRE.));\nENDSEC;\nEND-ISO",
+    );
+    for (units, usable) in [("(#8,#90)", false), ("(#90,#8)", false), ("(#90)", true)] {
+        let changed = mutate(
+            &two_units,
+            "GLOBAL_UNIT_ASSIGNED_CONTEXT((#8))",
+            &format!("GLOBAL_UNIT_ASSIGNED_CONTEXT({units})"),
+        );
+        let read = read_step_pmi(changed.as_bytes()).unwrap();
+        if usable {
+            assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+            assert_eq!(read.pmi.views[0].camera.distance, q("15000"));
+            assert_eq!(
+                read.graphics[0].polylines_mm[0][0],
+                v("2000", "2000", "5000")
+            );
+        } else {
+            assert!(read.graphics.is_empty());
+            assert!(read.pmi.views.is_empty());
+            assert_eq!(
+                read.skipped
+                    .iter()
+                    .filter(|item| item.reason.contains("conflicting length units"))
+                    .count(),
+                2
+            );
+        }
+    }
 
     let boxed = mutate(
         source,
@@ -4343,6 +4478,97 @@ fn a_coplanar_disk_closes_a_projected_entry() {
     );
     let read = read_step_pmi(source.as_bytes()).unwrap();
     assert!(read.pmi.items.iter().all(|item| item.id != "Projection"));
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("axis meets a closed end")),
+        "{:?}",
+        read.skipped
+    );
+}
+
+#[test]
+fn a_flush_boss_blocks_projection_across_a_recess() {
+    use catallax_boolean::{BoolOp, boolean};
+    use catallax_shapes::{RVector3, Rotation};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let at = |z| Pose::from_rational(Rotation::identity(), RVector3::new(q("0"), q("0"), q(z)));
+    let stock = cylinder(&mut model, q("5"), q("6"), &Pose::identity()).unwrap();
+    let outer_cut = cylinder(&mut model, q("4"), q("5"), &at("2")).unwrap();
+    let boss = cylinder(&mut model, q("1"), q("7"), &at("1")).unwrap();
+    let annular_cut = boolean(&mut model, outer_cut, boss, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let body = boolean(&mut model, stock, annular_cut, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let part = Bracket { model, body };
+    let rim = part
+        .planes(2, "6")
+        .into_iter()
+        .find(|face| part.model.face(*face).loops.len() == 2)
+        .unwrap();
+    let wall = part.round(2, "4", ["0", "0"]);
+    let make_pmi = |kind| Pmi {
+        items: vec![
+            item(
+                "Rim",
+                ItemKind::Datum(Datum {
+                    letter: "R".into(),
+                    feature: vec![rim],
+                }),
+            ),
+            item("Recess wall", kind),
+        ],
+        ..Pmi::default()
+    };
+    let pmi = make_pmi(ItemKind::Position(PositionControl {
+        features: vec![wall.clone()],
+        frame: PositionFrame::Single {
+            segment: segment("0.05", None, Vec::new()),
+            projected_zone: Some(ProjectedZone {
+                height_mm: q("8"),
+                direction: v("0", "0", "1"),
+                entry_faces: vec![rim],
+            }),
+        },
+    }));
+    let error = catallax_step::pmi::check_on_model(&part.model, &pmi, &mut dec).unwrap_err();
+    assert!(
+        error.detail.contains("axis meets a closed end"),
+        "{error:?}"
+    );
+    assert!(
+        try_write(&part, &pmi)
+            .unwrap_err()
+            .contains("axis meets a closed end")
+    );
+    let (file, _) = write(
+        &part,
+        &make_pmi(ItemKind::Tolerance(GeometricTolerance {
+            characteristic: Characteristic::Position,
+            value: q("0.05"),
+            diameter_zone: true,
+            material: None,
+            datums: Vec::new(),
+            features: vec![wall.clone()],
+        })),
+    );
+    let all = records(&file);
+    let start = line_with(&file, &["=DATUM_FEATURE("]);
+    let zone = line_with(&file, &["=TOLERANCE_ZONE("]);
+    let control = line_with(&file, &["=POSITION_TOLERANCE("]);
+    let height = &references(&all[&control])[0];
+    let file = mutate(
+        &file,
+        "ENDSEC;\nEND-ISO",
+        &format!(
+            "#900000=PROJECTED_ZONE_DEFINITION({zone},(),{start},{height});\nENDSEC;\nEND-ISO"
+        ),
+    );
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert_eq!(read.sources.keys().collect::<Vec<_>>(), [&"Rim".to_owned()]);
     assert!(
         read.skipped
             .iter()

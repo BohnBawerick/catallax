@@ -794,8 +794,9 @@ pub(crate) fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rationa
     };
     if let Some(si) = e.part("SI_UNIT") {
         let prefix = match si.first() {
-            Some(Param::Enum(p)) => p.as_str(),
-            _ => "",
+            Some(Param::Enum(p)) if !p.is_empty() => p.as_str(),
+            Some(Param::Unset) => "",
+            _ => return Err(unknown_unit("invalid SI prefix")),
         };
         let unit = match si.get(1) {
             Some(Param::Enum(u)) => u.as_str(),

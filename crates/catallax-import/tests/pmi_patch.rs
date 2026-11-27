@@ -669,3 +669,23 @@ fn new_patch_ids_leave_existing_dangling_references_unbound() {
     assert!(read.pmi.items.iter().any(|item| item.id == "Base flatness"
         && matches!(&item.kind, ItemKind::Tolerance(tolerance) if tolerance.value == q("0.02"))));
 }
+
+#[test]
+fn a_patch_refuses_a_length_with_a_derived_si_prefix() {
+    let file = source();
+    let id = read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone();
+    let malformed = file.replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(*,.METRE.)");
+    assert_ne!(malformed, file);
+    let report = read_step_pmi(malformed.as_bytes()).unwrap();
+    assert!(!report.sources.contains_key("Base flatness"));
+    assert!(
+        patch_step_pmi(
+            malformed.as_bytes(),
+            &[PmiEdit::ToleranceValue {
+                source: id,
+                value: q("0.02"),
+            }]
+        )
+        .is_err()
+    );
+}

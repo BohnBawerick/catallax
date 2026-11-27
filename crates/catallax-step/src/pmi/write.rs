@@ -1514,9 +1514,13 @@ impl Emitter<'_> {
         let mapped = self
             .graph
             .add("MAPPED_ITEM", vec![text("''"), map.into(), target.into()]);
-        let style = self
-            .presentation
-            .map_or_else(|| self.curve_style(), |presentation| presentation.style);
+        let style = self.graph.add(
+            "PRESENTATION_STYLE_ASSIGNMENT",
+            vec![Field::List(vec![Field::Typed(
+                "NULL_STYLE",
+                vec![text(".NULL.")],
+            )])],
+        );
         let styled = self.graph.add(
             "STYLED_ITEM",
             vec![text("''"), refs([style]), mapped.into()],

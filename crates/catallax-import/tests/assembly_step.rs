@@ -10,7 +10,8 @@ use catallax_step::{
     StepOptions,
     assembly::{Assembly, Occurrence, Part, Product, ProductContent, write_step_assembly},
     pmi::{
-        Characteristic, Datum, GeometricTolerance, Item, ItemKind, PartNotes, Pmi, Size, SizeKind,
+        Characteristic, Datum, DatumTarget, GeometricTolerance, Item, ItemKind, PartNotes, Pmi,
+        Size, SizeKind, TargetKind,
     },
 };
 use catallax_topology::{BodyId, FaceId, Model, block, cylinder};
@@ -292,6 +293,97 @@ fn export_and_read(threads: usize) -> (Vec<u8>, Vec<u8>, u64) {
     let work = dec.stats().work;
     assert!(work < 20_000_000, "{work}");
     (first, second, work)
+}
+
+#[test]
+fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
+    let mut model = Model::new();
+    let body = block(&mut model, [q("6"), q("8"), q("3")], &Pose::identity()).unwrap();
+    let bottom = model
+        .faces_of_body(body)
+        .into_iter()
+        .find(|face| {
+            let Surface::Plane(plane) = model.geom().surface(model.face(*face).surface) else {
+                return false;
+            };
+            let [x, y, _] = plane.normal.rational_components().unwrap();
+            x.is_zero() && y.is_zero() && plane.origin.z.rational_ref() == Some(&q("0"))
+        })
+        .unwrap();
+    let pmi = Pmi {
+        items: vec![
+            Item {
+                id: "Base datum".into(),
+                kind: ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![bottom],
+                }),
+            },
+            Item {
+                id: "Base centre".into(),
+                kind: ItemKind::DatumTarget(DatumTarget {
+                    datum: "A".into(),
+                    number: 1,
+                    face: bottom,
+                    point_mm: [q("3"), q("4"), q("0")],
+                    kind: TargetKind::Point,
+                }),
+            },
+        ],
+        ..Pmi::default()
+    };
+    let assembly = Assembly {
+        root: 0,
+        products: vec![
+            Product {
+                name: "Fixture".into(),
+                content: ProductContent::Assembly(vec![instance(
+                    "Base occurrence",
+                    1,
+                    ["0", "0", "0"],
+                    Rotation::identity(),
+                )]),
+            },
+            Product {
+                name: "Base".into(),
+                content: ProductContent::Part(Part {
+                    model: &model,
+                    body,
+                    colour: None,
+                    pmi: Some(&pmi),
+                }),
+            },
+        ],
+    };
+    let mut bytes = Vec::new();
+    write_step_assembly(
+        &assembly,
+        &StepOptions::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    let read = read_step_assembly(&bytes, &mut Decider::default()).unwrap();
+    let leaf = read
+        .products
+        .iter()
+        .find(|product| product.name == "Base")
+        .unwrap();
+    let ProductContent::Part(part) = &leaf.content else {
+        panic!("expected the leaf part")
+    };
+    assert!(part.pmi.skipped.is_empty(), "{:?}", part.pmi.skipped);
+    let [datum, target] = part.pmi.pmi.items.as_slice() else {
+        panic!("expected datum and target")
+    };
+    let ItemKind::DatumTarget(target) = &target.kind else {
+        panic!("expected the datum target")
+    };
+    assert_eq!(target.point_mm, [q("3"), q("4"), q("0")]);
+    assert_eq!(target.number, 1);
+    assert_eq!(target.datum, "A");
+    assert_eq!(target.kind, TargetKind::Point);
+    assert_eq!(datum.kind.faces(), [&target.face]);
 }
 
 #[test]

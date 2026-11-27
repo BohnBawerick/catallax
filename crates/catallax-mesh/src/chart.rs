@@ -262,6 +262,7 @@ impl Chart {
                 | SplineSupport::RationalPatch(_)
                 | SplineSupport::SplineFillet(_) => SplineNormals::Patch,
                 SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
+                SplineSupport::RollingMitre(_) => SplineNormals::Mitre,
                 SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
                 _ => SplineNormals::Carrier,
             },

@@ -2008,7 +2008,12 @@ impl FaceBuilder<'_, '_> {
                         angular_limit,
                         self.dec,
                     )?;
-                    let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                    let ratio = ratio.ok_or_else(|| {
+                        let constraints = f.adjacent_edges().map(|e| e.is_constraint_edge());
+                        failure(format!(
+                            "display triangle has zero area: vertices={vertices:?} uv={uvs:?} xyz={positions:?} constraints={constraints:?}"
+                        ))
+                    })?;
                     (ratio, angular_reached)
                 };
                 let mut angle_violation = false;

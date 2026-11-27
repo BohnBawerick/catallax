@@ -20,6 +20,7 @@ pub(crate) enum SplineNormals<'a> {
     // Preserve the proof order and seeds of the existing finite spline charts.
     Patch,
     Saddle,
+    Mitre,
     Pipe(&'a RollingPipe),
 }
 
@@ -708,11 +709,14 @@ impl SplineChart {
             _ => None,
         };
         let mut rail_spans = Vec::new();
-        let pieces = if saddle {
+        let pieces = if saddle || matches!(normals, SplineNormals::Mitre) {
+            // Mitres need local Bernstein bounds before sizing fixed rail
+            // cells. Over the whole apex span the weight bound over-samples
+            // both rails, even far from the apex.
             let mut pieces = Vec::new();
             for span in rational_spans(surface, dec)? {
                 let halves = span.bisect(0, dec)?;
-                if span.domain()[1].each_ref() == source_domain[1] {
+                if saddle && span.domain()[1].each_ref() == source_domain[1] {
                     let [lo, hi] = source_domain[0];
                     let knots = [
                         &span.domain()[0][0],

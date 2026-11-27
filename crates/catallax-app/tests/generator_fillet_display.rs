@@ -260,6 +260,19 @@ fn a_partial_oblique_rim_keeps_both_rails_and_wall_sections() {
 }
 
 #[test]
+fn narrow_mitres_keep_their_shared_rails_at_every_viewport_level() {
+    let recipe = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|case| case["id"] == "narrow-mitres")
+        .unwrap();
+    assert_viewport_levels(
+        "narrow mitres",
+        &Recipe::parse(&recipe["recipe"].to_string()).unwrap(),
+    );
+}
+
+#[test]
 fn generator_fillets_stay_closed_at_every_viewport_level() {
     for (kind, recipe) in [
         ("lens", pair("intersect", "5/4")),

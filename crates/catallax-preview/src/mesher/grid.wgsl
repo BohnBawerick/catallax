@@ -8,10 +8,10 @@ fn grid(surface: Surface, uv: vec2<f32>) -> Vertex {
     let f = xy - vec2<f32>(cell);
     let stride = size.x;
     let i = surface.mode.y + cell.y * stride + cell.x;
-    let p00 = positions[i].xyz;
-    let p10 = positions[i + 1u].xyz;
-    let p01 = positions[i + stride].xyz;
-    let p11 = positions[i + stride + 1u].xyz;
+    let p00 = spline_controls[i].xyz;
+    let p10 = spline_controls[i + 1u].xyz;
+    let p01 = spline_controls[i + stride].xyz;
+    let p11 = spline_controls[i + stride + 1u].xyz;
     let p = mix(mix(p00, p10, f.x), mix(p01, p11, f.x), f.y);
     let du = mix(p10 - p00, p11 - p01, f.y);
     let dv = mix(p01 - p00, p11 - p10, f.x);

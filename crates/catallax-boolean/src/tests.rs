@@ -590,7 +590,7 @@ fn skipped_carriers_keep_the_complete_section_order() {
                     .iter()
                     .map(|edge| {
                         (
-                            edge.curve,
+                            model.geom().curve(edge.curve).clone(),
                             at(edge.start),
                             at(edge.end),
                             edge.faces_of_first.clone(),
@@ -607,8 +607,21 @@ fn skipped_carriers_keep_the_complete_section_order() {
         let complete = section(false, false);
         let baseline = section(true, false);
         let bounded = section(true, true);
-        assert_eq!(baseline.0, complete.0);
-        assert_eq!(bounded.0, baseline.0);
+        let same_graph = |a: &(Vec<_>, Vec<_>, usize), b: &(Vec<_>, Vec<_>, usize)| {
+            assert_eq!(a.0.len(), b.0.len());
+            assert_eq!(a.1, b.1);
+            assert_eq!(a.2, b.2);
+            let mut geom = catallax_shapes::GeomStore::new();
+            let mut dec = Decider::default();
+            for ((ca, a0, a1, af, ag), (cb, b0, b1, bf, bg)) in a.0.iter().zip(&b.0) {
+                assert_eq!((a0, a1, af, ag), (b0, b1, bf, bg));
+                let ca = geom.add_curve(catallax_shapes::Curve::clone(ca));
+                let cb = geom.add_curve(catallax_shapes::Curve::clone(cb));
+                assert!(catallax_intersect::same_curve(&geom, ca, cb, &mut dec).is_coincident());
+            }
+        };
+        same_graph(&baseline.0, &complete.0);
+        same_graph(&bounded.0, &baseline.0);
         assert!(
             bounded.1 <= baseline.1,
             "bounded {}, baseline {}",

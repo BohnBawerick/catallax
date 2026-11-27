@@ -582,7 +582,10 @@ async fn corpus_gpu<F: Clone + std::fmt::Debug, E>(
                 *grids.entry(kind).or_default() += 1;
             }
             Ok(_) => (),
-            Err(error) => refusals.push(format!("{:?} {kind}: {error}", face.face)),
+            Err(error) => {
+                chart_diagnostic(face);
+                refusals.push(format!("{:?} {kind}: {error}", face.face));
+            }
         }
     }
     *grid_faces += grids.values().sum::<usize>();
@@ -595,6 +598,49 @@ async fn corpus_gpu<F: Clone + std::fmt::Debug, E>(
         Ok(gpu)
     } else {
         Err(refusals.join(", "))
+    }
+}
+
+fn chart_diagnostic<F: std::fmt::Debug>(face: &DisplayFace<F>) {
+    if std::env::var_os("CATALLAX_TRIM_DIAGNOSTICS").is_none() {
+        return;
+    }
+    use catallax_mesh::float::DisplaySurface::*;
+    let kind = match &face.surface {
+        Plane(_) => "plane",
+        Cylinder { .. } => "cylinder",
+        Cone { .. } => "cone",
+        Sphere { .. } => "sphere",
+        Torus { .. } => "torus",
+        EllipticCylinder { .. } => "elliptic-cylinder",
+        BSpline(_) => "spline",
+        Grid(_) => "grid",
+    };
+    eprintln!(
+        "chart {:?} {kind}: {:?}, periods {:?}, reversed {}",
+        face.face, face.bounds, face.periods, face.reversed
+    );
+    for ring in &face.loops {
+        if let Some((_, uv)) = ring.vertex {
+            eprintln!("  pole {uv:?}");
+        }
+        for edge in &ring.uses {
+            let mut lo = [f64::INFINITY; 2];
+            let mut hi = [f64::NEG_INFINITY; 2];
+            for sample in &edge.samples {
+                for i in 0..2 {
+                    lo[i] = lo[i].min(sample.uv[i]);
+                    hi[i] = hi[i].max(sample.uv[i]);
+                }
+            }
+            eprintln!(
+                "  edge {}: {} samples {:?} to {:?}, extent {lo:?} through {hi:?}",
+                edge.edge,
+                edge.samples.len(),
+                edge.samples.first().map(|p| p.uv),
+                edge.samples.last().map(|p| p.uv),
+            );
+        }
     }
 }
 
@@ -666,6 +712,7 @@ fn assert_geometry(
                     let [x, y, z, _] = vertex.position;
                     let local = [x, y, z].map(f64::from);
                     let carrier = face.carrier_distance().map(|mut distance| distance(local));
+                    chart_diagnostic(face);
                     let closest = reference.distance(position);
                     panic!(
                         "face {:?}: vertex {position:?} is {closest:.6} mm from checked face; carrier {carrier:?}",

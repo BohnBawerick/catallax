@@ -68,8 +68,20 @@ impl<F> DisplayFace<F> {
         let mut carrier = Projector::new(&self.surface, None)?;
         Some(move |position| {
             let uv = carrier.project(position, None);
-            let (point, _) = carrier.jet(uv);
-            evaluate::norm(sub(position, point))
+            let mut distance = evaluate::norm(sub(position, carrier.position(uv)));
+            if distance > 0.005 && matches!(self.surface, DisplaySurface::BSpline(_)) {
+                // A nearest control can seed the wrong lobe of a folded net.
+                // Try the other chart regions only when the first fit is coarse.
+                let [[u0, u1], [v0, v1]] = self.bounds;
+                for u in [u0, u0.midpoint(u1), u1] {
+                    for v in [v0, v0.midpoint(v1), v1] {
+                        let uv = carrier.project(position, Some([u, v]));
+                        distance =
+                            distance.min(evaluate::norm(sub(position, carrier.position(uv))));
+                    }
+                }
+            }
+            distance
         })
     }
 

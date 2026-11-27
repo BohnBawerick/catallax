@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 
-use catallax_mesh::float::{DisplayFace, DisplayFrame, DisplayLoop, DisplaySurface};
+use catallax_mesh::float::{DisplayEdgeUse, DisplayFace, DisplayFrame, DisplaySurface};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
@@ -74,19 +74,33 @@ pub(super) fn triangulate<F>(
             poles.push((point, uv));
             continue;
         }
-        let ring = collect_ring(
-            trim,
-            edges,
-            positions,
-            face.periods,
-            max_vertices - trim_count,
-        )?;
-        trim_count += ring.points.len();
-        rings.push(ring);
+        if trim.uses.is_empty() {
+            return Err(FaceRefusal::UnsupportedTrim);
+        }
+        let split = trim.uses.len() > 1
+            && trim
+                .uses
+                .iter()
+                .all(|edge| closed_use(edge, edges, positions));
+        let width = if split { 1 } else { trim.uses.len() };
+        for uses in trim.uses.chunks(width) {
+            let ring = collect_ring(
+                uses,
+                edges,
+                positions,
+                face.periods,
+                span,
+                max_vertices - trim_count,
+            )?;
+            trim_count += ring.points.len();
+            rings.push(ring);
+        }
     }
     let sphere_chart = match face.surface {
         DisplaySurface::Sphere { frame, radius }
-            if !rings.is_empty() && face.periods[0].is_some() =>
+            if !rings.is_empty()
+                && face.periods[0].is_some()
+                && rings.iter().filter(|r| r.winding != [0, 0]).count() < 2 =>
         {
             spherical_chart(frame, radius, face.reversed, &mut rings, positions)
         }
@@ -96,7 +110,6 @@ pub(super) fn triangulate<F>(
         poles.clear();
     }
     let mut seam_count = 0;
-    let pole_start = positions.len() as u32;
     let wrapped: Vec<_> = rings
         .iter()
         .enumerate()
@@ -210,14 +223,36 @@ pub(super) fn triangulate<F>(
     let reversed = outer_area < 0.0;
 
     let mut cdt = Cdt::new();
-    let mut inputs = Vec::with_capacity(trim_count + grid_count - seam_count);
+    let mut inputs: Vec<InputVertex> = Vec::with_capacity(trim_count + grid_count - seam_count);
     let mut seams = vec![None; seam_count + poles.len()];
     let mut constraints = Vec::with_capacity(trim_count);
     let mut handles = Vec::new();
     for ring in &rings {
         handles.clear();
-        for point in &ring.points {
+        for (i, point) in ring.points.iter().enumerate() {
             let uv = normalized(point.uv);
+            let mut site = Point2::new(uv[0], uv[1]);
+            if let PositionInTriangulation::OnVertex(existing) = cdt.locate(site) {
+                let other = inputs[cdt.vertex(existing).data().input as usize].boundary;
+                if same_boundary(point.boundary, other, positions) {
+                    if handles.last() != Some(&existing) {
+                        handles.push(existing);
+                    }
+                    continue;
+                }
+                // Keep the 3D chord authoritative when two distinct samples
+                // project to the same UV at a nearly collapsed chart end.
+                let next = normalized(ring.points[(i + 1) % ring.points.len()].uv);
+                let previous =
+                    normalized(ring.points[(i + ring.points.len() - 1) % ring.points.len()].uv);
+                let dx = next[0].midpoint(previous[0]) - site.x;
+                let dy = next[1].midpoint(previous[1]) - site.y;
+                let scale = dx.abs().max(dy.abs());
+                if scale <= f64::MIN_POSITIVE {
+                    return Err(FaceRefusal::InvalidTrim);
+                }
+                site = Point2::new(site.x + 1e-11 * dx / scale, site.y + 1e-11 * dy / scale);
+            }
             let mut push = || {
                 let index = inputs.len() as u32;
                 inputs.push(InputVertex::new(uv, point.boundary));
@@ -229,16 +264,19 @@ pub(super) fn triangulate<F>(
             };
             let before = cdt.num_vertices();
             let handle = cdt
-                .insert(Site {
-                    point: Point2::new(uv[0], uv[1]),
-                    input,
-                })
+                .insert(Site { point: site, input })
                 .map_err(|_| FaceRefusal::InvalidTrim)?;
             if cdt.num_vertices() == before {
                 trim_diagnostic("duplicate projected vertex", [point.uv, uv]);
                 return Err(FaceRefusal::InvalidTrim);
             }
             handles.push(handle);
+        }
+        if handles.first() == handles.last() {
+            handles.pop();
+        }
+        if handles.len() < 3 {
+            return Err(FaceRefusal::InvalidTrim);
         }
         for i in 0..handles.len() {
             constraints.push((handles[i], handles[(i + 1) % handles.len()]));
@@ -307,15 +345,12 @@ pub(super) fn triangulate<F>(
         let mut ids = triangle
             .vertices()
             .map(|vertex| vertex.data().input as usize);
-        if (0..3).any(|i| ids[i] == ids[(i + 1) % 3]) {
-            if (0..3).any(|i| {
-                ids[i] == ids[(i + 1) % 3]
-                    && (pole_start..pole_start + poles.len() as u32)
-                        .contains(&inputs[ids[i]].boundary)
-            }) {
-                continue;
-            }
-            return Err(FaceRefusal::InvalidTrim);
+        if (0..3).any(|i| {
+            let a = ids[i];
+            let b = ids[(i + 1) % 3];
+            a == b || same_boundary(inputs[a].boundary, inputs[b].boundary, positions)
+        }) {
+            continue;
         }
         if reversed {
             ids.swap(1, 2);
@@ -345,18 +380,36 @@ fn trim_diagnostic(message: &str, points: impl std::fmt::Debug) {
     }
 }
 
+fn closed_use(edge: &DisplayEdgeUse, edges: &EdgeRanges, positions: &[[f32; 4]]) -> bool {
+    let Some(Ok(range)) = edges.get(edge.edge) else {
+        return false;
+    };
+    let boundary = |i: usize| {
+        u32::try_from(i)
+            .ok()
+            .and_then(|i| range.start.checked_add(i))
+            .filter(|&i| i < range.end)
+    };
+    edge.samples
+        .first()
+        .zip(edge.samples.last())
+        .is_some_and(|(a, b)| {
+            boundary(a.point)
+                .zip(boundary(b.point))
+                .is_some_and(|(a, b)| same_boundary(a, b, positions))
+        })
+}
+
 fn collect_ring(
-    trim: &DisplayLoop,
+    uses: &[DisplayEdgeUse],
     edges: &EdgeRanges,
     positions: &[[f32; 4]],
     periods: [Option<f64>; 2],
+    span: [f64; 2],
     limit: usize,
 ) -> Result<Ring, FaceRefusal> {
-    if trim.vertex.is_some() || trim.uses.is_empty() {
-        return Err(FaceRefusal::UnsupportedTrim);
-    }
     let mut points = Vec::<TrimPoint>::new();
-    for edge in &trim.uses {
+    for edge in uses {
         let range = edges
             .get(edge.edge)
             .ok_or(FaceRefusal::InvalidTrim)?
@@ -406,10 +459,19 @@ fn collect_ring(
     let last = *points.last().unwrap();
     same_position(first, last, positions)?;
     let (winding, shift) = periodic_shift(first.uv, last.uv, periods)?;
-    if winding == [0, 0] {
-        points.pop();
-    } else {
-        points.last_mut().unwrap().uv = std::array::from_fn(|i| first.uv[i] + shift[i]);
+    let lifted: [f64; 2] = std::array::from_fn(|i| first.uv[i] + shift[i]);
+    let same_uv = (0..2).all(|i| (last.uv[i] - lifted[i]).abs() <= 1e-9 * span[i]);
+    if same_uv {
+        if winding == [0, 0] {
+            points.pop();
+        } else {
+            points.last_mut().unwrap().uv = lifted;
+        }
+    } else if winding != [0, 0] {
+        points.push(TrimPoint {
+            uv: lifted,
+            ..first
+        });
     }
     if points.len() < 3 {
         return Err(FaceRefusal::InvalidTrim);
@@ -421,13 +483,17 @@ fn collect_ring(
 }
 
 fn same_position(a: TrimPoint, b: TrimPoint, positions: &[[f32; 4]]) -> Result<(), FaceRefusal> {
-    if positions[a.boundary as usize].map(f32::to_bits)
-        == positions[b.boundary as usize].map(f32::to_bits)
-    {
+    if same_boundary(a.boundary, b.boundary, positions) {
         Ok(())
     } else {
         Err(FaceRefusal::InvalidTrim)
     }
+}
+
+fn same_boundary(a: u32, b: u32, positions: &[[f32; 4]]) -> bool {
+    a != NO_BOUNDARY
+        && b != NO_BOUNDARY
+        && positions[a as usize].map(f32::to_bits) == positions[b as usize].map(f32::to_bits)
 }
 
 fn periodic_shift(

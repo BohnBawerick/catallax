@@ -172,13 +172,12 @@ impl<'a> Projector<'a> {
                     Some(Surface::BSpline(s)) => s.param_kinds(),
                     _ => [ParamKind::Finite; 2],
                 };
+                let periods = std::array::from_fn(|i| {
+                    (kinds[i] == ParamKind::PeriodicFinite || patch.closed(i))
+                        .then(|| domain[i][1] - domain[i][0])
+                });
                 spline = Some(patch);
-                (
-                    domain.map(Some),
-                    std::array::from_fn(|i| {
-                        (kinds[i] == ParamKind::PeriodicFinite).then(|| domain[i][1] - domain[i][0])
-                    }),
-                )
+                (domain.map(Some), periods)
             }
             D::Grid(_) => return None,
         };
@@ -207,7 +206,7 @@ impl<'a> Projector<'a> {
         use DisplaySurface as D;
         let previous = previous.map(|uv| self.canonical(uv));
         if let Some(patch) = &mut self.spline {
-            return patch.project(p, previous);
+            return patch.project(p, previous, self.periods);
         }
         let frame = match self.surface {
             D::Plane(frame)

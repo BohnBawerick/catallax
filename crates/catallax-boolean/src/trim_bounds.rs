@@ -1,8 +1,5 @@
-//! Finite boxes of trimmed faces and of finite supports. They are consulted
-//! only after an exact pair or curve query has refused, to prove that the
-//! refused meeting cannot reach a retained face. A box never claims a meeting
-//! and never adds geometry to the model, so a query that answers keeps its
-//! path and its work.
+//! Conservative boxes of trimmed faces and finite supports. A box may
+//! exclude a meeting, but never establishes one or adds geometry.
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Curve, CurveId, Point3, SplineSupport, Surface, SurfaceId, Vector3};
@@ -426,47 +423,33 @@ fn face_box(
     if let Some(bounds) = support {
         return Ok(Some(bounds));
     }
-    let band = match surface {
-        Surface::Plane(_) => None,
-        Surface::Cylinder(c) => Some((&c.origin, &c.axis, None)),
-        Surface::Cone(c) => Some((&c.apex, &c.axis, Some(&c.slope))),
+    let cone = match surface {
+        Surface::Plane(_) | Surface::Cylinder(_) | Surface::EllipticCylinder(_) => None,
+        Surface::Cone(cone) => Some(cone),
         _ => return Ok(None),
     };
     let Some(boundary) = boundary_box(model, face, cache, dec)? else {
         return Ok(None);
     };
-    let Some((origin, axis, slope)) = band else {
-        // A bounded planar region lies in the convex hull of its boundary.
+    // A bounded planar region lies in its boundary's convex hull. On a
+    // cylinder each coordinate is affine along a ruling, so its extrema
+    // are also attained on the boundary of a bounded face.
+    let Some(cone) = cone else {
         return Ok(Some(boundary));
     };
-    // The axial coordinate has no critical point on a cylinder, nor on a cone
-    // nappe away from its apex, so over the face it peaks on the boundary. The
-    // apex is the nappe's lowest point and is included for a cone.
-    let Some(direction) = unit(axis, dec)? else {
+    let Some(direction) = unit(&cone.axis, dec)? else {
         return Ok(None);
     };
-    let origin = point_box(origin, dec)?;
+    let origin = point_box(&cone.apex, dec)?;
     let mut axial = Ball::from_rational(&Rational::zero(), 128);
     for i in 0..3 {
         axial = &axial + &(&(&boundary[i] - &origin[i]) * &direction[i]);
     }
-    let (lo, hi) = match slope {
-        None => (axial.lo(), axial.hi()),
-        Some(_) => (Rational::zero(), axial.hi().max(Rational::zero())),
-    };
-    let reach = match slope {
-        None => {
-            let Surface::Cylinder(c) = surface else {
-                unreachable!()
-            };
-            let Some(radius) = enclose(&c.radius_sq, dec)?.sqrt() else {
-                return Ok(None);
-            };
-            radius
-        }
-        Some(slope) => &enclose(slope, dec)? * &Ball::from_rational(&hi, 128),
-    };
-    let widths = perpendicular_widths(axis, dec)?;
+    // Include the apex, the nappe's lowest level.
+    let lo = Rational::zero();
+    let hi = axial.hi().max(Rational::zero());
+    let reach = &enclose(&cone.slope, dec)? * &Ball::from_rational(&hi, 128);
+    let widths = perpendicular_widths(&cone.axis, dec)?;
     let span = Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128));
     let center: Box3 = std::array::from_fn(|i| &origin[i] + &(&direction[i] * &span));
     let radius = std::array::from_fn(|i| &reach * &widths[i]);
@@ -504,9 +487,8 @@ impl BodyApartProof {
 
 /// Memoized face and support boxes for one section pass.
 ///
-/// The proofs run only for operands with a fitted rolling band. Everywhere
-/// else a refusal stands at once, so callers that catch it and try another
-/// route spend exactly the work they did before.
+/// Support and body exclusions used after refusals are enabled only when
+/// one of the operands has a fitted rolling band.
 #[derive(Clone, Default)]
 pub(crate) struct TrimBounds {
     enabled: bool,
@@ -607,6 +589,46 @@ impl TrimBounds {
             catallax_numbers::work_span::write_at(kind, owner, index);
         }
         bounds
+    }
+
+    /// A box of the entire solid, or none when a face cannot be bounded.
+    pub(crate) fn solid_box(
+        &mut self,
+        model: &Model,
+        faces: &[FaceId],
+        dec: &mut Decider,
+    ) -> Option<Box3> {
+        let mut bounds = None;
+        for &face in faces {
+            include(&mut bounds, &self.face(model, face, dec)?);
+        }
+        bounds
+    }
+
+    pub(crate) fn face_outside(
+        &mut self,
+        model: &Model,
+        face: FaceId,
+        bounds: &Box3,
+        dec: &mut Decider,
+    ) -> bool {
+        self.face(model, face, dec)
+            .is_some_and(|face| apart(&face, bounds))
+    }
+
+    pub(crate) fn edge_outside(
+        &mut self,
+        model: &Model,
+        edge: EdgeId,
+        bounds: &Box3,
+        dec: &mut Decider,
+    ) -> bool {
+        edge_box(model, edge, self, dec)
+            .is_ok_and(|edge| edge.is_some_and(|edge| apart(&edge, bounds)))
+    }
+
+    pub(crate) fn point_outside(point: &Point3, bounds: &Box3, dec: &mut Decider) -> bool {
+        point_box(point, dec).is_ok_and(|point| apart(&point, bounds))
     }
 
     /// Whether the two bounded faces are strictly apart.

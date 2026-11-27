@@ -95,6 +95,28 @@ fn rounded_base_flange_default_build_keeps_the_inner_joint_pick_edge() {
             "the inner joint midpoint must be exactly (0, -35, 10)"
         );
     }
+
+    let result = body.built.result;
+    assert!(model.check(result).is_empty());
+    let vertices = model.vertices_of_body(result);
+    let mut dec = Decider::default();
+    for x in [-60, 60] {
+        assert!(
+            vertices.iter().any(|&vertex| {
+                let point = model.geom().position(model.vertex(vertex).point);
+                [point.x, point.y, point.z]
+                    .into_iter()
+                    .zip([x, -37, 62])
+                    .all(|(coordinate, expected)| {
+                        matches!(
+                            dec.sign(&(coordinate - catallax_numbers::Real::from_i64(expected))),
+                            catallax_numbers::Outcome::ProvenCoincident(_)
+                        )
+                    })
+            }),
+            "the singular carrier cut at ({x}, -37, 62) must split the flange edge"
+        );
+    }
 }
 
 #[test]

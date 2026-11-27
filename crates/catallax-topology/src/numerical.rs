@@ -21,6 +21,8 @@ mod atlas;
 mod curved;
 mod edge_gap;
 pub use edge_gap::{DerivedCopyAudit, audit_derived_copies};
+/// Whole-edge distance certificates, independent of sampled admission.
+pub mod edge_proof;
 /// The edge-gap checker: the largest distance between an edge's two copies.
 pub mod gap;
 mod handover;

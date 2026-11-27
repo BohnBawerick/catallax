@@ -175,6 +175,7 @@ impl ReusePlan<'_> {
             uncompacted,
             positions,
             triangles: copied,
+            lower: [None, None],
             report,
             unavailable_controls,
             shared,

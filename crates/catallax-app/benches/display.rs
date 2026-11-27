@@ -1,9 +1,15 @@
 //! Display timing and complete mesh capture, outside the application build path.
-use std::{env, fs, io::BufWriter, path::PathBuf, time::Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    io::BufWriter,
+    path::PathBuf,
+    time::Instant,
+};
 
 use catallax_features::evaluate;
-use catallax_mesh::{MeshOptions, mesh_body};
-use catallax_numbers::Decider;
+use catallax_mesh::{FaceLevel, MeshOptions, mesh_body, plan_face_levels_profiled};
+use catallax_numbers::{Decider, current_operation_work, with_operation_budget};
 use catallax_recipe::Recipe;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,12 +25,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let incremental = args.first().is_some_and(|arg| arg == "--incremental");
     let application = args.first().is_some_and(|arg| arg == "--application");
-    if incremental || application {
+    let levels = args.first().is_some_and(|arg| arg == "--levels");
+    if incremental || application || levels {
         args.remove(0);
     }
     if !(3..=5).contains(&args.len()) {
         return Err(
-            "usage: display [--incremental|--application|--edit-from OLD_NATIVE.json] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
+            "usage: display [--incremental|--application|--levels|--edit-from OLD_NATIVE.json] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
         );
     }
     let input = fs::read_to_string(&args[0])?;
@@ -41,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("repetitions must be positive".into());
     }
     let drawing = args.get(3).is_some_and(|value| value == "drawing");
-    if (incremental || application || previous_input.is_some()) && drawing {
+    if (incremental || application || levels || previous_input.is_some()) && drawing {
         return Err("drawing chord mode requires independent display measurements".into());
     }
     let options = MeshOptions {
@@ -67,6 +74,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if application {
         return application_builds(&recipe, &options, &out, repetitions);
+    }
+    if levels {
+        return display_levels(&recipe, &options, &out, repetitions);
     }
     for iteration in 0..repetitions {
         let mut dec = Decider::default();
@@ -132,6 +142,136 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     println!("{}", serde_json::to_string(&rows)?);
+    fs::write(out.join("samples.json"), serde_json::to_vec_pretty(&rows)?)?;
+    Ok(())
+}
+
+fn display_levels(
+    recipe: &Recipe,
+    options: &MeshOptions,
+    out: &std::path::Path,
+    repetitions: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut rows = Vec::new();
+    for iteration in 0..repetitions {
+        let built = evaluate(recipe, &mut Decider::default())?;
+        let model = &built.model;
+        let body = built.result;
+        let faces = model.faces_of_body(body);
+        let start = Instant::now();
+        let (direct, direct_work) = with_operation_budget(u64::MAX, || {
+            mesh_body(model, body, options, &mut Decider::default())
+        });
+        let direct_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let direct = direct?;
+        let mut direct_obj = Vec::new();
+        direct.value.write_obj(&mut direct_obj)?;
+        for level in [FaceLevel::Preview, FaceLevel::Bounded, FaceLevel::Proven] {
+            let (result, total_work) = with_operation_budget(u64::MAX, || {
+                let start = Instant::now();
+                let (plan, profile) =
+                    plan_face_levels_profiled(model, body, options, &mut Decider::default())?;
+                let preflight_ms = start.elapsed().as_secs_f64() * 1000.0;
+                let preflight_work = current_operation_work().used;
+                let planned = faces
+                    .iter()
+                    .map(|&face| {
+                        (
+                            face,
+                            plan.point_count(face, level).expect("planned logical face"),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                let start = Instant::now();
+                let (triangles, ranges, bytes, elapsed) = match level {
+                    FaceLevel::Preview => {
+                        let mesh = plan.emit_preview()?;
+                        let elapsed = start.elapsed();
+                        let bytes = format!("{mesh:?}\n").into_bytes();
+                        let ranges = mesh
+                            .faces
+                            .into_iter()
+                            .map(|f| (f.face, f.triangles))
+                            .collect();
+                        (mesh.triangles, ranges, bytes, elapsed)
+                    }
+                    FaceLevel::Bounded => {
+                        let mesh = plan.emit_bounded()?;
+                        let elapsed = start.elapsed();
+                        let bytes = format!("{mesh:?}\n").into_bytes();
+                        let ranges = mesh
+                            .geometry
+                            .faces
+                            .into_iter()
+                            .map(|f| (f.face, f.triangles))
+                            .collect();
+                        (mesh.geometry.triangles, ranges, bytes, elapsed)
+                    }
+                    FaceLevel::Proven => {
+                        let mesh = plan.emit()?;
+                        let elapsed = start.elapsed();
+                        assert_eq!(mesh.value, direct.value);
+                        assert_eq!(mesh.marks, direct.marks);
+                        let mut bytes = Vec::new();
+                        mesh.value
+                            .write_obj(&mut bytes)
+                            .expect("writing OBJ into a vector");
+                        assert_eq!(bytes, direct_obj);
+                        let ranges = mesh
+                            .value
+                            .faces
+                            .into_iter()
+                            .map(|f| (f.face, f.triangles))
+                            .collect();
+                        (mesh.value.triangles, ranges, bytes, elapsed)
+                    }
+                };
+                let emit_ms = elapsed.as_secs_f64() * 1000.0;
+                let ranges: Vec<(_, std::ops::Range<usize>)> = ranges;
+                let counts: Vec<_> = ranges.into_iter().map(|(face, range)| {
+                    let count = triangles[range]
+                        .iter()
+                        .flat_map(|triangle| triangle.vertices)
+                        .collect::<BTreeSet<_>>()
+                        .len();
+                    assert_eq!(planned[&face], count, "{level:?}, face {}", face.index());
+                    serde_json::json!({
+                        "face": face.index(),
+                        "kind": format!("{:?}", model.geom().surface(model.face(face).surface).kind()),
+                        "points": count,
+                    })
+                }).collect();
+                let mut kinds = BTreeMap::<_, (f64, u64)>::new();
+                for face in profile {
+                    let (milliseconds, work) = kinds.entry(format!("{:?}", face.kind)).or_default();
+                    *milliseconds += face.elapsed.as_secs_f64() * 1000.0;
+                    *work += face.work;
+                }
+                Ok::<_, catallax_numbers::Refusal>((
+                    preflight_ms,
+                    preflight_work,
+                    emit_ms,
+                    counts,
+                    kinds,
+                    bytes,
+                ))
+            });
+            assert!(!total_work.exhausted && total_work.used <= direct_work.used);
+            let (preflight_ms, preflight_work, emit_ms, counts, kinds, bytes) = result?;
+            rows.push(serde_json::json!({
+                "iteration": iteration, "level": format!("{level:?}"), "faces": counts,
+                "direct_ms": direct_ms, "direct_work": direct_work.used,
+                "preflight_ms": preflight_ms, "preflight_work": preflight_work,
+                "emit_ms": emit_ms, "emit_work": total_work.used - preflight_work,
+                "face_kinds": kinds.into_iter().map(|(kind, (milliseconds, work))| {
+                    (kind, serde_json::json!({"preflight_ms": milliseconds, "preflight_work": work}))
+                }).collect::<BTreeMap<_, _>>(),
+            }));
+            if iteration + 1 == repetitions {
+                fs::write(out.join(format!("level-{level:?}.mesh")), bytes)?;
+            }
+        }
+    }
     fs::write(out.join("samples.json"), serde_json::to_vec_pretty(&rows)?)?;
     Ok(())
 }

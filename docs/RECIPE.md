@@ -1670,6 +1670,11 @@ options, cancellation, or a limit too small for the coarsest picture can still
 refuse. The revision controller keeps the current preview visible when certified
 display refuses and exposes the typed refusal through `Snapshot::status()`.
 
+For an admitted native STEP body, `catallax_mesh::preview_tolerant_body` can
+return the drawable faces when another face has no usable trim. Draw its shared
+edge polylines even when no face triangles are available. Omitted geometry is
+logged; neither partial faces nor wire-only previews certify or export the body.
+
 The no-display build and each later display request spend the current caller
 allowance without resetting or enlarging it. Without an active caller allowance,
 each call has its own `DEFAULT_BUILD_WORK` guard and reports

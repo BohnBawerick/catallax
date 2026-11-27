@@ -401,7 +401,10 @@ pub(super) fn push(
     options: &PreviewOptions,
 ) -> Result<usize, Refusal> {
     if mesh.positions.len() >= options.max_vertices {
-        return Err(failure("import preview reached max_vertices"));
+        return Err(Refusal::new(
+            "mesh.preview-resource-limit",
+            "import preview reached max_vertices",
+        ));
     }
     if !p.iter().all(|x| x.is_finite()) {
         return Err(failure("nonfinite preview sample"));

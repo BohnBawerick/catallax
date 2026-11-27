@@ -328,9 +328,7 @@ fn a_reopened_rolling_ball_rim_previews_within_the_request_allowance() {
     assert!(coarse.faces.iter().all(|face| !face.triangles.is_empty()));
 }
 
-#[test]
-fn a_periodic_conical_face_closes_at_its_declared_vertex() {
-    let source = br"ISO-10303-21;
+const PERIODIC_CONE: &str = "ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('conical pole'),'2;1');
 FILE_NAME('cone.step','',(''),(''),'','','');
@@ -368,6 +366,10 @@ REPRESENTATION_CONTEXT('','') );
 #28=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#25),#27);
 ENDSEC;
 END-ISO-10303-21;";
+
+#[test]
+fn a_periodic_conical_face_closes_at_its_declared_vertex() {
+    let source = PERIODIC_CONE.as_bytes();
     let import = tolerant::admission::import_step(
         source,
         &sha256_hex(source),
@@ -394,4 +396,63 @@ END-ISO-10303-21;";
     }
     assert!(touches_apex);
     assert!((volume(&view) - std::f64::consts::PI / 3.0).abs() < 0.1);
+}
+
+#[test]
+fn a_native_face_with_no_finite_trim_does_not_hide_its_neighbour() {
+    // A cylinder with only one rim has no finite trimmed lateral face.
+    // Its neighbouring plane uses that same circular EDGE_CURVE as a disk.
+    let source = PERIODIC_CONE
+        .replace(
+            "CONICAL_SURFACE('',#6,0.,0.7853981633974483)",
+            "CYLINDRICAL_SURFACE('',#6,1.)",
+        )
+        .replace(
+            "ADVANCED_FACE('',(#20,#21),#8,.T.)",
+            "ADVANCED_FACE('',(#20),#8,.T.)",
+        );
+    let source = source.as_bytes();
+    let import = tolerant::admission::import_step(
+        source,
+        &sha256_hex(source),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let (preview, work) = with_operation_budget(100_000_000, || {
+        preview_tolerant_body(
+            &import,
+            0,
+            &PreviewOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    let preview = preview.unwrap();
+    assert!(!work.exhausted);
+    let [disk] = preview.faces.as_slice() else {
+        panic!("only the planar disk is drawable: {:?}", preview.faces);
+    };
+    assert_eq!(disk.face, "#23");
+    let area: f64 = preview.triangles[disk.triangles.clone()]
+        .iter()
+        .map(|triangle| {
+            let [a, b, c] = triangle.vertices.map(|i| preview.positions[i]);
+            assert!([a, b, c].into_iter().all(|p| (p[2] - 1.0).abs() < 1e-12));
+            ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 0.5
+        })
+        .sum();
+    assert!(
+        (3.0..std::f64::consts::PI).contains(&area),
+        "disk area {area}"
+    );
+    let (refusal, work) = with_operation_budget(0, || {
+        preview_tolerant_body(
+            &import,
+            0,
+            &PreviewOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(refusal.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
 }

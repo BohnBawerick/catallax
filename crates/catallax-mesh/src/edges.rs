@@ -805,7 +805,7 @@ pub(crate) fn sample(
         options,
         dec,
     )?;
-    let mut refinement = BTreeMap::<EdgeId, i32>::new();
+    let mut refinement = BTreeMap::<EdgeId, i64>::new();
     loop {
         let mut crossings = BTreeSet::new();
         for (&face, chart) in charts {
@@ -878,7 +878,7 @@ fn sample_with_goals(
     charts: &BTreeMap<catallax_topology::FaceId, Chart>,
     junction: Option<&crate::junction::Junction>,
     options: &MeshOptions,
-    refinement: &BTreeMap<EdgeId, i32>,
+    refinement: &BTreeMap<EdgeId, i64>,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
     let mut result = Boundaries {

@@ -440,7 +440,7 @@ fn closed_use(edge: &DisplayEdgeUse, boundary: &impl TrimBoundaries) -> bool {
     let Some(range) = boundary.edge_range(edge.edge) else {
         return false;
     };
-    let boundary = |i: usize| {
+    let sample_index = |i: usize| {
         u32::try_from(i)
             .ok()
             .and_then(|i| range.start.checked_add(i))
@@ -450,8 +450,8 @@ fn closed_use(edge: &DisplayEdgeUse, boundary: &impl TrimBoundaries) -> bool {
         .first()
         .zip(edge.samples.last())
         .is_some_and(|(a, b)| {
-            boundary(a.point)
-                .zip(boundary(b.point))
+            sample_index(a.point)
+                .zip(sample_index(b.point))
                 .is_some_and(|(a, b)| same_boundary(a, b, boundary))
         })
 }

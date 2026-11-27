@@ -318,4 +318,12 @@ fn a_reopened_rolling_ball_rim_previews_within_the_request_allowance() {
     // The rim's volume is 317,998.676 mm3; the triangles keep it to a chord.
     let volume = volume(&preview);
     assert!((volume - 317_998.676).abs() < 0.5, "volume {volume}");
+    let (coarse, budget) = with_operation_budget(work.used - 1, || {
+        preview_tolerant_body(import, body, &options, &mut Decider::default())
+    });
+    let coarse = coarse.unwrap();
+    assert!(!budget.exhausted);
+    assert_eq!(coarse.faces.len(), preview.faces.len());
+    assert_ne!(coarse.triangles, preview.triangles);
+    assert!(coarse.faces.iter().all(|face| !face.triangles.is_empty()));
 }

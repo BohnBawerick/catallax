@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 import release
+from record_topology import face_key
 
 
 class ReplayTransitionTests(unittest.TestCase):
@@ -488,7 +489,7 @@ class RebuildRecordTests(unittest.TestCase):
         args = type("Args", (), {"run": str(path), "workers": 4, "out": str(self.answers)})()
         release.rebuild_record(args)
         document = self.record()
-        self.assertEqual(document["format"], "catallax-rebuild-answers/1")
+        self.assertEqual(document["format"], "catallax-rebuild-answers/2")
         self.assertEqual(document["corpus_sha256"], release.sha256(self.corpus))
         self.assertEqual([row["index"] for row in document["cases"]], [0, 1])
         self.assertEqual(document["cases"][0]["faces"], 2)
@@ -508,6 +509,63 @@ class RebuildRecordTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "answer_sha256 differs from the record"):
             release.check_rebuild_record(
                 type("Args", (), {"run": str(changed), "workers": 4, "allow_uncommitted": True})())
+
+    def test_rebuild_ignores_only_certificate_face_allocation(self):
+        def certified_case(handles, change=None):
+            case = self.run_case(0, "certified")
+            step = self.recipe["result"]
+            manifest = case["response"]["manifest"]
+            revision = "fe" * 32
+            ids = [face_key(revision, step, handle) for handle in handles]
+            regions = [
+                {"face": handle, "id": key,
+                 "identity": {"representation": key, "scope": {"entities": [key]}},
+                 "origins": [origin]}
+                for handle, key, origin in zip(handles, ids, ("left", "right"))
+            ]
+            manifest.update({
+                "format": "catallax-manifest/4",
+                "certificate": {
+                    "identity": {"revision": revision},
+                    "regions": regions,
+                    "evidence_records": [{"identity": copy.deepcopy(row["identity"])}
+                                         for row in regions],
+                    "spline": None,
+                    "retained_target": {},
+                },
+                "names": {"faces": sorted(
+                    ({"face": handle, "origins": [origin]}
+                     for handle, origin in zip(handles, ("left", "right"))),
+                    key=lambda row: row["face"])},
+                "step": {"regions": [{"face": handles[0], "model_region": ids[0],
+                                      "file_region": f"face_{handles[0]}",
+                                      "file_to_model_bound_mm": "0"}]},
+            })
+            if change == "name":
+                manifest["names"]["faces"][0]["origins"] = ["renamed"]
+            elif change == "bound":
+                manifest["step"]["regions"][0]["file_to_model_bound_mm"] = "1"
+            elif change == "binding":
+                manifest["step"]["regions"][0]["model_region"] = ids[1]
+            elif change == "file-region":
+                manifest["step"]["regions"][0]["file_region"] = "face_0"
+            elif change == "key":
+                regions[0]["id"] = ids[1]
+            release.write_json(Path(case["path"]) / "manifest.json", manifest)
+            self.rehash(case)
+            return case
+
+        original = self.report("original", [certified_case([12, 20]), self.run_case(1)])
+        args = type("Args", (), {"run": str(original), "workers": 4, "out": str(self.answers)})()
+        release.rebuild_record(args)
+        shifted = self.report("shifted", [certified_case([9, 4]), self.run_case(1)])
+        check = type("Args", (), {"run": str(shifted), "workers": 4, "allow_uncommitted": True})()
+        release.check_rebuild_record(check)
+        for change in ("name", "bound", "binding", "file-region", "key"):
+            with self.subTest(change=change):
+                check.run = str(self.report(change, [certified_case([9, 4], change), self.run_case(1)]))
+                with self.assertRaisesRegex(ValueError, "case 0:"):
+                    release.check_rebuild_record(check)
 
     def test_check_rejects_a_changed_request_or_allowance(self):
         for field, value in (("max_work", 40), ("problem", {"other": 1})):
@@ -698,7 +756,7 @@ class RebuildRecordTests(unittest.TestCase):
                     def __getattr__(self, name):
                         return getattr(driver, name)
 
-                    def compare(self, left, right):
+                    def compare(self, left, right, **_kwargs):
                         if Path(left).parent.name == "base":
                             return {"equal": False, "cases": 2,
                                     "failures": [{"index": 0, "cause": cause}]}

@@ -5,6 +5,7 @@ pub(super) mod planar;
 pub(super) struct Fit<'a> {
     pub curve: &'a PhysicalCurve,
     pub surface: &'a NativeSurface,
+    pub closed: bool,
     pub precision: f64,
     pub maximum_residual: f64,
     pub samples: usize,
@@ -34,9 +35,12 @@ impl Fit<'_> {
         });
         let chord_location = self.surface.location(uv)?;
         let chord = self.surface.sample(chord_location, dec)?;
-        let projection = self
-            .surface
-            .project(target.point_mm, Some(chord_location), dec)?;
+        let projection = self.surface.project_for_trim(
+            target.point_mm,
+            Some(chord_location),
+            self.closed,
+            dec,
+        )?;
         let uv = self
             .surface
             .align_parameters(projection.location.parameters, Some(uv));

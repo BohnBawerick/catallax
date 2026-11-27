@@ -8,11 +8,13 @@
 //! exact builders and then the fitted construction, exports the result, and
 //! writes one line for each row and thread count. `check` reads those lines
 //! and tests the done-when lines.
+use catallax_app::preview::{display_description, numerical_display_description};
 use catallax_app::{
     DEFAULT_BUILD_WORK, EvaluatedApplicationOutcome, TARGET_BUILD_WORK,
     build_incremental_with_files_without_display,
 };
 use catallax_features::{ImportFiles, predictor};
+use catallax_mesh::float::DisplayOptions;
 use catallax_numbers::{Decider, OperationWork, with_operation_budget, with_operation_log};
 use catallax_recipe::Recipe;
 use catallax_step::{StepOptions, write_step};
@@ -29,13 +31,14 @@ use std::{
 
 const USAGE: &str = "usage:
   predictor_corpus run --corpus FILE --out FILE [--root DIR] [--sources DIR --selection FILE]
-                       [--threads 1,2,4,24] [--repeat N] [--rows ID,ID] [--label TEXT]
+                       [--threads 1,2,4,24] [--repeat N] [--rows ID,ID] [--label TEXT] [--describe]
   predictor_corpus check --corpus FILE FILE... [--base FILE]
 
 run   builds and exports every row at every thread count, N times each, and
       appends one JSON line for each to --out. Rows that import a private
       source need --sources and --selection, as tools/checkpoint/checkpoint.py
       takes them; without them those rows are skipped and named.
+      --describe records unproved display descriptions in place of STEP export.
 check tests the predictor's done-when lines on the lines of the runs. It
       needs every row of --corpus at 1, 2, 4 and 24 threads on two machines,
       a machine being a --label, and fails on any that is missing. --base is
@@ -153,20 +156,20 @@ fn work_json(work: OperationWork) -> Value {
 }
 
 /// Builds and exports one row on a thread of its own, as a request runs.
-fn measure(recipe: &Value, source: Option<&Source>, max_work: u64) -> Value {
+fn measure(recipe: &Value, source: Option<&Source>, max_work: u64, describe: bool) -> Value {
     let text = recipe.to_string();
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .name("catallax-request".into())
             .stack_size(8 * 1024 * 1024)
-            .spawn_scoped(scope, || measure_here(&text, source, max_work))
+            .spawn_scoped(scope, || measure_here(&text, source, max_work, describe))
             .expect("a request thread")
             .join()
             .unwrap_or_else(|_| json!({"build": {"status": "panicked"}}))
     })
 }
 
-fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
+fn measure_here(text: &str, source: Option<&Source>, max_work: u64, describe: bool) -> Value {
     let recipe = match Recipe::parse(text) {
         Ok(recipe) => recipe,
         Err(error) => {
@@ -224,6 +227,13 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
     build["status"] = json!(status);
     build["refusal"] = json!(refusal);
     build["ms"] = json!(build_ms);
+    if describe {
+        let display = match outcome {
+            Ok(body) if !work.exhausted => describe_outcome(&body),
+            _ => Value::Null,
+        };
+        return json!({"build": build, "display": display, "operations": operations, "choices": choices});
+    }
     let export = if work.exhausted {
         Value::Null
     } else {
@@ -275,6 +285,34 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
     json!({"build": build, "export": export, "operations": operations, "choices": choices})
 }
 
+fn describe_outcome(outcome: &EvaluatedApplicationOutcome) -> Value {
+    fn record<T: std::fmt::Debug>(read: impl FnOnce() -> Result<T, catallax_app::Error>) -> Value {
+        let started = Instant::now();
+        let (answer, work) = with_operation_budget(0, read);
+        let mut report = work_json(work);
+        report["ms"] = json!(started.elapsed().as_secs_f64() * 1000.0);
+        match answer {
+            Ok(description) => {
+                // Rust's shortest round-trip representation preserves each
+                // binary64 value. This fingerprint is for corpus comparisons,
+                // not a wire encoding of the display API.
+                report["sha256"] = json!(sha256(format!("{description:?}").as_bytes()));
+            }
+            Err(error) => report["refusal"] = json!(format!("{error:?}")),
+        }
+        report
+    }
+    let options = DisplayOptions::default();
+    match outcome {
+        EvaluatedApplicationOutcome::Exact(body) => {
+            record(|| display_description(body.checkpoint.built(), &options))
+        }
+        EvaluatedApplicationOutcome::Numerical(body) => {
+            record(|| numerical_display_description(body, &options))
+        }
+    }
+}
+
 fn exported(work: OperationWork, started: Instant, refusal: Option<&str>, bytes: &[u8]) -> Value {
     let ms = started.elapsed().as_secs_f64() * 1000.0;
     let mut export = work_json(work);
@@ -314,6 +352,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let repeat: usize = flag(args, "--repeat").map_or(Ok(1), str::parse)?;
     let only: Option<Vec<&str>> = flag(args, "--rows").map(|rows| rows.split(',').collect());
     let label = flag(args, "--label").unwrap_or("");
+    let describe = args.iter().any(|arg| arg == "--describe");
     let sources = match (flag(args, "--sources"), flag(args, "--selection")) {
         (Some(sources), Some(selection)) => {
             let members: Vec<(String, String)> = serde_json::from_slice(&fs::read(selection)?)?;
@@ -340,7 +379,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         for &count in &threads {
             catallax_numbers::set_threads(NonZeroUsize::new(count));
             for pass in 0..repeat {
-                let mut line = measure(&recipe, source.as_ref(), max_work);
+                let mut line = measure(&recipe, source.as_ref(), max_work, describe);
                 line["id"] = json!(id);
                 line["group"] = row["group"].clone();
                 line["threads"] = json!(count);
@@ -369,7 +408,7 @@ fn answer_of(line: &Value) -> Value {
     for key in ["threads", "pass", "label"] {
         answer.as_object_mut().expect("a line").remove(key);
     }
-    for part in ["build", "export"] {
+    for part in ["build", "export", "display"] {
         if let Some(part) = answer[part].as_object_mut() {
             part.remove("ms");
         }

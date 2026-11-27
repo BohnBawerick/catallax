@@ -1,5 +1,6 @@
 use super::{Expr, Frame, MappingError};
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use std::cmp::Ordering;
 use std::f64::consts::PI;
 
 #[derive(Debug)]
@@ -230,7 +231,11 @@ impl AnalyticProjection {
 
 fn closer(a: Option<([f64; 2], f64)>, b: Option<([f64; 2], f64)>) -> Option<[f64; 2]> {
     match (a, b) {
-        (Some((a, d)), Some((b, e))) if d != e => Some(if d < e { a } else { b }),
+        (Some((a, d)), Some((b, e))) => match d.partial_cmp(&e) {
+            Some(Ordering::Less) => Some(a),
+            Some(Ordering::Equal) => None,
+            Some(Ordering::Greater) | None => Some(b),
+        },
         (Some((a, _)), None) | (None, Some((a, _))) => Some(a),
         _ => None,
     }

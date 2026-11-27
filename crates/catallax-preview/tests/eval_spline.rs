@@ -296,9 +296,28 @@ impl Batch {
                 let got = &result[i];
                 let want = &self.expected[i];
                 let position = error(got.position, want.position) / size;
+                if position > 5e-6 {
+                    let net = self.queries[i].net;
+                    for (t, offset, degree, count) in [
+                        (uv[0], net.knot_u_offset, net.degree_u, net.count_u),
+                        (uv[1], net.knot_v_offset, net.degree_v, net.count_v),
+                    ] {
+                        let knots =
+                            &self.knots[offset as usize..(offset + count + degree + 1) as usize];
+                        let span = knots.partition_point(|&k| k <= t);
+                        let nearby = span.saturating_sub(degree as usize + 2)
+                            ..(span + degree as usize + 2).min(knots.len());
+                        eprintln!(
+                            "degree {degree} count {count} t {t} span {span} nearby {:?}",
+                            &knots[nearby]
+                        );
+                    }
+                }
                 assert!(
                     position <= 5e-6,
-                    "{name} {uv:?}: relative position error {position:e}"
+                    "{name} sample {i} {uv:?}: relative position error {position:e}, got {:?}, expected {:?}",
+                    got.position,
+                    want.position
                 );
                 face[0] = face[0].max(position);
                 if let Some(n) = want.normal {

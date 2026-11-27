@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use catallax_numbers::{
@@ -16,7 +17,9 @@ use spade::{
 use crate::{
     FaceMesh, Mesh, MeshOptions, Triangle,
     assembly::{Assembly, FaceDraft, Positions},
-    chart::{self, Chart, CollarBridge, NormalProof, SplineChart, Uv, align, chord_bound, key},
+    chart::{
+        self, Chart, CollarBridge, FixedTrim, NormalProof, SplineChart, Uv, align, chord_bound, key,
+    },
     edges::{self, Boundaries},
     failure,
 };
@@ -515,7 +518,54 @@ impl FaceBuilder<'_, '_> {
             });
             self.collar(segments, anchors, &mut nodes, &mut indices, seam_collars)?;
         }
+        if let Some(trim) = &self.chart.fixed {
+            self.fixed_cells(trim, &mut nodes, &mut indices)?;
+        }
         self.bulk_load(nodes)
+    }
+
+    fn fixed_cells(
+        &mut self,
+        trim: &FixedTrim,
+        nodes: &mut Vec<Node>,
+        indices: &mut BTreeMap<[u64; 2], usize>,
+    ) -> Result<(), Refusal> {
+        // Freeze the interior sides of the rail cells before adding any free
+        // points. A rejected facet can refine within its cell, not drive its
+        // apex into a shared chord or move it across a knot.
+        let [columns, rows] = &trim.axes;
+        let mut previous = Vec::<usize>::with_capacity(rows.len());
+        let mut current = Vec::<usize>::with_capacity(rows.len());
+        for (i, &u) in columns.iter().enumerate() {
+            let outer_column = i == 0 || i + 1 == columns.len();
+            for (j, &v) in rows.iter().enumerate() {
+                self.dec.charge_traversal(1)?;
+                let uv = [u, v];
+                let outer_row = j == 0 || j + 1 == rows.len();
+                let vertex = if outer_row || outer_column {
+                    let at = self.place(uv);
+                    *indices
+                        .get(&key([at.x, at.y]))
+                        .ok_or_else(|| failure("fixed cell boundary has no shared sample"))?
+                } else {
+                    self.queue(nodes, indices, uv, None)?
+                };
+                if !outer_row && i != 0 {
+                    let left = previous[j];
+                    self.collar_edges
+                        .insert([left.min(vertex), left.max(vertex)]);
+                }
+                if !outer_column && j != 0 {
+                    let below = current[j - 1];
+                    self.collar_edges
+                        .insert([below.min(vertex), below.max(vertex)]);
+                }
+                current.push(vertex);
+            }
+            std::mem::swap(&mut previous, &mut current);
+            current.clear();
+        }
+        Ok(())
     }
 
     fn seam_collar_points(
@@ -1615,9 +1665,10 @@ impl FaceBuilder<'_, '_> {
     ) -> Result<(Vec<Triangle>, Rational, Rational, Option<Rational>), Refusal> {
         let filtered_tolerance = Interval::from_rational(&self.options.chord_tolerance);
         let spline = self.chart.spline();
+        let fixed = self.chart.fixed.is_some();
         let collapsed_station = self.collapsed_station.is_some();
         let protect_band = self.protects_band();
-        let cosine = if spline.is_some() {
+        let cosine = if spline.is_some() && !fixed {
             self.options
                 .angular_deviation
                 .as_ref()
@@ -1684,6 +1735,23 @@ impl FaceBuilder<'_, '_> {
                 {
                     if protect_band {
                         return Err(failure("periodic band facet repeats a mesh vertex"));
+                    }
+                    if fixed {
+                        // The repeated vertices map the collapsed cell half
+                        // onto an edge of the retained half. Its positional
+                        // proof still covers surface points in that half.
+                        let replacement = nodes
+                            .iter()
+                            .map(|n| self.filtered_errors[n.error].hi())
+                            .fold(0.0_f64, f64::max);
+                        let bound = spline.expect("fixed spline chart").chord(&uvs, self.dec)?
+                            + Interval::point(replacement).unwrap();
+                        if bound.hi() > filtered_tolerance.lo() {
+                            return Err(failure(
+                                "collapsed trim facet exceeds its chord tolerance",
+                            ));
+                        }
+                        maximum = maximum.max(chart::q(bound.hi()));
                     }
                     continue;
                 }
@@ -1771,7 +1839,7 @@ impl FaceBuilder<'_, '_> {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
                 };
-                if let Some(limit) = &self.options.max_edge_length {
+                if !fixed && let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
                         crate::controls::length_squared(
                             self.positions[vertices[i]],
@@ -1792,7 +1860,7 @@ impl FaceBuilder<'_, '_> {
                     }
                 }
                 let station = self.collapsed_station;
-                let split_edge = self.band.is_some() || collapsed_station;
+                let split_edge = self.band.is_some() || collapsed_station || fixed;
                 let refine_at =
                     |prefer_transverse: bool, dec: &mut Decider| -> Result<Uv, Refusal> {
                         if !split_edge {
@@ -1919,7 +1987,7 @@ impl FaceBuilder<'_, '_> {
                 } else {
                     self.options.angular_deviation.as_ref()
                 };
-                let (ratio, mut angular_reached) = if self.unproved {
+                let (ratio, mut angular_reached) = if self.unproved && !fixed {
                     // The preview omits the aspect report. Its chart chord
                     // and rounded-facet normal still qualify the geometry.
                     (Rational::zero(), true)
@@ -1935,7 +2003,9 @@ impl FaceBuilder<'_, '_> {
                     (ratio, angular_reached)
                 };
                 let mut angle_violation = false;
-                if let Some(spline) = spline {
+                if let Some(spline) = spline
+                    && !fixed
+                {
                     angular_reached = if let Some(bounds) = normal_bounds {
                         spline.facet_normals_within(bounds, positions, cosine, self.dec)?
                     } else {
@@ -2056,7 +2126,9 @@ impl FaceBuilder<'_, '_> {
                     triangles,
                     maximum,
                     aspect,
-                    self.options.angular_deviation.clone(),
+                    (!fixed)
+                        .then(|| self.options.angular_deviation.clone())
+                        .flatten(),
                 ));
             }
             if let Some(trim) = trim {
@@ -2125,6 +2197,17 @@ fn face_mesh(
 ) -> Result<(), Refusal> {
     let Plan { options, level } = plan;
     let face = model.face(face_id);
+    let fixed = chart.fixed.as_ref();
+    let mut sense = fixed.map_or(face.sense, |trim| trim.sense);
+    let lower_rail = if face.loops.len() == 1
+        && matches!(
+            chart.surface,
+            Surface::BSpline(SplineSupport::RollingPipe(_))
+        ) {
+        catallax_topology::partial_pipe_rows(model, face_id, dec)?.map(|rows| rows[0].0)
+    } else {
+        None
+    };
     let mut segments = Vec::new();
     let mut trim_error = Rational::zero();
     let mut projected = Vec::new();
@@ -2155,6 +2238,38 @@ fn face_mesh(
                         trim_error = trim_error.max(edge.max_chord_error.clone());
                     }
                     let trim = chart.trim(c.edge);
+                    if let Some(fixed) = fixed {
+                        let trim = trim.ok_or_else(|| failure("fixed face lost a checked trim"))?;
+                        let params = fixed.points(trim);
+                        if params.len() != edge.vertices.len() {
+                            return Err(failure("fixed face and edge station counts disagree"));
+                        }
+                        let axis = 1 - trim.fixed.0;
+                        let mut append = |a: Uv, b: Uv, first, last| {
+                            projected.extend([a, b]);
+                            segments.push(if c.sense == Sense::Same {
+                                (a, b, first, last)
+                            } else {
+                                (b, a, last, first)
+                            });
+                        };
+                        let forward = trim.ends[0][axis] < trim.ends[1][axis];
+                        let mut add_samples = |params: &mut dyn Iterator<Item = Uv>| {
+                            let mut a = params.next().expect("fixed row begins");
+                            for (b, [first, last]) in params.zip(edge.vertices.array_windows::<2>())
+                            {
+                                append(a, b, *first, *last);
+                                a = b;
+                            }
+                        };
+                        if forward {
+                            add_samples(&mut params.into_iter());
+                        } else {
+                            add_samples(&mut params.rev());
+                        }
+                        continue;
+                    }
+                    let first_segment = segments.len();
                     let mut parameter = |index, seed, dec: &mut Decider| {
                         let Some(trim) = trim else {
                             return project(index, seed, dec);
@@ -2181,8 +2296,51 @@ fn face_mesh(
                         projected.extend([a, b]);
                         segments.push((a, b, pair[0], pair[1]));
                     }
+                    if lower_rail == Some(c.edge) {
+                        // The lower rail's coedge bounds the interior above it.
+                        // The topological sense is not the rational chart sense.
+                        let rail = &segments[first_segment..];
+                        let forward = rail.first().is_some_and(|(a, b, _, _)| a[0] < b[0]);
+                        let order = if forward {
+                            Ordering::Less
+                        } else {
+                            Ordering::Greater
+                        };
+                        if rail.is_empty()
+                            || rail.iter().any(|(a, b, _, _)| {
+                                a[1] != 0.0 || b[1] != 0.0 || a[0].partial_cmp(&b[0]) != Some(order)
+                            })
+                        {
+                            return Err(failure(
+                                "open pipe lower rail has no consistent chart direction",
+                            ));
+                        }
+                        sense = if forward {
+                            Sense::Same
+                        } else {
+                            Sense::Reversed
+                        };
+                    }
                 }
             }
+        }
+    }
+    if let Some(trim) = fixed.filter(|trim| trim.apex) {
+        let u = *trim.axes[0].last().expect("fixed chart has columns");
+        let mut ends = segments
+            .iter()
+            .flat_map(|&(a, b, first, last)| [(a, first), (b, last)])
+            .filter(|(uv, _)| uv[0] == u)
+            .map(|(_, index)| index);
+        let apex = ends
+            .next()
+            .ok_or_else(|| failure("collapsed trim has no apex"))?;
+        if ends.any(|index| index != apex) {
+            return Err(failure("collapsed trim rails do not meet at one apex"));
+        }
+        for &[a, b] in trim.axes[1].array_windows::<2>() {
+            let (a, b) = if sense == Sense::Same { (a, b) } else { (b, a) };
+            segments.push(([u, a], [u, b], apex, apex));
         }
     }
     let band =
@@ -2191,7 +2349,7 @@ fn face_mesh(
         } else {
             None
         };
-    let sense = band.map_or(face.sense, |band| band.sense);
+    let sense = band.map_or(sense, |band| band.sense);
     let bounds = std::array::from_fn(|i| {
         if chart.periodic[i] {
             [0.0, 1.0]
@@ -2231,6 +2389,9 @@ fn face_mesh(
             Surface::BSpline(SplineSupport::RollingSaddle(_))
         );
     let stretch = chart.spline().map_or(1.0, |spline| {
+        if fixed.is_some() {
+            return spline.exact_metric_stretch();
+        }
         // Refinement can put several samples on the same UV line. A rounded
         // metric product can turn them into a facet with no parameter area.
         if spline.has_normal_cover() {
@@ -2263,13 +2424,45 @@ fn face_mesh(
         dec,
     };
     builder.boundary(&segments, sense)?;
-    builder.grid()?;
+    if fixed.is_none() {
+        builder.grid()?;
+    }
     let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
         builder.finish(face_id, sense).map_err(|mut e| {
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
     let start = draft.mesh.triangles.len();
+    if fixed.is_some() && options.angular_deviation.is_some() {
+        draft
+            .mesh
+            .unavailable_controls
+            .push(crate::UnavailableControl {
+                face: face_id,
+                control: crate::MeshControl::AngularDeviation,
+                reason: "the fixed chart certifies position, not normal variation",
+            });
+    }
+    if fixed.is_some()
+        && let Some(limit) = &options.max_edge_length
+    {
+        let squared = limit * limit;
+        if triangles.iter().any(|triangle| {
+            (0..3).any(|i| {
+                let [a, b] = [i, (i + 1) % 3].map(|j| draft.mesh.positions[triangle.vertices[j]]);
+                crate::controls::length_squared(a, b) > squared
+            })
+        }) {
+            draft
+                .mesh
+                .unavailable_controls
+                .push(crate::UnavailableControl {
+                    face: face_id,
+                    control: crate::MeshControl::EdgeLength,
+                    reason: "the fixed chart is refined for chord error only",
+                });
+        }
+    }
     draft.mesh.triangles.extend(triangles);
     if options
         .max_aspect_ratio
@@ -2677,6 +2870,9 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
             | SplineSupport::RollingSphere(_)
             | SplineSupport::SplineFillet(_)),
         ) => Some(support),
+        Surface::BSpline(
+            support @ (SplineSupport::RollingEnvelope(_) | SplineSupport::RollingMitre(_)),
+        ) => Some(support),
         Surface::BSpline(support @ SplineSupport::RollingSaddle(saddle))
             if !matches!(
                 saddle.definition().law().ring,
@@ -2727,6 +2923,14 @@ pub(crate) fn shared_spline_preview(
     let mut found_spline = false;
     for face in faces {
         let surface = model.geom().surface(model.face(face).surface);
+        // Junction previews keep the same chord-only options on their
+        // neighbouring faces as on the fixed charts themselves.
+        if matches!(
+            surface,
+            Surface::BSpline(SplineSupport::RollingEnvelope(_) | SplineSupport::RollingMitre(_))
+        ) {
+            return None;
+        }
         if matches!(surface, Surface::BSpline(_)) {
             spline_chart(surface)?;
             found_spline = true;
@@ -2853,13 +3057,14 @@ fn build_junction(
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
     let Plan { options, level } = plan;
     let faces = model.faces_of_body(body);
-    let fitted = |face: FaceId| junction.as_ref().is_some_and(|j| j.contains(face));
+    let mut junction = junction.unwrap_or_default();
+    let fitted = |face: FaceId| junction.contains(face);
     let mut charts = faces
         .iter()
         .filter(|&&f| !fitted(f))
         .map(|&f| {
             let chart = match spline_chart(model.geom().surface(model.face(f).surface)) {
-                Some(support) => Chart::from_spline(model, f, support, dec)?,
+                Some(support) => Chart::from_spline(model, f, support, options, dec)?,
                 _ => regular_chart(model, f, options, dec)?,
             };
             Ok((f, chart))
@@ -2893,7 +3098,12 @@ fn build_junction(
             chart.chord_goal = Some(goal);
         }
     }
-    let boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
+    for chart in charts.values() {
+        if let Some(trim) = &chart.fixed {
+            trim.seed_edges(model, chart, &mut junction.seeds, options, dec)?;
+        }
+    }
+    let boundaries = edges::sample(model, body, &charts, Some(&junction), options, dec)?;
     let mut assembly = Assembly::new(&boundaries);
     let mut enclosures = BTreeMap::new();
     let mut removed = 0;
@@ -2930,7 +3140,7 @@ fn build_junction(
         let shared = Shared {
             model,
             boundaries: &boundaries,
-            junction: junction.as_ref(),
+            junction: Some(&junction),
             prior: assembly.prior(),
         };
         let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);

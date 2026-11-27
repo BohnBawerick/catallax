@@ -1105,9 +1105,6 @@ fn checked_corpus_faces_stay_within_their_reported_bounds() {
                     ("m10-top-cut" | "fillet-vertex-4-two", "mesh.precision-or-budget") => {
                         eprintln!("{case}: {err} (10.6)")
                     }
-                    ("fillet-partial-oblique", "mesh.precision-or-budget") => {
-                        eprintln!("{case}: {err} (10.2)")
-                    }
                     _ => findings.push(format!("{case}: display refused: {err}")),
                 }
                 continue;

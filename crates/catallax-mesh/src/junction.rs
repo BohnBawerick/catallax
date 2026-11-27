@@ -1,7 +1,4 @@
-//! Structured display grids for checked finite spline faces.
-//!
-//! Each supported face supplies a grid and a chord bound. Shared boundary rows
-//! seed the edge polylines, and analytic neighbours triangulate up to those rows.
+//! Retained crossing-saddle and rational display cells.
 
 use std::collections::BTreeMap;
 
@@ -10,13 +7,8 @@ mod rational_patch;
 mod spline_fillet;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
-use catallax_shapes::{
-    BoundaryRow, Curve, EnvelopeGrid, RollingEnvelope, RollingMitre, RollingSaddle, SplineSupport,
-    Surface,
-};
-use catallax_topology::{
-    BodyId, EdgeId, FaceId, Model, RollingMitreBand, Sense, envelope_rows, saddle_rows,
-};
+use catallax_shapes::{BoundaryRow, Curve, EnvelopeGrid, RollingSaddle, SplineSupport, Surface};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense, saddle_rows};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
@@ -50,19 +42,18 @@ struct Envelope {
 enum Ends {
     Meridians,
     Poles,
-    ZeroEnd,
 }
 
 impl Ends {
     fn collapsed(self, column: usize, columns: usize) -> bool {
-        (column == 0 && self == Self::Poles)
-            || (column + 1 == columns && matches!(self, Self::Poles | Self::ZeroEnd))
+        self == Self::Poles && (column == 0 || column + 1 == columns)
     }
 }
 
+#[derive(Default)]
 pub(crate) struct Junction {
     envelopes: BTreeMap<FaceId, Envelope>,
-    seeds: BTreeMap<EdgeId, Seed>,
+    pub(crate) seeds: BTreeMap<EdgeId, Seed>,
 }
 
 fn row_points(grid: &EnvelopeGrid, row: BoundaryRow) -> Vec<[Ball; 3]> {
@@ -96,161 +87,17 @@ pub(crate) fn preview(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
-    use catallax_numbers::Interval;
-    use catallax_shapes::tessellation::{chord_bound_interval, rational_spans};
-
-    fn grid(
-        envelope: &RollingEnvelope,
-        tolerance: &Rational,
-        max_vertices: usize,
-        dec: &mut Decider,
-    ) -> Result<EnvelopeGrid, Refusal> {
-        // Envelope carriers are a strip of Bernstein spans along u, with
-        // one span across the meridian. Bound all cells of a span at once.
-        let spans = rational_spans(envelope.carrier(), dec)?;
-        let hessian = std::array::from_fn(|i| {
-            let bound = spans
-                .iter()
-                .map(|span| span.chord_coefficients()[i].hi())
-                .fold(0.0, f64::max);
-            Interval::new(0.0, bound).unwrap()
-        });
-        let target = Interval::from_rational(tolerance).lo();
-        let mut cells: [usize; 2] = [1, 4];
-        let (columns, rows, chord) = loop {
-            dec.check_deadline()?;
-            let columns = spans.len().saturating_mul(cells[0]).saturating_add(1);
-            let rows = cells[1] + 1;
-            if columns.saturating_mul(rows) > max_vertices {
-                return Err(failure("preview envelope grid reached max_vertices"));
-            }
-            let steps = cells.map(|n| Interval::point(1.0 / n as f64).unwrap());
-            let chord = chord_bound_interval(steps, &hessian).hi();
-            if chord <= target {
-                break (columns, rows, chart::q(chord));
-            }
-            let [u, v] = steps.map(|step| step.hi());
-            let axis = usize::from(hessian[2].hi() * v * v > hessian[0].hi() * u * u);
-            cells[axis] = cells[axis]
-                .checked_mul(2)
-                .ok_or_else(|| failure("preview envelope grid size overflow"))?;
-        };
-
-        let mut points = Vec::with_capacity(columns * rows);
-        for (index, span) in spans.iter().enumerate() {
-            let last = cells[0] + usize::from(index + 1 == spans.len());
-            for i in 0..last {
-                for j in 0..rows {
-                    let uv = [i as f64 / cells[0] as f64, j as f64 / cells[1] as f64];
-                    let xyz = span.evaluate(uv, dec)?;
-                    if !xyz.iter().all(Interval::is_finite) {
-                        return Err(failure("preview envelope point exceeds binary64"));
-                    }
-                    points.push(xyz.map(|value| {
-                        Ball::from_rational(&chart::q(value.lo()), BITS)
-                            .hull(&Ball::from_rational(&chart::q(value.hi()), BITS))
-                    }));
-                }
-            }
-        }
-        Ok(EnvelopeGrid {
-            columns,
-            rows,
-            points,
-            chord,
-        })
-    }
-
     let mesh_options = MeshOptions {
         chord_tolerance: options.chord_tolerance.clone(),
-        angular_deviation: None,
         max_vertices: options.max_vertices,
-        max_edge_length: None,
-        max_aspect_ratio: None,
+        ..MeshOptions::default()
     };
-    let tolerance = options.chord_tolerance.mul_pow2(-1);
-    let mut envelopes = BTreeMap::new();
-    let mut seeds = BTreeMap::new();
-    for face in model.faces_of_body(body) {
-        let band = match model.geom().surface(model.face(face).surface) {
-            Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
-                let grid = grid(envelope, &tolerance, options.max_vertices, dec)?;
-                let mut rows = Vec::with_capacity(4);
-                let mut along_u = None;
-                for (edge, row, sense) in envelope_rows(model, face, dec)? {
-                    let points = row_points(&grid, row);
-                    let definition = model.edge(edge);
-                    let (Some(start), Some(end)) = (definition.start, definition.end) else {
-                        return Err(failure("envelope row needs two ends"));
-                    };
-                    let first = chart::position(&points[0])?;
-                    let distance = |vertex| -> Result<f64, Refusal> {
-                        let p = model.geom().position(model.vertex(vertex).point);
-                        [&p.x, &p.y, &p.z]
-                            .into_iter()
-                            .zip(first)
-                            .try_fold(0.0, |sum, (x, y)| {
-                                let x = dec.enclose_at(x, BITS)?.mid().to_f64_nearest();
-                                Ok(sum + (x - y).abs())
-                            })
-                    };
-                    let forward = distance(start)? <= distance(end)?;
-                    if row == BoundaryRow::Rail {
-                        along_u = Some((sense == Sense::Same) == forward);
-                    }
-                    rows.push((edge, row, forward));
-                    seeds.insert(
-                        edge,
-                        Seed {
-                            points,
-                            error: grid.chord.clone(),
-                            forward,
-                            exact: Vec::new(),
-                        },
-                    );
-                }
-                Envelope {
-                    grid,
-                    rows,
-                    along_u: along_u.ok_or_else(|| failure("envelope needs a rail"))?,
-                    ends: Ends::Meridians,
-                    rational: None,
-                }
-            }
-            Surface::BSpline(SplineSupport::RollingMitre(mitre)) => mitre_band(
-                model,
-                face,
-                mitre,
-                &tolerance,
-                &mesh_options,
-                &mut seeds,
-                dec,
-            )?,
-            Surface::BSpline(SplineSupport::RollingSaddle(saddle))
-                if matches!(
-                    saddle.definition().law().ring,
-                    catallax_shapes::SaddleRing::Crossing { .. }
-                ) =>
-            {
-                saddle_band(
-                    model,
-                    face,
-                    saddle,
-                    &tolerance,
-                    &mesh_options,
-                    &mut seeds,
-                    dec,
-                )?
-            }
-            _ => continue,
-        };
-        envelopes.insert(face, band);
-    }
+    let junction = prepare(model, &model.faces_of_body(body), &mesh_options, dec)?;
     crate::triangulate::build_preview(
         model,
         body,
         options,
-        Some(Junction { envelopes, seeds }),
+        Some(junction.unwrap_or_default()),
         dec,
     )
 }
@@ -374,6 +221,8 @@ pub(crate) fn prepare(
     let mut seeds = BTreeMap::new();
     for &face in faces {
         let envelope = match model.geom().surface(model.face(face).surface) {
+            // This finite strip has two distinct collapsed poles. Keep its
+            // checked grid until the shared chart can certify both ends.
             Surface::BSpline(SplineSupport::RollingSaddle(saddle))
                 if matches!(
                     saddle.definition().law().ring,
@@ -382,123 +231,11 @@ pub(crate) fn prepare(
             {
                 saddle_band(model, face, saddle, &tolerance, options, &mut seeds, dec)?
             }
-            Surface::BSpline(SplineSupport::RollingMitre(mitre)) => {
-                mitre_band(model, face, mitre, &tolerance, options, &mut seeds, dec)?
-            }
-            Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
-                envelope_band(model, face, envelope, &tolerance, options, &mut seeds, dec)?
-            }
             _ => continue,
         };
         envelopes.insert(face, envelope);
     }
     Ok((!envelopes.is_empty()).then_some(Junction { envelopes, seeds }))
-}
-
-fn envelope_band(
-    model: &Model,
-    face: FaceId,
-    envelope: &RollingEnvelope,
-    tolerance: &Rational,
-    options: &MeshOptions,
-    seeds: &mut BTreeMap<EdgeId, Seed>,
-    dec: &mut Decider,
-) -> Result<Envelope, Refusal> {
-    let grid = envelope.display_grid(tolerance, options.max_vertices, dec)?;
-    let mut rows = Vec::with_capacity(4);
-    let mut along_u = None;
-    for (edge, row, sense) in envelope_rows(model, face, dec)? {
-        let points = row_points(&grid, row);
-        let definition = model.edge(edge);
-        let (Some(start), Some(end)) = (definition.start, definition.end) else {
-            return Err(failure("a rolling-envelope row has two ends"));
-        };
-        let [start, end] = [start, end].map(|v| model.geom().position(model.vertex(v).point));
-        let distance = |point: &catallax_shapes::Point3| -> Result<Rational, Refusal> {
-            let xyz = [&point.x, &point.y, &point.z].map(|x| dec.enclose_at(x, BITS));
-            let mut sum = Rational::zero();
-            for (i, value) in xyz.into_iter().enumerate() {
-                sum = sum + (&value?.mid() - &points[0][i].mid()).abs();
-            }
-            Ok(sum)
-        };
-        let forward = distance(&start)? <= distance(&end)?;
-        if row == BoundaryRow::Rail {
-            along_u = Some((sense == Sense::Same) == forward);
-        }
-        rows.push((edge, row, forward));
-        seeds.insert(
-            edge,
-            Seed {
-                points,
-                error: grid.chord.clone(),
-                forward,
-                exact: Vec::new(),
-            },
-        );
-    }
-    Ok(Envelope {
-        grid,
-        rows,
-        along_u: along_u.ok_or_else(|| failure("a rolling-envelope face has no rail"))?,
-        ends: Ends::Meridians,
-        rational: None,
-    })
-}
-
-// A band over a mitre: its rails are the grid's first and last rows, its
-// end section the first column, and its last column collapses to the apex.
-fn mitre_band(
-    model: &Model,
-    face: FaceId,
-    support: &RollingMitre,
-    tolerance: &Rational,
-    options: &MeshOptions,
-    seeds: &mut BTreeMap<EdgeId, Seed>,
-    dec: &mut Decider,
-) -> Result<Envelope, Refusal> {
-    let checked = RollingMitreBand::checked(model, face, dec)?.map_err(|undecided| {
-        failure("a rolling mitre band has no proved complete domain").keeping_any(undecided)
-    })?;
-    let grid = support.display_grid(tolerance, options.max_vertices, dec)?;
-    let mut rows = Vec::with_capacity(3);
-    let mut along_u = None;
-    for (edge, row, sense, forward) in checked.rows() {
-        let points = row_points(&grid, row);
-        let count = points.len();
-        let mut exact = Vec::with_capacity(count);
-        for index in 0..count {
-            let t = Rational::from_ratio(index as i64, count as i64 - 1).unwrap();
-            let (u, v) = match row {
-                BoundaryRow::Rail => (t, Rational::zero()),
-                BoundaryRow::Mouth => (t, Rational::one()),
-                BoundaryRow::Negative => (Rational::zero(), t),
-                BoundaryRow::Positive => (Rational::one(), t),
-            };
-            let point = support.point(&u, &v);
-            exact.push([point.x, point.y, point.z]);
-        }
-        if row == BoundaryRow::Rail {
-            along_u = Some((sense == Sense::Same) == forward);
-        }
-        rows.push((edge, row, forward));
-        seeds.insert(
-            edge,
-            Seed {
-                points,
-                error: grid.chord.clone(),
-                forward,
-                exact,
-            },
-        );
-    }
-    Ok(Envelope {
-        grid,
-        rows,
-        along_u: along_u.ok_or_else(|| failure("a rolling mitre band has no first rail"))?,
-        ends: Ends::ZeroEnd,
-        rational: None,
-    })
 }
 
 // A crossing saddle's rails meet at both chart poles.
@@ -542,7 +279,7 @@ fn saddle_band(
 }
 
 // Whether a planar face uses the edge.
-fn meets_plane(model: &Model, edge: EdgeId) -> bool {
+pub(crate) fn meets_plane(model: &Model, edge: EdgeId) -> bool {
     model.coedges_of_edge(edge).into_iter().any(|coedge| {
         model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
             matches!(

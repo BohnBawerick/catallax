@@ -1584,6 +1584,68 @@ impl SplineChart {
         (position, vertex_residual(position, enclosed))
     }
 
+    /// Use one tensor subdivision on a complete finite trim. Knot lines are
+    /// constraints, so every facet stays within a span and the rail vertices
+    /// already size the cells touching the trim.
+    pub(crate) fn fixed_lattice(
+        &self,
+        limit: &Rational,
+        max_vertices: usize,
+        dec: &mut Decider,
+    ) -> Result<[Vec<f64>; 2], Refusal> {
+        let knots: [Vec<_>; 2] = std::array::from_fn(|axis| {
+            let mut knots: Vec<_> = self
+                .spans
+                .iter()
+                .flat_map(|span| span.bounds[axis])
+                .collect();
+            knots.sort_unstable_by(f64::total_cmp);
+            knots.dedup();
+            knots
+        });
+        let coefficients = self
+            .spans
+            .iter()
+            .map(|span| span.rational.chord_coefficients())
+            .reduce(|a, b| std::array::from_fn(|i| a[i].hull(&b[i])))
+            .ok_or_else(|| failure("fixed trim has no spans"))?;
+        let limit = Interval::from_rational(limit).lo();
+        let mut counts = [2usize; 2];
+        loop {
+            dec.check_deadline()?;
+            let sizes: [usize; 2] = std::array::from_fn(|axis| {
+                (knots[axis].len() - 1)
+                    .saturating_mul(counts[axis])
+                    .saturating_add(1)
+            });
+            if sizes[0].saturating_mul(sizes[1]) > max_vertices {
+                return Err(failure("fixed trim lattice reached max_vertices"));
+            }
+            let widths = counts.map(|count| point(1.0 / count as f64));
+            if chord_bound_interval(widths, &coefficients).hi() <= limit {
+                return Ok(std::array::from_fn(|axis| {
+                    let mut values = Vec::with_capacity(sizes[axis]);
+                    let count = counts[axis];
+                    for pair in knots[axis].windows(2) {
+                        for i in 0..count {
+                            values.push(pair[0] + (pair[1] - pair[0]) * (i as f64 / count as f64));
+                        }
+                    }
+                    values.push(*knots[axis].last().expect("fixed spline domain"));
+                    values
+                }));
+            }
+            let pure = [
+                coefficients[0] * widths[0].square(),
+                coefficients[2] * widths[1].square(),
+            ];
+            let axis = usize::from(pure[1].hi() > pure[0].hi());
+            counts[axis] = counts[axis]
+                .checked_mul(2)
+                .ok_or_else(|| failure("fixed trim lattice size overflow"))?;
+        }
+    }
+
     pub(crate) fn seed_grid(
         &self,
         limit: &Rational,

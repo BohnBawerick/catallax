@@ -249,6 +249,17 @@ fn a_branch_on_a_pipe_meshes_with_flat_facets() {
 }
 
 #[test]
+fn a_partial_oblique_rim_keeps_both_rails_and_wall_sections() {
+    let recipe = Recipe::parse(include_str!(
+        "../../../evidence/phase1/P03/inputs/partial-oblique.json"
+    ))
+    .unwrap();
+    let options = MeshOptions::default();
+    let body = catallax_app::build(&recipe, &options, &mut Decider::default()).unwrap();
+    assert_closed("partial oblique rim", &body.display.value, &options);
+}
+
+#[test]
 fn generator_fillets_stay_closed_at_every_viewport_level() {
     for (kind, recipe) in [
         ("lens", pair("intersect", "5/4")),

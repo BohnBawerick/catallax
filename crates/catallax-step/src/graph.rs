@@ -1,6 +1,7 @@
 //! Entity references stay symbolic until the required depth-first numbering pass.
 
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -211,6 +212,41 @@ impl Graph {
             next += 1;
         }
         numbers
+    }
+
+    pub(crate) fn unique_draughting_model_names(&mut self) {
+        let names = self
+            .entities
+            .iter_mut()
+            .filter_map(|entity| {
+                if entity.name == "DRAUGHTING_MODEL"
+                    && let Some(Field::Text(name)) = entity.fields.first_mut()
+                {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut reserved = names
+            .iter()
+            .map(|name| name.to_string())
+            .collect::<BTreeSet<_>>();
+        let mut seen = BTreeSet::new();
+        for name in names {
+            if seen.insert(name.to_string()) {
+                continue;
+            }
+            let base = name.strip_suffix('\'').expect("a quoted model name");
+            let base = if base == "'" { "'PMI" } else { base };
+            for suffix in 2.. {
+                let unique = format!("{base} ({suffix})'");
+                if reserved.insert(unique.clone()) {
+                    *name = Cow::Owned(unique);
+                    break;
+                }
+            }
+        }
     }
 
     pub(crate) fn write_layout(&self, layout: &Layout, mut output: String) -> String {

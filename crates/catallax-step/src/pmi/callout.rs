@@ -339,6 +339,7 @@ fn root(value: &Rational) -> Rational {
 }
 
 fn unit_axis(axis: &Point) -> Point {
+    let axis = super::decimal_direction(axis);
     let largest = axis
         .iter()
         .map(Rational::abs)

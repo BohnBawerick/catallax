@@ -1724,7 +1724,7 @@ impl<'a> Exporter<'a> {
     ) -> Result<Vec<Id>, Refusal> {
         pmi.validate()?;
         let digits = self.digits();
-        crate::pmi::emit(
+        let annotations = crate::pmi::emit(
             &mut self.graph,
             self.model,
             &self.written_faces,
@@ -1732,7 +1732,9 @@ impl<'a> Exporter<'a> {
             pmi,
             digits,
             self.dec,
-        )
+        )?;
+        self.graph.unique_draughting_model_names();
+        Ok(annotations)
     }
 
     pub(crate) fn build(self, bodies: &[BodyId]) -> Answered<PartDocument> {

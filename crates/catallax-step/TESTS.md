@@ -216,8 +216,10 @@ refused before writing, and a text variable the reader does not know is
 reported while the other items stay.
 
 The saved-view test writes the P1 items unchanged with two views, one parallel
-and one in perspective. It checks that the views read back exactly, with
-camera, window and the items each shows. An independent walk of the emitted
+and one in perspective. With `CATALLAX_PMI_OUT` set, the test writes both
+standalone views as `c4c-bore-view.step` and `c4c-top-view.step` and the
+combined `c4c-saved-views.step`. It checks the AP242 Edition 1 draughting model
+rules WR2 and UR1 and reads back each view's camera, window and visible items. An independent walk of the emitted
 records checks the datum feature and tolerance associations, each plane, and
 the extent of the labels and finish symbols along both screen dimensions. A
 handwritten fixture with no equivalent Unicode property checks graphical-only

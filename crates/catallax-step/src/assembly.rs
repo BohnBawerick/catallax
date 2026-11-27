@@ -258,6 +258,7 @@ pub fn write_step_assembly<W: Write>(
             "at least one part lacks a complete deviation bound; complete_body_bound=unestablished",
         ]
     };
+    graph.unique_draughting_model_names();
     let file = document::render(&graph, &layout, name, description);
     out.write_all(file.as_bytes())
         .map_err(|error| Refusal::new("step.io-error", error.to_string()))?;

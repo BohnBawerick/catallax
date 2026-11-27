@@ -10,8 +10,8 @@ use catallax_step::{
     StepOptions,
     assembly::{Assembly, Occurrence, Part, Product, ProductContent, write_step_assembly},
     pmi::{
-        Characteristic, Datum, DatumTarget, GeometricTolerance, Item, ItemKind, PartNotes, Pmi,
-        Size, SizeKind, TargetKind,
+        Camera, Characteristic, Datum, DatumTarget, GeometricTolerance, Item, ItemKind, PartNotes,
+        Pmi, SavedView, Size, SizeKind, TargetKind,
     },
 };
 use catallax_topology::{BodyId, FaceId, Model, block, cylinder};
@@ -329,6 +329,17 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
                     kind: TargetKind::Point,
                 }),
             },
+            Item {
+                id: "Base flatness".into(),
+                kind: ItemKind::Tolerance(GeometricTolerance {
+                    characteristic: Characteristic::Flatness,
+                    value: q("0.1"),
+                    material: None,
+                    diameter_zone: false,
+                    datums: Vec::new(),
+                    features: vec![vec![bottom]],
+                }),
+            },
         ],
         ..Pmi::default()
     };
@@ -373,7 +384,7 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
         panic!("expected the leaf part")
     };
     assert!(part.pmi.skipped.is_empty(), "{:?}", part.pmi.skipped);
-    let [datum, target] = part.pmi.pmi.items.as_slice() else {
+    let [datum, target, _] = part.pmi.pmi.items.as_slice() else {
         panic!("expected datum and target")
     };
     let ItemKind::DatumTarget(target) = &target.kind else {
@@ -383,7 +394,173 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
     assert_eq!(target.number, 1);
     assert_eq!(target.datum, "A");
     assert_eq!(target.kind, TargetKind::Point);
-    assert_eq!(datum.kind.faces(), [&target.face]);
+    let (_, underside) = part
+        .geometry
+        .named_faces()
+        .find(|(_, face)| {
+            matches!(&face.surface, catallax_import::Surface::Plane(plane)
+            if plane.origin[2].is_zero() && plane.axis[0].is_zero() && plane.axis[1].is_zero())
+        })
+        .unwrap();
+    assert_eq!(target.face, underside.name);
+    assert_eq!(datum.kind.faces(), [&underside.name]);
+
+    let file = std::str::from_utf8(&bytes).unwrap();
+    let sid = |kind: &str| {
+        file.lines()
+            .find_map(|line| {
+                let (id, record) = line.split_once('=')?;
+                record.starts_with(kind).then_some(id)
+            })
+            .unwrap()
+    };
+    let parameters = sid("SHAPE_REPRESENTATION_WITH_PARAMETERS(");
+    let link = file
+        .lines()
+        .find(|line| {
+            line.contains("=SHAPE_DEFINITION_REPRESENTATION(")
+                && line.ends_with(&format!(",{parameters});"))
+        })
+        .unwrap();
+    for bad in ["#900000", sid("ADVANCED_BREP_SHAPE_REPRESENTATION(")] {
+        let broken = file.replacen(link, &link.replace(parameters, bad), 1);
+        let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
+        let ProductContent::Part(part) = &read
+            .products
+            .iter()
+            .find(|p| p.name == "Base")
+            .unwrap()
+            .content
+        else {
+            panic!("expected the leaf part");
+        };
+        assert_eq!(part.geometry.solids.len(), 1);
+        assert_eq!(
+            part.pmi
+                .sources
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["Base flatness"]
+        );
+        assert!(
+            part.pmi
+                .skipped
+                .iter()
+                .any(|skip| skip.kind == "PLACED_DATUM_TARGET_FEATURE"
+                    && skip.reason.contains("shape representation with parameters"))
+        );
+    }
+
+    let datum = file.lines().find(|line| line.contains("=DATUM(")).unwrap();
+    let owner = datum.split(',').nth(2).unwrap();
+    let owner = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{owner}=")))
+        .unwrap();
+    let leaf_definition = owner.rsplit_once(',').unwrap().1.trim_end_matches(");");
+    let shape = sid("ADVANCED_BREP_SHAPE_REPRESENTATION(");
+    let geometry = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{shape}=")))
+        .unwrap();
+    let context = geometry.rsplit_once(',').unwrap().1.trim_end_matches(");");
+    let note = format!(
+        "#900000=PROPERTY_DEFINITION('semantic text','',{leaf_definition});\n#900001=DESCRIPTIVE_REPRESENTATION_ITEM('','Protect all finished faces');\n#900002=REPRESENTATION('',(#900001),{context});\n#900003=PROPERTY_DEFINITION_REPRESENTATION(#900000,#900002);\nENDSEC;\nEND-ISO"
+    );
+    let with_note = file.replacen("ENDSEC;\nEND-ISO", &note, 1);
+    let read = read_step_assembly(with_note.as_bytes(), &mut Decider::default()).unwrap();
+    let ProductContent::Part(part) = &read
+        .products
+        .iter()
+        .find(|p| p.name == "Base")
+        .unwrap()
+        .content
+    else {
+        panic!("expected the leaf part");
+    };
+    assert_eq!(part.pmi.sources.len(), 3);
+    assert!(
+        part.pmi
+            .skipped
+            .iter()
+            .any(|skip| skip.entity == "#900000" && skip.reason.contains("whole part"))
+    );
+
+    let mut with_views = pmi.clone();
+    with_views.views.push(SavedView {
+        name: "Top".into(),
+        camera: Camera {
+            eye: [q("3"), q("4"), q("20")],
+            direction: [q("0"), q("0"), q("-1")],
+            up: [q("0"), q("1"), q("0")],
+            window: [q("20"), q("20")],
+            distance: q("20"),
+            perspective: false,
+        },
+        items: vec!["Base datum".into()],
+    });
+    let leaf = |name: &str| Product {
+        name: name.into(),
+        content: ProductContent::Part(Part {
+            model: &model,
+            body,
+            colour: None,
+            pmi: Some(&with_views),
+        }),
+    };
+    let assembly = Assembly {
+        root: 0,
+        products: vec![
+            Product {
+                name: "Two leaves".into(),
+                content: ProductContent::Assembly(vec![
+                    instance("First occurrence", 1, ["0", "0", "0"], Rotation::identity()),
+                    instance(
+                        "Second occurrence",
+                        2,
+                        ["10", "0", "0"],
+                        Rotation::identity(),
+                    ),
+                ]),
+            },
+            leaf("First"),
+            leaf("Second"),
+        ],
+    };
+    let mut bytes = Vec::new();
+    write_step_assembly(
+        &assembly,
+        &StepOptions::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    let output = std::str::from_utf8(&bytes).unwrap();
+    let names: Vec<_> = output
+        .lines()
+        .filter_map(|line| {
+            line.split_once("=DRAUGHTING_MODEL(")?
+                .1
+                .split_once(",(")
+                .map(|(name, _)| name)
+        })
+        .collect();
+    assert_eq!(names.len(), 4);
+    assert_eq!(
+        names
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        names.len()
+    );
+    assert_eq!(
+        output
+            .lines()
+            .filter(|line| line.contains("=CAMERA_MODEL_D3('Top',"))
+            .count(),
+        2
+    );
 }
 
 #[test]

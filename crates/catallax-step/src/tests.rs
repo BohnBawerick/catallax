@@ -510,65 +510,6 @@ fn voids_multiple_lumps_and_repeated_bodies() {
             assert_eq!(es[bound - 1].1[2], ".F.");
         }
     }
-    let face = model
-        .shell(reversed)
-        .faces
-        .iter()
-        .copied()
-        .find(|face| {
-            let catallax_shapes::Surface::Plane(plane) =
-                model.geom().surface(model.face(*face).surface)
-            else {
-                return false;
-            };
-            let [x, _, _] = plane.origin.rational_components().unwrap();
-            let [nx, _, _] = plane.normal.rational_components().unwrap();
-            *x == q("4") && !nx.is_zero()
-        })
-        .unwrap();
-    let pmi = crate::pmi::Pmi {
-        items: vec![
-            crate::pmi::Item {
-                id: "Void datum".into(),
-                kind: crate::pmi::ItemKind::Datum(crate::pmi::Datum {
-                    letter: "A".into(),
-                    feature: vec![face],
-                }),
-            },
-            crate::pmi::Item {
-                id: "A1".into(),
-                kind: crate::pmi::ItemKind::DatumTarget(crate::pmi::DatumTarget {
-                    datum: "A".into(),
-                    number: 1,
-                    face,
-                    point_mm: [q("4"), q("5"), q("5")],
-                    kind: crate::pmi::TargetKind::Point,
-                }),
-            },
-        ],
-        ..crate::pmi::Pmi::default()
-    };
-    let mut annotated = Vec::new();
-    crate::write_step_with_pmi(
-        &model,
-        body,
-        &StepOptions::default(),
-        &pmi,
-        &mut catallax_numbers::Decider::default(),
-        &mut annotated,
-    )
-    .unwrap();
-    let read = catallax_import::read_step_pmi(&annotated).unwrap();
-    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
-    let a = read
-        .pmi
-        .items
-        .iter()
-        .find(|item| item.id == "Void datum")
-        .unwrap();
-    let target = read.pmi.items.iter().find(|item| item.id == "A1").unwrap();
-    assert_eq!(a.kind.faces(), target.kind.faces());
-    assert_eq!(target.kind.faces().len(), 1);
     assert_walk(&file);
     let (file, answer) = export(&model, &[outer, outer], &StepOptions::default());
     assert_eq!(

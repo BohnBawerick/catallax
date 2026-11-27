@@ -57,11 +57,10 @@ pub fn read_step_assembly(
                 let shape = reference(fields, 0)?;
                 if graph
                     .get(&shape)
-                    .is_some_and(|e| e.part("PROPERTY_DEFINITION").is_some())
-                    && reference(fields, 1)
-                        .ok()
-                        .and_then(|id| graph.get(&id))
-                        .is_some_and(|e| e.part("SHAPE_REPRESENTATION_WITH_PARAMETERS").is_some())
+                    .and_then(|e| e.part("PROPERTY_DEFINITION"))
+                    .and_then(|property| reference(property, 2).ok())
+                    .and_then(|owner| graph.get(&owner))
+                    .is_some_and(|owner| owner.part("PLACED_DATUM_TARGET_FEATURE").is_some())
                 {
                     continue;
                 }

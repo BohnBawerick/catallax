@@ -25,7 +25,8 @@ use catallax_step::pmi::{
     MIN_SETBACK, MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl,
     PositionFrame, PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, SavedView,
     Size, SizeKind, SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD,
-    THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH, off_face,
+    THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH, off_face, projection_circle_behind,
+    projection_misses_cylinder, projection_plane_hit,
 };
 
 use crate::ImportRefusal;
@@ -330,7 +331,7 @@ struct Placement {
     name: String,
     origin: [Rational; 3],
     axis: [Rational; 3],
-    reference: Option<[Rational; 3]>,
+    reference: [Rational; 3],
 }
 
 enum ZoneForm {
@@ -1500,12 +1501,12 @@ impl<'a> Reader<'a> {
                 None if simple && specialized.contains(&zone.type_name()) => {
                     zone.parts[0].1.as_slice()
                 }
+                None if specialized.iter().any(|kind| zone.part(kind).is_some()) => {
+                    return Err("its tolerance zone has unsupported shape attributes".into());
+                }
                 _ => continue,
             };
             let defining = if simple { 4 } else { 0 };
-            if !references(fields.get(defining)).contains(&id) {
-                continue;
-            }
             let shape = if simple && zone.type_name() == "TOLERANCE_ZONE" {
                 fields.get(..4)
             } else if !simple && zone.parts.len() == 2 {
@@ -1534,6 +1535,7 @@ impl<'a> Reader<'a> {
             let members = reference_list(fields.get(defining))
                 .ok_or("its zone has an invalid defining tolerance list")?;
             if fields.len() != defining + 2
+                || !members.contains(&id)
                 || members.into_iter().any(|member| {
                     self.entity(member).is_none_or(|entity| {
                         !entity.parts.iter().any(|(kind, _)| {
@@ -1613,9 +1615,6 @@ impl<'a> Reader<'a> {
                 }
                 continue;
             };
-            if !references(base.first()).contains(&zone) {
-                continue;
-            }
             if reference(base.first()) != Some(zone) {
                 return Err("its projected zone must name one tolerance zone".into());
             }
@@ -1653,18 +1652,7 @@ impl<'a> Reader<'a> {
             .get(&id)
             .into_iter()
             .flatten()
-            .filter_map(move |user| {
-                let params = self
-                    .entity(*user)?
-                    .part("GEOMETRIC_TOLERANCE_RELATIONSHIP")?;
-                (references(params.get(2)).contains(&id)
-                    || references(params.get(3)).contains(&id)
-                    || (params.len() != 4
-                        && params
-                            .iter()
-                            .any(|param| references(Some(param)).contains(&id))))
-                .then_some(params)
-            })
+            .filter_map(|user| self.entity(*user)?.part("GEOMETRIC_TOLERANCE_RELATIONSHIP"))
     }
 
     fn composite_link(&self, id: u64) -> Result<Option<(u64, u64)>, String> {
@@ -1689,6 +1677,7 @@ impl<'a> Reader<'a> {
             .ok_or("its composite frame has no lower position segment")?;
         let other = if id == upper { lower } else { upper };
         if upper == lower
+            || (id != upper && id != lower)
             || links.next().is_some()
             || self.tolerance_relationships(other).count() != 1
         {
@@ -1816,8 +1805,8 @@ impl<'a> Reader<'a> {
             let offset = &dot3(&sub3(point, &axis.origin), normal) / &dot3(&axis.axis, normal);
             let intersection: [Rational; 3] =
                 std::array::from_fn(|i| &axis.origin[i] + &(&offset * &axis.axis[i]));
-            self.check_open_entry(face, &intersection, normal)?;
             self.check_inward_trim(&edges, point, normal)?;
+            self.check_open_entry(face, &intersection, normal)?;
             entry_faces.push((*face).clone());
         }
         if starts.iter().any(|face| !entry_faces.contains(face)) {
@@ -1888,35 +1877,104 @@ impl<'a> Reader<'a> {
         normal: &[Rational; 3],
     ) -> Result<(), String> {
         let entry_id: u64 = entry[1..].parse().expect("a used face names its entity");
-        let shell_faces: BTreeSet<_> = ["CLOSED_SHELL", "OPEN_SHELL"]
-            .into_iter()
-            .flat_map(|kind| self.sharing_at(entry_id, kind, 1))
-            .flat_map(|(_, fields)| references(fields.get(1)))
-            .collect();
-        if shell_faces.is_empty() {
-            return Err("its projected zone entry has no owning shell".into());
-        }
-        let [x, y, z] = intersection.clone().map(Real::from_rational);
-        let at = Point3::new(x, y, z);
+        let shells = self.sharing_at(entry_id, "CLOSED_SHELL", 1);
+        let [(_, shell)] = shells.as_slice() else {
+            return Err("its projected zone entry has no unique closed shell".into());
+        };
+        let unknown = "the projected zone's exterior start cannot be proved";
+        let point = |p: [Rational; 3]| {
+            let [x, y, z] = p.map(Real::from_rational);
+            Point3::new(x, y, z)
+        };
+        let vector = |p: [Rational; 3]| {
+            let [x, y, z] = p.map(Real::from_rational);
+            Vector3::new(x, y, z)
+        };
+        let at = point(intersection.clone());
+        let direction = vector(normal.clone());
         let mut dec = Decider::default();
-        for id in shell_faces {
+        for id in reference_list(shell.get(1)).ok_or(unknown)? {
             let face = format!("#{id}");
-            let Some((point, axis)) = self.outward_plane(&face) else {
-                continue;
-            };
-            if !is_zero3(&cross3(normal, &axis))
-                || !dot3(&sub3(intersection, &point), normal).is_zero()
-            {
-                continue;
+            let surface = self.face_surface(&face).ok_or(unknown)?;
+            if self.has(surface, "PLANE") {
+                let (origin, axis) = self.outward_plane(&face).ok_or(unknown)?;
+                let plane = Plane {
+                    origin: point(origin),
+                    normal: vector(axis),
+                    ref_dir: direction.clone(),
+                };
+                if let Ok(hit) = projection_plane_hit(&at, &direction, &plane, &mut dec) {
+                    if let Some(hit) = hit
+                        && self
+                            .face_boundary(&face, &Rational::one())
+                            .ok_or(unknown)?
+                            .contains(&hit, &mut dec)
+                            .map_err(|error| error.detail)?
+                    {
+                        return Err("its projected zone's axis meets a closed end".into());
+                    }
+                    continue;
+                }
+            } else if self.has(surface, "CYLINDRICAL_SURFACE") {
+                let round = self.read_round(surface, false).ok_or(unknown)?;
+                let cylinder = catallax_shapes::Cylinder {
+                    origin: point(round.axis.origin),
+                    axis: vector(round.axis.axis),
+                    ref_dir: vector(round.axis.reference),
+                    radius_sq: Real::from_rational(&round.radius * &round.radius),
+                };
+                if projection_misses_cylinder(&at, &direction, &cylinder, &mut dec)
+                    .map_err(|error| error.detail)?
+                {
+                    continue;
+                }
+            } else if !self.has(surface, "CONICAL_SURFACE") {
+                return Err(unknown.into());
             }
-            let boundary = self
-                .face_boundary(&face, &Rational::one())
-                .ok_or("the projected zone start trim cannot be checked")?;
-            if boundary
-                .contains(&at, &mut dec)
-                .map_err(|refusal| refusal.detail)?
-            {
-                return Err("its projected zone's axis meets a closed end".into());
+            let edges = self.face_edge_curves(&face);
+            if edges.is_empty() {
+                return Err(unknown.into());
+            }
+            for id in edges {
+                let edge = self
+                    .entity(id)
+                    .and_then(|edge| edge.part("EDGE_CURVE"))
+                    .ok_or(unknown)?;
+                let curve = self
+                    .trim_curve(reference(edge.get(3)).ok_or(unknown)?)
+                    .ok_or(unknown)?;
+                if curve.part("LINE").is_some() {
+                    for vertex in [edge.get(1), edge.get(2)] {
+                        let end = reference(vertex)
+                            .and_then(|id| self.entity(id)?.part("VERTEX_POINT"))
+                            .and_then(|fields| reference(fields.get(1)))
+                            .and_then(|id| self.point_coordinates(id))
+                            .ok_or(unknown)?;
+                        if dot3(&sub3(&end, intersection), normal) > Rational::zero() {
+                            return Err(unknown.into());
+                        }
+                    }
+                } else {
+                    let circle = curve.part("CIRCLE").ok_or(unknown)?;
+                    let frame = reference(circle.get(1))
+                        .and_then(|id| self.placement(id))
+                        .ok_or(unknown)?;
+                    let radius = number(circle.get(2))
+                        .filter(|radius| *radius > Rational::zero())
+                        .ok_or(unknown)?;
+                    if !projection_circle_behind(
+                        &at,
+                        &direction,
+                        &point(frame.origin),
+                        &vector(frame.axis),
+                        &Real::from_rational(&radius * &radius),
+                        &mut dec,
+                    )
+                    .map_err(|error| error.detail)?
+                    {
+                        return Err(unknown.into());
+                    }
+                }
             }
         }
         Ok(())
@@ -2088,15 +2146,20 @@ impl<'a> Reader<'a> {
 
     /// The placed datum targets that set up a datum.
     fn placed_targets(&self, datum: u64) -> Result<Vec<u64>, String> {
-        self.sharing_at(datum, "SHAPE_ASPECT_RELATIONSHIP", 3)
+        self.sharing
+            .get(&datum)
             .into_iter()
-            .filter_map(|(_, fields)| {
+            .flatten()
+            .filter_map(|id| self.entity(*id)?.part("SHAPE_ASPECT_RELATIONSHIP"))
+            .filter_map(|fields| {
                 let from = fields.get(2);
                 let declared =
                     string(fields.get(1)).as_deref() == Some(catallax_step::pmi::DATUM_TARGET);
-                let placed = references(from)
-                    .into_iter()
-                    .any(|id| self.has(id, "PLACED_DATUM_TARGET_FEATURE"));
+                let placed = fields.iter().any(|field| {
+                    references(Some(field))
+                        .into_iter()
+                        .any(|id| self.has(id, "PLACED_DATUM_TARGET_FEATURE"))
+                });
                 (declared || placed).then(|| {
                     if !declared || fields.len() != 4 || reference(fields.get(3)) != Some(datum) {
                         return Err("its datum target relationship is unreadable".into());
@@ -2110,29 +2173,33 @@ impl<'a> Reader<'a> {
 
     /// An `AXIS2_PLACEMENT_3D` as the file writes it.
     fn placement(&self, id: u64) -> Option<Placement> {
-        let params = self.entity(id)?.part("AXIS2_PLACEMENT_3D")?;
-        let origin = self
-            .entity(reference(params.get(1))?)?
-            .part("CARTESIAN_POINT")?;
-        let direction = |param: Option<&Param>| -> Option<Option<[Rational; 3]>> {
+        let [Param::Str(name), origin, axis, reference_dir] =
+            self.entity(id)?.part("AXIS2_PLACEMENT_3D")?
+        else {
+            return None;
+        };
+        let direction = |param: &Param| -> Option<Option<[Rational; 3]>> {
             match param {
-                Some(Param::Unset) | None => Some(None),
+                Param::Unset => Some(None),
                 param => {
-                    let found =
-                        coordinates(self.entity(reference(param)?)?.part("DIRECTION")?.get(1))?;
+                    let [Param::Str(_), ratios] =
+                        self.entity(reference(Some(param))?)?.part("DIRECTION")?
+                    else {
+                        return None;
+                    };
+                    let found = coordinates(Some(ratios))?;
                     (!is_zero3(&found)).then_some(Some(found))
                 }
             }
         };
+        let axis =
+            direction(axis)?.unwrap_or([Rational::zero(), Rational::zero(), Rational::one()]);
+        let reference_dir = placement_reference(&axis, direction(reference_dir)?)?;
         Some(Placement {
-            name: string(params.first()).unwrap_or_default(),
-            origin: coordinates(origin.get(1))?,
-            axis: direction(params.get(2))?.unwrap_or([
-                Rational::zero(),
-                Rational::zero(),
-                Rational::one(),
-            ]),
-            reference: direction(params.get(3))?,
+            name: decode(name).unwrap_or_default(),
+            origin: self.point_coordinates(reference(Some(origin))?)?,
+            axis,
+            reference: reference_dir,
         })
     }
 
@@ -2274,6 +2341,67 @@ impl<'a> Reader<'a> {
         self.context_millimetres(context)
     }
 
+    fn presentation_scale(&self, model: u64) -> Result<Rational, String> {
+        let scale = self.representation_scale(model)?;
+        let members = self
+            .entity(model)
+            .and_then(Self::draughting_model)
+            .and_then(|fields| reference_list(fields.get(1)))
+            .ok_or("the draughting model has unreadable members")?;
+        let maps: BTreeSet<_> = members
+            .into_iter()
+            .filter_map(|id| {
+                let item = self.entity(id)?;
+                let mapped = item
+                    .part("STYLED_ITEM")
+                    .and_then(|fields| reference(fields.get(2)))
+                    .unwrap_or(id);
+                self.has(mapped, "MAPPED_ITEM").then_some(mapped)
+            })
+            .collect();
+        let mapped = match maps.len() {
+            0 => return Ok(scale),
+            1 => *maps.first().expect("one mapped item"),
+            _ => return Err("the draughting model has ambiguous geometry mappings".into()),
+        };
+        let frames = (|| {
+            let [Param::Str(_), source, target] = self.entity(mapped)?.part("MAPPED_ITEM")? else {
+                return None;
+            };
+            let [origin, geometry] = self
+                .entity(reference(Some(source))?)?
+                .part("REPRESENTATION_MAP")?
+            else {
+                return None;
+            };
+            let geometry = reference(Some(geometry))?;
+            if !matches!(
+                self.entity(geometry)?.type_name(),
+                "SHAPE_REPRESENTATION"
+                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+                    | "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+                    | "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION"
+            ) || self.representation_scale(geometry).ok()? != scale
+            {
+                return None;
+            }
+            Some((
+                self.placement(reference(Some(origin))?)?,
+                self.placement(reference(Some(target))?)?,
+            ))
+        })();
+        let (source, target) =
+            frames.ok_or("the draughting model has an unreadable geometry mapping")?;
+        let same_direction = |a, b| is_zero3(&cross3(a, b)) && dot3(a, b) > Rational::zero();
+        if source.origin != target.origin
+            || !same_direction(&source.axis, &target.axis)
+            || !same_direction(&source.reference, &target.reference)
+        {
+            return Err("the draughting model has a nonidentity geometry mapping".into());
+        }
+        Ok(scale)
+    }
+
     fn trim_curve(&self, id: u64) -> Option<&'a Entity> {
         let mut curve = self.entity(id)?;
         for wrapper in ["SURFACE_CURVE", "SEAM_CURVE"] {
@@ -2345,13 +2473,12 @@ impl<'a> Reader<'a> {
                     let circle = curve.part("CIRCLE")?;
                     let placement = self.placement(reference(circle.get(1))?)?;
                     let radius = &number(circle.get(2))? * scale;
-                    let ref_dir = placement_reference(&placement.axis, placement.reference)?;
                     edges.push(PlanarEdge::Arc {
                         circle: Circle {
                             center: at(&placement.origin),
                             normal: along(&placement.axis),
                             radius_sq: Real::from_rational(&radius * &radius),
-                            ref_dir: along(&ref_dir),
+                            ref_dir: along(&placement.reference),
                         },
                         ends: (ends[0] != ends[1])
                             .then(|| if same_sense { ends } else { [ends[1], ends[0]] }),
@@ -2359,12 +2486,11 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        let ref_dir = placement_reference(&frame.axis, frame.reference)?;
         (!edges.is_empty()).then(|| PlanarBoundary {
             plane: Plane {
                 origin: at(&frame.origin),
                 normal: along(&frame.axis),
-                ref_dir: along(&ref_dir),
+                ref_dir: along(&frame.reference),
             },
             vertices,
             edges,
@@ -2399,7 +2525,10 @@ impl<'a> Reader<'a> {
     }
 
     fn point_coordinates(&self, id: u64) -> Option<[Rational; 3]> {
-        coordinates(self.entity(id)?.part("CARTESIAN_POINT")?.get(1))
+        let [Param::Str(_), point] = self.entity(id)?.part("CARTESIAN_POINT")? else {
+            return None;
+        };
+        coordinates(Some(point))
     }
 
     fn graphic_geometry(
@@ -2471,11 +2600,10 @@ impl<'a> Reader<'a> {
             reference(carrier.part("PLANAR_BOX")?.get(3))?
         };
         let frame = self.placement(placement)?;
-        let reference = placement_reference(&frame.axis, frame.reference)?;
-        (!is_zero3(&cross3(&frame.axis, &reference))).then(|| GraphicPlane {
+        Some(GraphicPlane {
             origin_mm: frame.origin.map(|value| &value * scale),
             normal: frame.axis,
-            reference,
+            reference: frame.reference,
         })
     }
 
@@ -2489,11 +2617,9 @@ impl<'a> Reader<'a> {
         let params = entity.parts[0].1.as_slice();
         let frame = reference(params.get(1))
             .and_then(|frame| self.placement(frame))
-            .ok_or("the camera has no readable placement")?;
-        let across = placement_reference(&frame.axis, frame.reference)
-            .ok_or("the camera's placement axes are parallel")?;
+            .ok_or("the camera has no readable placement or its placement axes are parallel")?;
         let norm = dot3(&frame.axis, &frame.axis);
-        let up = cross3(&frame.axis, &across).map(|value| &value / &norm);
+        let up = cross3(&frame.axis, &frame.reference).map(|value| &value / &norm);
         let volume = reference(params.get(2))
             .and_then(|volume| self.entity(volume))
             .and_then(|volume| volume.part("VIEW_VOLUME"))
@@ -2540,8 +2666,7 @@ impl<'a> Reader<'a> {
         if placement.origin[2] != distance {
             return Err("the camera's window depth differs from its view distance".into());
         }
-        let across = placement_reference(&placement.axis, placement.reference)
-            .ok_or("the camera's window has parallel placement axes")?;
+        let across = placement.reference;
         if !placement.axis[0].is_zero()
             || !placement.axis[1].is_zero()
             || placement.axis[2] <= Rational::zero()
@@ -2846,19 +2971,13 @@ impl<'a> Reader<'a> {
                     }),
                 }
             }
-            if !linked.is_empty() {
-                presented.insert(callout, linked);
-                if presents.is_empty() {
-                    continue;
-                }
-            }
             for &plane in &planes {
                 models.extend(self.draughting_models_containing(plane));
             }
             let geometry = (|| -> Result<_, String> {
                 let mut scale = None;
                 for model in models {
-                    let unit = self.representation_scale(model)?;
+                    let unit = self.presentation_scale(model)?;
                     if scale.as_ref().is_some_and(|known| known != &unit) {
                         return Err("the callout has conflicting length units".into());
                     }
@@ -2886,6 +3005,12 @@ impl<'a> Reader<'a> {
                     continue;
                 }
             };
+            if !linked.is_empty() {
+                presented.insert(callout, linked);
+                if presents.is_empty() {
+                    continue;
+                }
+            }
             if kind == "surface roughness" && presents.is_empty() {
                 for aspect in legacy_aspects {
                     match self.legacy_texture(&name, equivalent.as_deref(), aspect, items) {
@@ -2977,7 +3102,7 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            let scale = match self.representation_scale(model) {
+            let scale = match self.presentation_scale(model) {
                 Ok(scale) => scale,
                 Err(reason) => {
                     skipped.push(SkippedPmi {
@@ -3119,10 +3244,12 @@ impl<'a> Reader<'a> {
             if let Some(fields) = self
                 .entity(*user)
                 .and_then(|e| e.part("SHAPE_ASPECT_RELATIONSHIP"))
-                && references(fields.get(2)).contains(&id)
-                && references(fields.get(3))
-                    .into_iter()
-                    .any(|id| self.has(id, "DATUM"))
+                && (string(fields.get(1)).as_deref() == Some(catallax_step::pmi::DATUM_TARGET)
+                    || fields.iter().any(|field| {
+                        references(Some(field))
+                            .into_iter()
+                            .any(|id| self.has(id, "DATUM"))
+                    }))
             {
                 let [Param::Str(_), description, from, to] = fields else {
                     return Err("its datum relationship has invalid attributes".into());
@@ -3227,8 +3354,7 @@ impl<'a> Reader<'a> {
             }
         }
         let orientation = orientation.ok_or("it has no orientation")?;
-        let direction = placement_reference(&orientation.axis, orientation.reference)
-            .ok_or("its orientation has parallel or invalid placement axes")?;
+        let direction = orientation.reference;
         let kind = match (description.as_str(), length, width, diameter) {
             ("point", None, None, None) => TargetKind::Point,
             ("line", Some(length_mm), None, None) => TargetKind::Line {
@@ -3554,7 +3680,20 @@ pub(crate) fn read_assembly_pmi(
         .iter()
         .filter_map(|(&id, entity)| candidate(id, entity))
     {
-        let owners = reader.owner_shapes(item.id);
+        let mut owners = reader.owner_shapes(item.id);
+        if matches!(item.kind, PmiKind::Text)
+            && let Some(definition) = item
+                .entity
+                .part("PROPERTY_DEFINITION")
+                .and_then(|fields| reference(fields.get(2)))
+                .filter(|definition| reader.has(*definition, "PRODUCT_DEFINITION"))
+        {
+            owners.extend(
+                shapes
+                    .iter()
+                    .filter_map(|(&shape, &leaf)| (leaf == definition).then_some(shape)),
+            );
+        }
         let owner = owners
             .first()
             .filter(|id| owners.len() == 1 && shapes.contains_key(id));

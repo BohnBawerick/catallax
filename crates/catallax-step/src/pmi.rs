@@ -30,7 +30,9 @@ use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
-pub use check::check_on_model;
+pub use check::{
+    check_on_model, projection_circle_behind, projection_misses_cylinder, projection_plane_hit,
+};
 pub use measure::nominals;
 pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
 pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
@@ -42,6 +44,20 @@ pub use write::{
     KNURL, MAX_SETBACK, MIN_SETBACK, ORIENTATION, SECOND_SIDE, SEMANTIC_TEXT, TARGET_DIAMETER,
     TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, WIDTH,
 };
+
+fn decimal_direction(at: &[Rational; 3]) -> [Rational; 3] {
+    if at.iter().all(|value| value.to_decimal_exact().is_some()) {
+        return at.clone();
+    }
+    let denominator = at
+        .iter()
+        .fold(catallax_numbers::Integer::from_i64(1), |a, v| {
+            let b = v.denominator();
+            &a.div_rem_floor(&a.gcd(b)).expect("positive denominator").0 * b
+        });
+    let scale = Rational::from_integer(denominator);
+    at.each_ref().map(|value| value * &scale)
+}
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
 pub type Feature<F> = Vec<F>;

@@ -329,19 +329,7 @@ impl Emitter<'_> {
         aspect: Id,
         item: &str,
     ) -> Result<(), Refusal> {
-        let value = real(value, item)?;
-        let measure = self.graph.add_complex(vec![
-            ("LENGTH_MEASURE_WITH_UNIT", vec![]),
-            ("MEASURE_REPRESENTATION_ITEM", vec![]),
-            (
-                "MEASURE_WITH_UNIT",
-                vec![
-                    text(format!("LENGTH_MEASURE({value})")),
-                    self.references.length_unit.into(),
-                ],
-            ),
-            ("REPRESENTATION_ITEM", vec![quoted(name)]),
-        ]);
+        let measure = self.named_length(name, value, item)?;
         self.attribute_item(name, measure, aspect.into());
         Ok(())
     }
@@ -878,7 +866,7 @@ impl Emitter<'_> {
     }
 
     fn direction(&mut self, at: &[Rational; 3], item: &str) -> Result<Id, Refusal> {
-        let xyz = at
+        let xyz = super::decimal_direction(at)
             .iter()
             .map(|value| real(value, item).map(text))
             .collect::<Result<_, _>>()?;
@@ -1432,8 +1420,7 @@ impl Emitter<'_> {
     }
 
     /// A saved view (recommended practices, section 9.4): a draughting model
-    /// named for the view holding its callouts, the part's geometry under a
-    /// null style and a camera of the same name, related to the global model.
+    /// named for the view holding its callouts, part geometry and camera.
     fn view(&mut self, view: &SavedView, mut items: Vec<Id>) -> Result<(), Refusal> {
         let name = view.name.as_str();
         let camera = &view.camera;
@@ -1514,16 +1501,17 @@ impl Emitter<'_> {
         let mapped = self
             .graph
             .add("MAPPED_ITEM", vec![text("''"), map.into(), target.into()]);
-        let style = self.graph.add(
-            "PRESENTATION_STYLE_ASSIGNMENT",
-            vec![Field::List(vec![Field::Typed(
-                "NULL_STYLE",
-                vec![text(".NULL.")],
-            )])],
+        let colour = self.graph.add("COLOUR", vec![]);
+        let curve = self.graph.add(
+            "CURVE_STYLE",
+            vec![text("''"), text("$"), text("$"), colour.into()],
         );
+        let assignment = self
+            .graph
+            .add("PRESENTATION_STYLE_ASSIGNMENT", vec![refs([curve])]);
         let styled = self.graph.add(
             "STYLED_ITEM",
-            vec![text("''"), refs([style]), mapped.into()],
+            vec![text("''"), refs([assignment]), mapped.into()],
         );
         items.extend([mapped, styled, camera]);
         let model = self.graph.add(

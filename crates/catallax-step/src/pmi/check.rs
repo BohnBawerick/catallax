@@ -363,6 +363,62 @@ pub(super) fn check_written_target(
     Ok(())
 }
 
+#[doc(hidden)]
+pub fn projection_plane_hit(
+    at: &Point3,
+    direction: &Vector3,
+    plane: &Plane,
+    dec: &mut Decider,
+) -> Result<Option<Point3>, Refusal> {
+    let height = plane.origin.minus(at).dot(&plane.normal);
+    let along = direction.dot(&plane.normal);
+    if is_zero(&along, dec)? {
+        if is_zero(&height, dec)? {
+            return Err(Refusal::new(
+                "step.pmi-invalid",
+                "the projection lies in a face plane",
+            ));
+        }
+        return Ok(None);
+    }
+    let t = height / along;
+    Ok((!is_positive(&(-t.clone()), dec)?).then(|| at.plus(&direction.scaled(&t))))
+}
+
+#[doc(hidden)]
+pub fn projection_misses_cylinder(
+    at: &Point3,
+    direction: &Vector3,
+    cylinder: &catallax_shapes::Cylinder,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let u = at.minus(&cylinder.origin).cross(&cylinder.axis);
+    let v = direction.cross(&cylinder.axis);
+    let a = v.dot(&v);
+    let b = u.dot(&v);
+    let c = u.dot(&u) - &cylinder.radius_sq * &cylinder.axis.dot(&cylinder.axis);
+    if is_zero(&a, dec)? {
+        return Ok(!is_zero(&c, dec)?);
+    }
+    Ok(is_positive(&(&a * &c - &b * &b), dec)?
+        || (is_positive(&c, dec)? && !is_positive(&(-b), dec)?))
+}
+
+#[doc(hidden)]
+pub fn projection_circle_behind(
+    at: &Point3,
+    direction: &Vector3,
+    centre: &Point3,
+    axis: &Vector3,
+    radius_sq: &Real,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let height = at.minus(centre).dot(direction);
+    let radial = axis.cross(direction);
+    let enough = &height * &height * axis.dot(axis) - radius_sq * &radial.dot(&radial);
+    Ok(!is_positive(&(-height), dec)? && !is_positive(&(-enough), dec)?)
+}
+
 pub(super) fn check_written_projection(
     graph: &Graph,
     faces: &BTreeMap<FaceId, Vec<Id>>,
@@ -386,7 +442,7 @@ pub(super) fn check_written_projection(
     let shells: Vec<_> = graph
         .records()
         .filter_map(|(kind, fields)| match (kind, fields) {
-            ("CLOSED_SHELL" | "OPEN_SHELL", [_, Field::List(members)]) => Some(members),
+            ("CLOSED_SHELL", [_, Field::List(members)]) => Some(members),
             _ => None,
         })
         .collect();
@@ -490,20 +546,71 @@ pub(super) fn check_written_projection(
             let Field::Ref(face) = member else {
                 return Err(invalid());
             };
-            let (_, surface, _) = written_face(graph, *face).ok_or_else(invalid)?;
-            let Some(plane) = fields(graph, surface, "PLANE")
+            let (bounds, surface, _) = written_face(graph, *face).ok_or_else(invalid)?;
+            if let Some(plane) = fields(graph, surface, "PLANE")
                 .and_then(|fields| written_plane(graph, fields.get(1)?))
-            else {
-                continue;
-            };
-            if !is_zero_vector(&plane.normal.cross(&normal), dec)?
-                || !is_zero(&at.minus(&plane.origin).dot(&normal), dec)?
             {
-                continue;
-            }
-            let boundary = written_boundary(graph, *face).ok_or_else(invalid)?;
-            if boundary.contains(&at, dec)? {
+                if let Ok(hit) = projection_plane_hit(&at, &normal, &plane, dec) {
+                    if let Some(hit) = hit
+                        && written_boundary(graph, *face)
+                            .ok_or_else(invalid)?
+                            .contains(&hit, dec)?
+                    {
+                        return Err(invalid());
+                    }
+                    continue;
+                }
+            } else if let Some([_, frame, Field::Text(radius)]) =
+                fields(graph, surface, "CYLINDRICAL_SURFACE")
+            {
+                let plane = written_plane(graph, frame).ok_or_else(invalid)?;
+                let radius = written_real(radius);
+                let cylinder = catallax_shapes::Cylinder {
+                    origin: plane.origin,
+                    axis: plane.normal,
+                    ref_dir: plane.ref_dir,
+                    radius_sq: &radius * &radius,
+                };
+                if projection_misses_cylinder(&at, &normal, &cylinder, dec)? {
+                    continue;
+                }
+            } else if fields(graph, surface, "CONICAL_SURFACE").is_none() {
                 return Err(invalid());
+            }
+            let edges = written_edges(graph, bounds).ok_or_else(invalid)?;
+            if edges.is_empty() {
+                return Err(invalid());
+            }
+            for id in edges {
+                let ("EDGE_CURVE", [_, a, b, curve, _]) = graph.record(id) else {
+                    return Err(invalid());
+                };
+                let curve = written_curve(graph, curve);
+                if fields(graph, curve, "LINE").is_some() {
+                    for end in [a, b] {
+                        let end = written_point(graph, end).ok_or_else(invalid)?;
+                        if is_positive(&end.minus(&at).dot(&normal), dec)? {
+                            return Err(invalid());
+                        }
+                    }
+                } else {
+                    let Some([_, frame, Field::Text(radius)]) = fields(graph, curve, "CIRCLE")
+                    else {
+                        return Err(invalid());
+                    };
+                    let circle = written_plane(graph, frame).ok_or_else(invalid)?;
+                    let radius = written_real(radius);
+                    if !projection_circle_behind(
+                        &at,
+                        &normal,
+                        &circle.origin,
+                        &circle.normal,
+                        &(&radius * &radius),
+                        dec,
+                    )? {
+                        return Err(invalid());
+                    }
+                }
             }
         }
     }
@@ -568,19 +675,58 @@ fn check_open_entry(
     if shell_faces.is_empty() {
         return Err(refuse(item, "the projected zone entry has no owning shell"));
     }
+    let blocked = || refuse(item, "a projected zone's axis meets a closed end");
+    let unknown = || refuse(item, "the projected zone's exterior start cannot be proved");
     for face in shell_faces {
-        let Surface::Plane(plane) = model.geom().surface(model.face(face).surface) else {
-            continue;
-        };
-        if !is_zero_vector(&plane.normal.cross(normal), dec)?
-            || !is_zero(&at.minus(&plane.origin).dot(normal), dec)?
-        {
-            continue;
+        match model.geom().surface(model.face(face).surface) {
+            Surface::Plane(plane) => {
+                if let Ok(hit) = projection_plane_hit(at, normal, plane, dec) {
+                    if let Some(hit) = hit
+                        && face_boundary(model, face, dec)?
+                            .ok_or_else(unknown)?
+                            .contains(&hit, dec)?
+                    {
+                        return Err(blocked());
+                    }
+                    continue;
+                }
+            }
+            Surface::Cylinder(cylinder) => {
+                if projection_misses_cylinder(at, normal, cylinder, dec)? {
+                    continue;
+                }
+            }
+            Surface::Cone(_) => {}
+            _ => return Err(unknown()),
         }
-        let boundary = face_boundary(model, face, dec)?
-            .ok_or_else(|| refuse(item, "the projected zone entry trim cannot be checked"))?;
-        if boundary.contains(at, dec)? {
-            return Err(refuse(item, "a projected zone's axis meets a closed end"));
+        let mut edges = face_edges(model, face).peekable();
+        if edges.peek().is_none() {
+            return Err(unknown());
+        }
+        for id in edges {
+            let edge = model.edge(id);
+            match curve_form(model.geom(), edge.curve, dec)? {
+                CurveForm::Line { .. } => {
+                    for end in [edge.start, edge.end] {
+                        let end = end.ok_or_else(unknown)?;
+                        let end = model.geom().position(model.vertex(end).point);
+                        if is_positive(&end.minus(at).dot(normal), dec)? {
+                            return Err(unknown());
+                        }
+                    }
+                }
+                CurveForm::Circle {
+                    center,
+                    normal: axis,
+                    radius_sq,
+                    ..
+                } => {
+                    if !projection_circle_behind(at, normal, &center, &axis, &radius_sq, dec)? {
+                        return Err(unknown());
+                    }
+                }
+                _ => return Err(unknown()),
+            }
         }
     }
     Ok(())
@@ -729,6 +875,7 @@ fn check_position(
                 ));
             }
             let offset = plane.origin.minus(point).dot(&normal) / axis.dot(&normal);
+            check_inward_trim(model, &edges, &plane.origin, &normal, item, dec)?;
             check_open_entry(
                 model,
                 *entry,
@@ -738,7 +885,6 @@ fn check_position(
                 item,
                 dec,
             )?;
-            check_inward_trim(model, &edges, &plane.origin, &normal, item, dec)?;
         }
     }
     Ok(())

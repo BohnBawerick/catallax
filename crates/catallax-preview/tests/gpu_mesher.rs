@@ -445,13 +445,8 @@ async fn check_corpus(adapter: wgpu::Adapter) {
     let mut rows = 0;
     let mut grid_faces = 0;
     let selected = std::env::var("CATALLAX_DISPLAY_CASES").ok();
-    for (id, outcome) in corpus::bodies() {
-        if selected
-            .as_ref()
-            .is_some_and(|s| !s.split(',').any(|name| name == id))
-        {
-            continue;
-        }
+    let digest = std::env::var_os("CATALLAX_DISPLAY_DIGEST").is_some();
+    for (id, outcome) in corpus::bodies(selected.as_deref()) {
         rows += 1;
         let started = std::time::Instant::now();
         let result: Result<(), String> = async {
@@ -480,14 +475,23 @@ async fn check_corpus(adapter: wgpu::Adapter) {
                             if matches!(id, "fillet-vertex-4-two" | "m10-top-cut")
                                 && error.code == "mesh.precision-or-budget" =>
                         {
-                            eprintln!("{id}: known checked-mesh refusal: {error}; GPU: {:?}", gpu.as_ref().map(|_| ()));
-                            return Ok(());
+                            eprintln!("{id}: known checked-mesh refusal: {error}");
+                            let gpu = gpu?;
+                            let (vertices, indices) =
+                                readback(&device, &queue, gpu.buffers.as_ref().unwrap()).await;
+                            return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                assert_closed(&description, &gpu, &vertices, &indices, |_, _| {});
+                            }))
+                            .map_err(|_| "closedness check failed".to_owned());
                         }
                         Err(error) => return Err(error.to_string()),
                     };
                     let gpu = gpu?;
                     let (vertices, indices) =
                         readback(&device, &queue, gpu.buffers.as_ref().unwrap()).await;
+                    if digest {
+                        report_digest(id, &vertices, &indices, Some(&reference.value));
+                    }
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         assert_geometry(&description, &gpu, &vertices, &indices, &reference.value);
                     }))
@@ -500,6 +504,9 @@ async fn check_corpus(adapter: wgpu::Adapter) {
                         .await?;
                     let (vertices, indices) =
                         readback(&device, &queue, gpu.buffers.as_ref().unwrap()).await;
+                    if digest {
+                        report_digest(id, &vertices, &indices, None);
+                    }
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         assert_closed(
                             &description,
@@ -541,6 +548,26 @@ fn corpus_display_options() -> DisplayOptions {
         chord_tolerance: TOLERANCE / 4.0,
         ..Default::default()
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn report_digest(id: &str, vertices: &[PreviewVertex], indices: &[u32], reference: Option<&Mesh>) {
+    use std::hash::{DefaultHasher, Hasher};
+
+    let mut gpu = DefaultHasher::new();
+    gpu.write(bytemuck::cast_slice(vertices));
+    gpu.write(bytemuck::cast_slice(indices));
+    let checked = reference.map(|reference| {
+        let mut bytes = Vec::new();
+        reference.write_obj(&mut bytes).unwrap();
+        let mut hasher = DefaultHasher::new();
+        hasher.write(&bytes);
+        hasher.finish()
+    });
+    eprintln!(
+        "{id}: gpu_digest={:016x}, checked_digest={checked:016x?}",
+        gpu.finish()
+    );
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

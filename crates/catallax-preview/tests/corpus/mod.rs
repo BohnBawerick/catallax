@@ -41,7 +41,9 @@ const HELD_OUT: &str = "
     abc-00001260 abc-00001533 abc-00001006 abc-00000938 abc-00001339
 ";
 
-pub fn bodies() -> impl Iterator<Item = (&'static str, EvaluationOutcome)> {
+pub fn bodies(
+    selected: Option<&str>,
+) -> impl Iterator<Item = (&'static str, EvaluationOutcome)> + '_ {
     let root = std::env::var_os("CARGO_MANIFEST_DIR")
         .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
         .join("../..");
@@ -72,6 +74,7 @@ pub fn bodies() -> impl Iterator<Item = (&'static str, EvaluationOutcome)> {
         .chain(held_out)
         .map(|id| (id, false))
         .chain(FITTED.split_whitespace().map(|id| (id, true)))
+        .filter(move |(id, _)| selected.is_none_or(|list| list.split(',').any(|name| name == *id)))
         .map(move |(id, fitted)| {
             let row = manifest["rows"]
                 .as_array()

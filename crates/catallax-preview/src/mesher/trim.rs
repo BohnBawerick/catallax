@@ -231,7 +231,7 @@ pub(super) fn triangulate<F>(
         handles.clear();
         for (i, point) in ring.points.iter().enumerate() {
             let uv = normalized(point.uv);
-            let mut site = Point2::new(uv[0], uv[1]);
+            let mut site = spade::mitigate_underflow(Point2::new(uv[0], uv[1]));
             if let PositionInTriangulation::OnVertex(existing) = cdt.locate(site) {
                 let other = inputs[cdt.vertex(existing).data().input as usize].boundary;
                 if same_boundary(point.boundary, other, positions) {
@@ -251,7 +251,10 @@ pub(super) fn triangulate<F>(
                 if scale <= f64::MIN_POSITIVE {
                     return Err(FaceRefusal::InvalidTrim);
                 }
-                site = Point2::new(site.x + 1e-11 * dx / scale, site.y + 1e-11 * dy / scale);
+                site = spade::mitigate_underflow(Point2::new(
+                    site.x + 1e-11 * dx / scale,
+                    site.y + 1e-11 * dy / scale,
+                ));
             }
             let mut push = || {
                 let index = inputs.len() as u32;
@@ -263,9 +266,10 @@ pub(super) fn triangulate<F>(
                 None => push(),
             };
             let before = cdt.num_vertices();
-            let handle = cdt
-                .insert(Site { point: site, input })
-                .map_err(|_| FaceRefusal::InvalidTrim)?;
+            let handle = cdt.insert(Site { point: site, input }).map_err(|error| {
+                trim_diagnostic("invalid triangulation coordinate", (site, error));
+                FaceRefusal::InvalidTrim
+            })?;
             if cdt.num_vertices() == before {
                 trim_diagnostic("duplicate projected vertex", [point.uv, uv]);
                 return Err(FaceRefusal::InvalidTrim);

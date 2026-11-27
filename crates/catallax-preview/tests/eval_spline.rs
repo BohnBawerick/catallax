@@ -413,7 +413,7 @@ fn add_face(batch: &mut Batch, row: &str, index: usize, surface: &Surface) {
 fn add_corpus(batch: &mut Batch) {
     let mut exact = 0;
     let mut fitted = 0;
-    for (id, built) in corpus::bodies() {
+    for (id, built) in corpus::bodies(None) {
         match built {
             EvaluationOutcome::Exact(checkpoint) => {
                 exact += 1;

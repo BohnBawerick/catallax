@@ -439,8 +439,7 @@ impl Ball {
         let (mid, radius) = if center.fits_precision(p) {
             (center.into_owned(), radius)
         } else {
-            let mid = center.rounded(p, false);
-            let error = (&*center - &mid).into_abs();
+            let (mid, error) = center.rounded_center(p);
             let radius = match radius {
                 Cow::Owned(radius) => radius.add_sub_owned(error, false),
                 Cow::Borrowed(radius) => radius + &error,

@@ -580,7 +580,7 @@ fn validation_items(file: &str) -> BTreeMap<String, Vec<(String, String)>> {
 }
 
 #[test]
-fn the_bracket_file_counts_its_items_and_states_their_strings() {
+fn the_bracket_validation_counts_are_step_reals() {
     let part = bracket();
     let (pmi, _) = bracket_pmi(&part);
     let (file, _) = write(&part, &pmi);
@@ -593,7 +593,6 @@ fn the_bracket_file_counts_its_items_and_states_their_strings() {
         .find(|(_, (kind, _))| kind == "PRODUCT_DEFINITION_SHAPE")
         .map(|(id, _)| id.clone())
         .unwrap();
-    let counts: Vec<(String, String)> = properties[&shape].clone();
     let expected = [
         ("number of semantic pmi elements", "26."),
         ("number of dimensional locations", "14."),
@@ -610,13 +609,22 @@ fn the_bracket_file_counts_its_items_and_states_their_strings() {
             format!("'{name}',{value}"),
         )
     });
-    assert_eq!(counts, expected);
+    assert_eq!(properties[&shape], expected);
+}
+
+#[test]
+fn the_bracket_file_states_its_equivalent_unicode_strings() {
+    let part = bracket();
+    let (pmi, _) = bracket_pmi(&part);
+    let (file, _) = write(&part, &pmi);
+    let all = entities(&file);
+    let properties = validation_items(&file);
 
     // Each datum and distance states its text; edition 1 has no property on a
     // size or a tolerance.
     let strings: Vec<(String, String)> = properties
         .iter()
-        .filter(|(of, _)| **of != shape)
+        .filter(|(of, _)| all[*of].0 != "PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(of, items)| {
             let [(kind, fields)] = &items[..] else {
                 return None;

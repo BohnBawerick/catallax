@@ -20,8 +20,8 @@ use catallax_topology::{
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
+    assembly::{Assembly, FaceDraft},
     chart::{self, BITS},
-    edges::Boundaries,
     failure,
     preview::{PreviewMesh, PreviewOptions},
 };
@@ -96,21 +96,163 @@ pub(crate) fn preview(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
-    let mesh = crate::triangulate::build(
+    use catallax_numbers::Interval;
+    use catallax_shapes::tessellation::{chord_bound_interval, rational_spans};
+
+    fn grid(
+        envelope: &RollingEnvelope,
+        tolerance: &Rational,
+        max_vertices: usize,
+        dec: &mut Decider,
+    ) -> Result<EnvelopeGrid, Refusal> {
+        // Envelope carriers are a strip of Bernstein spans along u, with
+        // one span across the meridian. Bound all cells of a span at once.
+        let spans = rational_spans(envelope.carrier(), dec)?;
+        let hessian = std::array::from_fn(|i| {
+            let bound = spans
+                .iter()
+                .map(|span| span.chord_coefficients()[i].hi())
+                .fold(0.0, f64::max);
+            Interval::new(0.0, bound).unwrap()
+        });
+        let target = Interval::from_rational(tolerance).lo();
+        let mut cells: [usize; 2] = [1, 4];
+        let (columns, rows, chord) = loop {
+            dec.check_deadline()?;
+            let columns = spans.len().saturating_mul(cells[0]).saturating_add(1);
+            let rows = cells[1] + 1;
+            if columns.saturating_mul(rows) > max_vertices {
+                return Err(failure("preview envelope grid reached max_vertices"));
+            }
+            let steps = cells.map(|n| Interval::point(1.0 / n as f64).unwrap());
+            let chord = chord_bound_interval(steps, &hessian).hi();
+            if chord <= target {
+                break (columns, rows, chart::q(chord));
+            }
+            let [u, v] = steps.map(|step| step.hi());
+            let axis = usize::from(hessian[2].hi() * v * v > hessian[0].hi() * u * u);
+            cells[axis] = cells[axis]
+                .checked_mul(2)
+                .ok_or_else(|| failure("preview envelope grid size overflow"))?;
+        };
+
+        let mut points = Vec::with_capacity(columns * rows);
+        for (index, span) in spans.iter().enumerate() {
+            let last = cells[0] + usize::from(index + 1 == spans.len());
+            for i in 0..last {
+                for j in 0..rows {
+                    let uv = [i as f64 / cells[0] as f64, j as f64 / cells[1] as f64];
+                    let xyz = span.evaluate(uv, dec)?;
+                    if !xyz.iter().all(Interval::is_finite) {
+                        return Err(failure("preview envelope point exceeds binary64"));
+                    }
+                    points.push(xyz.map(|value| {
+                        Ball::from_rational(&chart::q(value.lo()), BITS)
+                            .hull(&Ball::from_rational(&chart::q(value.hi()), BITS))
+                    }));
+                }
+            }
+        }
+        Ok(EnvelopeGrid {
+            columns,
+            rows,
+            points,
+            chord,
+        })
+    }
+
+    let mesh_options = MeshOptions {
+        chord_tolerance: options.chord_tolerance.clone(),
+        angular_deviation: None,
+        max_vertices: options.max_vertices,
+        max_edge_length: None,
+        max_aspect_ratio: None,
+    };
+    let tolerance = options.chord_tolerance.mul_pow2(-1);
+    let mut envelopes = BTreeMap::new();
+    let mut seeds = BTreeMap::new();
+    for face in model.faces_of_body(body) {
+        let band = match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                let grid = grid(envelope, &tolerance, options.max_vertices, dec)?;
+                let mut rows = Vec::with_capacity(4);
+                let mut along_u = None;
+                for (edge, row, sense) in envelope_rows(model, face, dec)? {
+                    let points = row_points(&grid, row);
+                    let definition = model.edge(edge);
+                    let (Some(start), Some(end)) = (definition.start, definition.end) else {
+                        return Err(failure("envelope row needs two ends"));
+                    };
+                    let first = chart::position(&points[0])?;
+                    let distance = |vertex| -> Result<f64, Refusal> {
+                        let p = model.geom().position(model.vertex(vertex).point);
+                        [&p.x, &p.y, &p.z]
+                            .into_iter()
+                            .zip(first)
+                            .try_fold(0.0, |sum, (x, y)| {
+                                let x = dec.enclose_at(x, BITS)?.mid().to_f64_nearest();
+                                Ok(sum + (x - y).abs())
+                            })
+                    };
+                    let forward = distance(start)? <= distance(end)?;
+                    if row == BoundaryRow::Rail {
+                        along_u = Some((sense == Sense::Same) == forward);
+                    }
+                    rows.push((edge, row, forward));
+                    seeds.insert(
+                        edge,
+                        Seed {
+                            points,
+                            error: grid.chord.clone(),
+                            forward,
+                            exact: Vec::new(),
+                        },
+                    );
+                }
+                Envelope {
+                    grid,
+                    rows,
+                    along_u: along_u.ok_or_else(|| failure("envelope needs a rail"))?,
+                    ends: Ends::Meridians,
+                    rational: None,
+                }
+            }
+            Surface::BSpline(SplineSupport::RollingMitre(mitre)) => mitre_band(
+                model,
+                face,
+                mitre,
+                &tolerance,
+                &mesh_options,
+                &mut seeds,
+                dec,
+            )?,
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle))
+                if matches!(
+                    saddle.definition().law().ring,
+                    catallax_shapes::SaddleRing::Crossing { .. }
+                ) =>
+            {
+                saddle_band(
+                    model,
+                    face,
+                    saddle,
+                    &tolerance,
+                    &mesh_options,
+                    &mut seeds,
+                    dec,
+                )?
+            }
+            _ => continue,
+        };
+        envelopes.insert(face, band);
+    }
+    crate::triangulate::build_preview(
         model,
         body,
-        &MeshOptions {
-            chord_tolerance: options.chord_tolerance.clone(),
-            angular_deviation: None,
-            max_vertices: options.max_vertices,
-            max_edge_length: None,
-            max_aspect_ratio: None,
-        },
-        None,
+        options,
+        Some(Junction { envelopes, seeds }),
         dec,
-    )?
-    .value;
-    Ok(PreviewMesh::from_mesh(mesh))
+    )
 }
 
 /// A rendering-only junction with complete positional bounds.
@@ -164,10 +306,10 @@ pub(crate) fn spline_fillet_face(
     face: FaceId,
     options: &MeshOptions,
     dec: &mut Decider,
-) -> Result<Boundaries, Refusal> {
+) -> Result<(crate::Mesh, catallax_numbers::MarkLog), Refusal> {
     let junction =
         spline_fillet::prepare_face(model, &model.faces_of_body(body), face, options, dec)?;
-    let mut boundaries = crate::edges::sample_selected(
+    let boundaries = crate::edges::sample_selected(
         model,
         body,
         junction.seeds.keys().copied(),
@@ -176,8 +318,15 @@ pub(crate) fn spline_fillet_face(
         options,
         dec,
     )?;
-    junction.triangulate(face, &mut boundaries, options, true)?;
-    Ok(boundaries)
+    let mut assembly = Assembly::new(&boundaries);
+    let mut enclosures = BTreeMap::new();
+    let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
+    junction.triangulate(face, &mut draft, options, true)?;
+    let result = draft.finish(model, face, assembly.prior())?;
+    if !assembly.push(result)? {
+        return Err(failure("a lone face cannot conflict with earlier faces"));
+    }
+    Ok(assembly.finish(boundaries))
 }
 
 pub(crate) fn spline_fillet_carrier(
@@ -462,7 +611,7 @@ impl Junction {
     pub(crate) fn triangulate(
         &self,
         face: FaceId,
-        boundaries: &mut Boundaries,
+        draft: &mut FaceDraft<'_>,
         options: &MeshOptions,
         position_only: bool,
     ) -> Result<(), Refusal> {
@@ -473,7 +622,7 @@ impl Junction {
         let mut index = vec![usize::MAX; columns * rows];
         let mut error = grid.chord.clone();
         for (edge, row, forward) in &envelope.rows {
-            let mesh = &boundaries.mesh.edges[boundaries.edges[edge]];
+            let mesh = &draft.mesh.edges[draft.edges[edge]];
             error = error.max(mesh.max_chord_error.clone());
             let mut vertices = mesh.vertices.clone();
             if !forward {
@@ -502,7 +651,7 @@ impl Junction {
         }
         for column in 1..columns - 1 {
             for line in 1..rows - 1 {
-                if boundaries.mesh.positions.len() >= options.max_vertices {
+                if draft.mesh.positions.len() >= options.max_vertices {
                     return Err(Refusal::new(
                         "mesh.resource-limit",
                         "envelope grid reached max_vertices",
@@ -513,15 +662,15 @@ impl Junction {
                 if envelope.rational.is_none() {
                     error = error.max(&grid.chord + &chart::residual(&position, point));
                 }
-                index[at(column, line)] = boundaries.mesh.positions.len();
-                boundaries.mesh.positions.push(position);
+                index[at(column, line)] = draft.mesh.positions.len();
+                draft.mesh.positions.push(position);
             }
         }
         if let Some(proof) = &envelope.rational {
             let mut residual = Rational::zero();
             for (slot, &vertex) in index.iter().enumerate() {
                 residual = residual.max(chart::residual(
-                    &boundaries.mesh.positions[vertex],
+                    &draft.mesh.positions[vertex],
                     &grid.points[slot],
                 ));
             }
@@ -550,7 +699,7 @@ impl Junction {
                 "proved envelope mesh error exceeds the requested output accuracy",
             ));
         }
-        let start = boundaries.mesh.triangles.len();
+        let start = draft.mesh.triangles.len();
         let mut longest = Rational::zero();
         let mut aspect = Rational::zero();
         let mut angular = None::<Rational>;
@@ -577,7 +726,7 @@ impl Junction {
                     {
                         continue;
                     }
-                    let (ratio, length, normal) = quality(&boundaries.mesh.positions, vertices)?;
+                    let (ratio, length, normal) = quality(&draft.mesh.positions, vertices)?;
                     if let Some(boxes) = envelope
                         .rational
                         .as_ref()
@@ -603,19 +752,16 @@ impl Junction {
                     }
                     aspect = aspect.max(ratio);
                     longest = longest.max(length);
-                    boundaries.mesh.triangles.push(Triangle { vertices, face });
+                    draft.mesh.triangles.push(Triangle { vertices, face });
                 }
             }
         }
         let mut unavailable = |control, reason| {
-            boundaries
-                .mesh
-                .unavailable_controls
-                .push(UnavailableControl {
-                    face,
-                    control,
-                    reason,
-                })
+            draft.mesh.unavailable_controls.push(UnavailableControl {
+                face,
+                control,
+                reason,
+            })
         };
         if options.angular_deviation.is_some() && angular.is_none() {
             unavailable(
@@ -643,9 +789,9 @@ impl Junction {
                 "the certified aspect-ratio bound exceeds the requested limit",
             );
         }
-        boundaries.mesh.faces.push(FaceMesh {
+        draft.mesh.faces.push(FaceMesh {
             face,
-            triangles: start..boundaries.mesh.triangles.len(),
+            triangles: start..draft.mesh.triangles.len(),
             max_chord_error: error,
             max_aspect_ratio: Some(aspect),
             max_angular_deviation: angular,
@@ -656,7 +802,7 @@ impl Junction {
 
 // Longest edge over shortest altitude, and the longest squared edge.
 fn quality(
-    positions: &[[f64; 3]],
+    positions: &(impl std::ops::Index<usize, Output = [f64; 3]> + ?Sized),
     triangle: [usize; 3],
 ) -> Result<(Rational, Rational, [Ball; 3]), Refusal> {
     let points =

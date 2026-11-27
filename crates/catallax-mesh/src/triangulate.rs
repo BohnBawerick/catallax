@@ -15,6 +15,7 @@ use spade::{
 
 use crate::{
     FaceMesh, Mesh, MeshOptions, Triangle,
+    assembly::{Assembly, FaceDraft, Positions},
     chart::{self, Chart, CollarBridge, NormalProof, SplineChart, Uv, align, chord_bound, key},
     edges::{self, Boundaries},
     failure,
@@ -108,7 +109,7 @@ impl BandCut {
     }
 }
 
-struct FaceBuilder<'a> {
+struct FaceBuilder<'a, 'p> {
     chart: &'a Chart,
     options: &'a MeshOptions,
     band: Option<BandCut>,
@@ -119,7 +120,7 @@ struct FaceBuilder<'a> {
     // millimetres. Samples and all certificates retain their original UVs.
     stretch: f64,
     unproved: bool,
-    positions: &'a mut Vec<[f64; 3]>,
+    positions: &'a mut Positions<'p>,
     rails: &'a edges::Rails,
     cdt: Cdt,
     canonical: BTreeMap<[u64; 2], (usize, usize)>,
@@ -200,7 +201,7 @@ fn refinement_uv(chart: &Chart, finite_band: bool, uv: Uv, round: bool) -> Uv {
     uv
 }
 
-impl FaceBuilder<'_> {
+impl FaceBuilder<'_, '_> {
     fn protects_band(&self) -> bool {
         self.band.is_some()
             && matches!(
@@ -1014,14 +1015,16 @@ impl FaceBuilder<'_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
-            let angular_pipe = self.options.angular_deviation.is_some()
+            let angular = self.options.angular_deviation.is_some();
+            let angular_band = angular && self.protects_band();
+            let angular_pipe = angular
                 && matches!(
                     self.chart.surface,
                     Surface::BSpline(SplineSupport::RollingPipe(_))
                 );
-            // The radial normal proof guides angular pipe refinement from the
-            // full-chord grid. Every resulting facet is checked against both limits.
-            let chord = if spline.patch_sampling() || angular_pipe {
+            // Angular bands can use the split chord proof during refinement.
+            // Without it, leave room for triangles spanning the fixed collar.
+            let chord = if spline.patch_sampling() || angular_pipe || angular_band {
                 self.options.chord_tolerance.clone()
             } else {
                 self.options.chord_tolerance.mul_pow2(-1)
@@ -1033,7 +1036,12 @@ impl FaceBuilder<'_> {
                     .max_vertices
                     .saturating_sub(self.positions.len())
             };
-            let mut grid = spline.seed_grid(&chord, remaining, self.dec)?;
+            let mut grid = spline.seed_grid(
+                &chord,
+                self.options.angular_deviation.as_ref(),
+                remaining,
+                self.dec,
+            )?;
             for uv in &mut grid {
                 *uv = self.chart.canonical(*uv);
                 if let Some(band) = self.band {
@@ -2110,7 +2118,7 @@ fn face_mesh(
     model: &Model,
     face_id: FaceId,
     chart: &Chart,
-    boundaries: &mut Boundaries,
+    draft: &mut FaceDraft<'_>,
     plan: Plan<'_>,
     prior_chords: &BTreeSet<(usize, usize)>,
     dec: &mut Decider,
@@ -2123,7 +2131,7 @@ fn face_mesh(
     let mut parameters = BTreeMap::new();
     let goal = options.chord_tolerance.mul_pow2(-6).to_f64_nearest();
     let mut project = |index, seed, dec: &mut Decider| -> Result<Uv, Refusal> {
-        let position = boundaries.mesh.positions[index];
+        let position = draft.mesh.positions[index];
         if let Some(spline) = chart.spline() {
             if let Some(&uv) = parameters.get(&index) {
                 return Ok(uv);
@@ -2137,12 +2145,12 @@ fn face_mesh(
     };
     for &l in &face.loops {
         match model.loop_(l) {
-            Loop::Vertex(v) => projected.push(project(boundaries.vertices[v], None, dec)?),
+            Loop::Vertex(v) => projected.push(project(draft.vertices[v], None, dec)?),
             Loop::Coedges(cs) => {
                 let mut previous = None;
                 for &c in cs {
                     let c = model.coedge(c);
-                    let edge = &boundaries.mesh.edges[boundaries.edges[&c.edge]];
+                    let edge = &draft.mesh.edges[draft.edges[&c.edge]];
                     if chart.spline().is_some() && level != Level::Preview {
                         trim_error = trim_error.max(edge.max_chord_error.clone());
                     }
@@ -2239,8 +2247,8 @@ fn face_mesh(
         ruled: is_ruled,
         stretch,
         unproved: level == Level::Preview && chart.spline().is_some() && !protect_band,
-        positions: &mut boundaries.mesh.positions,
-        rails: &boundaries.rails,
+        positions: &mut draft.mesh.positions,
+        rails: draft.rails,
         cdt: Cdt::new(),
         canonical: BTreeMap::new(),
         errors: Vec::new(),
@@ -2261,14 +2269,14 @@ fn face_mesh(
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
-    let start = boundaries.mesh.triangles.len();
-    boundaries.mesh.triangles.extend(triangles);
+    let start = draft.mesh.triangles.len();
+    draft.mesh.triangles.extend(triangles);
     if options
         .max_aspect_ratio
         .as_ref()
         .is_some_and(|limit| max_aspect_ratio > *limit)
     {
-        boundaries
+        draft
             .mesh
             .unavailable_controls
             .push(crate::UnavailableControl {
@@ -2277,9 +2285,9 @@ fn face_mesh(
                 reason: "the certified aspect-ratio bound exceeds the requested limit",
             });
     }
-    boundaries.mesh.faces.push(FaceMesh {
+    draft.mesh.faces.push(FaceMesh {
         face: face_id,
-        triangles: start..boundaries.mesh.triangles.len(),
+        triangles: start..draft.mesh.triangles.len(),
         max_chord_error: max_chord_error.max(trim_error),
         max_aspect_ratio: (level != Level::Preview).then_some(max_aspect_ratio),
         max_angular_deviation,
@@ -2744,6 +2752,7 @@ pub(crate) fn shared_spline_preview(
             },
             None,
             None,
+            None,
             dec,
         )
         .and_then(|(mut mesh, _)| {
@@ -2759,7 +2768,7 @@ pub(crate) fn build(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,
-    previous: Option<(&Model, &Mesh)>,
+    edit: Option<crate::reuse::Edit<'_, '_>>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     let faces = model.faces_of_body(body);
@@ -2772,7 +2781,9 @@ pub(crate) fn build(
     } else {
         crate::junction::prepare(model, &faces, options, dec)?
     };
-    let previous = previous
+    let previous = edit
+        .as_ref()
+        .and_then(|edit| edit.previous)
         .filter(|_| {
             !faces.is_empty()
                 && faces.iter().all(|&face| {
@@ -2784,7 +2795,7 @@ pub(crate) fn build(
                     )
                 })
         })
-        .map(|(model, mesh)| crate::reuse::Previous::new(model, mesh, dec))
+        .map(|input| crate::reuse::Previous::new(input, dec))
         .transpose()?;
     let (value, marks) = build_junction(
         model,
@@ -2795,6 +2806,7 @@ pub(crate) fn build(
         },
         junction,
         previous.as_ref(),
+        edit.and_then(|edit| edit.capture),
         dec,
     )?;
     Ok(Answer { value, marks })
@@ -2825,6 +2837,7 @@ pub(crate) fn build_position(
         },
         Some(junction),
         None,
+        None,
         dec,
     )
 }
@@ -2835,6 +2848,7 @@ fn build_junction(
     plan: Plan<'_>,
     junction: Option<crate::junction::Junction>,
     previous: Option<&crate::reuse::Previous<'_>>,
+    mut capture: Option<&mut crate::reuse::Capture>,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
     let Plan { options, level } = plan;
@@ -2879,121 +2893,133 @@ fn build_junction(
             chart.chord_goal = Some(goal);
         }
     }
-    let mut boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
-    let boundary_limit = boundaries.mesh.positions.len();
-    let mut prior_chords = BTreeSet::new();
+    let boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
+    let mut assembly = Assembly::new(&boundaries);
+    let mut enclosures = BTreeMap::new();
+    let mut removed = 0;
     for face in faces {
-        let local_options = charts
+        let mut local_options = charts
             .get(&face)
             .and_then(|chart| chart.chord_goal.as_ref())
             .map(|chord| MeshOptions {
                 chord_tolerance: chord.clone(),
                 ..options.clone()
             });
+        if removed != 0 {
+            local_options
+                .get_or_insert_with(|| options.clone())
+                .max_vertices -= removed;
+        }
         let options = local_options.as_ref().unwrap_or(options);
-        let plan = Plan { options, level };
-        let start = boundaries.mesh.triangles.len();
         let reused = previous
-            .map(|previous| {
-                previous.append(model, face, &mut boundaries, &prior_chords, options, dec)
-            })
+            .map(|previous| previous.face(model, face, &boundaries, &assembly, options, dec))
             .transpose()?
-            .unwrap_or(false);
-        if !reused {
-            if fitted(face) {
-                junction.as_ref().expect("fitted face").triangulate(
-                    face,
-                    &mut boundaries,
-                    options,
-                    level == Level::Bounded,
-                )?;
-            } else if let Surface::Plane(plane) = &charts[&face].surface {
-                crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
-                    |mut e| {
-                        e.detail = format!("face {}: {}", face.index(), e.detail);
-                        e
-                    },
-                )?;
-            } else {
-                if let Some(center) = crate::bounded::minor_angle_center(
-                    model,
-                    face,
-                    &charts[&face],
-                    &boundaries,
-                    dec,
-                )? {
-                    charts.get_mut(&face).unwrap().restrict(1, center);
-                }
-                let strip = matches!(
-                    charts[&face].surface,
-                    Surface::Cylinder(_)
-                        | Surface::EllipticCylinder(_)
-                        | Surface::Cone(_)
-                        | Surface::Torus(_)
-                ) && crate::ruled::build(
-                    model,
-                    face,
-                    &charts[&face],
-                    &mut boundaries,
-                    options,
-                    dec,
-                )?;
-                if !strip {
-                    let positions = boundaries.mesh.positions.len();
-                    let result = face_mesh(
-                        model,
-                        face,
-                        &charts[&face],
-                        &mut boundaries,
-                        plan,
-                        &prior_chords,
-                        dec,
-                    );
-                    match result {
-                        Err(error)
-                            if error.code == "mesh.precision-or-budget"
-                                && crate::periodic::eligible(
-                                    model,
-                                    face,
-                                    &charts[&face],
-                                    options,
-                                ) =>
-                        {
-                            boundaries.mesh.positions.truncate(positions);
-                            crate::periodic::build(
-                                model,
-                                face,
-                                &charts[&face],
-                                &mut boundaries,
-                                options,
-                                dec,
-                            )?;
-                        }
-                        other => other?,
-                    }
-                }
+            .flatten();
+        if let Some(result) = reused {
+            // Reuse copies compact positions. Keep the same resource allowance
+            // for subsequent faces as when their predecessors were built.
+            removed += result.uncompacted - result.positions.len();
+            if let Some(capture) = &mut capture {
+                capture.face(&result, options, true);
             }
+            if !assembly.push(result)? {
+                return Err(failure("a cached face conflicts with the faces before it"));
+            }
+            continue;
         }
-        let mut once = BTreeSet::new();
-        for triangle in &boundaries.mesh.triangles[start..] {
-            for i in 0..3 {
-                let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
-                if a < boundary_limit && b < boundary_limit {
-                    let pair = (a.min(b), a.max(b));
-                    if !once.insert(pair) {
-                        prior_chords.insert(pair);
-                    }
-                }
-            }
+        let shared = Shared {
+            model,
+            boundaries: &boundaries,
+            junction: junction.as_ref(),
+            prior: assembly.prior(),
+        };
+        let mut draft = FaceDraft::new(&boundaries, assembly.base(), &mut enclosures);
+        build_face(
+            shared,
+            face,
+            &mut charts,
+            &mut draft,
+            Plan { options, level },
+            dec,
+        )?;
+        let result = draft.finish(model, face, assembly.prior())?;
+        if let Some(capture) = &mut capture {
+            capture.face(&result, options, false);
+        }
+        if !assembly.push(result)? {
+            return Err(failure(
+                "a face built in order conflicts with the faces before it",
+            ));
         }
     }
+    let (mut mesh, marks) = assembly.finish(boundaries);
     if model.body(body).kind == catallax_topology::BodyKind::Surface {
-        check_surface(model, body, &boundaries.mesh)?;
+        check_surface(model, body, &mesh)?;
     } else {
-        check_closed(&boundaries.mesh)?;
+        check_closed(&mesh)?;
     }
-    compact(&mut boundaries.mesh);
-    Ok((boundaries.mesh, boundaries.marks))
+    compact(&mut mesh);
+    Ok((mesh, marks))
+}
+
+/// What every face of one body shares while it is built.
+#[derive(Clone, Copy)]
+struct Shared<'a> {
+    model: &'a Model,
+    boundaries: &'a Boundaries,
+    junction: Option<&'a crate::junction::Junction>,
+    prior: &'a BTreeSet<(usize, usize)>,
+}
+
+/// Builds one face into its draft. Only this face's chart may be narrowed.
+fn build_face(
+    shared: Shared<'_>,
+    face: FaceId,
+    charts: &mut BTreeMap<FaceId, Chart>,
+    draft: &mut FaceDraft<'_>,
+    plan: Plan<'_>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let Shared {
+        model,
+        boundaries,
+        junction,
+        prior,
+    } = shared;
+    let Plan { options, level } = plan;
+    if let Some(junction) = junction.filter(|junction| junction.contains(face)) {
+        return junction.triangulate(face, draft, options, level == Level::Bounded);
+    }
+    if let Surface::Plane(plane) = &charts[&face].surface {
+        return crate::planar::build(model, face, plane, draft, options, dec).map_err(|mut e| {
+            e.detail = format!("face {}: {}", face.index(), e.detail);
+            e
+        });
+    }
+    if let Some(center) =
+        crate::bounded::minor_angle_center(model, face, &charts[&face], boundaries, dec)?
+    {
+        charts.get_mut(&face).unwrap().restrict(1, center);
+    }
+    let chart = &charts[&face];
+    let strip = matches!(
+        chart.surface,
+        Surface::Cylinder(_) | Surface::EllipticCylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+    ) && crate::ruled::build(model, face, chart, draft, options, dec)?;
+    if strip {
+        return Ok(());
+    }
+    let positions = draft.mesh.positions.len();
+    match face_mesh(model, face, chart, draft, plan, prior, dec) {
+        Err(error)
+            if error.code == "mesh.precision-or-budget"
+                && crate::periodic::eligible(model, face, chart, options) =>
+        {
+            draft.mesh.positions.truncate(positions);
+            crate::periodic::build(model, face, chart, draft, options, dec)
+        }
+        other => other,
+    }
 }
 
 fn constrain_annular_chord(
@@ -3075,21 +3101,41 @@ fn constrain_lens_chord(
     Ok(())
 }
 
-/// Shares the chart and boundary machinery, but never runs facet certification.
+/// Builds preview data from shared charts, optionally with prepared junction rows.
 pub(crate) fn build_preview(
     model: &Model,
     body: BodyId,
     options: &crate::PreviewOptions,
+    junction: Option<crate::junction::Junction>,
     dec: &mut Decider,
 ) -> Result<crate::PreviewMesh, Refusal> {
     let visual = options;
     let options = MeshOptions {
         chord_tolerance: options.chord_tolerance.clone(),
-        angular_deviation: options.angular_deviation.clone(),
+        angular_deviation: if junction.is_some() {
+            None
+        } else {
+            options.angular_deviation.clone()
+        },
         max_vertices: options.max_vertices,
         max_edge_length: None,
         max_aspect_ratio: None,
     };
+    if junction.is_some() {
+        let (mesh, _) = build_junction(
+            model,
+            body,
+            Plan {
+                options: &options,
+                level: Level::Preview,
+            },
+            junction,
+            None,
+            None,
+            dec,
+        )?;
+        return Ok(crate::PreviewMesh::from_mesh(mesh));
+    }
     let faces = model.faces_of_body(body);
     let mut charts = faces
         .iter()
@@ -3166,7 +3212,7 @@ pub(crate) fn build_preview(
         let bounds = std::array::from_fn(|i| {
             if chart.periodic[i] {
                 [0.0, 1.0]
-            } else if i == 1 && matches!(chart.surface, Surface::Sphere(_)) {
+            } else if i == 1 && chart.periodic[0] && matches!(chart.surface, Surface::Sphere(_)) {
                 [-0.25, 0.25]
             } else {
                 [
@@ -3188,6 +3234,7 @@ pub(crate) fn build_preview(
         let prior_chords = BTreeSet::new();
         let rails = edges::Rails::default();
         let is_ruled = ruled(model, face, chart, &options);
+        let mut positions = Positions::detached(std::mem::take(&mut boundaries.mesh.positions));
         let mut builder = FaceBuilder {
             chart,
             options: &options,
@@ -3196,7 +3243,7 @@ pub(crate) fn build_preview(
             ruled: is_ruled,
             stretch: 1.0,
             unproved: true,
-            positions: &mut boundaries.mesh.positions,
+            positions: &mut positions,
             rails: &rails,
             cdt: Cdt::new(),
             canonical: BTreeMap::new(),
@@ -3212,8 +3259,13 @@ pub(crate) fn build_preview(
             dec,
         };
         builder.boundary(&segments, definition.sense)?;
-        builder.grid()?;
+        // Planar interpolation is affine. Grid seeds add no resolution, and a
+        // rounded bounding-box corner can land just inside a shared chord.
+        if !matches!(chart.surface, Surface::Plane(_)) {
+            builder.grid()?;
+        }
         let triangles = builder.finish_preview(face, definition.sense)?;
+        boundaries.mesh.positions = positions.into_local();
         let start = boundaries.mesh.triangles.len();
         boundaries.mesh.triangles.extend(triangles);
         boundaries.mesh.faces.push(crate::PreviewFace {

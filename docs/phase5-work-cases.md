@@ -143,6 +143,19 @@ SHA-256 `203ae123b49186c571eb47fb5f0b8b5859c3e95f8bbc2214f27e073154d6c891`.
 A disjoint subtraction adds no intersecting-cut coverage. All stages over
 20M remain phase-5 cases; no work limit or tolerance was widened.
 
+Removing the request cap does not remove numeric limits. The default
+`Decider` still permits 1,000,000,000 work units **per decision**. For
+example, k08 reached this limit in coordinate projection when retaining a
+certified cone/sphere branch. `numbers.budget-exhausted` reports that local
+limit, not the request's `numbers.operation-budget`.
+
+Exact plane and cylinder sections of a fitted envelope reuse its admission
+regularity and the smooth joins given by shared Hermite values and slopes.
+The atlas still uses the ordinary projection and cell subdivision tests,
+and the section solver uses the original spline coefficients. Torus
+sections keep the original admission path: reuse made the ring-groove
+case slower.
+
 Independent OCP 8.0.1.1 checks read both the actual imported source and the
 emitted k12 STEP through raw `StepToTopoDS_Builder`, with healing,
 SameParameter and TransferRoots off. Both are valid closed single solids

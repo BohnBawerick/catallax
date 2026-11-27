@@ -479,7 +479,12 @@ impl Emitter<'_> {
         Ok(())
     }
 
-    fn texture(&mut self, texture: &SurfaceTexture<FaceId>, item: &str) -> Result<(), Refusal> {
+    fn texture(
+        &mut self,
+        texture: &SurfaceTexture<FaceId>,
+        item: &str,
+        slot: usize,
+    ) -> Result<(), Refusal> {
         let aspect = self.aspect(&texture.feature, item)?;
         let micrometre = match self.micrometre {
             Some(unit) => unit,
@@ -534,7 +539,7 @@ impl Emitter<'_> {
             vec![text("''"), text("''"), general.into(), property.into()],
         );
         self.root("ID_ATTRIBUTE", vec![quoted(item), property.into()]);
-        self.callout(texture, item)
+        self.callout(texture, item, slot)
     }
 
     /// The draughting model, made with the first callout: one annotation
@@ -686,10 +691,15 @@ impl Emitter<'_> {
     /// texture's faces. On the feature's shared aspect OpenCASCADE merges the
     /// callout into a dimension there; on its own it reads a presentation on
     /// the faces.
-    fn callout(&mut self, texture: &SurfaceTexture<FaceId>, item: &str) -> Result<(), Refusal> {
+    fn callout(
+        &mut self,
+        texture: &SurfaceTexture<FaceId>,
+        item: &str,
+        slot: usize,
+    ) -> Result<(), Refusal> {
         let anchor = self.anchor_point(&texture.feature)?;
         let value = plain(&texture.value, item)?;
-        let drawing = callout::draw(texture, &value, anchor.as_ref());
+        let drawing = callout::draw(texture, &value, anchor.as_ref(), slot);
         let presentation = self.presentation();
         let mut curves = Vec::with_capacity(drawing.polylines.len());
         for line in &drawing.polylines {
@@ -827,7 +837,7 @@ impl Emitter<'_> {
         let items = counts
             .into_iter()
             .map(|(name, count)| {
-                // The practices write an integer item's value as a real.
+                // AP242 declares INTEGER_REPRESENTATION_ITEM.the_value as REAL.
                 self.graph.add(
                     "INTEGER_REPRESENTATION_ITEM",
                     vec![quoted(name), text(format!("{count}."))],
@@ -959,6 +969,7 @@ pub(crate) fn emit(
             emitter.datum(&datum.letter, &datum.feature, &item.id)?;
         }
     }
+    let mut texture_slot = 0;
     for (item, nominal) in pmi.items.iter().zip(nominals) {
         let id = item.id.as_str();
         let measured = || {
@@ -1004,7 +1015,10 @@ pub(crate) fn emit(
                 emitter.equivalent(dimension, &string);
             }
             ItemKind::Tolerance(tolerance) => emitter.tolerance(tolerance, id)?,
-            ItemKind::Texture(texture) => emitter.texture(texture, id)?,
+            ItemKind::Texture(texture) => {
+                emitter.texture(texture, id, texture_slot)?;
+                texture_slot += 1;
+            }
         }
     }
     if let Some(value) = &pmi.part.general_tolerance {

@@ -249,6 +249,50 @@ pub(crate) struct Fit {
     pub error: Rational,
 }
 
+impl Fit {
+    pub fn degree(&self) -> usize {
+        self.multiplicities[0] - 1
+    }
+
+    /// The difference of two affine maps is affine, so the largest
+    /// deviation in the UV one-norm is bounded at the endpoints.
+    pub fn line(
+        ends: [&[Rational; 2]; 2],
+        range: &[Rational; 2],
+        ideal: [[Ball; 2]; 2],
+        tolerance: &Rational,
+    ) -> Option<Self> {
+        if ends[0] == ends[1] {
+            return None;
+        }
+        let error = (0..2)
+            .map(|i| {
+                (0..2).fold(Rational::zero(), |sum, axis| {
+                    sum + (&ends[i][axis] - &ideal[i][axis].lo())
+                        .abs()
+                        .max((&ends[i][axis] - &ideal[i][axis].hi()).abs())
+                })
+            })
+            .max()
+            .unwrap();
+        (error <= *tolerance).then(|| Self {
+            points: ends
+                .into_iter()
+                .map(|p| {
+                    p.each_ref().map(|value| Number {
+                        value: value.clone(),
+                        text: String::new(),
+                        error: Rational::zero(),
+                    })
+                })
+                .collect(),
+            knots: range.to_vec(),
+            multiplicities: vec![2, 2],
+            error,
+        })
+    }
+}
+
 #[cfg(test)]
 impl Fit {
     /// Exact degree-seven controls, joined spans sharing their end points,

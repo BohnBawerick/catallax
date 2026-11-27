@@ -160,31 +160,47 @@ struct Sampler<'a> {
     piece: &'a TracePiece,
     charts: &'a [&'a Chart],
     options: &'a PreviewOptions,
+    chord: f64,
+    turn: f64,
     dec: &'a Decider,
     boundaries: &'a mut Boundaries,
     indices: &'a mut Vec<usize>,
 }
 
 impl Sampler<'_> {
-    fn segment(&mut self, interval: [f64; 2], ends: [usize; 2], depth: u32) -> Result<(), Refusal> {
+    fn segment(
+        &mut self,
+        interval: [f64; 2],
+        ends: [usize; 2],
+        middle: Option<[f64; 3]>,
+        depth: u32,
+    ) -> Result<(), Refusal> {
         self.dec.check_deadline()?;
         let [lo, hi] = interval;
         let [first, last] = ends;
         let a = self.boundaries.mesh.positions[first];
         let b = self.boundaries.mesh.positions[last];
         let mid = (lo + hi) * 0.5;
-        let [p, q, r] = [lo + (hi - lo) * 0.25, mid, lo + (hi - lo) * 0.75]
-            .map(|t| sample(self.piece, t, self.dec));
-        let points = [p?, q?, r?];
+        let points = [
+            sample(self.piece, lo + (hi - lo) * 0.25, self.dec)?,
+            middle.map_or_else(|| sample(self.piece, mid, self.dec), Ok)?,
+            sample(self.piece, lo + (hi - lo) * 0.75, self.dec)?,
+        ];
         let mut small = points.iter().enumerate().all(|(i, p)| {
             let t = (i + 1) as f64 * 0.25;
             (0..3)
                 .map(|k| (p[k] - (a[k] + (b[k] - a[k]) * t)).powi(2))
                 .sum::<f64>()
                 .sqrt()
-                <= self.options.chord_tolerance.to_f64_nearest() * 0.25
+                <= self.chord * 0.25
         });
         for chart in self.charts {
+            if !small {
+                break;
+            }
+            if matches!(chart.surface, catallax_shapes::Surface::Plane(_)) {
+                continue;
+            }
             let uv_a = chart.project(a);
             let uv_b = align(chart.project(b), uv_a, chart.periodic);
             let uv_m = align(chart.project(points[1]), uv_a, chart.periodic);
@@ -202,13 +218,7 @@ impl Sampler<'_> {
                     + (chart::q(uv_b[1]) - chart::q(uv_a[1])).abs();
                 small &= span * Rational::from_i64(16) <= *angle;
             }
-            let limit = self
-                .options
-                .angular_deviation
-                .as_ref()
-                .map_or(0.125, |angle| {
-                    (angle.to_f64_nearest() / std::f64::consts::TAU * 0.5).min(0.125)
-                });
+            let limit = self.turn;
             for i in 0..2 {
                 let angular = chart.periodic[i]
                     || (i == 1 && matches!(chart.surface, catallax_shapes::Surface::Sphere(_)));
@@ -216,6 +226,17 @@ impl Sampler<'_> {
                     small &= (uv_b[i] - uv_a[i]).abs() <= limit;
                     small &= (uv_m[i] - (uv_a[i] + uv_b[i]) * 0.5).abs() <= limit * 0.25;
                 }
+            }
+            if small && matches!(chart.surface, catallax_shapes::Surface::Sphere(_)) {
+                // Near a pole the straight UV segment can bow away from
+                // the edge polyline. Split here, on both incident faces.
+                let uv = std::array::from_fn(|i| uv_a[i].midpoint(uv_b[i]));
+                let point = chart.preview_position(chart.canonical(uv), self.dec)?;
+                let error = (0..3)
+                    .map(|i| (point[i] - a[i].midpoint(b[i])).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                small &= error <= self.chord * 0.5;
             }
         }
         if small {
@@ -228,8 +249,8 @@ impl Sampler<'_> {
             ));
         }
         let middle = self.boundaries.push(points[1], self.options)?;
-        self.segment([lo, mid], [first, middle], depth + 1)?;
-        self.segment([mid, hi], [middle, last], depth + 1)
+        self.segment([lo, mid], [first, middle], Some(points[0]), depth + 1)?;
+        self.segment([mid, hi], [middle, last], Some(points[2]), depth + 1)
     }
 }
 
@@ -263,6 +284,10 @@ pub(crate) fn build(
             }
         }
     }
+    let chord = options.chord_tolerance.to_f64_nearest();
+    let turn = options.angular_deviation.as_ref().map_or(0.125, |angle| {
+        (angle.to_f64_nearest() / std::f64::consts::TAU * 0.5).min(0.125)
+    });
     for edge_id in model.edges_of_body(body) {
         let edge = model.edge(edge_id);
         let (from, to) = if edge.sense == Sense::Same {
@@ -299,11 +324,13 @@ pub(crate) fn build(
                 piece,
                 charts: &adjacent[&edge_id],
                 options,
+                chord,
+                turn,
                 dec,
                 boundaries: &mut result,
                 indices: &mut indices,
             }
-            .segment([0.0, 1.0], [start, last], 0)?;
+            .segment([0.0, 1.0], [start, last], None, 0)?;
         }
         if edge.sense == Sense::Reversed {
             indices.reverse();

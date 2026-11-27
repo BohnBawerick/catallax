@@ -130,11 +130,27 @@ fn validate(options: &PreviewOptions) -> Result<(), Refusal> {
 }
 
 /// Samples the retained B-rep for display, without certifying its triangles.
+/// Its topological edge polylines are sampled once for all incident faces.
 ///
 /// This synchronous call uses the caller's decider and active work allowance.
 /// It never starts, replaces, or enlarges an allowance and never calls
 /// [`crate::mesh_body`]. Failure returns no partial preview.
 pub fn preview_mesh_body(
+    model: &Model,
+    body: BodyId,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<PreviewMesh, Refusal> {
+    #[cfg(feature = "display-capture")]
+    let call =
+        crate::capture::Call::start("preview_mesh_body", crate::capture::carriers(model, body));
+    let result = preview_checked(model, body, options, dec);
+    #[cfg(feature = "display-capture")]
+    call.finish(options, &result);
+    result
+}
+
+fn preview_checked(
     model: &Model,
     body: BodyId,
     options: &PreviewOptions,
@@ -147,5 +163,5 @@ pub fn preview_mesh_body(
     if crate::junction::present(model, body) {
         return crate::junction::preview(model, body, options, dec);
     }
-    crate::triangulate::build_preview(model, body, options, dec)
+    crate::triangulate::build_preview(model, body, options, None, dec)
 }

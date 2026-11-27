@@ -1,16 +1,107 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use catallax_numbers::{Decider, Refusal};
 use catallax_shapes::{Curve, Point3, Surface};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, VertexId};
 
-use crate::{EdgeMesh, FaceMesh, Mesh, MeshOptions, Triangle, edges::Boundaries, failure};
+use crate::{
+    EdgeMesh, FaceMesh, Mesh, MeshOptions, Triangle,
+    assembly::{Assembly, Chords, FaceResult},
+    edges::Boundaries,
+};
 
-type Chords = BTreeSet<(usize, usize)>;
+/// Certified face provenance from one [`crate::mesh_body_cached`] result.
+///
+/// Positions live in the public mesh. Expanded bodies retain the physical cell
+/// reports, triangles and edges that were merged in the public picking view.
+#[derive(Clone, Debug)]
+pub struct FaceCache {
+    options: MeshOptions,
+    data: Arc<Capture>,
+}
+
+impl FaceCache {
+    pub(crate) fn new(options: MeshOptions, data: Capture) -> Self {
+        Self {
+            options,
+            data: Arc::new(data),
+        }
+    }
+
+    /// Number of physical faces served from the previous cache.
+    pub fn reused_faces(&self) -> usize {
+        self.data.reused
+    }
+
+    /// Number of physical faces triangulated for this request.
+    pub fn meshed_faces(&self) -> usize {
+        self.data.records.len() - self.data.reused
+    }
+
+    pub(crate) fn input<'a>(
+        &'a self,
+        model: &'a Model,
+        mesh: &'a Mesh,
+        options: &MeshOptions,
+    ) -> Option<Input<'a>> {
+        (&self.options == options).then_some(Input {
+            model,
+            geometry: mesh,
+            source: self.data.expanded.as_ref().unwrap_or(mesh),
+            records: Some(&self.data.records),
+        })
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Capture {
+    records: BTreeMap<FaceId, Record>,
+    pub(crate) expanded: Option<Mesh>,
+    reused: usize,
+}
+
+impl Capture {
+    pub(crate) fn face(&mut self, result: &FaceResult, options: &MeshOptions, reused: bool) {
+        self.records.insert(
+            result.face,
+            Record {
+                chord: options.chord_tolerance.clone(),
+                peak: result.peak,
+                uncompacted: result.uncompacted,
+            },
+        );
+        self.reused += usize::from(reused);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Record {
+    chord: catallax_numbers::Rational,
+    peak: usize,
+    uncompacted: usize,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Input<'a> {
+    pub(crate) model: &'a Model,
+    pub(crate) geometry: &'a Mesh,
+    pub(crate) source: &'a Mesh,
+    pub(crate) records: Option<&'a BTreeMap<FaceId, Record>>,
+}
+
+pub(crate) struct Edit<'a, 'out> {
+    pub(crate) previous: Option<Input<'a>>,
+    pub(crate) capture: Option<&'out mut Capture>,
+}
 
 pub(crate) struct Previous<'a> {
     model: &'a Model,
     mesh: &'a Mesh,
+    positions: &'a [[f64; 3]],
+    records: Option<&'a BTreeMap<FaceId, Record>>,
     edges: BTreeMap<EdgeId, &'a EdgeMesh>,
     chords: BTreeMap<(usize, usize), usize>,
 }
@@ -56,15 +147,18 @@ fn same_curve(a: &Model, ae: EdgeId, b: &Model, be: EdgeId) -> bool {
 }
 
 impl<'a> Previous<'a> {
-    pub(crate) fn new(
-        model: &'a Model,
-        mesh: &'a Mesh,
-        dec: &mut Decider,
-    ) -> Result<Self, Refusal> {
+    pub(crate) fn new(input: Input<'a>, dec: &mut Decider) -> Result<Self, Refusal> {
+        let Input {
+            model,
+            geometry,
+            source: mesh,
+            records,
+        } = input;
+        let positions = &geometry.positions;
         // Reserve both vertex-sized initializations before allocating. Each
         // remaining record visit is charged before its scan or copy.
-        dec.charge_work((mesh.positions.len() as u64).saturating_mul(2))?;
-        let mut boundary = vec![false; mesh.positions.len()];
+        dec.charge_work((positions.len() as u64).saturating_mul(2))?;
+        let mut boundary = vec![false; positions.len()];
         for edge in &mesh.edges {
             dec.charge_work(1)?;
             for &vertex in &edge.vertices {
@@ -73,7 +167,7 @@ impl<'a> Previous<'a> {
             }
         }
         dec.check_deadline()?;
-        let mut owner = vec![usize::MAX; mesh.positions.len()];
+        let mut owner = vec![usize::MAX; positions.len()];
         for (index, face) in mesh.faces.iter().enumerate() {
             dec.charge_work(1)?;
             for triangle in &mesh.triangles[face.triangles.clone()] {
@@ -112,6 +206,8 @@ impl<'a> Previous<'a> {
             model,
             chords,
             mesh,
+            positions,
+            records,
             edges,
         })
     }
@@ -139,10 +235,9 @@ impl<'a> Previous<'a> {
         let mut reverse = BTreeMap::new();
         let mut bind = |old: usize, new: usize, dec: &mut Decider| -> Result<bool, Refusal> {
             dec.charge_work(1)?;
-            let (Some(before), Some(after)) = (
-                self.mesh.positions.get(old),
-                boundaries.mesh.positions.get(new),
-            ) else {
+            let (Some(before), Some(after)) =
+                (self.positions.get(old), boundaries.mesh.positions.get(new))
+            else {
                 return Ok(false);
             };
             if before
@@ -203,54 +298,71 @@ impl<'a> Previous<'a> {
                 _ => return Ok(None),
             }
         }
+        // Sorted triangle and canonical cyclic order survive only when the
+        // relative order of the shared indices is unchanged.
+        if !remap.values().is_sorted() {
+            return Ok(None);
+        }
         Ok(Some(remap))
     }
 
-    fn prior_matches(
+    /// Chords that earlier old faces emitted between this old face's samples,
+    /// in new indices: what the cached triangulation was built against.
+    fn relied_on(
         &self,
         face_index: usize,
         remap: &BTreeMap<usize, usize>,
-        prior: &Chords,
         dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
-        let mut old_prior = Chords::new();
-        for (&(a, b), &first_face) in &self.chords {
-            dec.charge_work(1)?;
-            if first_face < face_index
-                && let (Some(&a), Some(&b)) = (remap.get(&a), remap.get(&b))
-            {
-                old_prior.insert((a.min(b), a.max(b)));
+    ) -> Result<Chords, Refusal> {
+        let mut relied_on = Chords::new();
+        for (&old, &new) in remap {
+            for (&(_, b), &first_face) in self.chords.range((old, 0)..=(old, usize::MAX)) {
+                dec.charge_work(1)?;
+                if first_face < face_index
+                    && let Some(&b) = remap.get(&b)
+                {
+                    relied_on.insert((new, b));
+                }
             }
         }
-        let mut vertices = BTreeSet::new();
-        for &vertex in remap.values() {
-            dec.charge_work(1)?;
-            vertices.insert(vertex);
-        }
-        for &(a, b) in prior {
-            dec.charge_work(1)?;
-            if vertices.contains(&a) && vertices.contains(&b) && !old_prior.remove(&(a, b)) {
-                return Ok(false);
-            }
-        }
-        Ok(old_prior.is_empty())
+        Ok(relied_on)
     }
 
-    pub(crate) fn append(
+    /// A cached face for `face`, when an old face has the same definition, the
+    /// same shared samples and the same earlier chords between them. The
+    /// assembly checks the chords again when it places the result.
+    pub(crate) fn face(
         &self,
         model: &Model,
         face: FaceId,
-        boundaries: &mut Boundaries,
-        prior: &Chords,
+        boundaries: &Boundaries,
+        assembly: &Assembly,
         options: &MeshOptions,
         dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
+    ) -> Result<Option<FaceResult>, Refusal> {
         for (index, old) in self.mesh.faces.iter().enumerate() {
             dec.charge_work(1)?;
+            let record = if let Some(records) = self.records {
+                let Some(record) = records.get(&old.face) else {
+                    continue;
+                };
+                if record.chord != options.chord_tolerance {
+                    continue;
+                }
+                Some(record)
+            } else {
+                None
+            };
             let Some(mut remap) = self.boundary_map(old, model, face, boundaries, dec)? else {
                 continue;
             };
-            if !self.prior_matches(index, &remap, prior, dec)? {
+            let relies_on = self.relied_on(index, &remap, dec)?;
+            let mut shared = BTreeSet::new();
+            for &vertex in remap.values() {
+                dec.charge_work(1)?;
+                shared.insert(vertex);
+            }
+            if !prior_matches(&relies_on, &shared, assembly.prior(), dec)? {
                 continue;
             }
             let triangles = &self.mesh.triangles[old.triangles.clone()];
@@ -263,27 +375,25 @@ impl<'a> Previous<'a> {
                     }
                 }
             }
-            if interior.len()
-                > options
-                    .max_vertices
-                    .saturating_sub(boundaries.mesh.positions.len())
-            {
-                return Err(failure("reused face triangulation reached max_vertices"));
+            let base = assembly.base();
+            let peak = record.map_or(interior.len(), |record| record.peak);
+            let uncompacted = record.map_or(interior.len(), |record| record.uncompacted);
+            if uncompacted < interior.len() || peak > options.max_vertices.saturating_sub(base) {
+                continue;
             }
             // Preserve the original position order, including periodic chart
             // copies that survived compaction. Only boundary indices are shared.
+            let mut positions = Vec::with_capacity(interior.len());
             for vertex in interior {
                 dec.charge_work(1)?;
-                let next = boundaries.mesh.positions.len();
-                boundaries.mesh.positions.push(self.mesh.positions[vertex]);
-                remap.insert(vertex, next);
+                remap.insert(vertex, base + positions.len());
+                positions.push(self.positions[vertex]);
             }
-            let start = boundaries.mesh.triangles.len();
             dec.charge_work((triangles.len() as u64).saturating_mul(3))?;
-            boundaries.mesh.triangles.reserve(triangles.len());
+            let mut copied = Vec::with_capacity(triangles.len());
             for triangle in triangles {
                 dec.check_deadline()?;
-                boundaries.mesh.triangles.push(Triangle {
+                copied.push(Triangle {
                     vertices: triangle.vertices.map(|vertex| remap[&vertex]),
                     face,
                 });
@@ -291,20 +401,54 @@ impl<'a> Previous<'a> {
             dec.charge_work(1)?;
             let mut report = old.clone();
             report.face = face;
-            report.triangles = start..boundaries.mesh.triangles.len();
-            boundaries.mesh.faces.push(report);
+            report.triangles = 0..copied.len();
+            let mut unavailable_controls = Vec::new();
             for control in &self.mesh.unavailable_controls {
                 dec.charge_work(1)?;
                 if control.face == old.face {
                     let mut control = control.clone();
                     control.face = face;
-                    boundaries.mesh.unavailable_controls.push(control);
+                    unavailable_controls.push(control);
                 }
             }
-            return Ok(true);
+            return Ok(Some(FaceResult {
+                face,
+                base,
+                peak,
+                uncompacted,
+                positions,
+                triangles: copied,
+                report,
+                unavailable_controls,
+                shared,
+                relies_on,
+            }));
         }
-        Ok(false)
+        Ok(None)
     }
+}
+
+/// Whether the chords emitted so far between `shared` samples are exactly
+/// `relies_on`. Charged per chord, as the old face loop was.
+fn prior_matches(
+    relies_on: &Chords,
+    shared: &BTreeSet<usize>,
+    prior: &Chords,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut count = 0;
+    for &a in shared {
+        for &pair in prior.range((a, 0)..=(a, usize::MAX)) {
+            dec.charge_work(1)?;
+            if shared.contains(&pair.1) {
+                if !relies_on.contains(&pair) {
+                    return Ok(false);
+                }
+                count += 1;
+            }
+        }
+    }
+    Ok(count == relies_on.len())
 }
 
 #[cfg(test)]
@@ -319,7 +463,13 @@ mod tests {
         dec.set_deadline(Some(
             std::time::Instant::now() - std::time::Duration::from_secs(1),
         ));
-        let refusal = Previous::new(&model, &mesh, &mut dec).err().unwrap();
+        let input = Input {
+            model: &model,
+            geometry: &mesh,
+            source: &mesh,
+            records: None,
+        };
+        let refusal = Previous::new(input, &mut dec).err().unwrap();
         assert_eq!(refusal.code, "numbers.deadline");
     }
 }

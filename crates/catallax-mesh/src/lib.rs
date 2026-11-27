@@ -2,8 +2,11 @@
 //!
 //! [`mesh_body`] samples each topological edge once. Faces reference the same
 //! vertex indices on either side of that edge. Periodic chart copies close
-//! seams without adding topological edges. All traversal and refinement orders
-//! are fixed; the implementation has no thread-local or process-global state.
+//! seams without adding topological edges. Each face is then built as its own
+//! result against those samples, and the body places the results in face
+//! order. A face reused from an earlier mesh passes the same placement checks
+//! as a fresh one. All traversal and refinement orders are fixed; the
+//! implementation has no thread-local or process-global state.
 //!
 //! Spline faces use rational charts split at their knots and checked periodic
 //! joins. Whole-span chord bounds include coordinate rounding, and interval
@@ -21,7 +24,10 @@ use std::{io::Write, ops::Range};
 use catallax_numbers::{Answered, Decider, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
+mod assembly;
 mod bounded;
+#[cfg(feature = "display-capture")]
+pub mod capture;
 mod chart;
 mod controls;
 mod display;
@@ -42,6 +48,7 @@ pub use preview::{
 };
 mod rational_atlas;
 mod reuse;
+pub use reuse::FaceCache;
 mod ruled;
 mod triangulate;
 
@@ -201,22 +208,67 @@ pub fn mesh_body_reusing(
     previous: &Mesh,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
-    let previous = (options == previous_options).then_some((previous_model, previous));
-    mesh_body_impl(model, body, options, previous, dec)
+    let edit = (options == previous_options).then_some(reuse::Edit {
+        previous: Some(reuse::Input {
+            model: previous_model,
+            geometry: previous,
+            source: previous,
+            records: None,
+        }),
+        capture: None,
+    });
+    mesh_body_impl(model, body, options, edit, dec)
+}
+
+/// Builds a checked display and retains per-face provenance for the next edit.
+///
+/// Supply the previous model, unmodified mesh and its matching cache together.
+/// A change in options starts a new cache. A hit still requires the same face
+/// definition, effective chord, sampled boundary and earlier shared chords.
+/// Expanded rational bodies match their physical cells, not merged picking faces.
+pub fn mesh_body_cached(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    previous: Option<(&Model, &Mesh, &FaceCache)>,
+    dec: &mut Decider,
+) -> Result<(catallax_numbers::Answer<Mesh>, FaceCache), Refusal> {
+    let mut capture = reuse::Capture::default();
+    let edit = reuse::Edit {
+        previous: previous.and_then(|(model, mesh, cache)| cache.input(model, mesh, options)),
+        capture: Some(&mut capture),
+    };
+    let answer = mesh_body_impl(model, body, options, Some(edit), dec)?;
+    Ok((answer, FaceCache::new(options.clone(), capture)))
 }
 
 fn mesh_body_impl(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,
-    previous: Option<(&Model, &Mesh)>,
+    edit: Option<reuse::Edit<'_, '_>>,
+    dec: &mut Decider,
+) -> Answered<Mesh> {
+    #[cfg(feature = "display-capture")]
+    let call = capture::Call::start("mesh_body_impl", capture::carriers(model, body));
+    let result = mesh_body_checked(model, body, options, edit, dec);
+    #[cfg(feature = "display-capture")]
+    call.finish(options, &result);
+    result
+}
+
+fn mesh_body_checked(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    edit: Option<reuse::Edit<'_, '_>>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     if let Some(expansion) = model
         .chart_expansion(body)
         .filter(|cover| cover.needs_cells())
     {
-        return rational_atlas::build(model, body, expansion, options, dec);
+        return rational_atlas::build(model, body, expansion, options, edit, dec);
     }
     if options
         .angular_deviation
@@ -242,7 +294,7 @@ fn mesh_body_impl(
             "chord tolerance must be positive and max_vertices at least four",
         ));
     }
-    triangulate::build(model, body, options, previous, dec)
+    triangulate::build(model, body, options, edit, dec)
 }
 
 fn failure(detail: impl Into<String>) -> Refusal {

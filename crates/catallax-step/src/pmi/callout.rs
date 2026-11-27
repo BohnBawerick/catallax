@@ -173,19 +173,31 @@ pub(crate) fn equivalent_string(process: Process, requirement: &str) -> String {
 
 /// Draws the callout of `texture` with the requirement `value` written as
 /// a decimal. `anchor` is a point on the texture's face, where the leader ends;
-/// without one the symbol stands at the origin with no leader.
-pub(crate) fn draw<F>(texture: &SurfaceTexture<F>, value: &str, anchor: Option<&Point>) -> Drawing {
+/// `slot` vertically separates callouts in their stable item order.
+pub(crate) fn draw<F>(
+    texture: &SurfaceTexture<F>,
+    value: &str,
+    anchor: Option<&Point>,
+    slot: usize,
+) -> Drawing {
     let zero = Rational::zero();
     let text = format!("{} {value}", texture.parameter);
     // Plane coordinates (u along x, v along z) of the drawing, from the
     // symbol's point.
     let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
+    let offset = Rational::from_i64(i64::try_from(slot).expect("callout slot fits i64") * 14);
     let origin = match anchor {
         Some(anchor) => {
             // A leader up and to the right, with an open arrow on the face.
             let reach = Rational::from_i64(7);
-            let symbol = [&anchor[0] + &reach, anchor[1].clone(), &anchor[2] + &reach];
-            let back = |u: Rational, v: Rational| [&zero - &reach + u, &zero - &reach + v];
+            let symbol = [
+                &anchor[0] + &reach,
+                anchor[1].clone(),
+                &(&anchor[2] + &reach) + &offset,
+            ];
+            let back = |u: Rational, v: Rational| {
+                [&zero - &reach + u, &zero - &reach - offset.clone() + v]
+            };
             let tip = back(zero.clone(), zero.clone());
             // Arrow wings 2.5 mm long at 15 degrees either side of the leader.
             let wings = [
@@ -196,7 +208,7 @@ pub(crate) fn draw<F>(texture: &SurfaceTexture<F>, value: &str, anchor: Option<&
             flat.push(vec![wings[0].clone(), tip, wings[1].clone()]);
             symbol
         }
-        None => [zero.clone(), zero.clone(), zero.clone()],
+        None => [zero.clone(), zero.clone(), offset],
     };
     // ISO 1302 for a 3 mm text height: legs H1 = 4.2 and H2 = 9 high.
     let short = q(21, 5);
@@ -232,7 +244,10 @@ pub(crate) fn draw<F>(texture: &SurfaceTexture<F>, value: &str, anchor: Option<&
             ];
             let mut circle = Vec::new();
             for quarter in 0..4 {
-                for (x, y) in &turn {
+                for (index, (x, y)) in turn.iter().enumerate() {
+                    if (quarter > 0 && index == 0) || (quarter == 3 && index == turn.len() - 1) {
+                        continue;
+                    }
                     let (x, y) = match quarter {
                         0 => (x.clone(), y.clone()),
                         1 => (&zero - y, x.clone()),
@@ -300,5 +315,53 @@ impl Drawing {
         }
         let centre = moment.map(|m| if length.is_zero() { m } else { &m / &length });
         (length, centre)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texture() -> SurfaceTexture<()> {
+        SurfaceTexture {
+            parameter: "Ra".to_owned(),
+            value: Rational::from_i64(16),
+            process: Process::NoRemoval,
+            feature: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn no_removal_circle_has_no_repeated_adjacent_points() {
+        let drawing = draw(&texture(), "1.6", None, 0);
+        let circle = drawing
+            .polylines
+            .iter()
+            .find(|line| line.first() == line.last())
+            .unwrap();
+        assert_eq!(circle.first(), circle.last());
+        assert!(
+            circle.windows(2).all(|pair| pair[0] != pair[1]),
+            "circle contains a zero-length segment"
+        );
+    }
+
+    #[test]
+    fn anchored_callout_slots_separate_same_face_textures() {
+        let anchor = [
+            Rational::from_i64(3),
+            Rational::zero(),
+            Rational::from_i64(5),
+        ];
+        let first = draw(&texture(), "1.6", Some(&anchor), 0);
+        let mut second_texture = texture();
+        second_texture.parameter = "Rz".to_owned();
+        let second = draw(&second_texture, "6.3", Some(&anchor), 1);
+        let second_again = draw(&second_texture, "6.3", Some(&anchor), 1);
+
+        assert_eq!(first.polylines[0][0], anchor);
+        assert_eq!(second.polylines[0][0], anchor);
+        assert_ne!(first.polylines[2], second.polylines[2]);
+        assert_eq!(second.polylines, second_again.polylines);
     }
 }

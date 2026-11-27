@@ -10,7 +10,7 @@ use catallax_numbers::{Decider, Rational, Refusal};
 mod query;
 mod section;
 use crate::rational_patch::{MAX_PROOF_CELLS, PolynomialBounds};
-use crate::{BSplineSurface, RationalPatch, SplineBoundary};
+use crate::{BSplineSurface, RationalPatch, RollingEnvelope, SplineBoundary};
 pub use section::AtlasSection;
 
 type Domain = [[Rational; 2]; 2];
@@ -57,6 +57,12 @@ struct Band {
 
 type CertifiedCover = (Vec<Band>, Vec<Band>, Vec<RationalPatch>);
 
+enum CoverProof<'a> {
+    General,
+    Polynomial(&'a BTreeMap<[usize; 2], PolynomialBounds>),
+    RollingEnvelope,
+}
+
 fn side_index(side: SplineBoundary) -> usize {
     match side {
         SplineBoundary::UMin => 0,
@@ -99,7 +105,7 @@ fn split_band(bands: &mut Vec<Band>, index: usize) {
 
 fn cover(
     source: &BSplineSurface,
-    polynomial: Option<&BTreeMap<[usize; 2], PolynomialBounds>>,
+    proof: CoverProof<'_>,
     dec: &mut Decider,
 ) -> Result<CertifiedCover, Refusal> {
     let mut u = bands(source, 0);
@@ -121,15 +127,18 @@ fn cover(
                     bounds.each_ref().map(|x| x.each_ref()),
                     dec,
                 )?;
-                let result = match polynomial {
-                    Some(bounds) => RationalPatch::new_cell_with_polynomial_bounds(
-                        carrier,
-                        bounds
-                            .get(&[ub.source_span, vb.source_span])
-                            .expect("precomputed source span"),
-                        dec,
-                    ),
-                    None => RationalPatch::new_cell(carrier, dec),
+                let result = match proof {
+                    CoverProof::Polynomial(bounds) => {
+                        RationalPatch::new_cell_with_polynomial_bounds(
+                            carrier,
+                            bounds
+                                .get(&[ub.source_span, vb.source_span])
+                                .expect("precomputed source span"),
+                            dec,
+                        )
+                    }
+                    CoverProof::RollingEnvelope => RationalPatch::new_regular_cell(carrier, dec),
+                    CoverProof::General => RationalPatch::new_cell(carrier, dec),
                 };
                 match result {
                     Ok(patch) => *slot = Some(patch),
@@ -201,8 +210,20 @@ impl RationalAtlas {
         periodic: [bool; 2],
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
-        let cover = cover(&source, None, dec)?;
-        Self::joined(source, periodic, false, cover, dec)
+        let cover = cover(&source, CoverProof::General, dec)?;
+        Self::joined(source, periodic, false, false, cover, dec)
+    }
+
+    /// Covers the unchanged carrier of a certified rolling envelope. Its
+    /// existing proof gives regularity, and its shared Hermite data gives
+    /// smooth interior knots. Chart partition still uses the usual projection.
+    pub fn partition_rolling_envelope(
+        envelope: &RollingEnvelope,
+        dec: &mut Decider,
+    ) -> Result<Vec<Self>, Refusal> {
+        let source = envelope.carrier().clone();
+        let cover = cover(&source, CoverProof::RollingEnvelope, dec)?;
+        Self::joined(source, [false, false], false, true, cover, dec)
     }
 
     /// Opt-in admission from exact rational homogeneous span coefficients.
@@ -218,8 +239,8 @@ impl RationalAtlas {
         for indices in source.span_indices() {
             bounds.insert(indices, PolynomialBounds::from_span(&source, indices, dec)?);
         }
-        let cover = cover(&source, Some(&bounds), dec)?;
-        Self::joined(source, periodic, true, cover, dec)
+        let cover = cover(&source, CoverProof::Polynomial(&bounds), dec)?;
+        Self::joined(source, periodic, true, false, cover, dec)
     }
 
     /// Re-admit a rewritten source with this atlas's finite-cover method and
@@ -241,6 +262,7 @@ impl RationalAtlas {
         source: BSplineSurface,
         periodic: [bool; 2],
         polynomial_bounds: bool,
+        smooth_source: bool,
         (u, v, patches): CertifiedCover,
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
@@ -273,7 +295,9 @@ impl RationalAtlas {
                         )
                     };
                     let multiplicity = source.knots()[axis].iter().filter(|k| *k == knot).count();
-                    let smooth = if !wrap && (same_span || multiplicity < source.degrees()[axis]) {
+                    let smooth = if !wrap
+                        && (smooth_source || same_span || multiplicity < source.degrees()[axis])
+                    {
                         true
                     } else {
                         patches[here].seam(

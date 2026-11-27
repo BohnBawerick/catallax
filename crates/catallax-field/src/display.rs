@@ -578,6 +578,59 @@ fn mesh_plan_inner(
     plan: &Plan,
     options: &Options,
     dec: &mut Decider,
+    report: Option<&mut Diagnostics>,
+    unproved: Option<&mut preview::Tally>,
+) -> Result<Mesh, Refusal> {
+    #[cfg(feature = "display-capture")]
+    let call = catallax_mesh::capture::Call::start("mesh_plan_inner", String::new());
+    let result = mesh_plan_checked(plan, options, dec, report, unproved);
+    #[cfg(feature = "display-capture")]
+    call.finish(options, &CapturedMesh(&result));
+    result
+}
+
+/// Field display records for `tools/display-diff`.
+#[cfg(feature = "display-capture")]
+struct CapturedMesh<'a>(&'a Result<Mesh, Refusal>);
+
+#[cfg(feature = "display-capture")]
+impl catallax_mesh::capture::Observable for CapturedMesh<'_> {
+    fn encode(&self, out: &mut catallax_mesh::capture::Encoder) {
+        match self.0 {
+            Ok(mesh) => {
+                out.text("ok");
+                catallax_mesh::capture::field_mesh(
+                    out,
+                    &mesh.positions,
+                    mesh.triangles
+                        .iter()
+                        .map(|triangle| (triangle.vertices, triangle.face.index())),
+                    &mesh.max_deviation,
+                    mesh.cells,
+                );
+            }
+            Err(refusal) => {
+                out.text("refused");
+                refusal.encode(out);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "display-capture")]
+impl catallax_mesh::capture::Describe for Options {
+    fn describe(&self) -> String {
+        format!(
+            "tolerance={} max_vertices={} max_cells={}",
+            self.tolerance, self.max_vertices, self.max_cells
+        )
+    }
+}
+
+fn mesh_plan_checked(
+    plan: &Plan,
+    options: &Options,
+    dec: &mut Decider,
     mut report: Option<&mut Diagnostics>,
     mut unproved: Option<&mut preview::Tally>,
 ) -> Result<Mesh, Refusal> {

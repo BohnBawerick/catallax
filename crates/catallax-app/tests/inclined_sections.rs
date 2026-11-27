@@ -20,7 +20,7 @@ fn at(x: i64, y: i64, z: i64) -> Pose {
 fn flange(model: &mut Model, dec: &mut Decider) -> BodyId {
     let disk = cylinder(model, 30.into(), 6.into(), &at(0, 0, 0)).unwrap();
     let hub = cylinder(model, 12.into(), 12.into(), &at(0, 0, 4)).unwrap();
-    let mut part = boolean(model, disk, hub, BoolOp::Union, dec).unwrap().body;
+    let mut part = boolean(model, disk, hub, BoolOp::Unite, dec).unwrap().body;
     let bore = cylinder(model, 5.into(), 20.into(), &at(0, 0, -2)).unwrap();
     part = boolean(model, part, bore, BoolOp::Subtract, dec)
         .unwrap()

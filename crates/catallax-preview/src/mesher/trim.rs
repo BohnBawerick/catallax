@@ -203,6 +203,7 @@ pub(super) fn triangulate<F>(
     }
     let span = bounds.map(|[lower, upper]| upper - lower);
     if span.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+        trim_diagnostic("empty normalized chart", bounds);
         return Err(FaceRefusal::InvalidTrim);
     }
     let normalized =
@@ -249,6 +250,10 @@ pub(super) fn triangulate<F>(
                 let dy = next[1].midpoint(previous[1]) - site.y;
                 let scale = dx.abs().max(dy.abs());
                 if scale <= f64::MIN_POSITIVE {
+                    trim_diagnostic(
+                        "coincident projected trim neighbourhood",
+                        (site, previous, next),
+                    );
                     return Err(FaceRefusal::InvalidTrim);
                 }
                 site = spade::mitigate_underflow(Point2::new(
@@ -330,9 +335,11 @@ pub(super) fn triangulate<F>(
             inputs.push(InputVertex::new(uv, NO_BOUNDARY));
         }
     }
-    let labels = label_triangles(&cdt)?;
+    let labels =
+        label_triangles(&cdt).inspect_err(|_| trim_diagnostic("ambiguous trim parity", bounds))?;
     let count = labels.iter().filter(|&&label| label == Some(true)).count();
     if count == 0 || count > max_indices / 3 {
+        trim_diagnostic("no interior triangles or index limit", (bounds, count));
         return Err(if count == 0 {
             FaceRefusal::InvalidTrim
         } else {
@@ -368,6 +375,7 @@ pub(super) fn triangulate<F>(
         }));
     }
     if indices.is_empty() {
+        trim_diagnostic("all triangles collapsed", bounds);
         return Err(FaceRefusal::InvalidTrim);
     }
     Ok(Triangulated {
@@ -490,6 +498,7 @@ fn same_position(a: TrimPoint, b: TrimPoint, positions: &[[f32; 4]]) -> Result<(
     if same_boundary(a.boundary, b.boundary, positions) {
         Ok(())
     } else {
+        trim_diagnostic("discontinuous shared trim point", (a.uv, b.uv));
         Err(FaceRefusal::InvalidTrim)
     }
 }

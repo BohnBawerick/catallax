@@ -33,6 +33,8 @@ An unproved preview belongs to one immutable recipe revision. The app can replac
 
 An ordinary B-rep part uses its B-rep display path. Field-only features can use a field preview. Render with samples, but use the retained definition for geometry queries and exports. Display meshes share one boundary polyline between incident faces and report a proved error bound where they claim one. Two-kernel sampled agreement is not a whole-boundary proof and does not run on every edit.
 
+Complete rolling-envelope and mitre faces use the shared spline triangulator. It fixes their rail samples before refining face interiors, so neighbouring faces use the same chords. The crossing-saddle strip still uses a separate grid because it collapses at two distinct ends.
+
 Output accuracy is separate from modelling tolerance. STEP preserves exact forms where supported and labels approximate exports. Printing defaults to 0.01 mm; it uses qualified B-rep tessellation for supported solids and certified field output where supported. Keep the requested accuracy and resource limits visible and report a refusal rather than silently coarsening the mesh.
 
 ## Work and determinism

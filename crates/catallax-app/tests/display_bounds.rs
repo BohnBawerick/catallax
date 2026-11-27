@@ -479,6 +479,31 @@ fn inside(uv: Uv, loops: &[Vec<Uv>], periods: Uv, interior_left: bool, guard: Uv
     )
 }
 
+// A finite pipe has a contractible trim, even when it crosses the carrier
+// seam. Lift the independently traced boundary into one period and classify
+// its bounded interior without using the face sense or the mesh winding.
+fn lifted_pipe_trim(ring: &mut [Uv], period: f64) -> (f64, bool) {
+    for i in 1..ring.len() {
+        ring[i][0] = ring[i - 1][0] + delta(ring[i][0], ring[i - 1][0], period);
+    }
+    let [lo, hi] = ring
+        .iter()
+        .fold([f64::INFINITY, f64::NEG_INFINITY], |[lo, hi], p| {
+            [lo.min(p[0]), hi.max(p[0])]
+        });
+    assert!(hi - lo < period, "partial pipe trim winds around its chart");
+    let area = ring
+        .iter()
+        .zip(ring.iter().cycle().skip(1))
+        .map(|(a, b)| a[0] * b[1] - a[1] * b[0])
+        .sum::<f64>();
+    assert!(
+        area.abs() > f64::EPSILON,
+        "partial pipe trim has no chart area"
+    );
+    (lo.midpoint(hi), area > 0.0)
+}
+
 fn sampled_range(domain: [[f64; 2]; 2]) -> impl Iterator<Item = Uv> {
     (0..GRID).flat_map(move |u| {
         (0..GRID).map(move |v| {
@@ -514,6 +539,10 @@ fn check_face(
         }
         _ => false,
     };
+    let partial_pipe = matches!(surface, Surface::BSpline(SplineSupport::RollingPipe(_)))
+        && !whole_band
+        && catallax_topology::partial_pipe_rows(model, face.face, dec)
+            .is_ok_and(|rails| rails.is_some());
     let atlas_domains: Vec<_> = match surface {
         Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => atlas
             .charts()
@@ -642,7 +671,7 @@ fn check_face(
             (&sample_analytic, &invert_analytic, analytic.periods())
         }
     };
-    let trim: Vec<Vec<Uv>> = if whole_band {
+    let mut trim: Vec<Vec<Uv>> = if whole_band {
         Vec::new()
     } else {
         loops
@@ -650,10 +679,16 @@ fn check_face(
             .map(|ring| ring.iter().map(|&p| uv(p)).collect())
             .collect()
     };
+    let lifted = partial_pipe.then(|| {
+        let [ring] = trim.as_mut_slice() else {
+            panic!("partial pipe needs one trim loop")
+        };
+        lifted_pipe_trim(ring, periods[0])
+    });
     let guard = domain.map(|[a, b]| (b - a) * 1e-5);
     // Face sense reverses the output winding, not the carrier's trim domain.
     // Orient the independent chart's mask using one topological interior witness.
-    let witness = if trim.is_empty() || !atlas_domains.is_empty() {
+    let witness = if trim.is_empty() || !atlas_domains.is_empty() || partial_pipe {
         None
     } else {
         catallax_boolean::face_point(&mut model.clone(), face.face, dec)
@@ -663,6 +698,14 @@ fn check_face(
     let interior_left = witness.map_or(input.sense == Sense::Same, |q| {
         inside(q, &trim, periods, true, [0.0; 2])
     });
+    let in_trim = |mut q: Uv, guard| {
+        if let Some((center, left)) = lifted {
+            q[0] = center + delta(q[0], center, periods[0]);
+            inside(q, &trim, [0.0; 2], left, guard)
+        } else {
+            inside(q, &trim, periods, interior_left, guard)
+        }
+    };
     let mut interior = 0;
     let mut worst = (0.0, [0.0; 3]);
     let mut check = |p| {
@@ -686,7 +729,7 @@ fn check_face(
         &atlas_domains
     };
     for q in cells.iter().flat_map(|&cell| sampled_range(cell)) {
-        if inside(q, &trim, periods, interior_left, guard) {
+        if in_trim(q, guard) {
             interior += 1;
             check(at(q));
         }
@@ -714,7 +757,7 @@ fn check_face(
                     q[i] = domain[i][0] + (q[i] - domain[i][0]).rem_euclid(periods[i]);
                 }
             }
-            if inside(q, &trim, periods, interior_left, guard) {
+            if in_trim(q, guard) {
                 interior += 1;
                 check(at(q));
             }
@@ -738,7 +781,7 @@ fn check_face(
         for (s, t) in [(0.25, 0.25), (0.5, 0.0), (0.0, 0.5), (0.5, 0.5)] {
             let p = std::array::from_fn(|i| a[i] + s * (b[i] - a[i]) + t * (c[i] - a[i]));
             let q = uv(p);
-            let mut d = if in_atlas(q) && inside(q, &trim, periods, interior_left, [0.0; 2]) {
+            let mut d = if in_atlas(q) && in_trim(q, [0.0; 2]) {
                 gap(p, at(q))
             } else {
                 f64::INFINITY
@@ -1104,9 +1147,6 @@ fn checked_corpus_faces_stay_within_their_reported_bounds() {
                 match (case, err.code) {
                     ("m10-top-cut" | "fillet-vertex-4-two", "mesh.precision-or-budget") => {
                         eprintln!("{case}: {err} (10.6)")
-                    }
-                    ("fillet-partial-oblique", "mesh.precision-or-budget") => {
-                        eprintln!("{case}: {err} (10.2)")
                     }
                     _ => findings.push(format!("{case}: display refused: {err}")),
                 }

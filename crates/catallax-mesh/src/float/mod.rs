@@ -77,7 +77,7 @@ impl<F> DisplayFace<F> {
     /// The evaluator reuses scratch storage and wraps periodic coordinates.
     pub fn carrier_points(&self) -> Option<impl FnMut([f64; 2]) -> [f64; 3] + '_> {
         let mut carrier = Projector::new(&self.surface, None)?;
-        Some(move |mut uv| {
+        Some(move |mut uv: [f64; 2]| {
             for (i, period) in self.periods.iter().enumerate() {
                 if let Some(period) = period {
                     let base = self.bounds[i][0];

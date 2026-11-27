@@ -283,8 +283,10 @@ fn cut_to_pole(
             return Err(failure());
         }
     }
-    let matching = vertex_loop
-        .filter(|&(i, tolerance)| distance(pole, body.positions[i]) <= tolerance.max(rounding));
+    let chord = options.chord_tolerance.to_f64_nearest();
+    let matching = vertex_loop.filter(|&(i, tolerance)| {
+        distance(pole, body.positions[i]) <= tolerance.max(rounding).max(chord)
+    });
     let mesh = match matching {
         Some((index, _)) => index,
         None if on_oriented_side => push(body, pole, options)?,

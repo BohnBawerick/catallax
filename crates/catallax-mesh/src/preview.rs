@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_numbers::{Decider, Rational, Refusal, refund_on_refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
 use crate::{Mesh, MeshOptions, Triangle};
@@ -132,9 +132,9 @@ fn validate(options: &PreviewOptions) -> Result<(), Refusal> {
 /// Samples the retained B-rep for display, without certifying its triangles.
 /// Its topological edge polylines are sampled once for all incident faces.
 ///
-/// This synchronous call uses the caller's decider and active work allowance.
-/// It never starts, replaces, or enlarges an allowance and never calls
-/// [`crate::mesh_body`]. Failure returns no partial preview.
+/// A geometry or resource refusal at the requested detail selects a coarser
+/// sampled grid. The call preserves cancellation and the caller's resource
+/// limits, and refuses if even the coarsest preview will not fit.
 pub fn preview_mesh_body(
     model: &Model,
     body: BodyId,
@@ -157,11 +157,62 @@ fn preview_checked(
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
     validate(options)?;
-    if let Some(preview) = crate::triangulate::shared_spline_preview(model, body, options, dec) {
-        return preview;
+    let direct = refund_on_refusal(|| {
+        if let Some(preview) = crate::triangulate::shared_spline_preview(model, body, options, dec)
+        {
+            return preview;
+        }
+        if crate::junction::present(model, body) {
+            return crate::junction::preview(model, body, options, dec);
+        }
+        crate::triangulate::build_preview(model, body, options, None, dec)
+    });
+    direct.or_else(|_| {
+        coarsen(options, dec, |divisions, tolerance, dec| {
+            crate::float::grid::build(model, body, options, divisions, tolerance, dec)
+        })
+    })
+}
+
+/// Draws the retained numerical fit without claiming a bound to its source.
+/// Face and edge keys belong to the numerical definition.
+pub fn preview_numerical_body(
+    body: &catallax_topology::numerical::NumericalBody,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<PreviewMesh<String, String>, Refusal> {
+    validate(options)?;
+    coarsen(options, dec, |divisions, tolerance, dec| {
+        let edges = body.definition().edges.len();
+        dec.charge_traversal(edges as u64)?;
+        let description = crate::float::describe_numerical_body(
+            body,
+            &crate::float::DisplayOptions {
+                chord_tolerance: tolerance,
+                max_edge_points: options.max_vertices.saturating_add(edges.saturating_mul(2)),
+            },
+        )?;
+        crate::float::grid::from_description(description, options, divisions, dec)
+    })
+}
+
+fn coarsen<T>(
+    options: &PreviewOptions,
+    dec: &mut Decider,
+    mut build: impl FnMut(u32, f64, &mut Decider) -> Result<T, Refusal>,
+) -> Result<T, Refusal> {
+    let chord = options
+        .chord_tolerance
+        .to_f64_nearest()
+        .clamp(f64::MIN_POSITIVE, f64::MAX);
+    for (divisions, scale) in [(16, 1.0), (8, 4.0), (4, 16.0), (2, 64.0)] {
+        dec.check_deadline()?;
+        if let Ok(preview) =
+            refund_on_refusal(|| build(divisions, (chord * scale).min(f64::MAX), dec))
+        {
+            return Ok(preview);
+        }
     }
-    if crate::junction::present(model, body) {
-        return crate::junction::preview(model, body, options, dec);
-    }
-    crate::triangulate::build_preview(model, body, options, None, dec)
+    dec.check_deadline()?;
+    build(1, f64::MAX, dec)
 }

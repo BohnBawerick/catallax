@@ -7,13 +7,13 @@ use std::{
 
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::Plane;
-use catallax_topology::{FaceId, Loop, Model, Sense};
+use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
     assembly::{FaceDraft, Positions},
     chart,
-    edges::Position,
+    edges::{Boundaries, Position},
     failure,
 };
 
@@ -103,6 +103,123 @@ fn cross(a: &Point, b: &Point, c: &Point, dec: &mut Decider) -> Result<Real, Ref
     let b = b.exact(dec)?;
     let c = c.exact(dec)?;
     Ok((&b[0] - &a[0]) * (&c[1] - &a[1]) - (&b[1] - &a[1]) * (&c[0] - &a[0]))
+}
+
+pub(crate) fn crossing_edges(
+    model: &Model,
+    face: FaceId,
+    plane: &Plane,
+    boundary: &Boundaries,
+    dec: &mut Decider,
+) -> Result<BTreeSet<EdgeId>, Refusal> {
+    let edges = model
+        .face(face)
+        .loops
+        .iter()
+        .flat_map(|&id| match model.loop_(id) {
+            Loop::Coedges(uses) => uses.as_slice(),
+            Loop::Vertex(_) => &[],
+        });
+    let mut edges: Vec<_> = edges.map(|&id| model.coedge(id).edge).collect();
+    edges.sort_unstable();
+    edges.dedup();
+    let linear = |id| {
+        matches!(
+            model.geom().curve(model.edge(id).curve),
+            catallax_shapes::Curve::Line(_)
+        )
+    };
+    if edges.len() < 2 || edges.iter().copied().all(linear) {
+        return Ok(BTreeSet::new());
+    }
+    let axes = projection(plane, model.face(face).sense, dec)?;
+    let mut points = BTreeMap::new();
+    for &id in &edges {
+        let edge = model.edge(id);
+        for vertex in [edge.start, edge.end].into_iter().flatten() {
+            points.entry(boundary.vertices[&vertex]).or_insert_with(|| {
+                let p = model.geom().position(model.vertex(vertex).point);
+                Position::Exact([p.x, p.y, p.z])
+            });
+        }
+    }
+    let mut projected = BTreeMap::new();
+    let mut chords = Vec::new();
+    for id in edges {
+        let straight = linear(id);
+        for pair in boundary.mesh.edges[boundary.edges[&id]].vertices.windows(2) {
+            let pair = [pair[0], pair[1]];
+            for index in pair {
+                if let std::collections::btree_map::Entry::Vacant(entry) = projected.entry(index) {
+                    let position = points
+                        .get(&index)
+                        .or_else(|| boundary.exact_positions.get(&index))
+                        .ok_or_else(|| failure("planar boundary lacks its exact trace sample"))?;
+                    let balls = position.enclose(dec)?;
+                    entry.insert(Point {
+                        position: position.clone(),
+                        axes,
+                        bounds: axes.map(|axis| {
+                            [
+                                balls[axis].lo().to_f64_nearest().next_down(),
+                                balls[axis].hi().to_f64_nearest().next_up(),
+                            ]
+                        }),
+                    });
+                }
+            }
+            let [a, b] = pair.map(|i| projected[&i].bounds);
+            let bounds: [[f64; 2]; 2] =
+                std::array::from_fn(|i| [a[i][0].min(b[i][0]), a[i][1].max(b[i][1])]);
+            chords.push((bounds, pair, id, straight));
+        }
+    }
+    dec.charge_traversal(chords.len() as u64)?;
+    chords.sort_unstable_by(|a, b| {
+        a.0[0][0]
+            .total_cmp(&b.0[0][0])
+            .then(a.1.cmp(&b.1))
+            .then(a.2.cmp(&b.2))
+    });
+    let mut polygon = Polygon {
+        points: projected,
+        dec,
+    };
+    let mut crossings = BTreeSet::new();
+    for (i, &(a, [p, q], edge, straight)) in chords.iter().enumerate() {
+        for &(b, [r, s], other, other_straight) in &chords[i + 1..] {
+            if b[0][0] > a[0][1] {
+                break;
+            }
+            if (straight && other_straight)
+                || b[1][0] > a[1][1]
+                || a[1][0] > b[1][1]
+                || p == r
+                || p == s
+                || q == r
+                || q == s
+            {
+                continue;
+            }
+            let straddles = |a, b| {
+                matches!(
+                    (a, b),
+                    (Sign::Positive, Sign::Negative) | (Sign::Negative, Sign::Positive)
+                )
+            };
+            if straddles(polygon.turn(p, q, r)?, polygon.turn(p, q, s)?)
+                && straddles(polygon.turn(r, s, p)?, polygon.turn(r, s, q)?)
+            {
+                if !straight {
+                    crossings.insert(edge);
+                }
+                if !other_straight {
+                    crossings.insert(other);
+                }
+            }
+        }
+    }
+    Ok(crossings)
 }
 
 struct Polygon<'a> {
@@ -740,14 +857,7 @@ fn split_rail_ears(
     Ok(error)
 }
 
-pub(crate) fn build(
-    model: &Model,
-    face: FaceId,
-    plane: &Plane,
-    draft: &mut FaceDraft<'_>,
-    options: &MeshOptions,
-    dec: &mut Decider,
-) -> Result<(), Refusal> {
+fn projection(plane: &Plane, sense: Sense, dec: &mut Decider) -> Result<[usize; 2], Refusal> {
     let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
     let mut candidates = [0, 1, 2];
     candidates.sort_by(|&a, &b| {
@@ -766,9 +876,21 @@ pub(crate) fn build(
     }
     let (drop, direction) = projection.ok_or_else(|| failure("zero planar normal"))?;
     let mut axes = [(drop + 1) % 3, (drop + 2) % 3];
-    if (direction == Sign::Negative) != (model.face(face).sense == Sense::Reversed) {
+    if (direction == Sign::Negative) != (sense == Sense::Reversed) {
         axes.swap(0, 1);
     }
+    Ok(axes)
+}
+
+pub(crate) fn build(
+    model: &Model,
+    face: FaceId,
+    plane: &Plane,
+    draft: &mut FaceDraft<'_>,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let axes = projection(plane, model.face(face).sense, dec)?;
     let mut points = BTreeMap::<usize, Position>::new();
     let mut loops = Vec::new();
     for &l in &model.face(face).loops {

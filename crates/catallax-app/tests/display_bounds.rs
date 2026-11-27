@@ -1144,12 +1144,7 @@ fn checked_corpus_faces_stay_within_their_reported_bounds() {
         let mesh = match mesh {
             Ok(mesh) => mesh.value,
             Err(err) => {
-                match (case, err.code) {
-                    ("m10-top-cut" | "fillet-vertex-4-two", "mesh.precision-or-budget") => {
-                        eprintln!("{case}: {err} (10.6)")
-                    }
-                    _ => findings.push(format!("{case}: display refused: {err}")),
-                }
+                findings.push(format!("{case}: display refused: {err}"));
                 continue;
             }
         };

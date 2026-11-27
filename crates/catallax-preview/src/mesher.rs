@@ -3,15 +3,12 @@
 use std::{fmt, ops::Range};
 
 use bytemuck::{Pod, Zeroable, cast_slice};
-use catallax_mesh::float::{DISPLAY_DESCRIPTION_VERSION, DisplayDescription, DisplayFace};
+use catallax_mesh::float::{DISPLAY_DESCRIPTION_VERSION, DisplayDescription, DisplayFace, trim};
 use catallax_topology::FaceId;
 
 use crate::gpu::Gpu;
 
 mod surface;
-mod trim;
-
-const NO_BOUNDARY: u32 = u32::MAX;
 
 /// Lattice divisions in U and V. Trim chords are independent of this setting.
 #[derive(Clone, Copy, Debug)]
@@ -97,6 +94,18 @@ impl FaceRefusal {
             Self::InvalidSurface => "preview.invalid-surface",
             Self::GpuRange => "preview.gpu-range",
             Self::MeshSize => "preview.mesh-size",
+        }
+    }
+}
+
+impl From<trim::TrimRefusal> for FaceRefusal {
+    fn from(error: trim::TrimRefusal) -> Self {
+        use trim::TrimRefusal::*;
+        match error {
+            InvalidChart => Self::InvalidChart,
+            UnsupportedTrim => Self::UnsupportedTrim,
+            InvalidTrim => Self::InvalidTrim,
+            MeshSize => Self::MeshSize,
         }
     }
 }
@@ -372,10 +381,20 @@ impl PackedMesh {
         if self.surfaces.len() == self.max_surfaces {
             return Err(FaceRefusal::MeshSize);
         }
+        for edge in face.loops.iter().flat_map(|lp| &lp.uses) {
+            self.edges
+                .get(edge.edge)
+                .ok_or(FaceRefusal::InvalidTrim)?
+                .as_ref()
+                .map_err(|&error| error)?;
+        }
         let trim = trim::triangulate(
             face,
-            &self.edges,
-            &self.positions,
+            &|edge| self.edges[edge].as_ref().ok().cloned(),
+            &|a, b| {
+                self.positions[a as usize].map(f32::to_bits)
+                    == self.positions[b as usize].map(f32::to_bits)
+            },
             detail,
             self.max_vertices - self.inputs.len(),
             self.max_indices - self.indices.len(),
@@ -397,11 +416,11 @@ impl PackedMesh {
         let base = self.inputs.len() as u32;
         let slot = self.surfaces.len() as u32;
         let start = self.indices.len() as u32;
-        self.inputs
-            .extend(trim.vertices.into_iter().map(|mut vertex| {
-                vertex.surface = slot;
-                vertex
-            }));
+        self.inputs.extend(trim.vertices.into_iter().map(|sample| {
+            let mut vertex = InputVertex::new(sample.uv, sample.boundary);
+            vertex.surface = slot;
+            vertex
+        }));
         self.indices
             .extend(trim.indices.into_iter().map(|index| base + index));
         self.surfaces.push(params);

@@ -150,47 +150,45 @@ fn preview_does_not_fill_planar_hole_trims() {
 }
 
 #[test]
-fn preview_consumes_the_existing_allowance_and_refuses_without_partial_data() {
-    let recipe = Recipe::parse(include_str!("../benches/fine_mesh/countersink.json")).unwrap();
-    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
-    let options = PreviewOptions::default();
-    let (result, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
-        catallax_app::preview_body(&built, &options, &mut Decider::default())
+fn preview_coarsens_within_vertex_and_work_limits() {
+    let model = &mut catallax_topology::Model::new();
+    let body = catallax_topology::block(
+        model,
+        [2.into(), 3.into(), 4.into()],
+        &catallax_shapes::Pose::identity(),
+    )
+    .unwrap();
+    let options = PreviewOptions {
+        max_vertices: 8,
+        ..PreviewOptions::default()
+    };
+    let (result, work) = with_operation_budget(96, || {
+        preview_mesh_body(model, body, &options, &mut Decider::default())
     });
-    let reference = result.unwrap();
+    let coarse = result.unwrap();
     assert!(!work.exhausted);
-    let (result, exact) = with_operation_budget(work.used, || {
-        catallax_app::preview_body(&built, &options, &mut Decider::default())
-    });
-    assert_eq!(result.unwrap().mesh, reference.mesh);
-    assert_eq!(exact.used, work.used);
-    assert!(!exact.exhausted);
-    let (result, short) = with_operation_budget(work.used - 1, || {
-        catallax_app::preview_body(&built, &options, &mut Decider::default())
+    assert!(coarse.positions.len() <= options.max_vertices);
+    assert_eq!(coarse.faces.len(), model.faces_of_body(body).len());
+    for edge in &coarse.edges {
+        for pair in edge.vertices.windows(2) {
+            let uses = coarse
+                .triangles
+                .iter()
+                .filter(|triangle| pair.iter().all(|vertex| triangle.vertices.contains(vertex)))
+                .count();
+            assert_eq!(uses, 2, "both faces must use the same sampled chord");
+        }
+    }
+    let (result, shared) = with_operation_budget(0, || {
+        preview_mesh_body(model, body, &options, &mut Decider::default())
     });
     assert!(result.is_err());
-    assert!(short.exhausted);
-    let ((first, second), shared) = with_operation_budget(work.used, || {
-        let first = catallax_app::preview_body(&built, &options, &mut Decider::default());
-        let second = catallax_app::preview_body(&built, &options, &mut Decider::default());
-        (first, second)
-    });
-    assert!(first.is_ok());
-    assert!(second.is_err());
     assert!(shared.exhausted);
     let constrained = PreviewOptions {
         max_vertices: 4,
         ..options
     };
-    assert!(
-        preview_mesh_body(
-            &built.model,
-            built.result,
-            &constrained,
-            &mut Decider::default()
-        )
-        .is_err()
-    );
+    assert!(preview_mesh_body(model, body, &constrained, &mut Decider::default()).is_err());
 }
 
 #[test]

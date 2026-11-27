@@ -1,17 +1,43 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 
-use catallax_mesh::float::{DisplayFace, DisplayLoop};
+use super::{DisplayFace, DisplayLoop};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
 
-use super::{FaceRefusal, InputVertex, NO_BOUNDARY};
+use TrimRefusal as FaceRefusal;
+
+/// Why a sampled trim could not be triangulated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrimRefusal {
+    /// Nonfinite bounds, invalid period or zero grid detail.
+    InvalidChart,
+    /// The face has a trim that is not a closed polygon or paired band.
+    UnsupportedTrim,
+    /// Trim topology cannot be triangulated without changing a shared chord.
+    InvalidTrim,
+    /// The requested triangulation exceeds its size limit.
+    MeshSize,
+}
+
+/// An interior grid sample, rather than a sample from an input edge.
+pub const NO_BOUNDARY: u32 = u32::MAX;
+
+/// UV in the grid's normalized rectangle, with an optional shared edge sample.
+#[derive(Clone, Copy)]
+pub struct TrimVertex {
+    /// Coordinates relative to [`Triangulated::bounds`].
+    pub uv: [f64; 2],
+    /// Edge sample index, or [`NO_BOUNDARY`].
+    pub boundary: u32,
+}
 
 // In units of a chart span or period, not millimetres.
 const UV_EPSILON: f64 = 1e-10;
 
-type EdgeRanges = [Result<Range<u32>, FaceRefusal>];
+type EdgeRange<'a> = &'a dyn Fn(usize) -> Option<Range<u32>>;
+type SamePosition<'a> = &'a dyn Fn(u32, u32) -> bool;
 type Cdt = ConstrainedDelaunayTriangulation<Site>;
 
 struct Site {
@@ -39,16 +65,21 @@ struct Ring {
     winding: [i32; 2],
 }
 
-pub(super) struct Triangulated {
-    pub vertices: Vec<InputVertex>,
+/// Trimmed grid indices, retaining incident edges and paired seam points.
+pub struct Triangulated {
+    /// Parameter or boundary sample for each vertex.
+    pub vertices: Vec<TrimVertex>,
+    /// Triangle vertex indices, three per triangle.
     pub indices: Vec<u32>,
+    /// Actual parameter rectangle containing the trim.
     pub bounds: [[f64; 2]; 2],
 }
 
-pub(super) fn triangulate<F>(
+/// Triangulate the trim and insert a regular grid without splitting its chords.
+pub fn triangulate<F>(
     face: &DisplayFace<F>,
-    edges: &EdgeRanges,
-    positions: &[[f32; 4]],
+    edge_range: EdgeRange<'_>,
+    same_position: SamePosition<'_>,
     detail: [u32; 2],
     max_vertices: usize,
     max_indices: usize,
@@ -70,8 +101,8 @@ pub(super) fn triangulate<F>(
     for trim in &face.loops {
         let ring = collect_ring(
             trim,
-            edges,
-            positions,
+            edge_range,
+            same_position,
             face.periods,
             tolerance,
             max_vertices - trim_count,
@@ -131,7 +162,10 @@ pub(super) fn triangulate<F>(
             let uv = normalized(point.uv);
             let mut push = || {
                 let index = inputs.len() as u32;
-                inputs.push(InputVertex::new(uv, point.boundary));
+                inputs.push(TrimVertex {
+                    uv,
+                    boundary: point.boundary,
+                });
                 index
             };
             let input = match point.seam_twin {
@@ -187,7 +221,10 @@ pub(super) fn triangulate<F>(
             let input = inputs.len() as u32;
             cdt.insert(Site { point, input })
                 .map_err(|_| FaceRefusal::InvalidTrim)?;
-            inputs.push(InputVertex::new(uv, NO_BOUNDARY));
+            inputs.push(TrimVertex {
+                uv,
+                boundary: NO_BOUNDARY,
+            });
         }
     }
     let labels = label_triangles(&cdt)?;
@@ -232,8 +269,8 @@ pub(super) fn triangulate<F>(
 
 fn collect_ring(
     trim: &DisplayLoop,
-    edges: &EdgeRanges,
-    positions: &[[f32; 4]],
+    edge_range: EdgeRange<'_>,
+    same_position: SamePosition<'_>,
     periods: [Option<f64>; 2],
     tolerance: [f64; 2],
     limit: usize,
@@ -243,11 +280,7 @@ fn collect_ring(
     }
     let mut points = Vec::<TrimPoint>::new();
     for edge in &trim.uses {
-        let range = edges
-            .get(edge.edge)
-            .ok_or(FaceRefusal::InvalidTrim)?
-            .as_ref()
-            .map_err(|e| *e)?;
+        let range = edge_range(edge.edge).ok_or(FaceRefusal::InvalidTrim)?;
         let get = |i: usize| {
             let sample = &edge.samples[i];
             let boundary = u32::try_from(sample.point)
@@ -269,7 +302,9 @@ fn collect_ring(
         }
         let first = get(0)?;
         let shift = if let Some(last) = points.last() {
-            same_position(*last, first, positions)?;
+            if !same_position(last.boundary, first.boundary) {
+                return Err(FaceRefusal::InvalidTrim);
+            }
             let (_, shift) = wraps(first.uv, last.uv, periods, tolerance)?;
             shift
         } else {
@@ -289,7 +324,9 @@ fn collect_ring(
     }
     let first = points[0];
     let last = *points.last().unwrap();
-    same_position(first, last, positions)?;
+    if !same_position(first.boundary, last.boundary) {
+        return Err(FaceRefusal::InvalidTrim);
+    }
     let (winding, _) = wraps(first.uv, last.uv, periods, tolerance)?;
     if winding == [0, 0] {
         points.pop();
@@ -301,16 +338,6 @@ fn collect_ring(
         return Err(FaceRefusal::MeshSize);
     }
     Ok(Ring { points, winding })
-}
-
-fn same_position(a: TrimPoint, b: TrimPoint, positions: &[[f32; 4]]) -> Result<(), FaceRefusal> {
-    if positions[a.boundary as usize].map(f32::to_bits)
-        == positions[b.boundary as usize].map(f32::to_bits)
-    {
-        Ok(())
-    } else {
-        Err(FaceRefusal::InvalidTrim)
-    }
 }
 
 fn wraps(

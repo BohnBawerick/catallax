@@ -126,6 +126,13 @@ jobs:
       - uses: ./.github/actions/rust-toolchain
         with:
           toolchain: stable
+      - name: Require a preview for each built corpus row
+        if: matrix.workers == 1
+        run: |
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/display-target"
+          cargo run --release -p catallax-cli --example predictor_corpus -- \
+            run --corpus tools/predictor/corpus.json --threads 1 --require-preview \
+            --out "$RUNNER_TEMP/corpus-preview.jsonl"
       - name: Capture head at ${{ matrix.workers }} workers
         run: |
           export CARGO_TARGET_DIR="$RUNNER_TEMP/display-target"

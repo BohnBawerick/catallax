@@ -796,7 +796,7 @@ pub(crate) fn sample(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
-    sample_selected(
+    let mut boundaries = sample_selected(
         model,
         body,
         model.edges_of_body(body),
@@ -804,7 +804,49 @@ pub(crate) fn sample(
         junction,
         options,
         dec,
-    )
+    )?;
+    let mut refinement = BTreeMap::<EdgeId, i32>::new();
+    loop {
+        let mut crossings = BTreeSet::new();
+        for (&face, chart) in charts {
+            if let Surface::Plane(plane) = &chart.surface {
+                crossings.extend(crate::planar::crossing_edges(
+                    model,
+                    face,
+                    plane,
+                    &boundaries,
+                    dec,
+                )?);
+            }
+        }
+        if crossings.is_empty() {
+            return Ok(boundaries);
+        }
+        crossings.retain(|edge| junction.is_none_or(|j| j.seed(*edge).is_none()));
+        if crossings.is_empty() {
+            return Err(failure("crossing planar trim chords cannot be refined"));
+        }
+        for &edge in &crossings {
+            let power = refinement.entry(edge).or_default();
+            *power -= 2;
+            if *power < -96 {
+                return Err(failure(
+                    "planar trim chord refinement reached the precision limit",
+                ));
+            }
+        }
+        let replacement = sample_with_goals(
+            model,
+            body,
+            crossings,
+            charts,
+            junction,
+            options,
+            &refinement,
+            dec,
+        )?;
+        boundaries.replace(replacement, options)?;
+    }
 }
 
 pub(crate) fn sample_selected(
@@ -814,6 +856,29 @@ pub(crate) fn sample_selected(
     charts: &BTreeMap<catallax_topology::FaceId, Chart>,
     junction: Option<&crate::junction::Junction>,
     options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Boundaries, Refusal> {
+    sample_with_goals(
+        model,
+        body,
+        selected,
+        charts,
+        junction,
+        options,
+        &BTreeMap::new(),
+        dec,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_with_goals(
+    model: &Model,
+    body: BodyId,
+    selected: impl IntoIterator<Item = EdgeId>,
+    charts: &BTreeMap<catallax_topology::FaceId, Chart>,
+    junction: Option<&crate::junction::Junction>,
+    options: &MeshOptions,
+    refinement: &BTreeMap<EdgeId, i32>,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
     let mut result = Boundaries {
@@ -898,16 +963,21 @@ pub(crate) fn sample_selected(
         None
     };
     for edge_id in selected {
-        let local_options = adjacent.get(&edge_id).and_then(|charts| {
-            let chord = charts
-                .iter()
-                .filter_map(|incident| incident.chart.chord_goal.as_ref())
-                .min()?;
+        let chord = adjacent[&edge_id]
+            .iter()
+            .filter_map(|incident| incident.chart.chord_goal.as_ref())
+            .min();
+        let local_options = if let Some(&power) = refinement.get(&edge_id) {
             Some(MeshOptions {
+                chord_tolerance: chord.unwrap_or(&options.chord_tolerance).mul_pow2(power),
+                ..options.clone()
+            })
+        } else {
+            chord.map(|chord| MeshOptions {
                 chord_tolerance: chord.clone(),
                 ..options.clone()
             })
-        });
+        };
         let options = local_options.as_ref().unwrap_or(options);
         let spline_cosine = if adjacent.get(&edge_id).is_some_and(|charts| {
             charts.iter().any(|incident| {
@@ -1152,4 +1222,69 @@ pub(crate) fn sample_selected(
     }
     result.rails = Rails::new(&result.mesh.edges);
     Ok(result)
+}
+
+impl Boundaries {
+    fn replace(&mut self, mut replacement: Self, options: &MeshOptions) -> Result<(), Refusal> {
+        let mut kept = vec![false; self.mesh.positions.len()];
+        for edge in &self.mesh.edges {
+            if !replacement.edges.contains_key(&edge.edge) {
+                for &index in &edge.vertices {
+                    kept[index] = true;
+                }
+            }
+        }
+        for &vertex in self.vertices.values() {
+            kept[vertex] = true;
+        }
+        let mut indices = vec![0; kept.len()];
+        let mut old = 0;
+        let mut next = 0;
+        self.mesh.positions.retain(|_| {
+            let retain = kept[old];
+            indices[old] = next;
+            old += 1;
+            next += usize::from(retain);
+            retain
+        });
+        self.exact_positions = std::mem::take(&mut self.exact_positions)
+            .into_iter()
+            .filter_map(|(i, p)| kept[i].then_some((indices[i], p)))
+            .collect();
+        for vertex in self.vertices.values_mut() {
+            *vertex = indices[*vertex];
+        }
+        for edge in &mut self.mesh.edges {
+            if !replacement.edges.contains_key(&edge.edge) {
+                for index in &mut edge.vertices {
+                    *index = indices[*index];
+                }
+            }
+        }
+        let mut remap = vec![None; replacement.mesh.positions.len()];
+        for (id, i) in replacement.vertices {
+            remap[i] = Some(self.vertices[&id]);
+        }
+        for (i, p) in replacement.mesh.positions.into_iter().enumerate() {
+            if remap[i].is_none() {
+                reserve_position(self.mesh.positions.len(), options)?;
+                let index = self.mesh.positions.len();
+                self.mesh.positions.push(p);
+                if let Some(exact) = replacement.exact_positions.remove(&i) {
+                    self.exact_positions.insert(index, exact);
+                }
+                remap[i] = Some(index);
+            }
+        }
+        for mut edge in replacement.mesh.edges {
+            for i in &mut edge.vertices {
+                *i = remap[*i].unwrap();
+            }
+            let index = self.edges[&edge.edge];
+            self.mesh.edges[index] = edge;
+        }
+        self.marks.extend(&replacement.marks);
+        self.rails = Rails::new(&self.mesh.edges);
+        Ok(())
+    }
 }

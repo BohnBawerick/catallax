@@ -8,9 +8,12 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 mod edges;
 mod evaluate;
+pub(crate) mod grid;
 mod numerical;
 mod sections;
 mod spline;
+#[doc(hidden)]
+pub mod trim;
 
 use evaluate::{Projector, align, anchor, describe, finite, point, positive, sub};
 pub use numerical::describe_numerical_body;

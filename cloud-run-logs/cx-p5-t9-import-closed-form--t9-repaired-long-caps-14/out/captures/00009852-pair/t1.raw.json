@@ -1,0 +1,828 @@
+{
+  "complete_source_body_bound_established": false,
+  "files": [
+    {
+      "bodies": [
+        1
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 1,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11951",
+          "topology": {
+            "edges": 493,
+            "euler_with_face_holes": -7,
+            "faces": 208,
+            "solids": 1,
+            "two_loop_faces": 47,
+            "vertices": 342
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "9e794b5dde1f477a275de5b4801c6293d00135d12580ea8b12be3816e3f8d472",
+      "topology": {
+        "edges": 535,
+        "euler_with_face_holes": -9,
+        "faces": 208,
+        "solids": 1,
+        "two_loop_faces": 13,
+        "vertices": 348
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        2
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 2,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11967",
+          "topology": {
+            "edges": 567,
+            "euler_with_face_holes": -6,
+            "faces": 200,
+            "solids": 1,
+            "two_loop_faces": 11,
+            "vertices": 380
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "6b75db34fb33df7615ae4281554eaa2be283ef9d533780c7246164b5f54ae9b9",
+      "topology": {
+        "edges": 581,
+        "euler_with_face_holes": -6,
+        "faces": 200,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 385
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        3
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 3,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11971",
+          "topology": {
+            "edges": 224,
+            "euler_with_face_holes": -4,
+            "faces": 88,
+            "solids": 1,
+            "two_loop_faces": 21,
+            "vertices": 155
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "fbd32cf01e28cb7a3acdcb1cd6a741ce13816dfc36405f26e9bf1605ad6ee141",
+      "topology": {
+        "edges": 240,
+        "euler_with_face_holes": -6,
+        "faces": 88,
+        "solids": 1,
+        "two_loop_faces": 8,
+        "vertices": 158
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        4
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 4,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11975",
+          "topology": {
+            "edges": 674,
+            "euler_with_face_holes": 0,
+            "faces": 227,
+            "solids": 1,
+            "two_loop_faces": 3,
+            "vertices": 450
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "8abcf7778d33032779c901f155a0aa5ff7f78e00a5997bead2c460e9b842a704",
+      "topology": {
+        "edges": 675,
+        "euler_with_face_holes": 0,
+        "faces": 227,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 450
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        5
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 5,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11979",
+          "topology": {
+            "edges": 725,
+            "euler_with_face_holes": 0,
+            "faces": 247,
+            "solids": 1,
+            "two_loop_faces": 7,
+            "vertices": 485
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "cd0dcebb41e0dbf21c9ac9a3c35e3a7c8235da4b52689b86d3b5c60cccc894f6",
+      "topology": {
+        "edges": 728,
+        "euler_with_face_holes": 0,
+        "faces": 247,
+        "solids": 1,
+        "two_loop_faces": 4,
+        "vertices": 485
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        6
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 6,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11983",
+          "topology": {
+            "edges": 281,
+            "euler_with_face_holes": -25,
+            "faces": 131,
+            "solids": 1,
+            "two_loop_faces": 55,
+            "vertices": 209
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "9bced660b06f437d0fab63337aa5af274440653eb1d66a09b16ddf47924549c0",
+      "topology": {
+        "edges": 331,
+        "euler_with_face_holes": -27,
+        "faces": 131,
+        "solids": 1,
+        "two_loop_faces": 14,
+        "vertices": 217
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        7
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 7,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11987",
+          "topology": {
+            "edges": 76,
+            "euler_with_face_holes": -2,
+            "faces": 28,
+            "solids": 1,
+            "two_loop_faces": 2,
+            "vertices": 52
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "830b9d576b9c8b6223e02fcfc5574b859480eed7c946b72dc5f2f50df8363aed",
+      "topology": {
+        "edges": 78,
+        "euler_with_face_holes": -2,
+        "faces": 28,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 52
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        8
+      ],
+      "kind": "solid",
+      "observation_complete": true,
+      "occurrence_graph_complete": false,
+      "occurrence_outcome": null,
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [],
+      "sha256": "f60ed559614fddd4c86898e98f6f719ee5a5bccd5cb7cf742131f0e536a1b7e2",
+      "topology": {
+        "edges": 184,
+        "euler_with_face_holes": -8,
+        "faces": 60,
+        "solids": 1,
+        "two_loop_faces": 4,
+        "vertices": 120
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_identity_unit_builder_at_fixed_precision"
+    },
+    {
+      "bodies": [
+        9
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 9,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#11995",
+          "topology": {
+            "edges": 97,
+            "euler_with_face_holes": -16,
+            "faces": 36,
+            "solids": 1,
+            "two_loop_faces": 5,
+            "vertices": 68
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "785211ede4c51146efc59c7e6db8af75cca3031f511426b64a19113ce64698de",
+      "topology": {
+        "edges": 102,
+        "euler_with_face_holes": -16,
+        "faces": 36,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 68
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        10
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 10,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13599",
+          "topology": {
+            "edges": 8,
+            "euler_with_face_holes": 0,
+            "faces": 8,
+            "solids": 1,
+            "two_loop_faces": 8,
+            "vertices": 8
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "42e434122282cfe2f046f82226d930c0ec0441bd1bd7df16db967c11c3306ebb",
+      "topology": {
+        "edges": 15,
+        "euler_with_face_holes": 0,
+        "faces": 8,
+        "solids": 1,
+        "two_loop_faces": 3,
+        "vertices": 10
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        11
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 11,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13603",
+          "topology": {
+            "edges": 151,
+            "euler_with_face_holes": 2,
+            "faces": 57,
+            "solids": 1,
+            "two_loop_faces": 7,
+            "vertices": 103
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "0c74db9cbc9c0b71a6d9432cdc24d26588fa69d4ad9957129776a56e0e37f821",
+      "topology": {
+        "edges": 156,
+        "euler_with_face_holes": 2,
+        "faces": 57,
+        "solids": 1,
+        "two_loop_faces": 3,
+        "vertices": 104
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        12
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 12,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13607",
+          "topology": {
+            "edges": 693,
+            "euler_with_face_holes": 1,
+            "faces": 239,
+            "solids": 1,
+            "two_loop_faces": 10,
+            "vertices": 465
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "1cb36ad530a27db07ec08a9e7975bcd8259428e94d204d757a308fe9ab636dc7",
+      "topology": {
+        "edges": 699,
+        "euler_with_face_holes": 1,
+        "faces": 239,
+        "solids": 1,
+        "two_loop_faces": 5,
+        "vertices": 466
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        13
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 13,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13611",
+          "topology": {
+            "edges": 924,
+            "euler_with_face_holes": -6,
+            "faces": 316,
+            "solids": 1,
+            "two_loop_faces": 10,
+            "vertices": 620
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "f2041b7a0912f03e7ec27853569d3a5cd39b7d99e32d29a808665d6fafa1bc35",
+      "topology": {
+        "edges": 933,
+        "euler_with_face_holes": -6,
+        "faces": 316,
+        "solids": 1,
+        "two_loop_faces": 3,
+        "vertices": 622
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        14
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 14,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13615",
+          "topology": {
+            "edges": 6,
+            "euler_with_face_holes": 0,
+            "faces": 5,
+            "solids": 1,
+            "two_loop_faces": 5,
+            "vertices": 6
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "1dc98111a12d9bbe37ff691860caeafc1a35629b780c296914960b46a5f1ceeb",
+      "topology": {
+        "edges": 10,
+        "euler_with_face_holes": 0,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 1,
+        "vertices": 6
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        15
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 15,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13619",
+          "topology": {
+            "edges": 873,
+            "euler_with_face_holes": 1,
+            "faces": 299,
+            "solids": 1,
+            "two_loop_faces": 10,
+            "vertices": 585
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "f7234cb72cb1ed7f99fb32710815a06967c9d5fee81e20a96bd5a527f4e29ba8",
+      "topology": {
+        "edges": 881,
+        "euler_with_face_holes": 1,
+        "faces": 299,
+        "solids": 1,
+        "two_loop_faces": 4,
+        "vertices": 587
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        16
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 16,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13623",
+          "topology": {
+            "edges": 259,
+            "euler_with_face_holes": 2,
+            "faces": 91,
+            "solids": 1,
+            "two_loop_faces": 0,
+            "vertices": 170
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "fcb23e9bfb5130c70536a2e76508a54ed91b4d5c17251db1b65c7b9630118984",
+      "topology": {
+        "edges": 259,
+        "euler_with_face_holes": 2,
+        "faces": 91,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 170
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        17
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 17,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13627",
+          "topology": {
+            "edges": 89,
+            "euler_with_face_holes": 0,
+            "faces": 33,
+            "solids": 1,
+            "two_loop_faces": 4,
+            "vertices": 60
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "b0c86db02e5bf44cdd4527b3ba957beafd11c34e425ac8389ea2fb0d22b3d8e6",
+      "topology": {
+        "edges": 93,
+        "euler_with_face_holes": 0,
+        "faces": 33,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 62
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        18
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 18,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13631",
+          "topology": {
+            "edges": 261,
+            "euler_with_face_holes": 2,
+            "faces": 97,
+            "solids": 1,
+            "two_loop_faces": 12,
+            "vertices": 178
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "5119e61b9ef8472f111c1a4f7e56d004199387395792ee893188209b5c736da2",
+      "topology": {
+        "edges": 269,
+        "euler_with_face_holes": 2,
+        "faces": 97,
+        "solids": 1,
+        "two_loop_faces": 4,
+        "vertices": 178
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        19
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 19,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13635",
+          "topology": {
+            "edges": 8,
+            "euler_with_face_holes": 2,
+            "faces": 9,
+            "solids": 1,
+            "two_loop_faces": 7,
+            "vertices": 8
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "257859875038e7d468f31b751df3bcea1527dba011000d6b0c400a22d1ca0c86",
+      "topology": {
+        "edges": 14,
+        "euler_with_face_holes": 2,
+        "faces": 9,
+        "solids": 1,
+        "two_loop_faces": 1,
+        "vertices": 8
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    },
+    {
+      "bodies": [
+        20
+      ],
+      "kind": "native_body",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 20,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#13639",
+          "topology": {
+            "edges": 816,
+            "euler_with_face_holes": 2,
+            "faces": 301,
+            "solids": 1,
+            "two_loop_faces": 11,
+            "vertices": 528
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "b5f6f2cdf9e6649618663ba186c0e8f30caa0cd04e0fbf2b4418d2045f87af64",
+      "topology": {
+        "edges": 825,
+        "euler_with_face_holes": 2,
+        "faces": 301,
+        "solids": 1,
+        "two_loop_faces": 4,
+        "vertices": 530
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    }
+  ],
+  "ocp_version": "8.0.1.1",
+  "source_sha256": "745efa60caf521488cbd6a61751b54fcb10e343b570c4667c9a47a4c9d744edb",
+  "unhealed_validity_established": false
+}

@@ -56,7 +56,7 @@ use catallax_topology::numerical::tolerance;
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::ApplicationBody;
-use crate::queries::{QueryRefusal, perpendicular, query, sign};
+use crate::queries::{QueryRefusal, drawing_query, perpendicular, sign};
 
 mod drawing;
 mod fit;
@@ -953,7 +953,7 @@ pub fn contour_generators(
     direction: &RVector3,
     dec: &mut Decider,
 ) -> Result<Answer<Contours>, QueryRefusal> {
-    query(model, &[body], || {
+    drawing_query(model, &[body], || {
         dec.check_deadline()?;
         if direction.is_zero() {
             return Err(Refusal::new(

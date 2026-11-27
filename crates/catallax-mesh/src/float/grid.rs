@@ -26,6 +26,41 @@ fn trim_error(error: trim::TrimRefusal) -> Refusal {
     }
 }
 
+struct Boundary<'a, F, E> {
+    ranges: &'a [Range<u32>],
+    samples: &'a mut Vec<usize>,
+    mesh: &'a mut PreviewMesh<F, E>,
+    origin: Xyz,
+    max_vertices: usize,
+}
+
+impl<F, E> trim::TrimBoundaries for Boundary<'_, F, E> {
+    fn edge_range(&self, edge: usize) -> Option<Range<u32>> {
+        self.ranges.get(edge).cloned()
+    }
+
+    fn same_position(&self, a: u32, b: u32) -> bool {
+        self.samples[a as usize] == self.samples[b as usize]
+    }
+
+    fn position(&self, sample: u32) -> Xyz {
+        let p = self.mesh.positions[self.samples[sample as usize]];
+        std::array::from_fn(|i| p[i] - self.origin[i])
+    }
+
+    fn add_pole(&mut self, position: Xyz) -> Result<u32, trim::TrimRefusal> {
+        let index = u32::try_from(self.samples.len()).map_err(|_| trim::TrimRefusal::MeshSize)?;
+        if self.mesh.positions.len() == self.max_vertices {
+            return Err(trim::TrimRefusal::MeshSize);
+        }
+        let p = std::array::from_fn(|i| position[i] + self.origin[i]);
+        let vertex = append(self.mesh, p, self.max_vertices)
+            .map_err(|_| trim::TrimRefusal::InvalidPosition)?;
+        self.samples.push(vertex);
+        Ok(index)
+    }
+}
+
 fn append<F, E>(
     mesh: &mut PreviewMesh<F, E>,
     position: Xyz,
@@ -83,15 +118,10 @@ pub(crate) fn from_description<F: Clone, E>(
     for edge in description.edges {
         dec.charge_traversal(edge.points.len() as u64)?;
         let first = u32::try_from(edge_samples.len()).map_err(|_| limit())?;
-        let closed = edge
-            .points
-            .first()
-            .zip(edge.points.last())
-            .is_some_and(|(a, b)| a.map(f64::to_bits) == b.map(f64::to_bits));
         let count = edge.points.len();
         let mut indices = Vec::with_capacity(count);
         for (i, point) in edge.points.into_iter().enumerate() {
-            let endpoint = !closed && (i == 0 || i + 1 == count);
+            let endpoint = i == 0 || i + 1 == count;
             let position = world(point);
             let index = if endpoint {
                 match vertices.entry(point.map(f64::to_bits)) {
@@ -100,8 +130,6 @@ pub(crate) fn from_description<F: Clone, E>(
                         *e.insert(append(&mut mesh, position, options.max_vertices)?)
                     }
                 }
-            } else if i + 1 == count && closed {
-                indices[0]
             } else {
                 append(&mut mesh, position, options.max_vertices)?
             };
@@ -134,9 +162,9 @@ pub(crate) fn from_description<F: Clone, E>(
                 face,
                 &mut projector,
                 &ranges,
-                &edge_samples,
+                &mut edge_samples,
                 divisions,
-                &world,
+                description.origin,
                 &mut mesh,
                 options,
                 dec,
@@ -162,9 +190,9 @@ fn trimmed<F: Clone, E>(
     face: &DisplayFace<F>,
     projector: &mut Projector<'_>,
     ranges: &[Range<u32>],
-    edge_samples: &[usize],
+    edge_samples: &mut Vec<usize>,
     divisions: u32,
-    world: &impl Fn(Xyz) -> Xyz,
+    origin: Xyz,
     mesh: &mut PreviewMesh<F, E>,
     options: &PreviewOptions,
     dec: &mut Decider,
@@ -178,12 +206,16 @@ fn trimmed<F: Clone, E>(
     dec.charge_traversal((nodes as u64).saturating_add(u64::from(divisions).pow(2)))?;
     let trim = trim::triangulate(
         face,
-        &|i| ranges.get(i).cloned(),
-        &|a, b| edge_samples[a as usize] == edge_samples[b as usize],
+        &mut Boundary {
+            ranges,
+            samples: edge_samples,
+            mesh,
+            origin,
+            max_vertices: options.max_vertices,
+        },
         [divisions; 2],
         options.max_vertices.saturating_add(nodes),
         usize::MAX,
-        true,
     )
     .map_err(trim_error)?;
     let mut indices = Vec::with_capacity(trim.vertices.len());
@@ -195,8 +227,24 @@ fn trimmed<F: Clone, E>(
                 let [lo, hi] = trim.bounds[axis];
                 lo + node.uv[axis] * (hi - lo)
             });
-            let p = projector.jet(canonical(face, uv)).0;
-            append(mesh, world(p), options.max_vertices)?
+            let relative = if let Some(frame) = trim.sphere_chart
+                && let DisplaySurface::Sphere { radius, .. } = face.surface
+            {
+                let r2 = uv[0] * uv[0] + uv[1] * uv[1];
+                std::array::from_fn(|i| {
+                    let normal = (2.0 * (uv[0] * frame.x[i] + uv[1] * frame.y[i])
+                        + (1.0 - r2) * frame.z[i])
+                        / (1.0 + r2);
+                    frame.origin[i] + radius * normal
+                })
+            } else {
+                projector.jet(canonical(face, uv)).0
+            };
+            append(
+                mesh,
+                std::array::from_fn(|i| relative[i] + origin[i]),
+                options.max_vertices,
+            )?
         };
         indices.push(index);
     }

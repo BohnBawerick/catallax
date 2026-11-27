@@ -13,6 +13,7 @@ mod numerical;
 mod sections;
 mod spline;
 #[doc(hidden)]
+#[path = "trimmed.rs"]
 pub mod trim;
 
 use evaluate::{Projector, align, anchor, describe, finite, point, positive, sub};
@@ -61,6 +62,47 @@ pub struct DisplayFace<F = FaceId> {
     pub periods: [Option<f64>; 2],
     /// Boundary loops in their topological orientation; no duplicated closing use.
     pub loops: Vec<DisplayLoop>,
+}
+
+impl<F> DisplayFace<F> {
+    /// Distance to a point on the binary64 carrier, ignoring the trims.
+    /// The input position is body-relative. The result bounds the minimum
+    /// distance from above; it is not a certified deviation bound.
+    pub fn carrier_distance(&self) -> Option<impl FnMut([f64; 3]) -> f64 + '_> {
+        let mut carrier = Projector::new(&self.surface, None)?;
+        Some(move |position| {
+            let uv = carrier.project(position, None);
+            let mut distance = evaluate::norm(sub(position, carrier.position(uv)));
+            if distance > 0.005 && matches!(self.surface, DisplaySurface::BSpline(_)) {
+                // A nearest control can seed the wrong lobe of a folded net.
+                // Try the other chart regions only when the first fit is coarse.
+                let [[u0, u1], [v0, v1]] = self.bounds;
+                for u in [u0, u0.midpoint(u1), u1] {
+                    for v in [v0, v0.midpoint(v1), v1] {
+                        let uv = carrier.project(position, Some([u, v]));
+                        distance =
+                            distance.min(evaluate::norm(sub(position, carrier.position(uv))));
+                    }
+                }
+            }
+            distance
+        })
+    }
+
+    /// Evaluate the body-relative binary64 carrier in this face's chart.
+    /// The evaluator reuses scratch storage and wraps periodic coordinates.
+    pub fn carrier_points(&self) -> Option<impl FnMut([f64; 2]) -> [f64; 3] + '_> {
+        let mut carrier = Projector::new(&self.surface, None)?;
+        Some(move |mut uv: [f64; 2]| {
+            for (i, period) in self.periods.iter().enumerate() {
+                if let Some(period) = period {
+                    let base = self.bounds[i][0];
+                    uv[i] = base + (uv[i] - base).rem_euclid(*period);
+                }
+            }
+            carrier.position(uv)
+        })
+    }
 }
 
 /// Consecutive oriented uses around a boundary loop.

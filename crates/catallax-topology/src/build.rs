@@ -18,8 +18,7 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
     if size.iter().any(|s| s.sign() != Sign::Positive) {
         return Err(non_positive());
     }
-    let origin = "topology.block";
-    let corners: [Point3; 8] = std::array::from_fn(|i| {
+    let local: [Point3; 8] = std::array::from_fn(|i| {
         let c: [Rational; 3] = std::array::from_fn(|axis| {
             if i & (4 >> axis) == 0 {
                 Rational::zero()
@@ -30,10 +29,48 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
         let [x, y, z] = c;
         RPoint3::new(x, y, z).to_real()
     });
+    let corners = local.map(|p| pose.apply_point(&p));
+    let axes =
+        std::array::from_fn(|axis| [-1, 1].map(|sense| pose.apply_vector(&unit(axis, sense))));
+    Ok(box_topology(model, &corners, &axes))
+}
+
+/// A rectangular block with its corner and full edge vectors specified
+/// directly. The vectors must form a right-handed orthogonal frame.
+pub fn block_in_frame(
+    model: &mut Model,
+    corner: &RPoint3,
+    edges: &[RVector3; 3],
+) -> Result<BodyId, Refusal> {
+    if edges.iter().any(RVector3::is_zero)
+        || !(0..3).all(|i| edges[i].dot(&edges[(i + 1) % 3]).is_zero())
+        || edges[0].cross(&edges[1]).dot(&edges[2]).sign() != Sign::Positive
+    {
+        return Err(Refusal::new(
+            "topology.block-frame",
+            "block edge vectors must be a right-handed orthogonal frame",
+        ));
+    }
+    let corners = std::array::from_fn(|i| {
+        let mut point = corner.clone();
+        for (axis, edge) in edges.iter().enumerate() {
+            if i & (4 >> axis) != 0 {
+                point = point.plus(edge);
+            }
+        }
+        point.to_real()
+    });
+    let axes =
+        std::array::from_fn(|i| [edges[i].scaled(&(-1).into()).to_real(), edges[i].to_real()]);
+    Ok(box_topology(model, &corners, &axes))
+}
+
+fn box_topology(model: &mut Model, corners: &[Point3; 8], axes: &[[Vector3; 2]; 3]) -> BodyId {
+    let origin = "topology.block";
     let vertices: [_; 8] = std::array::from_fn(|i| {
         let point = model
             .geom_mut()
-            .add_point(PointDef::Explicit(pose.apply_point(&corners[i])));
+            .add_point(PointDef::Explicit(corners[i].clone()));
         model.add_vertex(Vertex {
             point,
             tolerance: None,
@@ -45,11 +82,9 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
             if i & mask == 0 {
                 let curve = Curve::Line(Line {
                     origin: corners[i].clone(),
-                    dir: unit(axis, 1),
+                    dir: axes[axis][1].clone(),
                 });
-                let curve = model
-                    .geom_mut()
-                    .add_curve(curve.transformed(pose).expect("analytic curve"));
+                let curve = model.geom_mut().add_curve(curve);
                 let edge = model.add_edge(Edge {
                     curve,
                     sense: Sense::Same,
@@ -75,10 +110,10 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
         let axis = i / 2;
         let plane = Surface::Plane(Plane {
             origin: corners[if i % 2 == 0 { 0 } else { 4 >> axis }].clone(),
-            normal: unit(axis, if i % 2 == 0 { -1 } else { 1 }),
-            ref_dir: unit((axis + 1) % 3, 1),
+            normal: axes[axis][i % 2].clone(),
+            ref_dir: axes[(axis + 1) % 3][1].clone(),
         });
-        let surface = model.geom_mut().add_surface(plane.transformed(pose));
+        let surface = model.geom_mut().add_surface(plane);
         surfaces.push(surface);
         let mut coedges = Vec::with_capacity(4);
         for j in 0..4 {
@@ -101,7 +136,7 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
             origin,
         );
     }
-    Ok(solid(model, faces))
+    solid(model, faces)
 }
 
 /// A cylinder on the local `z` axis from 0 to `height`, moved by `pose`.

@@ -416,3 +416,17 @@ fn query_default_admits_work_above_target_and_refuses_above_allowance() {
     .unwrap_err();
     assert_eq!(refusal.refusal.code, "application.work-limit");
 }
+
+#[test]
+fn drawing_query_has_no_default_cap_and_inherits_an_explicit_allowance() {
+    let model = Model::default();
+    let draw = || {
+        super::drawing_query(&model, &[], || {
+            Decider::default().charge_work(crate::DEFAULT_BUILD_WORK + 1)?;
+            Ok(Answer::exact(()))
+        })
+    };
+    assert!(draw().is_ok());
+    let (_, work) = catallax_numbers::with_operation_budget(crate::DEFAULT_BUILD_WORK, draw);
+    assert!(work.exhausted);
+}

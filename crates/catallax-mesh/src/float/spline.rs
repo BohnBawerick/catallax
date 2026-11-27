@@ -93,6 +93,30 @@ impl<'a> Patch<'a> {
         })
     }
 
+    pub(super) fn closed(&self, axis: usize) -> bool {
+        let n = self.net.size[axis];
+        let degree = self.net.degree[axis];
+        let [lo, hi] = self.bounds[axis].map(f64::to_bits);
+        let knots = &self.net.knots[axis];
+        if !knots[..degree + 1].iter().all(|x| x.to_bits() == lo)
+            || !knots[n..].iter().all(|x| x.to_bits() == hi)
+        {
+            return false;
+        }
+        let stride = if axis == 0 { 1 } else { self.net.size[0] };
+        let next = if axis == 0 { self.net.size[0] } else { 1 };
+        (0..self.net.size[1 - axis]).all(|i| {
+            let a = i * next;
+            let b = a + (n - 1) * stride;
+            self.net.points[a].map(f64::to_bits) == self.net.points[b].map(f64::to_bits)
+                && self
+                    .net
+                    .weights
+                    .as_ref()
+                    .is_none_or(|w| w[a].to_bits() == w[b].to_bits())
+        })
+    }
+
     pub(super) fn at(&mut self, uv: [f64; 2]) -> Xyz {
         let [u, v] = &mut self.axes;
         let (u0, bu) = u.at(uv[0].clamp(self.bounds[0][0], self.bounds[0][1]));
@@ -124,7 +148,12 @@ impl<'a> Patch<'a> {
         (p, tangents)
     }
 
-    pub(super) fn project(&mut self, p: Xyz, previous: Option<[f64; 2]>) -> [f64; 2] {
+    pub(super) fn project(
+        &mut self,
+        p: Xyz,
+        previous: Option<[f64; 2]>,
+        periods: [Option<f64>; 2],
+    ) -> [f64; 2] {
         let mut best = previous.map(|uv| self.fit(p, uv));
         if best.is_some_and(|(_, error)| error <= 1e-20) {
             return best.unwrap().0;
@@ -154,6 +183,25 @@ impl<'a> Patch<'a> {
         if best.is_none_or(|(_, error)| estimate.1 < error) {
             best = Some(estimate);
         }
+        if let Some(previous) = previous {
+            for (axis, period) in periods.into_iter().enumerate() {
+                if let Some(period) = period
+                    && best.unwrap().1 > 1e-20
+                {
+                    let [lo, hi] = self.bounds[axis];
+                    let mut seed = previous;
+                    seed[axis] = if previous[axis] < lo + period / 2.0 {
+                        hi
+                    } else {
+                        lo
+                    };
+                    let estimate = self.fit(p, seed);
+                    if estimate.1 < best.unwrap().1 {
+                        best = Some(estimate);
+                    }
+                }
+            }
+        }
         best.unwrap().0
     }
 
@@ -168,8 +216,20 @@ impl<'a> Patch<'a> {
                 break;
             }
             let (_, [du, dv]) = self.jet(uv);
-            let Some(delta) = solve_gram(du, dv, [dot(du, residual), dot(dv, residual)]) else {
-                break;
+            let rhs = [dot(du, residual), dot(dv, residual)];
+            let delta = if let Some(delta) = solve_gram(du, dv, rhs) {
+                delta
+            } else {
+                // At a collapsed edge, one tangent vanishes but the other
+                // still moves the iterate away from the singular boundary.
+                let lengths = [dot(du, du), dot(dv, dv)];
+                let axis = usize::from(lengths[1] > lengths[0]);
+                if positive(lengths[axis]).is_none() {
+                    break;
+                }
+                let mut delta = [0.0; 2];
+                delta[axis] = rhs[axis] / lengths[axis];
+                delta
             };
             let mut improved = false;
             let mut step = 1.0;

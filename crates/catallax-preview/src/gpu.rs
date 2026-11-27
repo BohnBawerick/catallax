@@ -8,6 +8,8 @@ const SHADER: &str = concat!(
     include_str!("mesher/compute.wgsl"),
     include_str!("mesher/analytic.wgsl"),
     include_str!("mesher/grid.wgsl"),
+    include_str!("eval/spline.wgsl"),
+    include_str!("eval/analytic.wgsl"),
 );
 const GROUP_SIZE: u32 = 64;
 
@@ -27,7 +29,7 @@ impl Gpu {
         queue: &wgpu::Queue,
     ) -> Result<Self, GpuRefusal> {
         let limits = device.limits();
-        if limits.max_storage_buffers_per_shader_stage < 4
+        if limits.max_storage_buffers_per_shader_stage < 5
             || limits.max_compute_invocations_per_workgroup < GROUP_SIZE
             || limits.max_compute_workgroup_size_x < GROUP_SIZE
             || limits.max_compute_workgroups_per_dimension == 0
@@ -78,13 +80,14 @@ impl Gpu {
         positions: &[u8],
         surfaces: &[u8],
         indices: &[u8],
+        knots: &[u8],
         vertex_count: u32,
     ) -> Result<MeshBuffers, GpuRefusal> {
         let oom = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let input = self.upload("Catallax preview UVs", inputs, wgpu::BufferUsages::STORAGE);
         let positions = self.upload(
-            "Catallax preview edge and grid positions",
+            "Catallax preview edge and grid positions and spline controls",
             positions,
             wgpu::BufferUsages::STORAGE,
         );
@@ -98,6 +101,11 @@ impl Gpu {
             indices,
             wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_SRC,
         );
+        let knots = self.upload(
+            "Catallax preview spline knots",
+            if knots.is_empty() { &[0; 4] } else { knots },
+            wgpu::BufferUsages::STORAGE,
+        );
         let vertex = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Catallax preview vertices"),
             size: u64::from(vertex_count) * size_of::<PreviewVertex>() as u64,
@@ -106,11 +114,11 @@ impl Gpu {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let buffers = [&input, &positions, &surfaces, &vertex];
+        let buffers = [&input, &positions, &surfaces, &vertex, &knots];
         let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.layout,
-            entries: &std::array::from_fn::<_, 4, _>(|binding| wgpu::BindGroupEntry {
+            entries: &std::array::from_fn::<_, 5, _>(|binding| wgpu::BindGroupEntry {
                 binding: binding as u32,
                 resource: buffers[binding].as_entire_binding(),
             }),

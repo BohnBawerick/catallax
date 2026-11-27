@@ -106,6 +106,7 @@ impl From<trim::TrimRefusal> for FaceRefusal {
             UnsupportedTrim => Self::UnsupportedTrim,
             InvalidTrim(_) => Self::InvalidTrim,
             MeshSize => Self::MeshSize,
+            InvalidPosition => Self::GpuRange,
         }
     }
 }
@@ -279,6 +280,7 @@ impl Mesher {
                         cast_slice(&packed.positions),
                         cast_slice(&packed.surfaces),
                         cast_slice(&packed.indices),
+                        cast_slice(&packed.knots),
                         packed.inputs.len() as u32,
                     )
                     .await?,
@@ -318,6 +320,8 @@ struct SurfaceParams {
     y: [f32; 4],
     z: [f32; 4],
     mode: [u32; 4],
+    // SplineNet in eval/spline.wgsl, followed by padding to a vec4 boundary.
+    spline: [u32; 8],
 }
 
 struct PackedMesh {
@@ -326,10 +330,37 @@ struct PackedMesh {
     inputs: Vec<InputVertex>,
     indices: Vec<u32>,
     surfaces: Vec<SurfaceParams>,
+    knots: Vec<f32>,
     max_positions: usize,
     max_indices: usize,
     max_vertices: usize,
     max_surfaces: usize,
+    max_knots: usize,
+}
+
+impl trim::TrimBoundaries for PackedMesh {
+    fn edge_range(&self, edge: usize) -> Option<Range<u32>> {
+        self.edges.get(edge)?.as_ref().ok().cloned()
+    }
+
+    fn same_position(&self, a: u32, b: u32) -> bool {
+        self.positions[a as usize].map(f32::to_bits) == self.positions[b as usize].map(f32::to_bits)
+    }
+
+    fn position(&self, sample: u32) -> [f64; 3] {
+        let [x, y, z, _] = self.positions[sample as usize];
+        [x, y, z].map(f64::from)
+    }
+
+    fn add_pole(&mut self, position: [f64; 3]) -> Result<u32, trim::TrimRefusal> {
+        if self.positions.len() == self.max_positions {
+            return Err(trim::TrimRefusal::MeshSize);
+        }
+        let index = self.positions.len() as u32;
+        self.positions
+            .push(position32(position).map_err(|_| trim::TrimRefusal::InvalidPosition)?);
+        Ok(index)
+    }
 }
 
 impl PackedMesh {
@@ -366,10 +397,12 @@ impl PackedMesh {
             inputs: Vec::new(),
             indices: Vec::new(),
             surfaces: Vec::new(),
+            knots: Vec::new(),
             max_positions,
             max_indices: gpu.index_bytes / size_of::<u32>(),
             max_vertices: gpu.max_vertices(),
             max_surfaces: gpu.storage_bytes / size_of::<SurfaceParams>(),
+            max_knots: gpu.storage_bytes / size_of::<f32>(),
         }
     }
 
@@ -388,30 +421,50 @@ impl PackedMesh {
                 .as_ref()
                 .map_err(|&error| error)?;
         }
-        let trim = trim::triangulate(
-            face,
-            &|edge| self.edges[edge].as_ref().ok().cloned(),
-            &|a, b| {
-                self.positions[a as usize].map(f32::to_bits)
-                    == self.positions[b as usize].map(f32::to_bits)
-            },
-            detail,
-            self.max_vertices - self.inputs.len(),
-            self.max_indices - self.indices.len(),
-            false,
-        )?;
         let first = self.positions.len();
+        let max_vertices = self.max_vertices - self.inputs.len();
+        let max_indices = self.max_indices - self.indices.len();
+        let trim = match trim::triangulate(face, self, detail, max_vertices, max_indices) {
+            Ok(trim) => trim,
+            Err(error) => {
+                self.positions.truncate(first);
+                return Err(error.into());
+            }
+        };
+        let first_surface = self.positions.len();
+        let first_knot = self.knots.len();
         let params = match surface::pack(
             face,
             trim.bounds,
-            detail,
+            trim.sphere_chart,
             &mut self.positions,
             self.max_positions,
+            &mut self.knots,
+            self.max_knots,
         ) {
             Ok(params) => params,
             Err(error) => {
-                self.positions.truncate(first);
-                return Err(error);
+                self.positions.truncate(first_surface);
+                self.knots.truncate(first_knot);
+                if trim.sphere_chart.is_some()
+                    || !matches!(error, FaceRefusal::GpuRange | FaceRefusal::UnsupportedTrim)
+                {
+                    self.positions.truncate(first);
+                    return Err(error);
+                }
+                match surface::sampled(
+                    face,
+                    trim.bounds,
+                    detail,
+                    &mut self.positions,
+                    self.max_positions,
+                ) {
+                    Ok(params) => params,
+                    Err(_) => {
+                        self.positions.truncate(first);
+                        return Err(error);
+                    }
+                }
             }
         };
         let base = self.inputs.len() as u32;
@@ -427,7 +480,7 @@ impl PackedMesh {
         self.surfaces.push(params);
         Ok(FaceDraw {
             indices: start..self.indices.len() as u32,
-            sampled_grid: params.mode[0] == 2,
+            sampled_grid: params.mode[0] == surface::GRID,
         })
     }
 }

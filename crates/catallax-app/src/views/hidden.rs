@@ -261,7 +261,7 @@ pub(super) struct Stroke {
     seam: bool,
     fit: Option<ContourFit>,
     pub(super) curve: CurveId,
-    pub(super) form: Form,
+    form: Form,
     axes: Option<[Vector3; 2]>,
     geo: Geo,
     /// Ends in the carrier's natural direction; `None` for a whole closed

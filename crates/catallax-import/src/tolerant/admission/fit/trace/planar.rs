@@ -151,7 +151,7 @@ fn conic(
     let centre = std::array::from_fn(|axis| points[0][axis] * 0.5 + points[2][axis] * 0.5);
     let vectors = [points[0], points[1]]
         .map(|point| std::array::from_fn::<_, 2, _>(|axis| point[axis] - centre[axis]));
-    let radii = vectors.map(|vector| vector[0].hypot(vector[1]));
+    let radii = vectors.map(|[x, y]| libm::hypot(x, y));
     if radii
         .iter()
         .any(|radius| !radius.is_finite() || *radius <= 0.0)
@@ -165,7 +165,7 @@ fn conic(
     }
     for sample in samples {
         let angle = sample.curve.parameters[0] / period * std::f64::consts::TAU;
-        let (sin, cos) = angle.sin_cos();
+        let (sin, cos) = libm::sincos(angle);
         let uv = std::array::from_fn(|axis| {
             centre[axis] + vectors[0][axis] * cos + vectors[1][axis] * sin
         });

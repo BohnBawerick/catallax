@@ -18,7 +18,7 @@ use crate::{
     preview::{PreviewMesh, PreviewOptions},
 };
 
-/// One boundary row's grid points, with the row's distance to its grid polyline.
+/// Shared boundary samples and their chord bound.
 pub(crate) struct Seed {
     pub(crate) points: Vec<[Ball; 3]>,
     pub(crate) error: Rational,
@@ -66,7 +66,7 @@ fn row_points(grid: &EnvelopeGrid, row: BoundaryRow) -> Vec<[Ball; 3]> {
     }
 }
 
-/// Whether the model has a junction that still needs singular grid cells.
+/// Whether a blend requires the checked junction preview route.
 pub(crate) fn present(model: &Model, body: BodyId) -> bool {
     model.faces_of_body(body).iter().any(|&face| {
         matches!(

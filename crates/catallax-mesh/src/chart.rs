@@ -6,17 +6,15 @@ use std::{
     collections::BTreeMap,
 };
 
-use crate::MeshOptions;
-
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
 use catallax_shapes::{BoundaryRow, SplineSupport, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, LinearFilletBand, Model};
 
-use crate::failure;
+use crate::{MeshOptions, failure};
 
 mod fixed;
-pub(crate) use fixed::FixedTrim;
 mod spline;
+pub(crate) use fixed::FixedTrim;
 use spline::SplineNormals;
 pub(crate) use spline::{CollarBridge, NormalProof, RailSample, RailSpan, SplineChart};
 

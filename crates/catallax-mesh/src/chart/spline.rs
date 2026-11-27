@@ -1639,7 +1639,11 @@ impl SplineChart {
                 coefficients[0] * widths[0].square(),
                 coefficients[2] * widths[1].square(),
             ];
-            let axis = usize::from(pure[1].hi() > pure[0].hi());
+            let axis = match pure[0].hi().total_cmp(&pure[1].hi()) {
+                std::cmp::Ordering::Less => 1,
+                std::cmp::Ordering::Greater => 0,
+                std::cmp::Ordering::Equal => usize::from(counts[1] < counts[0]),
+            };
             counts[axis] = counts[axis]
                 .checked_mul(2)
                 .ok_or_else(|| failure("fixed trim lattice size overflow"))?;

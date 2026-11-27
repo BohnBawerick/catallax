@@ -1,5 +1,7 @@
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+};
 
 use catallax_numbers::{
     Answer, Answered, Ball, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal,
@@ -1737,6 +1739,9 @@ impl FaceBuilder<'_, '_> {
                         return Err(failure("periodic band facet repeats a mesh vertex"));
                     }
                     if fixed {
+                        if !self.chart.fixed.as_ref().is_some_and(|trim| trim.apex) {
+                            return Err(failure("fixed trim facet repeats a mesh vertex"));
+                        }
                         // The repeated vertices map the collapsed cell half
                         // onto an edge of the retained half. Its positional
                         // proof still covers surface points in that half.
@@ -1755,8 +1760,12 @@ impl FaceBuilder<'_, '_> {
                     }
                     continue;
                 }
-                if protect_band && !chart::positive_turn(uvs[0], uvs[1], uvs[2]) {
-                    return Err(failure("periodic band has no positive parameter area"));
+                if (protect_band || fixed) && !chart::positive_turn(uvs[0], uvs[1], uvs[2]) {
+                    return Err(failure(if fixed {
+                        "fixed band facet has no positive parameter area"
+                    } else {
+                        "periodic band has no positive parameter area"
+                    }));
                 }
                 if self.rails.contains_triangle(vertices) {
                     let point = self.ear_point(&uvs, center)?;
@@ -2126,9 +2135,11 @@ impl FaceBuilder<'_, '_> {
                     triangles,
                     maximum,
                     aspect,
-                    (!fixed)
-                        .then(|| self.options.angular_deviation.clone())
-                        .flatten(),
+                    if fixed {
+                        None
+                    } else {
+                        self.options.angular_deviation.clone()
+                    },
                 ));
             }
             if let Some(trim) = trim {
@@ -2240,32 +2251,29 @@ fn face_mesh(
                     let trim = chart.trim(c.edge);
                     if let Some(fixed) = fixed {
                         let trim = trim.ok_or_else(|| failure("fixed face lost a checked trim"))?;
-                        let params = fixed.points(trim);
+                        let mut params = fixed.points(trim);
                         if params.len() != edge.vertices.len() {
                             return Err(failure("fixed face and edge station counts disagree"));
                         }
                         let axis = 1 - trim.fixed.0;
-                        let mut append = |a: Uv, b: Uv, first, last| {
+                        let forward = trim.ends[0][axis] < trim.ends[1][axis];
+                        let mut next = || {
+                            if forward {
+                                params.next()
+                            } else {
+                                params.next_back()
+                            }
+                        };
+                        let mut a = next().expect("fixed row begins");
+                        for &[first, last] in edge.vertices.array_windows::<2>() {
+                            let b = next().expect("fixed row and edge station counts agree");
                             projected.extend([a, b]);
                             segments.push(if c.sense == Sense::Same {
                                 (a, b, first, last)
                             } else {
                                 (b, a, last, first)
                             });
-                        };
-                        let forward = trim.ends[0][axis] < trim.ends[1][axis];
-                        let mut add_samples = |params: &mut dyn Iterator<Item = Uv>| {
-                            let mut a = params.next().expect("fixed row begins");
-                            for (b, [first, last]) in params.zip(edge.vertices.array_windows::<2>())
-                            {
-                                append(a, b, *first, *last);
-                                a = b;
-                            }
-                        };
-                        if forward {
-                            add_samples(&mut params.into_iter());
-                        } else {
-                            add_samples(&mut params.rev());
+                            a = b;
                         }
                         continue;
                     }
@@ -2330,7 +2338,7 @@ fn face_mesh(
         let mut ends = segments
             .iter()
             .flat_map(|&(a, b, first, last)| [(a, first), (b, last)])
-            .filter(|(uv, _)| uv[0] == u)
+            .filter(|(uv, _)| uv[0].to_bits() == u.to_bits())
             .map(|(_, index)| index);
         let apex = ends
             .next()

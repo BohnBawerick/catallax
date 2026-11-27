@@ -6,7 +6,7 @@ use catallax_numbers::{Ball, Decider, Interval, Outcome, Rational, Real, Refusal
 use catallax_shapes::{BSplineCurve, BoundaryRow, SplineBoundary, SplineSupport, Surface};
 use catallax_topology::{EdgeId, FaceId, Model, RollingMitreBand, Sense};
 
-use super::{BITS, Chart, SplineChart, Trim, Uv, q};
+use super::{BITS, Chart, SplineChart, Trim, Uv, position, q, residual};
 use crate::{MeshOptions, failure, junction::Seed};
 
 pub(crate) struct FixedTrim {
@@ -123,29 +123,35 @@ impl FixedTrim {
             unreachable!()
         };
         let spline = chart.spline().expect("fixed spline trim");
+        let limit = Interval::from_rational(&options.chord_tolerance).lo();
         for (&edge, &trim) in &self.rows {
             let Entry::Vacant(slot) = seeds.entry(edge) else {
                 return Err(failure("two fixed charts prescribe the same edge"));
             };
             let (axis, value) = trim.fixed;
+            let forward = trim.ends[0][1 - axis] < trim.ends[1][1 - axis];
             let points = self.points(trim);
             let mut exact = Vec::new();
             if crate::junction::meets_plane(model, edge) {
-                let side = match (axis, value == self.axes[axis][0]) {
-                    (0, true) => SplineBoundary::UMin,
-                    (0, false) => SplineBoundary::UMax,
-                    (1, true) => SplineBoundary::VMin,
-                    _ => SplineBoundary::VMax,
-                };
-                let curve = BSplineCurve::boundary(Chart::carrier(support), side);
                 exact.reserve(points.len());
-                for uv in self.points(trim) {
-                    let p = if let SplineSupport::RollingMitre(mitre) = support {
-                        mitre.point(&q(uv[0]), &q(uv[1]))
-                    } else {
-                        curve.point_at(&Real::from(q(uv[1 - axis])), dec)?
+                if let SplineSupport::RollingMitre(mitre) = support {
+                    exact.extend(self.points(trim).map(|uv| {
+                        let p = mitre.point(&q(uv[0]), &q(uv[1]));
+                        [p.x, p.y, p.z]
+                    }));
+                } else {
+                    let min = value.to_bits() == self.axes[axis][0].to_bits();
+                    let side = match (axis, min) {
+                        (0, true) => SplineBoundary::UMin,
+                        (0, false) => SplineBoundary::UMax,
+                        (1, true) => SplineBoundary::VMin,
+                        _ => SplineBoundary::VMax,
                     };
-                    exact.push([p.x, p.y, p.z]);
+                    let curve = BSplineCurve::boundary(Chart::carrier(support), side);
+                    for uv in self.points(trim) {
+                        let p = curve.point_at(&Real::from(q(uv[1 - axis])), dec)?;
+                        exact.push([p.x, p.y, p.z]);
+                    }
                 }
             }
             let mut error = Rational::zero();
@@ -154,9 +160,7 @@ impl FixedTrim {
             for uv in points {
                 if let Some(a) = previous {
                     let bound = spline.chord(&[a, a, uv], dec)?;
-                    if !bound.is_finite()
-                        || bound.hi() > Interval::from_rational(&options.chord_tolerance).lo()
-                    {
+                    if !bound.is_finite() || bound.hi() > limit {
                         return Err(failure("fixed rail has no chord certificate"));
                     }
                     error = error.max(q(bound.hi()));
@@ -171,10 +175,27 @@ impl FixedTrim {
                         .hull(&Ball::from_rational(&q(x.hi()), BITS))
                 }));
             }
+            // Edge assembly uses the rounded topological vertices at the ends,
+            // not the chart's rounded samples.
+            let definition = model.edge(edge);
+            let mut endpoints = [definition.start, definition.end];
+            if !forward {
+                endpoints.reverse();
+            }
+            let mut rounding = Rational::zero();
+            for (vertex, sample) in endpoints.into_iter().zip([
+                &enclosed[0],
+                enclosed.last().expect("fixed edge has stations"),
+            ]) {
+                let vertex = vertex.ok_or_else(|| failure("fixed edge has no endpoint"))?;
+                let p = model.geom().position(model.vertex(vertex).point);
+                let [x, y, z] = [&p.x, &p.y, &p.z].map(|x| dec.enclose_at(x, BITS));
+                rounding = rounding.max(residual(&position(&[x?, y?, z?])?, sample));
+            }
             slot.insert(Seed {
                 points: enclosed,
-                error,
-                forward: trim.ends[0][1 - axis] < trim.ends[1][1 - axis],
+                error: error + rounding,
+                forward,
                 exact,
             });
         }

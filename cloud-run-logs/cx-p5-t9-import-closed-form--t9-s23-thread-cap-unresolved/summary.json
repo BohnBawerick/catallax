@@ -1,0 +1,82 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-s23-thread-cap-unresolved",
+ "repo": "BohnBawerick/catallax",
+ "sha": "ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+ "script_exit_code": 0,
+ "seconds": 4565,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-scratch/s23",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\" /home/user/t9-scratch",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<gzipped base64 kit>' | base64 -d > \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "echo \"f9e0ec97be92885c495f4a746fd9a2b60cea1bb619fd45fa4355d19fef03d1e7  $work/kit.tar.gz\" | sha256sum -c",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "tar -xzp -C \"$KIT\" -f \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-run.sh\" ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 23 48 \"$KIT\" \"$OWNER\" \"$SCRATCH\"",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script sha256 verified. Script exit 0. run.log has no 'test result:' lines, so test counts are 0 (it is a census run, not cargo test). bsdtar was missing and the script installed libarchive-tools via apt. T9FAIL lines: none. T9COMPLETE: 'T9COMPLETE 63'. Counts: T9ROW 62, T9IMPROVED 0, T9UNRESOLVED 1. Shard 23 of 48: 63 models found, none missing. rows copied from /home/user/t9-scratch/s23/rows; no file above 50 MB left out. Kit matching-thread-cap-unresolved-v3 (sha256 f9e0ec97...) verified. Candidate ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7. cargo fetch succeeded. Per-command statuses are inferred from exit 0 under set -e (every command ran); run.log does not echo commands individually."
+}

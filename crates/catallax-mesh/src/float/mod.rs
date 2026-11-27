@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use catallax_numbers::Refusal;
-use catallax_shapes::{Surface, SurfaceId};
+use catallax_shapes::SurfaceId;
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 mod edges;
@@ -376,7 +376,7 @@ pub fn describe_body(
             )));
         }
         let periods = chart.periods;
-        let reversed = (f.sense == Sense::Reversed) ^ carrier_reversed(source);
+        let reversed = f.sense == Sense::Reversed;
         result.faces.push(DisplayFace {
             face,
             reversed,
@@ -405,10 +405,6 @@ fn read_surface(
         })?);
     }
     Ok(())
-}
-
-fn carrier_reversed(surface: &Surface) -> bool {
-    matches!(surface, Surface::BSpline(catallax_shapes::SplineSupport::LinearFillet(s)) if s.orientation() < 0)
 }
 
 fn failed(detail: impl Into<String>) -> Refusal {

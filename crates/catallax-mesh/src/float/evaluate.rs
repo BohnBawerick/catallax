@@ -156,6 +156,10 @@ impl<'a> Projector<'a> {
                 ([Some([0.0, 1.0]), None], [Some(1.0), None])
             }
             D::Sphere { .. } => ([Some([0.0, 1.0]), Some([-0.25, 0.25])], [Some(1.0), None]),
+            D::Torus { major, minor, .. } if matches!(source, Some(Surface::TorusSheet(_))) => {
+                let end = libm::acos(-major / minor) / TAU;
+                ([Some([0.0, 1.0]), Some([-end, end])], [Some(1.0), None])
+            }
             D::Torus { .. } => ([Some([0.0, 1.0]); 2], [Some(1.0); 2]),
             D::BSpline(net) => {
                 let patch = spline::Patch::new(net)?;

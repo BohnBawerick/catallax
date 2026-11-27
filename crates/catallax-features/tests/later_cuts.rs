@@ -4,11 +4,12 @@
 //! the intersection list they feed are described in docs/M8-LATER-CUTS.md.
 
 use catallax_features::{BuildError, Built, evaluate};
+use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::{Recipe, StepId};
 use catallax_shapes::{ROLLING_ENVELOPE_TARGET_NM, SplineSupport, Surface};
 use catallax_topology::{BodyId, envelope_rows};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 const APPLICATION_ALLOWANCE: u64 = 20_000_000;
 
@@ -66,6 +67,48 @@ fn a_cut_that_misses_the_part_keeps_and_remeasures_every_fitted_face() {
         // The same check on the same retained data gives the same bound.
         assert_eq!(&measured, recorded);
         assert!(recorded <= &target);
+    }
+}
+
+#[test]
+fn the_disjoint_cut_preserves_torus_trims_at_coarse_and_fine_viewport_levels() {
+    let (built, exhausted) = build(include_str!("fixtures/p5-later-cuts/k12-far-disjoint.json"));
+    assert!(!exhausted);
+    let built = built.unwrap();
+    for chord in ["0.276318656627", "0.017269916039"] {
+        let options = MeshOptions {
+            chord_tolerance: Rational::parse(chord).unwrap(),
+            angular_deviation: Some(Rational::parse("0.2617993877991494").unwrap()),
+            ..MeshOptions::default()
+        };
+        let mesh = mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .value;
+        assert!(mesh.faces.iter().all(|face| {
+            !face.triangles.is_empty() && face.max_chord_error <= options.chord_tolerance
+        }));
+        let mut chords = BTreeMap::new();
+        for triangle in &mesh.triangles {
+            for i in 0..3 {
+                let [a, b] = [i, (i + 1) % 3].map(|j| triangle.vertices[j]);
+                let uses = chords.entry((a.min(b), a.max(b))).or_insert((0, 0));
+                uses.0 += 1;
+                uses.1 += if a < b { 1 } else { -1 };
+            }
+        }
+        assert!(
+            mesh.edges
+                .iter()
+                .all(|edge| edge.vertices.windows(2).all(|pair| {
+                    let (a, b) = (pair[0], pair[1]);
+                    chords.get(&(a.min(b), a.max(b))) == Some(&(2, 0))
+                }))
+        );
     }
 }
 
@@ -181,7 +224,7 @@ fn a_later_boolean_marks_the_fit_bound_of_the_faces_it_keeps() {
 /// the missing intersection or fitted-boundary query, at the cut's own step.
 #[test]
 fn later_cuts_refuse_by_naming_what_is_missing() {
-    let rows: [(&str, &str, &str, &str); 12] = [
+    let rows: [(&str, &str, &str, &str); 11] = [
         (
             "k01 wall hole",
             include_str!("fixtures/p5-later-cuts/k01-wall-hole.json"),
@@ -191,14 +234,14 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         (
             "k02 top slot",
             include_str!("fixtures/p5-later-cuts/k02-top-slot.json"),
-            "intersect.parametric-surface",
-            "line contact on this finite spline",
+            "intersect.spline-plane",
+            "rational homogeneous cut coefficients",
         ),
         (
             "k03 rim notch",
             include_str!("fixtures/p5-later-cuts/k03-rim-notch.json"),
-            "boolean.parametric-query",
-            "fitted spline edge with a trimmed face",
+            "shapes.parametric-query",
+            "cross-kind spline support equality",
         ),
         (
             "k04 torus pocket",
@@ -248,12 +291,6 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
             "numbers.operation-budget",
             "fitted rolling-envelope spline with plane",
         ),
-        (
-            "k13 fillet first",
-            include_str!("fixtures/p5-later-cuts/k13-fillet-first.json"),
-            "intersect.unsupported-pair",
-            "parallel cone/torus",
-        ),
     ];
     for (name, recipe, code, detail) in rows {
         let (built, exhausted) = build(recipe);
@@ -261,13 +298,9 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
             panic!("{name}: expected a refusal");
         };
         assert_eq!(refusal.code, code, "{name}: {}", refusal.detail);
-        // Traced/fitted proof budgets retain the unchanged allowance. k01 and
-        // k03 preserve their higher-level typed boundary-query refusals.
         assert_eq!(
             exhausted,
-            code == "numbers.operation-budget"
-                || name.starts_with("k01")
-                || name.starts_with("k03"),
+            code == "numbers.operation-budget" || name.starts_with("k01"),
             "{name}"
         );
         assert!(
@@ -275,18 +308,45 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
             "{name}: {}",
             refusal.detail
         );
-        if name.starts_with("k13") {
-            let evidence = refusal
-                .undecided()
-                .expect("the bounded quarter sign keeps its decision");
-            assert_eq!(evidence.code, "numbers.budget-exhausted", "{name}");
-        }
-        let expected = if name.starts_with("k13") {
-            "drilled"
-        } else {
-            "later-cut"
-        };
-        assert_eq!(step.as_str(), expected, "{name}");
+        assert_eq!(step.as_str(), "later-cut", "{name}");
+    }
+}
+
+#[test]
+fn a_countersink_pattern_cuts_the_flange_but_not_the_distant_fillet() {
+    use catallax_boolean::{Containment, classify_point};
+    use catallax_numbers::Outcome;
+    use catallax_shapes::RPoint3;
+
+    let (built, exhausted) = build(include_str!("fixtures/p5-later-cuts/k13-fillet-first.json"));
+    assert!(!exhausted);
+    let mut built = built.unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    let original = built.bodies[&StepId::new("filleted").unwrap()];
+    let fillet = |built: &Built, body| {
+        built
+            .model
+            .faces_of_body(body)
+            .into_iter()
+            .map(|face| built.model.face(face).surface)
+            .find(|&surface| matches!(built.model.geom().surface(surface), Surface::Torus(_)))
+            .expect("the flange fillet keeps its torus")
+    };
+    assert_eq!(fillet(&built, original), fillet(&built, built.result));
+
+    let mut dec = Decider::default();
+    for (x, z, want) in [
+        (17, 0, Containment::Outside),
+        (0, 17, Containment::Outside),
+        (-17, 0, Containment::Outside),
+        (0, -17, Containment::Outside),
+        (17, 5, Containment::Inside),
+    ] {
+        let point = RPoint3::new(x.into(), 2.into(), z.into());
+        assert_eq!(
+            classify_point(&mut built.model, built.result, &point, &mut dec),
+            Outcome::Proven(want)
+        );
     }
 }
 

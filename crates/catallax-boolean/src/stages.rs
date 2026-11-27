@@ -39,6 +39,8 @@ impl catallax_topology::Relocate for SectionEdge {
 pub struct IntersectionGraph {
     pub(crate) a: BodyId,
     pub(crate) b: BodyId,
+    pub(crate) outside: BTreeSet<FaceId>,
+    pub(crate) outside_edges: BTreeSet<EdgeId>,
     pub(crate) edges: Vec<SectionEdge>,
     pub(crate) points: Vec<PointId>,
     pub(crate) singular: BTreeSet<PointId>,
@@ -74,6 +76,7 @@ pub struct Imprinted {
     pub(crate) b: BodyId,
     pub(crate) first: Vec<FaceId>,
     pub(crate) second: Vec<FaceId>,
+    pub(crate) outside: BTreeSet<FaceId>,
     pub(crate) common: Vec<EdgeId>,
     pub(crate) singular: BTreeSet<PointId>,
     pub(crate) marks: MarkLog,
@@ -305,6 +308,10 @@ pub fn classify(
         let tasks = catallax_numbers::work_span::parallel("classify pieces");
         let mut ahead = catallax_numbers::values_ahead!(dec, pieces.len());
         for (index, &piece) in pieces.iter().enumerate() {
+            if imprinted.outside.contains(&piece) {
+                classes.insert(piece, FaceClass::Outside);
+                continue;
+            }
             #[cfg(feature = "work-span")]
             let _task = tasks.task();
             let planned = ahead.take_if(

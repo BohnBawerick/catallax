@@ -366,6 +366,19 @@ fn named_curve(model: &Model, curve: CurveId, surface: SurfaceId, mut refusal: R
 /// canonical points of that meeting.
 type Complete = BTreeMap<SurfaceId, Vec<PointId>>;
 
+type SectionWindow = [Option<[catallax_numbers::Interval; 3]>; 2];
+
+fn in_window(model: &Model, point: PointId, window: &SectionWindow) -> bool {
+    if window.iter().all(Option::is_none) {
+        return true;
+    }
+    let point = model.geom().position(point);
+    window
+        .iter()
+        .flatten()
+        .all(|bounds| !crate::carrier_bounds::excludes_point(bounds, &point))
+}
+
 /// Borrowed graph state shared by every carrier's pieces.
 struct Context<'a> {
     first: &'a [FaceId],
@@ -373,6 +386,7 @@ struct Context<'a> {
     multiway: bool,
     mandatory: &'a BTreeSet<PointId>,
     point_faces: &'a BTreeMap<PointId, SharedFaces>,
+    window: SectionWindow,
 }
 
 /// The section pieces of `curve` between consecutive sorted `cuts`.
@@ -399,6 +413,9 @@ fn carrier_pieces(
     let mut pieces: Vec<SectionEdge> = Vec::new();
     for (start, end) in arcs {
         let sample = curve_sample(model, curve, start, end, dec)?;
+        if !in_window(model, sample, &context.window) {
+            continue;
+        }
         let Some((faces_of_first, faces_of_second)) = shared_faces(
             model,
             context.first,
@@ -717,7 +734,7 @@ struct Inputs<'a> {
     bodies: [BodyId; 2],
     first: &'a [FaceId],
     second: &'a [FaceId],
-    vertices: Vec<VertexId>,
+    arrangement_vertices: Option<Vec<VertexId>>,
     multiway: bool,
     clip: Option<[Ball; 3]>,
     carrier_exclusions: bool,
@@ -752,7 +769,7 @@ pub(crate) fn arrangement(
             bodies: [source, source],
             first: faces,
             second: faces,
-            vertices: vertices.into_iter().collect(),
+            arrangement_vertices: Some(vertices.into_iter().collect()),
             multiway: true,
             clip,
             carrier_exclusions: true,
@@ -762,8 +779,7 @@ pub(crate) fn arrangement(
     )
 }
 
-/// The section graph. `prune` lets finite-face exclusions skip curve/surface
-/// queries; the graph is the same either way.
+/// The section graph. `prune` enables optional finite-face exclusions.
 pub(crate) fn section(
     model: &mut Model,
     a: BodyId,
@@ -783,17 +799,13 @@ pub(crate) fn section(
     }
     let first = model.faces_of_body(a);
     let second = model.faces_of_body(b);
-    let vertices = [a, b]
-        .into_iter()
-        .flat_map(|body| model.vertices_of_body(body))
-        .collect();
     section_inputs(
         model,
         Inputs {
             bodies: [a, b],
             first: &first,
             second: &second,
-            vertices,
+            arrangement_vertices: None,
             multiway: false,
             clip: None,
             carrier_exclusions,
@@ -813,21 +825,96 @@ fn section_inputs(
         bodies: [a, b],
         first,
         second,
-        vertices,
+        arrangement_vertices,
         multiway,
         clip,
         carrier_exclusions,
     } = inputs;
-    let algebraic = first.iter().chain(second).any(|face| {
-        !model
-            .geom()
-            .surface(model.face(*face).surface)
-            .has_rational_definition()
-    });
+    use crate::trim_bounds::TrimBounds;
+    let trimmed = TrimBounds::for_faces(model, first.iter().chain(second));
+    let has_algebraic = |first: &[FaceId], second: &[FaceId]| {
+        first.iter().chain(second).any(|face| {
+            !model
+                .geom()
+                .surface(model.face(*face).surface)
+                .has_rational_definition()
+        })
+    };
+    let algebraic = has_algebraic(first, second);
+    let fitted = trimmed.has_fitted_band();
+    let mut outside = BTreeSet::new();
+    let mut outside_edges = BTreeSet::new();
+    let mut bounds = [None, None];
+    // Optional refinement can exhaust the allowance for algebraic analytic
+    // supports. Fitted cuts still need the boxes to exclude remote contacts.
+    if prune && !multiway && (fitted || !algebraic) {
+        let mut broad = TrimBounds::default();
+        // Even if we cannot bound the target, its individual faces may
+        // still be excluded against the tool.
+        bounds[1] = broad.solid_box(model, second, dec);
+        bounds[0] = broad.solid_box(model, first, dec);
+        for (faces, opposite) in [(first, &bounds[1]), (second, &bounds[0])] {
+            if let Some(opposite) = opposite {
+                outside.extend(
+                    faces
+                        .iter()
+                        .copied()
+                        .filter(|&face| broad.face_outside(model, face, opposite, dec)),
+                );
+            }
+        }
+        if fitted
+            && first
+                .iter()
+                .chain(second)
+                .all(|face| outside.contains(face))
+        {
+            // The existing disjoint fitted-body path retains its blend base.
+            outside.clear();
+            bounds = [None, None];
+        }
+        for (body, opposite) in [(a, &bounds[1]), (b, &bounds[0])] {
+            let Some(opposite) = opposite else { continue };
+            let lumps = &model.body(body).lumps;
+            // Distinct shells may touch. Only an already embedded single shell
+            // needs no additional splits from its own operand vertices.
+            if let [lump] = lumps.as_slice()
+                && model.lump(*lump).shells.len() == 1
+            {
+                outside_edges.extend(
+                    model
+                        .edges_of_body(body)
+                        .into_iter()
+                        .filter(|&edge| broad.edge_outside(model, edge, opposite, dec)),
+                );
+            }
+        }
+    }
+    // A disjoint trim can still supply the first occurrence of a carrier
+    // shared by a later pair. Filter finite membership, not carrier discovery.
+    let face_order = [first, second];
+    let candidates = |faces: &[FaceId]| {
+        faces
+            .iter()
+            .copied()
+            .filter(|face| !outside.contains(face))
+            .collect::<Vec<_>>()
+    };
+    let (first_candidates, second_candidates);
+    let (first, second) = if outside.is_empty() {
+        (first, second)
+    } else {
+        first_candidates = candidates(first);
+        second_candidates = candidates(second);
+        (first_candidates.as_slice(), second_candidates.as_slice())
+    };
+    let algebraic = algebraic && (outside.is_empty() || has_algebraic(first, second));
     if !multiway && !algebraic && boundaries_apart(model, first, second, dec) {
         return Ok(Answer::exact(IntersectionGraph {
             a,
             b,
+            outside,
+            outside_edges,
             edges: Vec::new(),
             points: Vec::new(),
             singular: BTreeSet::new(),
@@ -836,7 +923,7 @@ fn section_inputs(
     }
     let mut pass = PairPass {
         bounds: crate::bounds::FaceBounds::new(algebraic),
-        trimmed: crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second)),
+        trimmed,
         finite_bounds: crate::bounds::FaceBounds::new(false),
         pruning_model: None,
         pairs: BTreeMap::new(),
@@ -853,6 +940,18 @@ fn section_inputs(
         overlapping_coincidence: false,
     };
     let mut regions = RegionCache::default();
+    let vertices = arrangement_vertices.unwrap_or_else(|| {
+        let mut vertices = Vec::new();
+        for (body, opposite) in [(a, &bounds[1]), (b, &bounds[0])] {
+            vertices.extend(model.vertices_of_body(body).into_iter().filter(|&vertex| {
+                !opposite.as_ref().is_some_and(|bounds| {
+                    let point = model.geom().position(model.vertex(vertex).point);
+                    TrimBounds::point_outside(&point, bounds, dec)
+                })
+            }));
+        }
+        vertices
+    });
     for vertex in vertices {
         let point = canonical_point(
             model,
@@ -864,10 +963,17 @@ fn section_inputs(
         pass.mandatory.insert(point);
     }
     pass.pruning_model = (prune && !algebraic).then(|| model.clone());
-    let face_pairs: Vec<(FaceId, FaceId)> = first
+    let face_pairs: Vec<_> = face_order[0]
         .iter()
-        .flat_map(|&fa| second.iter().map(move |&fb| (fa, fb)))
-        .filter(|&(fa, fb)| !(multiway && fb <= fa))
+        .flat_map(|&fa| {
+            let first_outside = outside.contains(&fa);
+            let outside = &outside;
+            face_order[1]
+                .iter()
+                .copied()
+                .filter(move |&fb| !multiway || fb > fa)
+                .map(move |fb| ((fa, fb), first_outside || outside.contains(&fb)))
+        })
         .collect();
     // Each pair's support intersection is its own proof. Merging its carriers
     // and points into the pass stays in pair order on this thread; workers
@@ -875,7 +981,7 @@ fn section_inputs(
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("face pairs");
     let mut ahead = catallax_numbers::run_ahead!(dec, face_pairs.len());
-    for (index, &pair) in face_pairs.iter().enumerate() {
+    for (index, &(pair, outside)) in face_pairs.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         ahead.at(index, || {
@@ -886,17 +992,27 @@ fn section_inputs(
                 clip.clone(),
             );
             move |index: usize, dec: &mut Decider| {
+                let (pair, outside) = face_pairs[index];
                 let _ = face_pair(
                     &mut model.clone(),
                     &mut pass.clone(),
-                    face_pairs[index],
+                    pair,
+                    outside,
                     algebraic,
                     clip.as_ref(),
                     dec,
                 );
             }
         });
-        face_pair(model, &mut pass, pair, algebraic, clip.as_ref(), dec)?;
+        face_pair(
+            model,
+            &mut pass,
+            pair,
+            outside,
+            algebraic,
+            clip.as_ref(),
+            dec,
+        )?;
     }
     drop(ahead);
     #[cfg(feature = "work-span")]
@@ -956,9 +1072,25 @@ fn section_inputs(
             }
         }
     }
-    let surfaces: Vec<SurfaceId> = first
+    // Keep complete support hits to avoid exact curve-pair solves. With a
+    // torus or fitted band, a remote support crossing can require an
+    // undecidable quarter or spline contact, so keep the trimmed scan.
+    let restricted_hits = !outside.is_empty()
+        && (trimmed.has_fitted_band()
+            || face_order.into_iter().flatten().any(|&face| {
+                matches!(
+                    model.geom().surface(model.face(face).surface),
+                    catallax_shapes::Surface::Torus(_)
+                )
+            }));
+    let [support_first, support_second] = if restricted_hits {
+        [first, second]
+    } else {
+        face_order
+    };
+    let surfaces: Vec<SurfaceId> = support_first
         .iter()
-        .chain(second)
+        .chain(support_second)
         .map(|f| model.face(*f).surface)
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -969,7 +1101,7 @@ fn section_inputs(
     let mut order = Order {
         finder: points.iter().map(|&p| (p, 0)).collect(),
         carrier_exclusions,
-        trimmed: crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second)),
+        trimmed: trimmed.clone(),
         ..Order::default()
     };
     #[cfg(feature = "work-span")]
@@ -1081,6 +1213,9 @@ fn section_inputs(
     drop(ahead);
     #[cfg(feature = "work-span")]
     drop(span_tasks);
+    // Keep outlying cuts in carrier order: one can anchor a closed curve
+    // even though it will not belong to both operands.
+    let window = bounds.map(|bounds| bounds.map(|bounds| bounds.each_ref().map(Ball::to_interval)));
     order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
     // The faces that hold each point are found for each point on its own.
@@ -1093,6 +1228,9 @@ fn section_inputs(
     let span_tasks = catallax_numbers::work_span::parallel("point faces");
     let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
     for (index, &point) in points.iter().enumerate() {
+        if !in_window(model, point, &window) {
+            continue;
+        }
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         let found = ahead.take_if(
@@ -1107,16 +1245,12 @@ fn section_inputs(
                     regions.clone(),
                 );
                 move |index: usize, dec: &mut Decider| {
+                    let candidate = points[index];
+                    if !in_window(&base, candidate, &window) {
+                        return regions.ahead(&base, |_, _| Ok(None));
+                    }
                     regions.ahead(&base, |model, regions| {
-                        shared_faces(
-                            model,
-                            &first,
-                            &second,
-                            multiway,
-                            points[index],
-                            regions,
-                            dec,
-                        )
+                        shared_faces(model, &first, &second, multiway, candidate, regions, dec)
                     })
                 }
             },
@@ -1141,11 +1275,13 @@ fn section_inputs(
     // not taken, and this thread cuts it itself.
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("carrier pieces");
-    let mut ahead = catallax_numbers::values_ahead!(dec, pool.len());
-    for (index, &curve) in pool.iter().enumerate() {
-        if covered.contains_key(&curve) {
-            continue;
-        }
+    let carriers: Vec<_> = pool
+        .iter()
+        .zip(&active)
+        .filter_map(|(&curve, &active)| (active && !covered.contains_key(&curve)).then_some(curve))
+        .collect();
+    let mut ahead = catallax_numbers::values_ahead!(dec, carriers.len());
+    for (index, &curve) in carriers.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         let found = ahead.take_if(
@@ -1163,6 +1299,7 @@ fn section_inputs(
                     point_faces.clone(),
                 );
                 let (regions, order) = (regions.clone(), order.clone());
+                let carriers = carriers.clone();
                 move |index: usize, dec: &mut Decider| {
                     let context = Context {
                         first: &first,
@@ -1170,13 +1307,14 @@ fn section_inputs(
                         multiway,
                         mandatory: &mandatory,
                         point_faces: &point_faces,
+                        window,
                     };
                     let mut order = order.clone();
                     let asked = order.hits.len();
                     let ahead = regions.ahead(&base, |model, regions| {
                         carrier_sections(
                             model,
-                            pool[index],
+                            carriers[index],
                             (&pool, &surfaces, &points),
                             &context,
                             regions,
@@ -1195,6 +1333,7 @@ fn section_inputs(
             multiway,
             mandatory: &mandatory,
             point_faces: &point_faces,
+            window,
         };
         edges.extend(match found {
             Some((ahead, _)) => ahead.commit(model),
@@ -1257,6 +1396,8 @@ fn section_inputs(
     let graph = IntersectionGraph {
         a,
         b,
+        outside,
+        outside_edges,
         edges,
         points: isolated,
         singular,
@@ -1301,6 +1442,7 @@ fn face_pair(
     model: &mut Model,
     pass: &mut PairPass,
     (fa, fb): (FaceId, FaceId),
+    outside: bool,
     algebraic: bool,
     clip: Option<&[Ball; 3]>,
     dec: &mut Decider,
@@ -1394,7 +1536,8 @@ fn face_pair(
     } = pass;
     // Disjoint and point-only supports have no carrier activity to
     // prove. Cache the optional finite bound only when adding a curve.
-    let mut relevance = None;
+    // An excluded trim still contributes order, but cannot activate a carrier.
+    let mut relevance = outside.then_some(false);
     let mut relevant = |dec: &mut Decider| {
         *relevance.get_or_insert_with(|| match pruning_model {
             Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),
@@ -1581,7 +1724,16 @@ fn carrier_sections(
     dec: &mut Decider,
 ) -> Result<Vec<SectionEdge>, Refusal> {
     let mut cuts = Vec::new();
+    let bounds = order
+        .carrier_exclusions
+        .then(|| crate::carrier_bounds::enclosure(model.geom(), curve))
+        .flatten();
     for &point in points {
+        if bounds.as_ref().is_some_and(|bounds| {
+            crate::carrier_bounds::excludes_point(bounds, &model.geom().position(point))
+        }) {
+            continue;
+        }
         if coincident(
             on_curve(model.geom(), curve, point, dec),
             "boolean.imprint-ambiguous",

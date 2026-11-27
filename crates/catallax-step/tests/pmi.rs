@@ -3599,10 +3599,8 @@ fn saved_views_write_their_callouts_and_read_back() {
         one_view.views = vec![view.clone()];
         let (fixture, _) = write(&part, &one_view);
         check_edition_one_draughting_models(&fixture);
-        assert_eq!(
-            read_step_pmi(fixture.as_bytes()).unwrap().pmi.views,
-            [view.clone()]
-        );
+        let read = read_step_pmi(fixture.as_bytes()).unwrap();
+        assert_eq!(read.pmi.views.as_slice(), std::slice::from_ref(view));
         if let Some(directory) = &directory {
             std::fs::write(directory.join(filename), fixture).unwrap();
         }
@@ -4133,7 +4131,7 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
         .iter()
         .find(|graphic| graphic.name == "Bore diameter")
         .unwrap();
-    assert_eq!(retained.presents, [size.clone()]);
+    assert_eq!(retained.presents.as_slice(), std::slice::from_ref(&size));
     assert_eq!(retained.faces.as_ref(), Some(&expected));
     assert_eq!(retained.views, ["Bore"]);
     assert_eq!(graphic.presents, [size]);
@@ -4860,7 +4858,7 @@ fn a_void_target_round_trips_on_the_inner_wall() {
             let frame = references(&all[placement].1);
             let origin = numbers(&all[&frame[0]].1);
             let axis = numbers(&all[&frame[1]].1);
-            origin[0] == 4.0 && axis[0].abs() == 1.0
+            (origin[0] - 4.0).abs() < 1e-9 && (axis[0].abs() - 1.0).abs() < 1e-9
         })
         .unwrap();
     let read = read_step_pmi(file.as_bytes()).unwrap();

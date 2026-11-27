@@ -425,6 +425,10 @@ fn carrier(
         CurveForm::Branch | CurveForm::PatchSection(_) | CurveForm::PatchPair(_) => {
             fitted_carrier(scratch, curve, ends, floor, marks, dec)
         }
+        _ => Err(Refusal::new(
+            "app.view-curve",
+            "hidden-line projection does not support this curve form",
+        )),
     }
 }
 

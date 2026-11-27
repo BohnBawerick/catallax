@@ -14,7 +14,8 @@ fn reader_respects_quotes_and_nested_references() {
     );
     assert_eq!(string("a'b\\c"), "'a''b\\\\c'");
     assert_eq!(string("é"), "'\\X2\\00E9\\X0\\'");
-    assert_eq!(string("😀"), "'\\X2\\D83DDE00\\X0\\'");
+    assert_eq!(string("😀"), "'\\X4\\0001F600\\X0\\'");
+    assert_eq!(string("a\nb"), "'a\\X\\0Ab'");
     assert_eq!(number("1.E+30"), r("1e30"));
     assert_eq!(number("-2.5E-7"), r("-2.5e-7"));
     assert_eq!(number("0."), n(0));

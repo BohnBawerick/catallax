@@ -37,9 +37,9 @@ pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
 pub use view::{Camera, SavedView};
 pub(crate) use write::emit;
 pub use write::{
-    BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, DATUM_TARGET, EDGE_BREAK,
-    FIRST_SIDE, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, KNURL,
-    MAX_SETBACK, MIN_SETBACK, ORIENTATION, SECOND_SIDE, SEMANTIC_TEXT, TARGET_DIAMETER,
+    BEVEL_ANGLE, CHAMFER, COMPOSITE, COMPOSITE_STANDARD, COUNTERBORE, COUNTERSINK, DATUM_TARGET,
+    EDGE_BREAK, FIRST_SIDE, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE,
+    KNURL, MAX_SETBACK, MIN_SETBACK, ORIENTATION, SECOND_SIDE, SEMANTIC_TEXT, TARGET_DIAMETER,
     TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, WIDTH,
 };
 
@@ -1263,19 +1263,20 @@ impl<F> Pmi<F> {
 }
 
 impl<F> ItemKind<F> {
-    /// Whether a saved view can show the item: the writer draws a callout for
-    /// datums, diameters and radii, geometric tolerances, position controls
-    /// and surface textures.
+    /// Whether this item has a supported saved-view drawing.
     pub fn has_callout(&self) -> bool {
         matches!(
             self,
             ItemKind::Datum(_)
                 | ItemKind::Size(Size {
-                    kind: SizeKind::Diameter | SizeKind::Radius,
+                    kind: SizeKind::Diameter,
+                    thread: None,
                     ..
                 })
-                | ItemKind::Tolerance(_)
-                | ItemKind::Position(_)
+                | ItemKind::Tolerance(GeometricTolerance {
+                    characteristic: Characteristic::Position,
+                    ..
+                })
                 | ItemKind::Texture(_)
         )
     }

@@ -299,45 +299,23 @@ pub(crate) fn drawable(text: &str) -> bool {
     text.chars().all(|c| glyph(c).is_some())
 }
 
-/// Draws a label callout: a leader as for a texture, then `lines` upper line
-/// first, each in a compartment of one frame, as a feature control frame or
-/// a dimension label is drawn. Every character must be [`drawable`].
-pub(crate) fn label(lines: &[String]) -> Drawing {
+pub(crate) fn label(line: &str) -> Drawing {
     let zero = Rational::zero();
-    let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
-    let origin = [zero.clone(), zero.clone(), zero.clone()];
-    // Lines 5 mm apart in compartments, with 1 mm around the 3 mm text.
-    let pitch = Rational::from_i64(5);
     let gap = Rational::one();
-    let count = Rational::from_i64(i64::try_from(lines.len()).expect("few lines"));
-    let height = &pitch * &count;
-    let mut right = Rational::zero();
-    let mut letters = Vec::new();
-    for (index, line) in lines.iter().enumerate() {
-        let below = Rational::from_i64(i64::try_from(lines.len() - 1 - index).expect("few lines"));
-        let baseline = &(&pitch * &below) + &gap;
-        let (strokes, end) = stroke(line, &gap, &baseline);
-        letters.extend(strokes);
-        let edge = &end + &gap;
-        if edge > right {
-            right = edge;
-        }
-    }
-    flat.push(vec![
+    let height = Rational::from_i64(5);
+    let (letters, end) = stroke(line, &gap, &gap);
+    let right = &end + &gap;
+    let mut flat = vec![vec![
         [zero.clone(), zero.clone()],
         [right.clone(), zero.clone()],
-        [right.clone(), height.clone()],
+        [right, height.clone()],
         [zero.clone(), height],
         [zero.clone(), zero.clone()],
-    ]);
-    for index in 1..lines.len() {
-        let v = &pitch * &Rational::from_i64(i64::try_from(index).expect("few lines"));
-        flat.push(vec![[zero.clone(), v.clone()], [right.clone(), v]]);
-    }
+    ]];
     flat.extend(letters);
     Drawing {
-        polylines: place(&origin, flat),
-        text: lines.join(" / "),
+        polylines: place(&[zero.clone(), zero.clone(), zero], flat),
+        text: String::new(),
     }
 }
 
@@ -391,7 +369,7 @@ impl Drawing {
         slot: usize,
         count: usize,
     ) -> Option<[Point; 2]> {
-        let across = cross(&camera.up, &camera.direction);
+        let across = cross(&camera.direction, &camera.up);
         let right = unit_axis(&across);
         let up = unit_axis(&camera.up);
         let offset = std::array::from_fn(|i| &anchor[i] - &camera.eye[i]);

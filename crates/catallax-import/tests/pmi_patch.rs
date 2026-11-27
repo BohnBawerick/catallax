@@ -70,8 +70,8 @@ fn assembly_source(repeat_items: bool) -> String {
                 kind: tolerance(Characteristic::Parallelism, "0.01", &["A"], faces[1]),
             },
             Item {
-                id: "Base profile".into(),
-                kind: tolerance(Characteristic::SurfaceProfile, "0.2", &[], faces[3]),
+                id: "Base position".into(),
+                kind: tolerance(Characteristic::Position, "0.2", &[], faces[3]),
             },
             Item {
                 id: "Base finish".into(),
@@ -101,7 +101,7 @@ fn assembly_source(repeat_items: bool) -> String {
                 window: [q("20"), q("12")],
                 perspective: false,
             },
-            items: vec!["Base profile".into()],
+            items: vec!["Base position".into()],
         }],
     };
     let barrel = model
@@ -338,7 +338,7 @@ fn an_unsafe_edit_is_refused_before_writing() {
     for (edit, reason) in [
         (
             PmiEdit::ToleranceValue {
-                source: read_step_pmi(file.as_bytes()).unwrap().sources["Base profile"].clone(),
+                source: read_step_pmi(file.as_bytes()).unwrap().sources["Base position"].clone(),
                 value: q("0.1"),
             },
             "(DRAUGHTING_MODEL_ITEM_ASSOCIATION) may still depend on the old value",
@@ -529,4 +529,108 @@ fn a_source_id_selects_the_second_parts_same_named_tolerance() {
     assert_eq!(tol.value, q("0.04"));
     tol.value = q("0.06");
     assert_eq!(after["Pin"], expected);
+}
+
+#[test]
+fn a_qualified_magnitude_cannot_be_replaced() {
+    let file = source();
+    let original = read_step_pmi(file.as_bytes()).unwrap();
+    let id = &original.sources["Base flatness"];
+    let magnitude = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{id}=")))
+        .unwrap()
+        .split(',')
+        .nth(2)
+        .unwrap();
+    let qualified = file.replacen("ENDSEC;\nEND-ISO", &format!(
+        "#900000=MEASURE_QUALIFICATION('', '', {magnitude}, (#900001));\n#900001=TYPE_QUALIFIER('maximum');\nENDSEC;\nEND-ISO"
+    ), 1);
+    let result = patch_step_pmi(
+        qualified.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: id.clone(),
+            value: q("0.02"),
+        }],
+    );
+    assert!(result.is_err(), "a replacement detached the qualification");
+    assert!(result.unwrap_err().detail.contains("MEASURE_QUALIFICATION"));
+}
+
+#[test]
+fn an_unrelated_assembly_dimension_and_id_comments_survive_a_leaf_edit() {
+    let file = assembly_source(true);
+    let assembly = read_step_assembly(file.as_bytes(), &mut Decider::default()).unwrap();
+    let ProductContent::Part(base) = &assembly
+        .products
+        .iter()
+        .find(|p| p.name == "Base")
+        .unwrap()
+        .content
+    else {
+        panic!("expected Base part");
+    };
+    let source = base.pmi.sources["Base flatness"].clone();
+    let refs = |text: &str| -> Vec<String> {
+        text.split('#')
+            .skip(1)
+            .map(|tail| {
+                format!(
+                    "#{}",
+                    tail.chars()
+                        .take_while(char::is_ascii_digit)
+                        .collect::<String>()
+                )
+            })
+            .collect()
+    };
+    let named = |kind: &str| {
+        file.lines()
+            .filter(|line| line.contains(kind))
+            .collect::<Vec<_>>()
+    };
+    let occurrences = named("=NEXT_ASSEMBLY_USAGE_OCCURRENCE(");
+    let occurrences: Vec<_> = occurrences.iter().map(|record| refs(record)).collect();
+    let root_product = &occurrences[0][1];
+    let shape = named("=PRODUCT_DEFINITION_SHAPE(")
+        .into_iter()
+        .map(refs)
+        .find(|ids| &ids[1] == root_product)
+        .unwrap()[0]
+        .clone();
+    let datum_features = named("=DATUM_FEATURE(");
+    let base_feature = refs(datum_features[0])[0].clone();
+    let shaft_feature = refs(datum_features[1])[0].clone();
+    let dimension = format!(
+        "#900000=COMPONENT_PATH_SHAPE_ASPECT('','',{shape},.T.,{},{base_feature});
+         #900001=COMPONENT_PATH_SHAPE_ASPECT('','',{shape},.T.,{},{shaft_feature});
+         #900002=DIMENSIONAL_LOCATION('linear distance','',#900000,#900001);
+",
+        occurrences[0][0], occurrences[1][0]
+    );
+    let extended = file.replacen(
+        "ENDSEC;\nEND-ISO",
+        &format!("{dimension}ENDSEC;\nEND-ISO"),
+        1,
+    );
+    let colour = file
+        .lines()
+        .find(|line| line.contains("=COLOUR_RGB("))
+        .unwrap();
+    let commented = colour.replacen('=', "/* supplier colour */=", 1);
+    let extended = extended.replacen(colour, &commented, 1);
+    let out = patch_step_pmi(
+        extended.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source,
+            value: q("0.02"),
+        }],
+    )
+    .unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains(&dimension));
+    assert!(out.contains(&commented));
+    let read = read_step_pmi(out.as_bytes()).unwrap();
+    assert!(read.pmi.items.iter().any(|item| item.id == "Base flatness"
+        && matches!(&item.kind, ItemKind::Tolerance(tolerance) if tolerance.value == q("0.02"))));
 }

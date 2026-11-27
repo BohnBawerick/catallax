@@ -688,10 +688,17 @@ fn the_bore_finish_is_drawn_on_the_bore() {
         .filter(|(kind, _)| kind == "DRAUGHTING_MODEL_ITEM_ASSOCIATION")
         .map(|(_, fields)| fields)
         .collect();
-    let [association] = associations[..] else {
-        panic!("one callout: {associations:?}");
-    };
-    assert!(association.starts_with("'Bore finish',''"));
+    assert_eq!(associations.len(), 2, "{associations:?}");
+    let association = associations
+        .iter()
+        .find(|fields| fields.starts_with("'Bore finish',''"))
+        .unwrap();
+    let semantic = associations
+        .iter()
+        .find(|fields| fields.starts_with("'PMI representation to presentation link',''"))
+        .unwrap();
+    let semantic_source = read_step_pmi(file.as_bytes()).unwrap().sources["Bore finish"].clone();
+    assert_eq!(references(semantic)[0], semantic_source);
     let [aspect, model, callout] = &references(association)[..] else {
         panic!("{association}");
     };
@@ -2592,6 +2599,32 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
         assert!(reasons(&skipped).contains("height is not a length"));
     }
 
+    let iso = mutate(&file, "ASME Y14.5-2018", "ISO 1101:2017");
+    let (back, skipped) = read_back(&iso, &report);
+    assert!(!ids(&back).contains(&"Bolt pattern".to_owned()));
+    assert!(ids(&back).contains(&"Bore projection".to_owned()));
+    assert!(reasons(&skipped).contains("requires a part declaration of ASME Y14.5-2018"));
+    let all = records(&file);
+    let relationship = all
+        .values()
+        .find(|body| body.starts_with("GEOMETRIC_TOLERANCE_RELATIONSHIP('composite'"))
+        .unwrap();
+    let lower = &all[&references(relationship)[1]];
+    let marker = "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((";
+    let datum = lower
+        .split_once(marker)
+        .unwrap()
+        .1
+        .split(')')
+        .next()
+        .unwrap();
+    let poison = lower.replace(&format!("{marker}{datum}"), &format!("{marker}{datum},$"));
+    let malformed = mutate(&file, lower, &poison);
+    let (back, skipped) = read_back(&malformed, &report);
+    assert!(!ids(&back).contains(&"Bolt pattern".to_owned()));
+    assert!(ids(&back).contains(&"Bore projection".to_owned()));
+    assert!(reasons(&skipped).contains("invalid datum reference aggregate"));
+
     // An unknown relationship between the segments leaves out both of them.
     let broken = mutate(
         &file,
@@ -3056,7 +3089,7 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
     }
 
     let mut text = text_pmi(&part, &f);
-    let note = "One\n\nThree, café";
+    let note = "One\n\nThree, café 😀";
     let designation = format!("RGE 'Ø' \\ DIN 82 {}", "x".repeat(60));
     for item in &mut text.items {
         match &mut item.kind {
@@ -3068,6 +3101,16 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
         }
     }
     let (file, report) = write(&part, &text);
+    let unsupported = mutate(&file, r"\X4\0001F600\X0\", r"\PE\\S\*\S\U\S\b");
+    let unsupported = read_step_pmi(unsupported.as_bytes()).unwrap();
+    assert!(!unsupported.sources.contains_key("Flange note"));
+    assert!(
+        unsupported
+            .skipped
+            .iter()
+            .any(|item| item.reason.contains("unsupported STEP encoding"))
+    );
+
     let (back, skipped) = read_back(&file, &report);
     assert!(skipped.is_empty(), "{skipped:?}");
     let (back, text) = (sorted(back), sorted(text));
@@ -3305,8 +3348,14 @@ fn saved_views_write_their_callouts_and_read_back() {
         let axes = references(&all[&camera[0]]);
         let eye = numbers(&all[&axes[0]]);
         let depth = unit(numbers(&all[&axes[1]]));
-        let across = unit(numbers(&all[&axes[2]]));
-        let up = cross(&depth, &across);
+        let across = [1.0, 0.0, 0.0];
+        let up = if view == "Bore" {
+            [0.0, 0.0, 1.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let camera_x = unit(numbers(&all[&axes[2]]));
+        assert!(dot(&cross(&depth, &camera_x), &up) > 1.0 - 1e-9);
         let volume = &all[&camera[1]];
         let perspective = volume.contains(".CENTRAL.");
         let distance = volume.split(',').nth(2).unwrap().parse::<f64>().unwrap();
@@ -3348,7 +3397,10 @@ fn saved_views_write_their_callouts_and_read_back() {
             let frame = references(&all[&references(surface)[0]]);
             let origin = numbers(&all[&frame[0]]);
             let normal = unit(numbers(&all[&frame[1]]));
-            assert!(dot(&normal, &depth).abs() > 1.0 - 1e-9);
+            assert!(dot(&normal, &depth) < -1.0 + 1e-9);
+            let plane_right = unit(numbers(&all[&frame[2]]));
+            assert!(dot(&plane_right, &across) > 1.0 - 1e-9);
+            assert!(dot(&cross(&normal, &plane_right), &up) > 1.0 - 1e-9);
             let occurrence = references(&all[&keys[2]]).pop().unwrap();
             let set = references(&all[&occurrence]).pop().unwrap();
             let lines = references(&all[&set]);
@@ -3440,13 +3492,15 @@ fn saved_views_write_their_callouts_and_read_back() {
 
     // A view that names an item with no callout, or a camera looking along
     // its own up direction, is refused.
-    let mut bad = pmi.clone();
-    bad.views[0].items.push("Slot width".into());
-    assert!(
-        try_write(&part, &bad)
-            .unwrap_err()
-            .contains("item Slot width has no callout")
-    );
+    for unsupported in ["Slot width", "Slot end radius", "Flatness of A"] {
+        let mut bad = pmi.clone();
+        bad.views[0].items.push(unsupported.into());
+        let reason = try_write(&part, &bad).unwrap_err();
+        assert!(
+            reason.contains(&format!("item {unsupported} has no callout")),
+            "{reason}"
+        );
+    }
     let mut bad = pmi.clone();
     bad.views[1].camera.up = v("0", "0", "1");
     assert!(
@@ -3486,6 +3540,25 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
             1
         );
     }
+
+    let finish = &read_step_pmi(file.as_bytes()).unwrap().sources["Bore finish"];
+    let link = callout_associations(&all, "Bore finish")
+        .into_iter()
+        .find(|(_, link)| references(link).first() == Some(finish))
+        .unwrap();
+    let preserved = mutate(&file, &format!("{}={}\n", link.0, link.1), "");
+    let read = read_step_pmi(preserved.as_bytes()).unwrap();
+    assert!(
+        read.graphics
+            .iter()
+            .any(|graphic| graphic.name == "Bore finish" && graphic.faces.is_some())
+    );
+    assert!(
+        !read.pmi.views[0]
+            .items
+            .iter()
+            .any(|item| item == "Bore finish")
+    );
 
     // Without its association the datum callout presents nothing read: it is
     // graphics in the Bore view, and the datum is still one semantic item.
@@ -3555,6 +3628,57 @@ fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
             normal: v("0", "0", "1"),
             reference: v("1", "0", "0"),
         }]
+    );
+
+    let boxed = mutate(
+        source,
+        "#38=ANNOTATION_PLANE('',(#37),#16,(#36));",
+        "#38=ANNOTATION_PLANE('',(#54),#55,(#36));",
+    );
+    let boxed = mutate(
+        &boxed,
+        "ENDSEC;\nEND-ISO",
+        "#54=PRESENTATION_STYLE_ASSIGNMENT((#28));\n#55=PLANAR_BOX('',10.,10.,#15);\nENDSEC;\nEND-ISO",
+    );
+    let boxed = read_step_pmi(boxed.as_bytes()).unwrap();
+    assert!(boxed.skipped.is_empty());
+    assert_eq!(boxed.graphics, read.graphics);
+
+    let repeated = mutate(
+        source,
+        "#50=DRAUGHTING_MODEL('Top',(#38,#49),#9);",
+        "#50=DRAUGHTING_MODEL('',(#38,#49,#54,#55,#56),#9);",
+    );
+    let repeated = mutate(
+        &repeated,
+        "ENDSEC;\nEND-ISO",
+        "#54=CAMERA_MODEL_D3('Top',#43,#48);\n#55=CAMERA_MODEL_D3('Top',#43,#48);\n#56=CAMERA_MODEL_D3(' ',#43,#48);\nENDSEC;\nEND-ISO",
+    );
+    let repeated = read_step_pmi(repeated.as_bytes()).unwrap();
+    assert!(repeated.skipped.is_empty());
+    assert_eq!(
+        repeated.graphics[0].views,
+        ["Top", "Top (2)", "Top (3)", "View #56"]
+    );
+
+    let unsupported = mutate(
+        source,
+        "ENDSEC;\nEND-ISO",
+        r"#900000=CHARACTERIZED_ITEM_WITHIN_REPRESENTATION('','',#36,#39);
+#900001=PROPERTY_DEFINITION('pmi validation property','',#900000);
+#900002=DESCRIPTIVE_REPRESENTATION_ITEM('equivalent unicode string','\PE\\S\*\S\U\S\b');
+#900003=REPRESENTATION('',(#900002),#9);
+#900004=PROPERTY_DEFINITION_REPRESENTATION(#900001,#900003);
+ENDSEC;
+END-ISO",
+    );
+    let unsupported = read_step_pmi(unsupported.as_bytes()).unwrap();
+    assert_eq!(unsupported.graphics, read.graphics);
+    assert!(
+        unsupported
+            .skipped
+            .iter()
+            .any(|item| item.reason.contains("unsupported STEP encoding"))
     );
 
     let defaults = mutate(source, "#41,#42,#14", "#41,#42,$");
@@ -3632,6 +3756,74 @@ fn target_refuses_a_face_moved_by_step_rounding() {
         "{refusal:?}"
     );
     assert!(out.is_empty());
+}
+
+#[test]
+fn a_counterbore_shoulder_is_not_an_outward_entry() {
+    let (part, pmi) = hole_fixture();
+    let ItemKind::Size(size) = kind_of(&pmi, "counterbore") else {
+        panic!("expected counterbore");
+    };
+    let bottom = part.planes(2, "0")[0];
+    let shoulder = part.planes(2, "2.25")[0];
+    let projection = |entry| {
+        ItemKind::Position(PositionControl {
+            features: vec![size.features[1].clone()],
+            frame: PositionFrame::Single {
+                segment: segment("0.05", None, Vec::new()),
+                projected_zone: Some(ProjectedZone {
+                    height_mm: q("8"),
+                    direction: v("0", "0", "-1"),
+                    entry_faces: vec![entry],
+                }),
+            },
+        })
+    };
+    let mut pmi = Pmi {
+        items: vec![
+            item(
+                "Datum A",
+                ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![shoulder],
+                }),
+            ),
+            item("Projection", projection(bottom)),
+        ],
+        part: PartNotes::default(),
+        views: Vec::new(),
+    };
+    let (file, report) = write(&part, &pmi);
+    let (back, skipped) = read_back(&file, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    assert_eq!(back, pmi);
+
+    pmi.items[1].kind = projection(shoulder);
+    let err = try_write(&part, &pmi).unwrap_err();
+    assert!(
+        err.contains("points back into its controlled cylinder"),
+        "{err}"
+    );
+
+    let all = records(&file);
+    let (datum, _) = all
+        .iter()
+        .find(|(_, body)| body.starts_with("DATUM_FEATURE("))
+        .unwrap();
+    let projected = all
+        .values()
+        .find(|body| body.starts_with("PROJECTED_ZONE_DEFINITION("))
+        .unwrap();
+    let start = &references(projected)[1];
+    let modified = mutate(&file, projected, &projected.replace(start, datum));
+    let (back, skipped) = read_back(&modified, &report);
+    assert_eq!(back.items, vec![pmi.items[0].clone()]);
+    assert!(
+        skipped.iter().any(|item| item
+            .reason
+            .contains("points back into its controlled cylinder")),
+        "{skipped:?}"
+    );
 }
 
 #[test]

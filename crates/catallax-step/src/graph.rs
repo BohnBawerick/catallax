@@ -291,13 +291,9 @@ pub(crate) fn string(value: &str) -> String {
             '\'' => out.push_str("''"),
             '\\' => out.push_str("\\\\"),
             ' '..='~' => out.push(c),
-            _ => {
-                out.push_str("\\X2\\");
-                for unit in c.encode_utf16(&mut [0; 2]) {
-                    write!(out, "{unit:04X}").unwrap();
-                }
-                out.push_str("\\X0\\");
-            }
+            '\u{0}'..='\u{1F}' | '\u{7F}' => write!(out, "\\X\\{:02X}", u32::from(c)).unwrap(),
+            '\u{80}'..='\u{FFFF}' => write!(out, "\\X2\\{:04X}\\X0\\", u32::from(c)).unwrap(),
+            _ => write!(out, "\\X4\\{:08X}\\X0\\", u32::from(c)).unwrap(),
         }
     }
     out.push('\'');

@@ -398,6 +398,52 @@ fn check_open_entry(
     Ok(())
 }
 
+fn check_inward_trim(
+    model: &Model,
+    edges: &BTreeSet<catallax_topology::EdgeId>,
+    origin: &Point3,
+    normal: &Vector3,
+    item: &str,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let unknown = || refuse(item, "the cylinder's axial trim cannot be checked");
+    let mut inward = false;
+    let mut check = |point: &Point3, dec: &mut Decider| -> Result<(), Refusal> {
+        let distance = point.minus(origin).dot(normal);
+        if is_positive(&distance, dec)? {
+            return Err(refuse(
+                item,
+                "the projected zone points back into its controlled cylinder",
+            ));
+        }
+        inward |= is_positive(&(-distance), dec)?;
+        Ok(())
+    };
+    for edge in edges {
+        let edge = model.edge(*edge);
+        match curve_form(model.geom(), edge.curve, dec)? {
+            CurveForm::Line { .. } => {
+                for vertex in [edge.start, edge.end] {
+                    let vertex = vertex.ok_or_else(unknown)?;
+                    check(&model.geom().position(model.vertex(vertex).point), dec)?;
+                }
+            }
+            CurveForm::Circle {
+                center,
+                normal: axis,
+                ..
+            } if is_zero_vector(&axis.cross(normal), dec)? => {
+                check(&center, dec)?;
+            }
+            _ => return Err(unknown()),
+        }
+    }
+    if !inward {
+        return Err(unknown());
+    }
+    Ok(())
+}
+
 fn check_position(
     model: &Model,
     control: &PositionControl<FaceId>,
@@ -504,6 +550,7 @@ fn check_position(
                 item,
                 dec,
             )?;
+            check_inward_trim(model, &edges, &plane.origin, &normal, item, dec)?;
         }
     }
     Ok(())

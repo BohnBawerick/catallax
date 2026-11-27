@@ -74,6 +74,9 @@ pub const MAX_SETBACK: &str = "maximum setback";
 /// The name of the relationship from an upper composite segment to its lower
 /// one (recommended practices, section 6.9.9).
 pub const COMPOSITE: &str = "composite";
+
+/// The supported ASME standard for composite position frames.
+pub const COMPOSITE_STANDARD: &str = "ASME Y14.5-2018";
 /// The description of the relationship from a datum target to its datum.
 pub const DATUM_TARGET: &str = "datum target";
 /// The name of a datum target's placement (section 6.6.1, table 10).
@@ -207,7 +210,7 @@ struct Emitter<'a> {
     annotations: usize,
     /// The semantic entity each item is written as, by item name, for the
     /// association of its callout.
-    semantic: BTreeMap<String, Vec<Id>>,
+    semantic: BTreeMap<String, Id>,
     dec: &'a mut Decider,
 }
 
@@ -446,7 +449,7 @@ impl Emitter<'_> {
             vec![text("''"), text("''"), aspect.into(), datum.into()],
         );
         self.datums.insert(letter.to_owned(), datum);
-        self.semantic.insert(item.to_owned(), vec![aspect]);
+        self.semantic.insert(item.to_owned(), aspect);
         self.root("ID_ATTRIBUTE", vec![quoted(item), aspect.into()]);
         self.equivalent(datum, &format!("DTM\\w{letter}"));
         Ok(())
@@ -700,7 +703,7 @@ impl Emitter<'_> {
             target,
             item,
         )?;
-        self.semantic.insert(item.to_owned(), vec![id]);
+        self.semantic.insert(item.to_owned(), id);
         Ok(())
     }
 
@@ -802,8 +805,7 @@ impl Emitter<'_> {
                 segment,
                 projected_zone,
             } => {
-                let (single, zone) = self.segment(segment, target, item)?;
-                self.semantic.insert(item.to_owned(), vec![single]);
+                let (_, zone) = self.segment(segment, target, item)?;
                 if let Some(projection) = projected_zone {
                     let zone = zone.ok_or_else(|| {
                         Refusal::new(
@@ -830,7 +832,6 @@ impl Emitter<'_> {
             PositionFrame::Composite { upper, lower } => {
                 let (upper, _) = self.segment(upper, target, item)?;
                 let (lower, _) = self.segment(lower, target, item)?;
-                self.semantic.insert(item.to_owned(), vec![upper, lower]);
                 self.root(
                     "GEOMETRIC_TOLERANCE_RELATIONSHIP",
                     vec![quoted(COMPOSITE), text("''"), upper.into(), lower.into()],
@@ -1080,6 +1081,7 @@ impl Emitter<'_> {
             vec![text("''"), text("''"), general.into(), property.into()],
         );
         self.root("ID_ATTRIBUTE", vec![quoted(item), property.into()]);
+        self.semantic.insert(item.to_owned(), property);
         Ok(())
     }
 
@@ -1244,7 +1246,7 @@ impl Emitter<'_> {
             &drawing,
             &equivalent,
             plane,
-            &[aspect],
+            &[self.semantic[item], aspect],
         ))
     }
 
@@ -1254,15 +1256,15 @@ impl Emitter<'_> {
         label: Label<'_>,
         view: (&Camera, usize, usize),
     ) -> Result<Id, Refusal> {
-        if let Some(line) = label.lines.iter().find(|line| !callout::drawable(line)) {
+        if !callout::drawable(&label.line) {
             return Err(Refusal::new(
                 "step.pmi-invalid",
-                format!("{item}: the callout font cannot draw `{line}`"),
+                format!("{item}: the callout font cannot draw {}", label.line),
             ));
         }
-        let definitions = self.semantic[item].clone();
+        let definition = self.semantic[item];
         let anchor = self.anchor_point(label.feature)?;
-        let mut drawing = callout::label(&label.lines);
+        let mut drawing = callout::label(&label.line);
         let plane = self.callout_plane(Some(view), anchor.as_ref(), &mut drawing, item)?;
         Ok(self.graphic_callout(
             item,
@@ -1270,7 +1272,7 @@ impl Emitter<'_> {
             &drawing,
             &label.equivalent,
             plane,
-            &definitions,
+            &[definition],
         ))
     }
 
@@ -1364,12 +1366,12 @@ impl Emitter<'_> {
             .graph
             .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
         self.graph.extend_list(plane, 3, [callout]);
-        let link_name = if set_name == "surface roughness" {
-            item
-        } else {
-            "PMI representation to presentation link"
-        };
-        for &definition in definitions {
+        for (index, &definition) in definitions.iter().enumerate() {
+            let link_name = if index == 0 {
+                "PMI representation to presentation link"
+            } else {
+                item
+            };
             self.root(
                 "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
                 vec![
@@ -1679,8 +1681,7 @@ impl Emitter<'_> {
         );
     }
 
-    /// States that the tolerances read by ISO 1101.
-    fn standard(&mut self) {
+    fn standard(&mut self, name: &str) {
         let application = self.graph.add(
             "APPLICATION_CONTEXT",
             vec![text(
@@ -1710,7 +1711,7 @@ impl Emitter<'_> {
         let document = self.graph.add(
             "DOCUMENT",
             vec![
-                text("'ISO 1101:2017'"),
+                quoted(name),
                 text("'Geometrical tolerancing'"),
                 text("''"),
                 kind.into(),
@@ -1728,91 +1729,51 @@ fn circled(material: Option<MaterialCondition>) -> String {
     material.map_or_else(String::new, |material| format!("({})", letter(material)))
 }
 
-/// The name of a tolerance's graphic and its symbol as a label writes it
-/// (recommended practices, table 18).
-fn characteristic(
-    characteristic: super::Characteristic,
-) -> (&'static str, &'static str, &'static str) {
-    use super::Characteristic as C;
-    match characteristic {
-        C::Angularity => ("angularity", "ANG", "∠"),
-        C::CircularRunout => ("circular runout", "RUNOUT", "↗"),
-        C::Coaxiality => ("coaxiality", "COAX", "◎"),
-        C::Concentricity => ("concentricity", "CONC", "◎"),
-        C::Cylindricity => ("cylindricity", "CYL", "⌭"),
-        C::Flatness => ("flatness", "FLAT", "▱"),
-        C::LineProfile => ("profile of line", "PROFILE LINE", "⌒"),
-        C::Parallelism => ("parallelism", "PARL", "⫽"),
-        C::Perpendicularity => ("perpendicularity", "PERP", "⏊"),
-        C::Position => ("position", "POS", "⌖"),
-        C::Roundness => ("roundness", "CIRC", "○"),
-        C::Straightness => ("straightness", "STR", "⏤"),
-        C::SurfaceProfile => ("profile of surface", "PROFILE SURFACE", "⌓"),
-        C::Symmetry => ("symmetry", "SYM", "⌯"),
-        C::TotalRunout => ("total runout", "TOTAL RUNOUT", "⌰"),
-    }
-}
-
-/// One compartment line of a feature control frame, such as
-/// `POS|⌀0.4(M)|A|D(M)|B`.
-fn frame(
-    symbols: (&str, &str),
-    diameter: bool,
-    value: &Rational,
-    material: Option<MaterialCondition>,
-    extra: (&str, &str),
-    datums: &[DatumRef],
-    item: &str,
-) -> Result<(String, String), Refusal> {
-    let value = plain(value, item)?;
-    let diameter = if diameter { "⌀" } else { "" };
-    let display = circled;
-    let unicode = |material| match material {
+fn frame(tolerance: &GeometricTolerance<FaceId>, item: &str) -> Result<(String, String), Refusal> {
+    let value = plain(&tolerance.value, item)?;
+    let diameter = if tolerance.diameter_zone { "⌀" } else { "" };
+    let visible_modifier = circled(tolerance.material);
+    let modifier = match tolerance.material {
         Some(MaterialCondition::Maximum) => "Ⓜ",
         Some(MaterialCondition::Least) => "Ⓛ",
         None => "",
     };
-    let mut cells = vec![
-        symbols.0.to_owned(),
-        format!("{diameter}{value}{}{}", display(material), extra.0),
+    let mut visible = vec![
+        "POS".to_owned(),
+        format!("{diameter}{value}{visible_modifier}"),
     ];
+    visible.extend(tolerance.datums.iter().cloned());
     let mut equivalent = vec![
-        symbols.1.to_owned(),
-        format!("{diameter}{value}{}{}", unicode(material), extra.1),
+        "FCF".to_owned(),
+        "⌖".to_owned(),
+        format!("{diameter}{value}{modifier}"),
     ];
-    for datum in datums {
-        cells.push(format!("{}{}", datum.letter, display(datum.material)));
-        equivalent.push(format!("{}{}", datum.letter, unicode(datum.material)));
-    }
-    Ok((cells.join("|"), equivalent.join(r"\w")))
+    equivalent.extend(tolerance.datums.iter().cloned());
+    Ok((visible.join("|"), equivalent.join(r"\w")))
 }
 
 struct Label<'a> {
     kind: &'static str,
-    lines: Vec<String>,
+    line: String,
     equivalent: String,
     feature: &'a [FaceId],
 }
 
-/// The graphic name, text lines and leader feature of an item's label
-/// callout. `nominal` is a size's measured value as the file writes it.
 fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Label<'a>, Refusal> {
     let id = item.id.as_str();
-    let (kind, lines, equivalent, feature) = match &item.kind {
+    let (kind, line, equivalent, feature) = match &item.kind {
         ItemKind::Datum(datum) => (
             "datum",
-            vec![datum.letter.clone()],
+            datum.letter.clone(),
             format!(r"DTM\w{}", datum.letter),
             datum.feature.as_slice(),
         ),
-        ItemKind::Size(size) if !matches!(size.kind, SizeKind::Hole(_)) => {
-            let value = nominal.expect("a size has a measured value");
+        ItemKind::Size(size)
+            if matches!(size.kind, SizeKind::Diameter) && size.thread.is_none() =>
+        {
+            let value = nominal.expect("a diameter has a measured value");
             let value = value.strip_suffix('.').unwrap_or(value);
-            let (set, mut main) = if matches!(size.kind, SizeKind::Radius) {
-                ("radial dimension", format!("R{value}"))
-            } else {
-                ("diameter dimension", format!("⌀{value}"))
-            };
+            let mut main = format!("⌀{value}");
             match &size.limits {
                 None => {}
                 Some(Limits::Basic) => main = format!("[{main}]"),
@@ -1826,68 +1787,23 @@ fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Lab
             if size.through {
                 main.push_str(" THRU");
             }
-            let mut lines = vec![main];
-            lines.extend(size.thread.clone());
-            let equivalent = format!(r"DIM\w{}", lines.join(r"\n"));
-            (set, lines, equivalent, size.features[0].as_slice())
-        }
-        ItemKind::Tolerance(tolerance) => {
-            let (set, display, symbol) = characteristic(tolerance.characteristic);
-            let datums: Vec<DatumRef> = tolerance
-                .datums
-                .iter()
-                .map(|letter| DatumRef::new(letter))
-                .collect();
-            let (line, equivalent) = frame(
-                (display, symbol),
-                tolerance.diameter_zone,
-                &tolerance.value,
-                tolerance.material,
-                ("", ""),
-                &datums,
-                id,
-            )?;
+            let equivalent = format!(r"DIM\w{main}");
             (
-                set,
-                vec![line],
-                format!(r"FCF\w{equivalent}"),
-                tolerance.features[0].as_slice(),
+                "diameter dimension",
+                main,
+                equivalent,
+                size.features[0].as_slice(),
             )
         }
-        ItemKind::Position(control) => {
-            let extra = match &control.frame {
-                PositionFrame::Single {
-                    projected_zone: Some(zone),
-                    ..
-                } => {
-                    let height = plain(&zone.height_mm, id)?;
-                    (format!("(P){height}"), format!("Ⓟ{height}"))
-                }
-                _ => (String::new(), String::new()),
-            };
-            let (lines, equivalents): (Vec<_>, Vec<_>) = control
-                .frame
-                .segments()
-                .into_iter()
-                .map(|segment| {
-                    frame(
-                        ("POS", "⌖"),
-                        segment.diameter_zone,
-                        &segment.value_mm,
-                        segment.material,
-                        (&extra.0, &extra.1),
-                        &segment.datums,
-                        id,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .unzip();
+        ItemKind::Tolerance(tolerance)
+            if tolerance.characteristic == super::Characteristic::Position =>
+        {
+            let (line, equivalent) = frame(tolerance, id)?;
             (
                 "position",
-                lines,
-                format!(r"FCF\w{}", equivalents.join(r"\n\w")),
-                control.features[0].as_slice(),
+                line,
+                equivalent,
+                tolerance.features[0].as_slice(),
             )
         }
         _ => {
@@ -1899,7 +1815,7 @@ fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Lab
     };
     Ok(Label {
         kind,
-        lines,
+        line,
         equivalent,
         feature,
     })
@@ -1958,7 +1874,20 @@ pub(crate) fn emit(
     };
     check::check_on_model_for_export(model, pmi, Some(faces), emitter.dec)?;
     if !pmi.items.is_empty() {
-        emitter.standard();
+        let composite = pmi.items.iter().any(|item| {
+            matches!(
+                &item.kind,
+                ItemKind::Position(PositionControl {
+                    frame: PositionFrame::Composite { .. },
+                    ..
+                })
+            )
+        });
+        emitter.standard(if composite {
+            COMPOSITE_STANDARD
+        } else {
+            "ISO 1101:2017"
+        });
     }
     // A datum's feature is a DATUM_FEATURE whatever else is attached to it,
     // so datums come first.
@@ -2003,7 +1932,7 @@ pub(crate) fn emit(
                 let dimension = emitter
                     .graph
                     .add("DIMENSIONAL_SIZE", vec![target.into(), text(name)]);
-                emitter.semantic.insert(id.to_owned(), vec![dimension]);
+                emitter.semantic.insert(id.to_owned(), dimension);
                 sizes.insert(id, nominal().to_owned());
                 emitter.dimension(
                     dimension,

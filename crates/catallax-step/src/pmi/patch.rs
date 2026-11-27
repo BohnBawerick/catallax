@@ -147,9 +147,7 @@ impl<'a> Records<'a> {
             let id: u64 = text[i + 1..j]
                 .parse()
                 .map_err(|_| refuse(format!("a record at byte {i} has no number")))?;
-            while bytes.get(j).is_some_and(u8::is_ascii_whitespace) {
-                j += 1;
-            }
+            j = layout(bytes, j);
             if bytes.get(j) != Some(&b'=') {
                 return Err(refuse(format!("record #{id} has no `=`")));
             }

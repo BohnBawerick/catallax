@@ -18,14 +18,14 @@ use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
 use catallax_shapes::{Circle, Plane, Point3, RPoint3, RVector3, Vector3};
 use catallax_step::pmi::{
-    Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, Camera, ChamferNominal,
-    Characteristic, Datum, DatumRef, DatumTarget, EDGE_BREAK, FIRST_SIDE, Feature,
-    GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize,
-    INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location, MAX_SETBACK, MIN_SETBACK,
-    MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl, PositionFrame,
-    PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, SavedView, Size, SizeKind,
-    SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH,
-    TargetArea, TargetKind, WIDTH, off_face,
+    Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COMPOSITE_STANDARD, COUNTERBORE, COUNTERSINK,
+    Camera, ChamferNominal, Characteristic, Datum, DatumRef, DatumTarget, EDGE_BREAK, FIRST_SIDE,
+    Feature, GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead,
+    HoleSize, INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location, MAX_SETBACK,
+    MIN_SETBACK, MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl,
+    PositionFrame, PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, SavedView,
+    Size, SizeKind, SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD,
+    THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH, off_face,
 };
 
 use crate::ImportRefusal;
@@ -148,6 +148,20 @@ fn references(param: Option<&Param>) -> Vec<u64> {
     }
 }
 
+fn reference_list(param: Option<&Param>) -> Option<Vec<u64>> {
+    let Some(Param::List(items)) = param else {
+        return None;
+    };
+    if items.is_empty() {
+        return None;
+    }
+    let refs: Vec<_> = items
+        .iter()
+        .map(|item| reference(Some(item)))
+        .collect::<Option<_>>()?;
+    (refs.iter().collect::<BTreeSet<_>>().len() == refs.len()).then_some(refs)
+}
+
 fn collect_references(params: &[Param], out: &mut Vec<u64>) {
     for param in params {
         match param {
@@ -159,65 +173,54 @@ fn collect_references(params: &[Param], out: &mut Vec<u64>) {
 }
 
 /// A STEP string with its control directives decoded.
-fn decode(raw: &str) -> String {
+fn decode(raw: &str) -> Option<String> {
     let mut out = String::new();
     let mut rest = raw;
     while let Some(at) = rest.find('\\') {
         out.push_str(&rest[..at]);
         let tail = &rest[at..];
-        let hex = |width: usize, body: &str, out: &mut String| {
-            let digits: Vec<char> = body.chars().collect();
-            for chunk in digits.chunks(width) {
-                let text: String = chunk.iter().collect();
-                if let Some(c) = u32::from_str_radix(&text, 16).ok().and_then(char::from_u32) {
-                    out.push(c);
-                }
-            }
-        };
         if let Some(body) = tail.strip_prefix("\\\\") {
             out.push('\\');
             rest = body;
-        } else if let Some(body) = tail.strip_prefix("\\X2\\")
-            && let Some(end) = body.find("\\X0\\")
-        {
-            // UTF-16 code units, so a pair of surrogates is one character.
-            let units: Vec<u16> = body.as_bytes()[..end]
-                .chunks(4)
-                .filter_map(|chunk| u16::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok())
-                .collect();
-            out.push_str(&String::from_utf16_lossy(&units));
-            rest = &body[end + 4..];
-        } else if let Some(body) = tail.strip_prefix("\\X4\\")
-            && let Some(end) = body.find("\\X0\\")
-        {
-            hex(8, &body[..end], &mut out);
-            rest = &body[end + 4..];
-        } else if let Some(body) = tail.strip_prefix("\\X\\")
-            && body.len() >= 2
-            && body.is_char_boundary(2)
-        {
-            hex(2, &body[..2], &mut out);
-            rest = &body[2..];
-        } else if let Some(body) = tail.strip_prefix("\\S\\")
-            && let Some(c) = body.chars().next()
-        {
-            // ISO 8859-1 upper half: the character's code plus 128.
-            if let Some(c) = char::from_u32(c as u32 + 128) {
-                out.push(c);
+        } else if let Some(body) = tail.strip_prefix("\\PA\\") {
+            rest = body;
+        } else if let Some(body) = tail.strip_prefix("\\S\\") {
+            let character = *body.as_bytes().first()?;
+            if !(b' '..=b'~').contains(&character) {
+                return None;
             }
-            rest = &body[c.len_utf8()..];
+            out.push(char::from_u32(u32::from(character) + 128)?);
+            rest = &body[1..];
+        } else if let Some(body) = tail.strip_prefix("\\X\\") {
+            let code = u32::from_str_radix(body.get(..2)?, 16).ok()?;
+            out.push(char::from_u32(code)?);
+            rest = &body[2..];
         } else {
-            out.push('\\');
-            rest = &tail[1..];
+            let (width, body) = if let Some(body) = tail.strip_prefix("\\X2\\") {
+                (4, body)
+            } else if let Some(body) = tail.strip_prefix("\\X4\\") {
+                (8, body)
+            } else {
+                return None;
+            };
+            let (encoded, after) = body.split_once("\\X0\\")?;
+            if encoded.is_empty() || encoded.len() % width != 0 {
+                return None;
+            }
+            for chunk in encoded.as_bytes().chunks_exact(width) {
+                let code = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
+                out.push(char::from_u32(code)?);
+            }
+            rest = after;
         }
     }
     out.push_str(rest);
-    out
+    Some(out)
 }
 
 pub(crate) fn string(param: Option<&Param>) -> Option<String> {
     match param {
-        Some(Param::Str(text)) => Some(decode(text)),
+        Some(Param::Str(text)) => decode(text),
         _ => None,
     }
 }
@@ -248,11 +251,11 @@ fn coordinates(param: Option<&Param>) -> Option<[Rational; 3]> {
 }
 
 /// A datum reference compartment's modifier: its material boundary, or none.
-fn datum_boundary(param: Option<&Param>) -> Result<Option<MaterialCondition>, String> {
+fn datum_boundary(param: &Param) -> Result<Option<MaterialCondition>, String> {
     let items = match param {
-        None | Some(Param::Unset) => return Ok(None),
-        Some(Param::List(items)) => items,
-        Some(_) => return Err("a datum reference has an unreadable modifier".into()),
+        Param::Unset => return Ok(None),
+        Param::List(items) if !items.is_empty() => items,
+        _ => return Err("a datum reference has an unreadable modifier".into()),
     };
     let mut found = None;
     for item in items {
@@ -263,7 +266,6 @@ fn datum_boundary(param: Option<&Param>) -> Result<Option<MaterialCondition>, St
                     _ => return Err("a datum reference has an unreadable modifier".into()),
                 }
             }
-            Param::Enum(name) => name.as_str(),
             Param::Typed(kind, _) => return Err(format!("a datum reference has a {kind}")),
             _ => return Err("a datum reference has an unreadable modifier".into()),
         };
@@ -1287,46 +1289,90 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// The datum references a tolerance makes, primary first, each with the
-    /// `DATUM` entity it names.
-    fn datum_refs(&self, systems: &[u64]) -> Result<Vec<(DatumRef, u64)>, String> {
-        let mut found = Vec::new();
+    fn datum_refs(&self, systems: &[u64], owner: u64) -> Result<Vec<(DatumRef, u64)>, String> {
+        let resolve = |param| {
+            let datum = reference(param).ok_or("a datum reference names no datum")?;
+            let letter = self
+                .datum_letter(datum)
+                .ok_or("it refers to a common or unreadable datum")?;
+            if self
+                .entity(datum)
+                .and_then(|e| reference(e.parts[0].1.get(2)))
+                != Some(owner)
+            {
+                return Err("a datum reference belongs to another part");
+            }
+            Ok((letter, datum))
+        };
+        if let [system] = systems
+            && let Some(fields) = self
+                .entity(*system)
+                .filter(|entity| entity.parts.len() == 1)
+                .and_then(|entity| entity.part("DATUM_SYSTEM"))
+        {
+            if fields.len() != 5
+                || reference(fields.get(2)) != Some(owner)
+                || !matches!(fields.get(3), Some(Param::Enum(flag)) if flag == "F")
+            {
+                return Err("its datum system has an invalid shape or attributes".into());
+            }
+            let compartments = reference_list(fields.get(4))
+                .filter(|refs| refs.len() <= 3)
+                .ok_or("its datum system needs one to three distinct ordered compartments")?;
+            return compartments
+                .into_iter()
+                .map(|compartment| {
+                    let fields = self
+                        .entity(compartment)
+                        .filter(|entity| entity.parts.len() == 1)
+                        .and_then(|entity| entity.part("DATUM_REFERENCE_COMPARTMENT"))
+                        .ok_or("a datum reference is not a single compartment")?;
+                    let [_, _, shape, Param::Enum(flag), datum, modifiers] = fields else {
+                        return Err("a datum reference compartment has invalid attributes".into());
+                    };
+                    if reference(Some(shape)) != Some(owner)
+                        || !matches!(flag.as_str(), "T" | "F" | "U")
+                        || self.sharing_at(compartment, "DATUM_SYSTEM", 4).len() != 1
+                    {
+                        return Err(
+                            "a datum reference compartment has invalid attributes or ownership"
+                                .into(),
+                        );
+                    }
+                    let material = datum_boundary(modifiers)?;
+                    let (letter, datum) = resolve(Some(datum))?;
+                    Ok((DatumRef { letter, material }, datum))
+                })
+                .collect();
+        }
         let mut ranked = Vec::new();
         for system in systems {
-            let entity = self.entity(*system).ok_or("a datum reference is missing")?;
-            let params = entity.parts[0].1.as_slice();
-            match entity.type_name() {
-                "DATUM_SYSTEM" => {
-                    for compartment in references(params.get(4)) {
-                        let fields = self
-                            .entity(compartment)
-                            .filter(|e| e.type_name() == "DATUM_REFERENCE_COMPARTMENT")
-                            .map(|e| e.parts[0].1.as_slice())
-                            .ok_or("a datum reference is not a single compartment")?;
-                        let material = datum_boundary(fields.get(5))?;
-                        let datum = reference(fields.get(4))
-                            .filter(|datum| self.datum_letter(*datum).is_some())
-                            .ok_or("it refers to a common datum")?;
-                        let letter = self.datum_letter(datum).unwrap_or_default();
-                        found.push((DatumRef { letter, material }, datum));
-                    }
-                }
-                "DATUM_REFERENCE" => {
-                    let rank = number(params.first()).ok_or("a datum has no precedence")?;
-                    let datum = reference(params.get(1))
-                        .filter(|datum| self.datum_letter(*datum).is_some())
-                        .ok_or("a datum reference names no datum")?;
-                    ranked.push((rank, datum));
-                }
-                other => return Err(format!("it refers to datums through a {other}")),
-            }
+            let fields = self
+                .entity(*system)
+                .filter(|entity| entity.parts.len() == 1)
+                .and_then(|entity| entity.part("DATUM_REFERENCE"))
+                .ok_or("a tolerance needs one datum system or ranked datum references")?;
+            let [Param::Number(rank), datum] = fields else {
+                return Err("a legacy datum reference has invalid attributes".into());
+            };
+            let rank = rank
+                .parse::<usize>()
+                .map_err(|_| "a datum's precedence is not an integer")?;
+            let (letter, datum) = resolve(Some(datum))?;
+            ranked.push((rank, DatumRef::new(&letter), datum));
         }
-        ranked.sort();
-        found.extend(ranked.into_iter().map(|(_, datum)| {
-            let letter = self.datum_letter(datum).unwrap_or_default();
-            (DatumRef::new(&letter), datum)
-        }));
-        Ok(found)
+        ranked.sort_by_key(|(rank, _, _)| *rank);
+        if ranked
+            .iter()
+            .enumerate()
+            .any(|(index, (rank, _, _))| *rank != index + 1)
+        {
+            return Err("datum precedence must be distinct and start at one".into());
+        }
+        Ok(ranked
+            .into_iter()
+            .map(|(_, reference, datum)| (reference, datum))
+            .collect())
     }
 
     /// One geometric tolerance entity as the file states it.
@@ -1355,9 +1401,24 @@ impl<'a> Reader<'a> {
             None if simple => entity.parts[0].1.as_slice(),
             None => return Err("it has no tolerance values".into()),
         };
-        let systems = match entity.part("GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE") {
-            Some(params) => references(params.first()),
-            None if simple => references(base.get(4)),
+        let datum_part = entity.part("GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
+        let (base_count, datum_field) = match (simple, datum_part, characteristic.datum_use()) {
+            (true, None, catallax_step::pmi::DatumUse::Required) => (5, base.get(4)),
+            (true, None, _) => (4, None),
+            (false, Some([field]), _) => (4, Some(field)),
+            (false, None, catallax_step::pmi::DatumUse::Required) => {
+                return Err("it lacks its datum reference attributes".into());
+            }
+            (false, None, _) => (4, None),
+            _ => return Err("its datum reference has invalid attributes".into()),
+        };
+        if base.len() != base_count || (!simple && entity.part(own) != Some(&[])) {
+            return Err("its geometric tolerance has invalid attributes".into());
+        }
+        let systems = match datum_field {
+            Some(field) => {
+                reference_list(Some(field)).ok_or("it has an invalid datum reference aggregate")?
+            }
             None => Vec::new(),
         };
         let mut material = None;
@@ -1373,8 +1434,15 @@ impl<'a> Reader<'a> {
                 return Err("it has an unreadable modifier".into());
             };
             let modifiers = match modifiers {
-                Param::List(items) => items.as_slice(),
-                modifier => std::slice::from_ref(modifier),
+                Param::List(items)
+                    if part == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS" && !items.is_empty() =>
+                {
+                    items.as_slice()
+                }
+                Param::Enum(_) if part == "MODIFIED_GEOMETRIC_TOLERANCE" => {
+                    std::slice::from_ref(modifiers)
+                }
+                _ => return Err("it has an unreadable modifier".into()),
             };
             for modifier in modifiers {
                 let Param::Enum(name) = modifier else {
@@ -1410,20 +1478,43 @@ impl<'a> Reader<'a> {
             Some(_) if self.aspect_params(target).is_some() => target,
             _ => return Err("it is not attached to a feature".into()),
         };
-        let zones = self
-            .sharing
-            .get(&id)
-            .into_iter()
-            .flatten()
-            .filter_map(|user| {
-                let zone = self.entity(*user)?;
-                let fields = zone.part("TOLERANCE_ZONE")?;
-                let defining = if zone.parts.len() == 1 { 4 } else { 0 };
-                references(fields.get(defining))
-                    .contains(&id)
-                    .then_some((*user, reference(fields.get(defining + 1))))
-            })
-            .collect::<Vec<_>>();
+        let datums = if systems.is_empty() {
+            Vec::new()
+        } else {
+            let owner = self
+                .aspect_params(target)
+                .and_then(|fields| reference(fields.get(2)))
+                .ok_or("the controlled feature has no owning part")?;
+            self.datum_refs(&systems, owner)?
+        };
+        let mut zones = Vec::new();
+        for user in self.sharing.get(&id).into_iter().flatten() {
+            let Some(zone) = self.entity(*user) else {
+                continue;
+            };
+            let Some(fields) = zone.part("TOLERANCE_ZONE") else {
+                continue;
+            };
+            let defining = if zone.parts.len() == 1 { 4 } else { 0 };
+            if !references(fields.get(defining)).contains(&id) {
+                continue;
+            }
+            let members = reference_list(fields.get(defining))
+                .ok_or("its zone has an invalid defining tolerance list")?;
+            if fields.len() != defining + 2
+                || members.into_iter().any(|member| {
+                    self.entity(member).is_none_or(|entity| {
+                        !entity.parts.iter().any(|(kind, _)| {
+                            kind == "GEOMETRIC_TOLERANCE"
+                                || Characteristic::of_entity(kind).is_some()
+                        })
+                    })
+                })
+            {
+                return Err("its zone has an invalid defining tolerance list".into());
+            }
+            zones.push((*user, reference(fields.get(defining + 1))));
+        }
         if zones.len() > 1 {
             return Err("it has more than one tolerance zone".into());
         }
@@ -1453,7 +1544,7 @@ impl<'a> Reader<'a> {
             value,
             zone_form,
             material,
-            datums: self.datum_refs(&systems)?,
+            datums,
             target,
             projected,
             name,
@@ -1669,6 +1760,7 @@ impl<'a> Reader<'a> {
             let intersection: [Rational; 3] =
                 std::array::from_fn(|i| &axis.origin[i] + &(&offset * &axis.axis[i]));
             self.check_open_entry(face, &intersection, normal)?;
+            self.check_inward_trim(&edges, point, normal)?;
             entry_faces.push((*face).clone());
         }
         if starts.iter().any(|face| !entry_faces.contains(face)) {
@@ -1679,6 +1771,57 @@ impl<'a> Reader<'a> {
             direction: direction.ok_or("the position control names no feature")?,
             entry_faces,
         })
+    }
+
+    fn check_inward_trim(
+        &self,
+        edges: &BTreeSet<u64>,
+        origin: &[Rational; 3],
+        normal: &[Rational; 3],
+    ) -> Result<(), String> {
+        let unknown = "the cylinder's axial trim cannot be checked";
+        let mut inward = false;
+        let mut check = |point: &[Rational; 3]| -> Result<(), String> {
+            let distance = dot3(&sub3(point, origin), normal);
+            if distance > Rational::zero() {
+                return Err("the projected zone points back into its controlled cylinder".into());
+            }
+            inward |= distance < Rational::zero();
+            Ok(())
+        };
+        for id in edges {
+            let edge = self
+                .entity(*id)
+                .and_then(|entity| entity.part("EDGE_CURVE"))
+                .ok_or(unknown)?;
+            let curve = self
+                .trim_curve(reference(edge.get(3)).ok_or(unknown)?)
+                .ok_or(unknown)?;
+            if curve.part("LINE").is_some() {
+                for vertex in [edge.get(1), edge.get(2)] {
+                    let point = reference(vertex)
+                        .and_then(|id| self.entity(id)?.part("VERTEX_POINT"))
+                        .and_then(|fields| reference(fields.get(1)))
+                        .and_then(|id| self.point_coordinates(id))
+                        .ok_or(unknown)?;
+                    check(&point)?;
+                }
+            } else {
+                let circle = curve
+                    .part("CIRCLE")
+                    .and_then(|p| reference(p.get(1)))
+                    .and_then(|id| self.placement(id))
+                    .ok_or(unknown)?;
+                if !is_zero3(&cross3(&circle.axis, normal)) {
+                    return Err(unknown.into());
+                }
+                check(&circle.origin)?;
+            }
+        }
+        if !inward {
+            return Err(unknown.into());
+        }
+        Ok(())
     }
 
     fn check_open_entry(
@@ -1802,6 +1945,44 @@ impl<'a> Reader<'a> {
         })
     }
 
+    fn has_composite_standard(&self, target: u64) -> bool {
+        let Some(product) = self
+            .aspect_params(target)
+            .and_then(|p| reference(p.get(2)))
+            .and_then(|shape| self.entity(shape)?.part("PRODUCT_DEFINITION_SHAPE"))
+            .and_then(|shape| reference(shape.get(2)))
+        else {
+            return false;
+        };
+        let mut standards = BTreeSet::new();
+        for (_, fields) in self.sharing_at(product, "PRODUCT_DEFINITION_CONTEXT_ASSOCIATION", 0) {
+            let Some(context) = reference(fields.get(1)) else {
+                continue;
+            };
+            let application = self
+                .entity(context)
+                .and_then(|e| e.part("PRODUCT_DEFINITION_CONTEXT"))
+                .and_then(|p| reference(p.get(1)))
+                .and_then(|id| self.entity(id)?.part("APPLICATION_CONTEXT"))
+                .and_then(|p| string(p.first()));
+            if application.as_deref()
+                != Some("geometrical dimensioning and tolerancing representation")
+            {
+                continue;
+            }
+            for (_, fields) in self.sharing_at(context, "APPLIED_DOCUMENT_REFERENCE", 2) {
+                let Some(name) = reference(fields.first())
+                    .and_then(|id| self.entity(id)?.part("DOCUMENT"))
+                    .and_then(|p| string(p.first()))
+                else {
+                    return false;
+                };
+                standards.insert(name);
+            }
+        }
+        standards.len() == 1 && standards.contains(COMPOSITE_STANDARD)
+    }
+
     /// A composite position frame: the upper segment `id` and the lower one
     /// its `composite` relationship names (section 6.9.9).
     fn composite(
@@ -1824,6 +2005,12 @@ impl<'a> Reader<'a> {
             .map_err(|reason| format!("its lower segment #{lower}: {reason}"))?;
         if upper.projected.is_some() || lower.projected.is_some() {
             return Err("a composite frame with a projected zone is not read".into());
+        }
+        if !self.has_composite_standard(upper.target) || !self.has_composite_standard(lower.target)
+        {
+            return Err(format!(
+                "a composite position frame requires a part declaration of {COMPOSITE_STANDARD}"
+            ));
         }
         let features = self.position_features(upper.target)?;
         if lower.target != upper.target && self.features(lower.target, 0)? != features {
@@ -1958,6 +2145,16 @@ impl<'a> Reader<'a> {
         self.context_millimetres(reference(fields.get(2))?)
     }
 
+    fn trim_curve(&self, id: u64) -> Option<&'a Entity> {
+        let mut curve = self.entity(id)?;
+        for wrapper in ["SURFACE_CURVE", "SEAM_CURVE"] {
+            if let Some(params) = curve.part(wrapper) {
+                curve = self.entity(reference(params.get(1))?)?;
+            }
+        }
+        Some(curve)
+    }
+
     /// The complete trim of a planar face from the file's own edge records,
     /// in millimetres, or `None` when an edge is not a line or a circle.
     fn face_boundary(&self, face: &str, scale: &Rational) -> Option<PlanarBoundary> {
@@ -2011,12 +2208,7 @@ impl<'a> Reader<'a> {
                     Some(Param::Enum(sense)) if sense == "F" => false,
                     _ => return None,
                 };
-                let mut curve = self.entity(reference(edge.get(3))?)?;
-                for wrapper in ["SURFACE_CURVE", "SEAM_CURVE"] {
-                    if let Some(params) = curve.part(wrapper) {
-                        curve = self.entity(reference(params.get(1))?)?;
-                    }
-                }
+                let curve = self.trim_curve(reference(edge.get(3))?)?;
                 if curve.part("LINE").is_some() {
                     edges.push(PlanarEdge::Segment(ends));
                 } else {
@@ -2051,7 +2243,7 @@ impl<'a> Reader<'a> {
     }
 
     /// The equivalent Unicode string a callout's validation property states.
-    fn callout_text(&self, callout: u64) -> Option<String> {
+    fn callout_text(&self, callout: u64) -> Result<Option<String>, String> {
         for (within, _) in self.sharing_at(callout, "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION", 2) {
             for (property, _) in self.sharing_at(within, "PROPERTY_DEFINITION", 2) {
                 for (_, link) in self.sharing_at(property, "PROPERTY_DEFINITION_REPRESENTATION", 0)
@@ -2068,13 +2260,13 @@ impl<'a> Reader<'a> {
                             && string(fields.first()).as_deref()
                                 == Some("equivalent unicode string")
                         {
-                            return string(fields.get(1));
+                            return string(fields.get(1)).map(Some).ok_or_else(|| "the callout equivalent text has an unsupported STEP encoding or is missing".into());
                         }
                     }
                 }
             }
         }
-        None
+        Ok(None)
     }
 
     fn point_coordinates(&self, id: u64) -> Option<[Rational; 3]> {
@@ -2143,8 +2335,13 @@ impl<'a> Reader<'a> {
 
     fn annotation_plane(&self, id: u64, scale: &Rational) -> Option<GraphicPlane> {
         let plane = self.entity(id)?.part("ANNOTATION_PLANE")?;
-        let surface = self.entity(reference(plane.get(2))?)?.part("PLANE")?;
-        let frame = self.placement(reference(surface.get(1))?)?;
+        let carrier = self.entity(reference(plane.get(2))?)?;
+        let placement = if let Some(surface) = carrier.part("PLANE") {
+            reference(surface.get(1))?
+        } else {
+            reference(carrier.part("PLANAR_BOX")?.get(3))?
+        };
+        let frame = self.placement(placement)?;
         let reference = placement_reference(&frame.axis, frame.reference)?;
         (!is_zero3(&cross3(&frame.axis, &reference))).then(|| GraphicPlane {
             origin_mm: frame.origin.map(|value| &value * scale),
@@ -2236,8 +2433,8 @@ impl<'a> Reader<'a> {
     }
 
     /// The saved views and graphic callouts of the file. A callout whose
-    /// association names a read item, or the private aspect of a read surface
-    /// texture, presents that item and is not listed again as graphics.
+    /// association names a read item presents that item and is not listed
+    /// again as graphics.
     fn presentation(
         &self,
         items: &[(u64, Item<String>)],
@@ -2301,25 +2498,9 @@ impl<'a> Reader<'a> {
                         linked.push((*name).to_owned());
                         continue;
                     }
-                    if let Some(params) = self.aspect_params(definition) {
-                        let Ok(features) = self.features(definition, 0) else {
-                            continue;
-                        };
-                        let mut feature: Feature<String> = features.into_iter().flatten().collect();
-                        feature.sort();
-                        feature.dedup();
-                        let name = string(params.first()).unwrap_or_default();
-                        if let Some((_, texture)) = items.iter().find(|(_, texture)| {
-                            texture.id == name
-                                && matches!(&texture.kind, ItemKind::Texture(t) if {
-                                    let mut attached = t.feature.clone();
-                                    attached.sort();
-                                    attached == feature
-                                })
-                        }) {
-                            linked.push(texture.id.clone());
-                        } else {
-                            faces.extend(feature);
+                    if self.aspect_params(definition).is_some() {
+                        if let Ok(features) = self.features(definition, 0) {
+                            faces.extend(features.into_iter().flatten());
                         }
                     } else if presents.is_none() {
                         presents = Some(format!("#{definition}"));
@@ -2335,6 +2516,20 @@ impl<'a> Reader<'a> {
                         .into_iter()
                         .map(|(id, _)| id),
                 );
+            }
+            let mut equivalent = None;
+            for &id in &subjects {
+                match self.callout_text(id) {
+                    Ok(Some(text)) => {
+                        equivalent.get_or_insert(text);
+                    }
+                    Ok(None) => {}
+                    Err(reason) => skipped.push(SkippedPmi {
+                        entity: format!("#{callout}"),
+                        kind: entity.type_name().into(),
+                        reason,
+                    }),
+                }
             }
             if !linked.is_empty() {
                 presented.insert(callout, linked);
@@ -2388,7 +2583,7 @@ impl<'a> Reader<'a> {
                     entity: format!("#{callout}"),
                     name: string(params.first()).unwrap_or_default(),
                     kind,
-                    text: subjects.iter().find_map(|&id| self.callout_text(id)),
+                    text: equivalent,
                     faces: (!faces.is_empty()).then_some(faces),
                     presents,
                     polylines_mm,
@@ -2398,6 +2593,7 @@ impl<'a> Reader<'a> {
             );
         }
         let mut views: Vec<SavedView> = Vec::new();
+        let mut view_names = BTreeSet::new();
         for (&model, entity) in self.g {
             if entity.type_name() != "DRAUGHTING_MODEL" || entity.parts.len() != 1 {
                 continue;
@@ -2450,16 +2646,6 @@ impl<'a> Reader<'a> {
                 continue;
             };
             for camera in cameras {
-                let camera_name = self
-                    .entity(camera)
-                    .and_then(|camera| string(camera.parts[0].1.first()))
-                    .filter(|name| !name.is_empty());
-                let mut name = camera_name
-                    .or_else(|| string(params.first()))
-                    .unwrap_or_default();
-                if views.iter().any(|view| view.name == name) {
-                    name = format!("{name} ({})", string(params.first()).unwrap_or_default());
-                }
                 let camera_record = match self.camera(camera, &scale) {
                     Ok(camera) => camera,
                     Err(reason) => {
@@ -2471,6 +2657,19 @@ impl<'a> Reader<'a> {
                         continue;
                     }
                 };
+                let base = self
+                    .entity(camera)
+                    .and_then(|entity| string(entity.parts[0].1.first()))
+                    .filter(|name| !name.trim().is_empty())
+                    .or_else(|| string(params.first()).filter(|name| !name.trim().is_empty()))
+                    .unwrap_or_else(|| format!("View #{camera}"));
+                let mut name = base.clone();
+                for index in 2.. {
+                    if view_names.insert(name.clone()) {
+                        break;
+                    }
+                    name = format!("{base} ({index})");
+                }
                 let mut view_items: Vec<String> = Vec::new();
                 for callout in &shown {
                     if let Some(items) = presented.get(callout) {
@@ -2526,7 +2725,8 @@ impl<'a> Reader<'a> {
             .and_then(|entity| entity.part("DESCRIPTIVE_REPRESENTATION_ITEM"))
             .ok_or("its text holds an item that is not a string")?;
         let name = string(fields.first()).ok_or("its text has no variable name")?;
-        let text = string(fields.get(1)).ok_or("its text is missing")?;
+        let text = string(fields.get(1))
+            .ok_or("its text has an unsupported STEP encoding or is missing")?;
         let feature = self.one_feature(target)?;
         let kind = match name.as_str() {
             "" => ItemKind::FaceNote { text, feature },
@@ -3243,21 +3443,9 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
     }
     let records = Records::parse(bytes)?;
     let graph = parse(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    let shapes: BTreeMap<_, _> = graph
-        .iter()
-        .filter_map(|(&id, entity)| {
-            let shape = entity.part("PRODUCT_DEFINITION_SHAPE")?;
-            let definition = reference(shape.get(2))?;
-            graph.get(&definition)?.part("PRODUCT_DEFINITION")?;
-            Some((id, definition))
-        })
-        .collect();
-    let scoped = |graph: &Graph| {
-        read_assembly_pmi(graph, &shapes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))
-    };
     let reader = Reader::new(&graph);
-    let mut patch = Patch::new(&records);
-    let mut expected = scoped(&graph)?;
+    let mut selected = BTreeMap::new();
+    let mut edits_by_id = Vec::with_capacity(edits.len());
     let mut edited = BTreeSet::new();
     for PmiEdit::ToleranceValue { source, value } in edits {
         let root: u64 = source
@@ -3268,11 +3456,54 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             return Err(patch_refusal(format!("{source}: it is edited twice")));
         }
         let owners = reader.owner_shapes(root);
-        let part = owners
+        let owner = owners
             .first()
+            .copied()
             .filter(|_| owners.len() == 1)
-            .and_then(|owner| expected.get_mut(owner))
             .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
+        let product = reader
+            .entity(owner)
+            .and_then(|shape| shape.part("PRODUCT_DEFINITION_SHAPE"))
+            .and_then(|shape| reference(shape.get(2)))
+            .filter(|id| reader.has(*id, "PRODUCT_DEFINITION"))
+            .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
+        selected.insert(owner, product);
+        edits_by_id.push((root, owner, source, value));
+    }
+    let scoped = |reader: &Reader<'_>| {
+        let mut candidates = BTreeMap::<_, Vec<_>>::new();
+        for item in reader
+            .g
+            .iter()
+            .filter_map(|(&id, entity)| candidate(id, entity))
+        {
+            let owners = reader.owner_shapes(item.id);
+            if let Some(owner) = owners
+                .first()
+                .copied()
+                .filter(|owner| owners.len() == 1 && selected.contains_key(owner))
+            {
+                candidates.entry(owner).or_default().push(item);
+            }
+        }
+        selected
+            .iter()
+            .map(|(&owner, &product)| {
+                (
+                    owner,
+                    read_items(
+                        reader,
+                        candidates.remove(&owner).unwrap_or_default(),
+                        Some((product, owner)),
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let mut patch = Patch::new(&records);
+    let mut expected = scoped(&reader);
+    for (root, owner, source, value) in edits_by_id {
+        let part = expected.get_mut(&owner).expect("selected part was read");
         let (item, _) = part
             .sources
             .iter()
@@ -3318,6 +3549,9 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             .part("GEOMETRIC_TOLERANCE")
             .unwrap_or(entity.parts[0].1.as_slice());
         let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
+        if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {
+            return Err(refuse_dependency(user));
+        }
         let measure = &graph[&magnitude];
         let (true, [select, Param::Ref(unit)]) = (
             measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
@@ -3341,14 +3575,12 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             "LENGTH_MEASURE_WITH_UNIT({kind}({written}),#{unit})"
         ))?;
         patch.rewrite(root, records.replace_reference(root, magnitude, fresh)?);
-        if records.users(magnitude) == [root] {
-            patch.remove(magnitude);
-        }
+        patch.remove(magnitude);
         tolerance.value = value.clone();
     }
     let out = patch.apply(&records);
     let graph = parse(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    if scoped(&graph)? != expected {
+    if scoped(&Reader::new(&graph)) != expected {
         return Err(patch_refusal(
             "the patched file does not read back as the edited PMI",
         ));
@@ -3372,11 +3604,18 @@ mod tests {
 
     #[test]
     fn strings_decode_their_control_directives() {
-        assert_eq!(decode("plain"), "plain");
-        assert_eq!(decode("a\\\\b"), "a\\b");
-        assert_eq!(decode("\\X2\\00D8\\X0\\8 H7"), "\u{d8}8 H7");
-        assert_eq!(decode("\\X\\D8"), "\u{d8}");
-        assert_eq!(decode("\\S\\X"), "\u{d8}");
-        assert_eq!(decode("\\X4\\0001F600\\X0\\"), "\u{1f600}");
+        for (encoded, decoded) in [
+            ("plain", "plain"),
+            (r"a\\b", r"a\b"),
+            (r"\X2\00D8\X0\8 H7", "Ø8 H7"),
+            (r"\X\D8", "Ø"),
+            (r"\S\X", "Ø"),
+            (r"\PA\\S\X", "Ø"),
+            (r"\X4\0001F600\X0\", "😀"),
+        ] {
+            assert_eq!(decode(encoded).as_deref(), Some(decoded));
+        }
+        assert_eq!(decode(r"\PE\\S\*\S\U\S\b"), None);
+        assert_eq!(decode(r"\X2\D83DDE00\X0\"), None);
     }
 }

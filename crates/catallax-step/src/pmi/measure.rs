@@ -13,7 +13,7 @@ use super::{Anchor, At, Feature, HoleHead, Item, ItemKind, Pmi, Size, SizeKind};
 use crate::number::{self, sqrt_real};
 
 /// What a feature is for measuring.
-enum Shape {
+pub(super) enum Shape {
     Plane {
         point: Point3,
         normal: Vector3,
@@ -30,7 +30,7 @@ fn refuse(item: &str, what: impl std::fmt::Display) -> Refusal {
     Refusal::new("step.pmi-not-measurable", format!("{item}: {what}"))
 }
 
-fn is_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn is_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(_) => Ok(false),
         Outcome::ProvenCoincident(_) => Ok(true),
@@ -39,7 +39,7 @@ fn is_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     }
 }
 
-fn is_positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn is_positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(sign) => Ok(sign == StrictSign::Positive),
         Outcome::ProvenCoincident(_) => Ok(false),
@@ -48,7 +48,7 @@ fn is_positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     }
 }
 
-fn is_zero_vector(value: &Vector3, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn is_zero_vector(value: &Vector3, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(is_zero(&value.x, dec)? && is_zero(&value.y, dec)? && is_zero(&value.z, dec)?)
 }
 
@@ -101,7 +101,7 @@ fn coincident(a: &Shape, b: &Shape, dec: &mut Decider) -> Result<bool, Refusal> 
 }
 
 /// The one shape all faces of a feature lie on.
-fn feature_shape(
+pub(super) fn feature_shape(
     model: &Model,
     feature: &[FaceId],
     item: &str,
@@ -393,12 +393,12 @@ fn hole_size(
     Ok(diameter)
 }
 
-struct OrientedPlane {
-    point: Point3,
-    normal: Vector3,
+pub(super) struct OrientedPlane {
+    pub(super) point: Point3,
+    pub(super) normal: Vector3,
 }
 
-fn oriented_plane(
+pub(super) fn oriented_plane(
     model: &Model,
     feature: &[FaceId],
     item: &str,
@@ -438,7 +438,7 @@ fn oriented_plane(
     Ok(first)
 }
 
-fn face_edges(model: &Model, face: FaceId) -> impl Iterator<Item = EdgeId> + '_ {
+pub(super) fn face_edges(model: &Model, face: FaceId) -> impl Iterator<Item = EdgeId> + '_ {
     model
         .face(face)
         .loops
@@ -620,7 +620,11 @@ pub(super) fn dimension(
             )?
             .into()
         }
-        ItemKind::Datum(_) | ItemKind::Tolerance(_) | ItemKind::Texture(_) => return Ok(None),
+        ItemKind::Datum(_)
+        | ItemKind::Tolerance(_)
+        | ItemKind::Texture(_)
+        | ItemKind::DatumTarget(_)
+        | ItemKind::Position(_) => return Ok(None),
     };
     Ok(Some(Measured { value, bevel_angle }))
 }

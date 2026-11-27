@@ -193,6 +193,20 @@ reads that file's datums, dimensions, tolerances and notes on the same faces as
 before, plus the finish as a presentation on the bore. That check runs in
 SolidDraft's CI, not here.
 
+A second fixture on the same bracket model writes datum A on the underside
+with a point, a line, a circular and a rectangular target, a composite
+position on the bolt holes, and two projected zones: one up out of the boss
+top on the bore, one down out of the underside on the bolt holes. The read-back
+names each target's face, number, point and sizes. Each segment of the
+composite keeps its order, its own material condition and its own datum
+boundaries. Each zone keeps its entry faces, height and outward sense. The
+file must count four tolerances, one composite and four targets, and a second
+write of what was read must read back the same. A separate test refuses each
+malformed frame, zone and target before writing, including targets that cross
+a hole or the face edge. Another changes the written file and checks that a bad
+target drops its datum and the controls that need that datum, while the
+independent items stay.
+
 ## Exact oracles
 
 `verify_exact.py` uses Python's standard-library `fractions.Fraction` only. It independently checks the 170-entity count, the squared rounding-distance bound `1/30000000000`, the large-coordinate error `10^13/3`, a rational alternating-series enclosure of `atan(3/4)`, the two adjacent decimals around `sqrt(2)`, the named quaternion matrix and the intersection equations.

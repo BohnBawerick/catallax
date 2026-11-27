@@ -311,9 +311,8 @@ pub fn read_step_assembly(
             for item in &pmi.pmi.items {
                 if item
                     .kind
-                    .features()
+                    .faces()
                     .into_iter()
-                    .flatten()
                     .any(|face| !faces.contains(face.as_str()))
                 {
                     return Err(invalid(format!(

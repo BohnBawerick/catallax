@@ -25,8 +25,9 @@ use catallax_topology::{FaceId, Loop, Model};
 
 use super::callout::{self, presented};
 use super::{
-    Anchor, At, Feature, GeometricTolerance, HoleHead, HoleSize, ItemKind, Limits,
-    MaterialCondition, Pmi, Size, SizeKind, SurfaceTexture, measure,
+    Anchor, At, DatumRef, DatumTarget, Feature, GeometricTolerance, HoleHead, HoleSize, ItemKind,
+    Limits, MaterialCondition, Pmi, PositionControl, PositionFrame, PositionSegment, Size,
+    SizeKind, SurfaceTexture, TargetArea, TargetKind, check, measure,
 };
 use crate::document::PartReferences;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
@@ -70,6 +71,46 @@ pub const BEVEL_ANGLE: &str = "bevel angle";
 pub const MIN_SETBACK: &str = "minimum setback";
 /// The upper setback bound of an edge break.
 pub const MAX_SETBACK: &str = "maximum setback";
+/// The name of the relationship from an upper composite segment to its lower
+/// one (recommended practices, section 6.9.9).
+pub const COMPOSITE: &str = "composite";
+/// The description of the relationship from a datum target to its datum.
+pub const DATUM_TARGET: &str = "datum target";
+/// The name of a datum target's placement (section 6.6.1, table 10).
+pub const ORIENTATION: &str = "orientation";
+/// The length of a line or rectangular datum target.
+pub const TARGET_LENGTH: &str = "target length";
+/// The width of a rectangular datum target.
+pub const TARGET_WIDTH: &str = "target width";
+/// The diameter of a circular datum target.
+pub const TARGET_DIAMETER: &str = "target diameter";
+
+/// The AP242 modifier of a material condition or boundary.
+fn modifier(material: MaterialCondition) -> &'static str {
+    match material {
+        MaterialCondition::Maximum => ".MAXIMUM_MATERIAL_REQUIREMENT.",
+        MaterialCondition::Least => ".LEAST_MATERIAL_REQUIREMENT.",
+    }
+}
+
+/// The letter a drawing circles for a material condition or boundary.
+fn letter(material: MaterialCondition) -> &'static str {
+    match material {
+        MaterialCondition::Maximum => "M",
+        MaterialCondition::Least => "L",
+    }
+}
+
+/// A nonzero exact vector square to `normal`, for the reference direction of
+/// a point or circle target, which has no direction of its own.
+fn perpendicular(normal: &[Rational; 3]) -> [Rational; 3] {
+    let [x, y, _] = normal;
+    if x.is_zero() && y.is_zero() {
+        [Rational::one(), Rational::zero(), Rational::zero()]
+    } else {
+        [&Rational::zero() - y, x.clone(), Rational::zero()]
+    }
+}
 
 enum Nominal<'a> {
     Length(&'a str),
@@ -153,7 +194,7 @@ struct Emitter<'a> {
     groups: BTreeMap<Vec<Vec<FaceId>>, Id>,
     centres: BTreeMap<Vec<FaceId>, Id>,
     datums: BTreeMap<String, Id>,
-    systems: BTreeMap<Vec<String>, Id>,
+    systems: BTreeMap<Vec<(String, u8)>, Id>,
     micrometre: Option<Id>,
     degree: Option<Id>,
     presentation: Option<Presentation>,
@@ -562,18 +603,40 @@ impl Emitter<'_> {
         Ok(())
     }
 
-    fn system(&mut self, letters: &[String], item: &str) -> Result<Id, Refusal> {
-        if let Some(id) = self.systems.get(letters) {
+    /// The one datum system of a sequence of references. A reference with a
+    /// material boundary is a compartment of its own, so `A|B` and `A|B(M)`
+    /// are different systems (recommended practices, section 6.9.7).
+    fn system(&mut self, datums: &[DatumRef], item: &str) -> Result<Id, Refusal> {
+        let key: Vec<(String, u8)> = datums
+            .iter()
+            .map(|datum| {
+                let boundary = match datum.material {
+                    None => 0,
+                    Some(MaterialCondition::Maximum) => 1,
+                    Some(MaterialCondition::Least) => 2,
+                };
+                (datum.letter.clone(), boundary)
+            })
+            .collect();
+        if let Some(id) = self.systems.get(&key) {
             return Ok(*id);
         }
-        let mut compartments = Vec::with_capacity(letters.len());
-        for letter in letters {
+        let mut compartments = Vec::with_capacity(datums.len());
+        for reference in datums {
+            let letter = &reference.letter;
             let datum = *self.datums.get(letter).ok_or_else(|| {
                 Refusal::new(
                     "step.pmi-invalid",
                     format!("{item}: datum {letter} is not defined"),
                 )
             })?;
+            let modifiers = match reference.material {
+                None => text("$"),
+                Some(material) => Field::List(vec![Field::Typed(
+                    "SIMPLE_DATUM_REFERENCE_MODIFIER",
+                    vec![text(modifier(material))],
+                )]),
+            };
             compartments.push(self.graph.add(
                 "DATUM_REFERENCE_COMPARTMENT",
                 vec![
@@ -582,21 +645,28 @@ impl Emitter<'_> {
                     self.references.product.shape.into(),
                     boolean(false),
                     datum.into(),
-                    text("$"),
+                    modifiers,
                 ],
             ));
         }
+        let name: Vec<String> = datums
+            .iter()
+            .map(|datum| match datum.material {
+                None => datum.letter.clone(),
+                Some(material) => format!("{}({})", datum.letter, letter(material)),
+            })
+            .collect();
         let id = self.graph.add(
             "DATUM_SYSTEM",
             vec![
-                quoted(&letters.join("|")),
+                quoted(&name.join("|")),
                 text("''"),
                 self.references.product.shape.into(),
                 boolean(false),
                 refs(compartments),
             ],
         );
-        self.systems.insert(letters.to_vec(), id);
+        self.systems.insert(key, id);
         Ok(id)
     }
 
@@ -606,38 +676,64 @@ impl Emitter<'_> {
         item: &str,
     ) -> Result<(), Refusal> {
         let target = self.target(&tolerance.features, item)?;
-        let magnitude = self.length(&tolerance.value, item)?;
+        let datums: Vec<DatumRef> = tolerance
+            .datums
+            .iter()
+            .map(|letter| DatumRef::new(letter))
+            .collect();
+        self.geometric(
+            tolerance.characteristic,
+            &tolerance.value,
+            tolerance.diameter_zone,
+            tolerance.material,
+            &datums,
+            target,
+            item,
+        )?;
+        Ok(())
+    }
+
+    /// One geometric tolerance entity on `target`, and its cylindrical zone
+    /// if it has one.
+    #[allow(clippy::too_many_arguments)]
+    fn geometric(
+        &mut self,
+        characteristic: super::Characteristic,
+        value: &Rational,
+        diameter_zone: bool,
+        material: Option<MaterialCondition>,
+        datums: &[DatumRef],
+        target: Id,
+        item: &str,
+    ) -> Result<(Id, Option<Id>), Refusal> {
+        let magnitude = self.length(value, item)?;
         let base = vec![quoted(item), text("''"), magnitude.into(), target.into()];
-        let entity = tolerance.characteristic.entity();
+        let entity = characteristic.entity();
         // An entity with one leaf type is a plain instance: every form
         // tolerance, and a characteristic that always has datums, whose
         // entity is a subtype of the one that holds them. Several leaf
         // types make a complex instance.
-        let datums_inherited = tolerance.characteristic.datum_use() == super::DatumUse::Required;
-        let id = if tolerance.datums.is_empty() && tolerance.material.is_none() {
+        let datums_inherited = characteristic.datum_use() == super::DatumUse::Required;
+        let id = if datums.is_empty() && material.is_none() {
             self.root(entity, base)
-        } else if datums_inherited && tolerance.material.is_none() {
-            let system = self.system(&tolerance.datums, item)?;
+        } else if datums_inherited && material.is_none() {
+            let system = self.system(datums, item)?;
             let mut fields = base;
             fields.push(refs([system]));
             self.root(entity, fields)
         } else {
             let mut parts = vec![("GEOMETRIC_TOLERANCE", base), (entity, vec![])];
-            if !tolerance.datums.is_empty() {
-                let system = self.system(&tolerance.datums, item)?;
+            if !datums.is_empty() {
+                let system = self.system(datums, item)?;
                 parts.push((
                     "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE",
                     vec![refs([system])],
                 ));
             }
-            if let Some(material) = tolerance.material {
-                let modifier = match material {
-                    MaterialCondition::Maximum => ".MAXIMUM_MATERIAL_REQUIREMENT.",
-                    MaterialCondition::Least => ".LEAST_MATERIAL_REQUIREMENT.",
-                };
+            if let Some(material) = material {
                 parts.push((
                     "GEOMETRIC_TOLERANCE_WITH_MODIFIERS",
-                    vec![Field::List(vec![text(modifier)])],
+                    vec![Field::List(vec![text(modifier(material))])],
                 ));
             }
             parts.sort_by_key(|part| part.0);
@@ -645,12 +741,12 @@ impl Emitter<'_> {
             self.roots.push(id);
             id
         };
-        if tolerance.diameter_zone {
+        let zone = if diameter_zone {
             let form = self.graph.add(
                 "TOLERANCE_ZONE_FORM",
                 vec![text("'cylindrical or circular'")],
             );
-            self.root(
+            Some(self.root(
                 "TOLERANCE_ZONE",
                 vec![
                     text("''"),
@@ -660,8 +756,214 @@ impl Emitter<'_> {
                     refs([id]),
                     form.into(),
                 ],
-            );
+            ))
+        } else {
+            None
+        };
+        Ok((id, zone))
+    }
+
+    fn segment(
+        &mut self,
+        segment: &PositionSegment,
+        target: Id,
+        item: &str,
+    ) -> Result<(Id, Option<Id>), Refusal> {
+        self.geometric(
+            super::Characteristic::Position,
+            &segment.value_mm,
+            segment.diameter_zone,
+            segment.material,
+            &segment.datums,
+            target,
+            item,
+        )
+    }
+
+    /// A position control (recommended practices, sections 6.9.2.2 and
+    /// 6.9.9). Both segments of a composite are position tolerances on one
+    /// aspect, related upper to lower by a `composite` relationship. A
+    /// projected zone starts on an aspect of the entry faces.
+    fn position(&mut self, control: &PositionControl<FaceId>, item: &str) -> Result<(), Refusal> {
+        let target = self.target(&control.features, item)?;
+        match &control.frame {
+            PositionFrame::Single {
+                segment,
+                projected_zone,
+            } => {
+                let (_, zone) = self.segment(segment, target, item)?;
+                if let Some(projection) = projected_zone {
+                    let zone = zone.ok_or_else(|| {
+                        Refusal::new(
+                            "step.pmi-invalid",
+                            format!("{item}: a projected zone needs a cylindrical zone"),
+                        )
+                    })?;
+                    let mut entries = projection.entry_faces.clone();
+                    entries.sort();
+                    entries.dedup();
+                    let end = self.aspect(&entries, item)?;
+                    let height = self.length(&projection.height_mm, item)?;
+                    self.root(
+                        "PROJECTED_ZONE_DEFINITION",
+                        vec![
+                            zone.into(),
+                            Field::List(Vec::new()),
+                            end.into(),
+                            height.into(),
+                        ],
+                    );
+                }
+            }
+            PositionFrame::Composite { upper, lower } => {
+                let (upper, _) = self.segment(upper, target, item)?;
+                let (lower, _) = self.segment(lower, target, item)?;
+                self.root(
+                    "GEOMETRIC_TOLERANCE_RELATIONSHIP",
+                    vec![quoted(COMPOSITE), text("''"), upper.into(), lower.into()],
+                );
+            }
         }
+        Ok(())
+    }
+
+    fn named_length(&mut self, name: &str, value: &Rational, item: &str) -> Result<Id, Refusal> {
+        let value = real(value, item)?;
+        Ok(self.graph.add_complex(vec![
+            ("LENGTH_MEASURE_WITH_UNIT", vec![]),
+            ("MEASURE_REPRESENTATION_ITEM", vec![]),
+            (
+                "MEASURE_WITH_UNIT",
+                vec![
+                    text(format!("LENGTH_MEASURE({value})")),
+                    self.references.length_unit.into(),
+                ],
+            ),
+            ("REPRESENTATION_ITEM", vec![quoted(name)]),
+        ]))
+    }
+
+    fn exact_point(&mut self, at: &[Rational; 3], item: &str) -> Result<Id, Refusal> {
+        let xyz = at
+            .iter()
+            .map(|value| real(value, item).map(text))
+            .collect::<Result<_, _>>()?;
+        Ok(self
+            .graph
+            .add("CARTESIAN_POINT", vec![text("''"), Field::List(xyz)]))
+    }
+
+    fn direction(&mut self, at: &[Rational; 3], item: &str) -> Result<Id, Refusal> {
+        let xyz = at
+            .iter()
+            .map(|value| real(value, item).map(text))
+            .collect::<Result<_, _>>()?;
+        Ok(self
+            .graph
+            .add("DIRECTION", vec![text("''"), Field::List(xyz)]))
+    }
+
+    /// A placed datum target (recommended practices, section 6.6): its
+    /// `orientation` placement and sizes as parameters, its relationship to
+    /// its datum, and its relationship to an aspect of its face (6.6.3).
+    fn datum_target(&mut self, target: &DatumTarget<FaceId>, item: &str) -> Result<(), Refusal> {
+        let datum = *self.datums.get(&target.datum).ok_or_else(|| {
+            Refusal::new(
+                "step.pmi-invalid",
+                format!("{item}: datum {} is not defined", target.datum),
+            )
+        })?;
+        let not_exact = || {
+            Refusal::new(
+                "step.pmi-invalid",
+                format!("{item}: the target face's normal is not an exact vector"),
+            )
+        };
+        let normal = check::outward_normal(self.model, target.face).ok_or_else(not_exact)?;
+        let normal = [&normal.x, &normal.y, &normal.z]
+            .map(|value| value.as_rational().ok_or_else(not_exact));
+        let [x, y, z] = normal;
+        let normal = [x?, y?, z?];
+        let reference = match target.kind.direction() {
+            Some(direction) => direction.clone(),
+            None => perpendicular(&normal),
+        };
+        let placed = self.graph.add(
+            "PLACED_DATUM_TARGET_FEATURE",
+            vec![
+                quoted(item),
+                quoted(target.kind.description()),
+                self.references.product.shape.into(),
+                boolean(true),
+                quoted(&target.number.to_string()),
+            ],
+        );
+        self.root(
+            "SHAPE_ASPECT_RELATIONSHIP",
+            vec![
+                text("''"),
+                quoted(DATUM_TARGET),
+                placed.into(),
+                datum.into(),
+            ],
+        );
+        let face = self.graph.add(
+            "SHAPE_ASPECT",
+            vec![
+                text("''"),
+                text("''"),
+                self.references.product.shape.into(),
+                boolean(true),
+            ],
+        );
+        self.usage(face, &[target.face], item)?;
+        self.root(
+            "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP",
+            vec![text("''"), text("$"), face.into(), placed.into()],
+        );
+        let origin = self.exact_point(&target.point_mm, item)?;
+        let axis = self.direction(&normal, item)?;
+        let along = self.direction(&reference, item)?;
+        let placement = self.graph.add(
+            "AXIS2_PLACEMENT_3D",
+            vec![
+                quoted(ORIENTATION),
+                origin.into(),
+                axis.into(),
+                along.into(),
+            ],
+        );
+        let mut items = vec![placement];
+        match &target.kind {
+            TargetKind::Point => {}
+            TargetKind::Line { length_mm, .. } => {
+                items.push(self.named_length(TARGET_LENGTH, length_mm, item)?);
+            }
+            TargetKind::Area(TargetArea::Circular { diameter_mm }) => {
+                items.push(self.named_length(TARGET_DIAMETER, diameter_mm, item)?);
+            }
+            TargetKind::Area(TargetArea::Rectangular {
+                length_mm,
+                width_mm,
+                ..
+            }) => {
+                items.push(self.named_length(TARGET_LENGTH, length_mm, item)?);
+                items.push(self.named_length(TARGET_WIDTH, width_mm, item)?);
+            }
+        }
+        let property = self.graph.add(
+            "PROPERTY_DEFINITION",
+            vec![text("''"), text("$"), placed.into()],
+        );
+        let representation = self.graph.add(
+            "SHAPE_REPRESENTATION_WITH_PARAMETERS",
+            vec![text("''"), refs(items), self.references.context.into()],
+        );
+        self.root(
+            "SHAPE_DEFINITION_REPRESENTATION",
+            vec![property.into(), representation.into()],
+        );
+        self.root("ID_ATTRIBUTE", vec![quoted(item), placed.into()]);
         Ok(())
     }
 
@@ -1018,14 +1320,35 @@ impl Emitter<'_> {
             ),
             (
                 "number of geometric tolerances",
-                of(|kind| matches!(kind, ItemKind::Tolerance(_))),
+                pmi.items
+                    .iter()
+                    .map(|item| match &item.kind {
+                        ItemKind::Tolerance(_) => 1,
+                        ItemKind::Position(control) => control.frame.segments().len(),
+                        _ => 0,
+                    })
+                    .sum(),
             ),
-            ("number of composite tolerances", 0),
+            (
+                "number of composite tolerances",
+                of(|kind| {
+                    matches!(
+                        kind,
+                        ItemKind::Position(PositionControl {
+                            frame: PositionFrame::Composite { .. },
+                            ..
+                        })
+                    )
+                }),
+            ),
             (
                 "number of datums",
                 of(|kind| matches!(kind, ItemKind::Datum(_))),
             ),
-            ("number of datum targets", 0),
+            (
+                "number of datum targets",
+                of(|kind| matches!(kind, ItemKind::DatumTarget(_))),
+            ),
             ("number of annotations", self.annotations),
         ];
         let items = counts
@@ -1158,6 +1481,7 @@ pub(crate) fn emit(
         annotations: 0,
         dec,
     };
+    check::check_on_model(model, pmi, emitter.dec)?;
     if !pmi.items.is_empty() {
         emitter.standard();
     }
@@ -1294,6 +1618,8 @@ pub(crate) fn emit(
                 emitter.equivalent(dimension, &format!("DIM\\w[{value}°]"));
             }
             ItemKind::Tolerance(tolerance) => emitter.tolerance(tolerance, id)?,
+            ItemKind::DatumTarget(target) => emitter.datum_target(target, id)?,
+            ItemKind::Position(control) => emitter.position(control, id)?,
             ItemKind::Texture(texture) => {
                 emitter.texture(texture, id, texture_slot)?;
                 texture_slot += 1;

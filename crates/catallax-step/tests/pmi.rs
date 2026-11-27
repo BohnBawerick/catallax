@@ -12,9 +12,10 @@ use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{HolePart, Recipe, Role};
 use catallax_shapes::{Pose, Surface};
 use catallax_step::pmi::{
-    Anchor, At, ChamferNominal, Characteristic, Datum, Feature, GeometricTolerance, HoleHead,
-    HoleSize, Item, ItemKind, Limits, Location, PartNotes, Pmi, Process, Size, SizeKind,
-    SurfaceTexture, nominals,
+    Anchor, At, ChamferNominal, Characteristic, Datum, DatumRef, DatumTarget, Feature,
+    GeometricTolerance, HoleHead, HoleSize, Item, ItemKind, Limits, Location, MaterialCondition,
+    PartNotes, Pmi, PositionControl, PositionFrame, PositionSegment, Process, ProjectedZone, Size,
+    SizeKind, SurfaceTexture, TargetArea, TargetKind, nominals,
 };
 use catallax_step::{StepOptions, write_step_with_pmi};
 use catallax_topology::{BodyId, FaceId, Loop, Model, cylinder};
@@ -439,6 +440,8 @@ fn sorted(pmi: Pmi<FaceId>) -> Pmi<FaceId> {
             }
             ItemKind::Tolerance(tolerance) => tolerance.features.iter_mut().for_each(order),
             ItemKind::Texture(texture) => order(&mut texture.feature),
+            ItemKind::Position(control) => control.features.iter_mut().for_each(order),
+            ItemKind::DatumTarget(_) => {}
         }
     }
     pmi
@@ -1700,4 +1703,856 @@ fn malformed_planar_pmi_does_not_hide_other_items() {
         part: PartNotes::default(),
     };
     assert_eq!(invalid.validate().unwrap_err().code, "step.pmi-invalid");
+}
+
+/// The faces the datum target and position fixture uses on the P1 bracket.
+struct GdtFaces {
+    underside: FaceId,
+    front: Feature<FaceId>,
+    left: Feature<FaceId>,
+    bore: Feature<FaceId>,
+    boss_top: FaceId,
+    flange_top: FaceId,
+    holes: Vec<Feature<FaceId>>,
+}
+
+fn gdt_faces(part: &Bracket) -> GdtFaces {
+    let underside = part.planes(2, "0");
+    assert_eq!(underside.len(), 1);
+    let boss_top: Vec<FaceId> = part
+        .planes(2, "15")
+        .into_iter()
+        .filter(|face| part.corners(*face) != 4)
+        .collect();
+    assert_eq!(boss_top.len(), 1);
+    let flange_top = part.planes(2, "30");
+    assert_eq!(flange_top.len(), 1);
+    GdtFaces {
+        underside: underside[0],
+        front: part.planes(1, "0"),
+        left: part.planes(0, "0"),
+        bore: part.round(2, "4", ["30", "25"]),
+        boss_top: boss_top[0],
+        flange_top: flange_top[0],
+        holes: [["10", "12"], ["10", "32"], ["50", "12"], ["50", "32"]]
+            .into_iter()
+            .map(|at| part.round(2, "2", at))
+            .collect(),
+    }
+}
+
+fn v(x: &str, y: &str, z: &str) -> [Rational; 3] {
+    [q(x), q(y), q(z)]
+}
+
+fn bounded(letter: &str, material: MaterialCondition) -> DatumRef {
+    DatumRef {
+        letter: letter.to_owned(),
+        material: Some(material),
+    }
+}
+
+fn segment(
+    value: &str,
+    material: Option<MaterialCondition>,
+    datums: Vec<DatumRef>,
+) -> PositionSegment {
+    PositionSegment {
+        value_mm: q(value),
+        diameter_zone: true,
+        material,
+        datums,
+    }
+}
+
+fn target(number: u32, face: FaceId, at: [Rational; 3], kind: TargetKind) -> ItemKind<FaceId> {
+    ItemKind::DatumTarget(DatumTarget {
+        datum: "A".into(),
+        number,
+        face,
+        point_mm: at,
+        kind,
+    })
+}
+
+/// Datum A on the plate's underside, set up by a point, a line, a circular and a
+/// rectangular target clear of its five holes; datums B, C and the bore D; a
+/// composite frame on the bolt holes whose segments carry their own modifiers
+/// and datum boundaries; a zone projected 10 up out of the boss top on the bore,
+/// and one projected 8 down out of the underside on the bolt holes.
+fn gdt_pmi(f: &GdtFaces) -> Pmi<FaceId> {
+    use MaterialCondition::{Least, Maximum};
+    let datum = |letter: &str, feature: &Feature<FaceId>| {
+        item(
+            &format!("Datum {letter}"),
+            ItemKind::Datum(Datum {
+                letter: letter.to_owned(),
+                feature: feature.clone(),
+            }),
+        )
+    };
+    let x = || v("1", "0", "0");
+    Pmi {
+        items: vec![
+            datum("A", &vec![f.underside]),
+            item(
+                "A1",
+                target(1, f.underside, v("5", "5", "0"), TargetKind::Point),
+            ),
+            item(
+                "A2",
+                target(
+                    2,
+                    f.underside,
+                    v("30", "5", "0"),
+                    TargetKind::Line {
+                        length_mm: q("20"),
+                        direction: x(),
+                    },
+                ),
+            ),
+            item(
+                "A3",
+                target(
+                    3,
+                    f.underside,
+                    v("55", "36", "0"),
+                    TargetKind::Area(TargetArea::Circular {
+                        diameter_mm: q("6"),
+                    }),
+                ),
+            ),
+            item(
+                "A4",
+                target(
+                    4,
+                    f.underside,
+                    v("30", "36", "0"),
+                    TargetKind::Area(TargetArea::Rectangular {
+                        length_mm: q("10"),
+                        width_mm: q("4"),
+                        direction: x(),
+                    }),
+                ),
+            ),
+            datum("B", &f.front),
+            datum("C", &f.left),
+            datum("D", &f.bore),
+            item(
+                "Bore",
+                ItemKind::Size(Size {
+                    kind: SizeKind::Diameter,
+                    features: vec![f.bore.clone()],
+                    limits: Some(Limits::Fit {
+                        deviation: "H".into(),
+                        grade: "7".into(),
+                    }),
+                    through: true,
+                    thread: None,
+                    nominal: None,
+                }),
+            ),
+            item(
+                "Bolt pattern",
+                ItemKind::Position(PositionControl {
+                    features: f.holes.clone(),
+                    frame: PositionFrame::Composite {
+                        upper: segment(
+                            "0.4",
+                            Some(Maximum),
+                            vec![
+                                DatumRef::new("A"),
+                                bounded("D", Maximum),
+                                DatumRef::new("B"),
+                            ],
+                        ),
+                        lower: segment(
+                            "0.1",
+                            Some(Least),
+                            vec![DatumRef::new("A"), DatumRef::new("D")],
+                        ),
+                    },
+                }),
+            ),
+            item(
+                "Bore projection",
+                ItemKind::Position(PositionControl {
+                    features: vec![f.bore.clone()],
+                    frame: PositionFrame::Single {
+                        segment: segment(
+                            "0.05",
+                            None,
+                            vec![DatumRef::new("B"), DatumRef::new("C")],
+                        ),
+                        projected_zone: Some(ProjectedZone {
+                            height_mm: q("10"),
+                            direction: v("0", "0", "1"),
+                            entry_faces: vec![f.boss_top],
+                        }),
+                    },
+                }),
+            ),
+            item(
+                "Bolt projection",
+                ItemKind::Position(PositionControl {
+                    features: f.holes.clone(),
+                    frame: PositionFrame::Single {
+                        segment: segment(
+                            "0.2",
+                            Some(Maximum),
+                            vec![DatumRef::new("A"), DatumRef::new("B"), DatumRef::new("C")],
+                        ),
+                        projected_zone: Some(ProjectedZone {
+                            height_mm: q("8"),
+                            direction: v("0", "0", "-1"),
+                            entry_faces: vec![f.underside; 4],
+                        }),
+                    },
+                }),
+            ),
+        ],
+        part: PartNotes::default(),
+    }
+}
+
+/// The items in name order, each feature's faces in one order.
+fn by_name(pmi: Pmi<FaceId>) -> Pmi<FaceId> {
+    let mut pmi = sorted(pmi);
+    pmi.items.sort_by(|a, b| a.id.cmp(&b.id));
+    pmi
+}
+
+fn assert_same(back: Pmi<FaceId>, expected: Pmi<FaceId>) {
+    let (back, expected) = (by_name(back), by_name(expected));
+    for (got, want) in back.items.iter().zip(&expected.items) {
+        assert_eq!(got, want);
+    }
+    assert_eq!(back, expected);
+}
+
+/// What a file reads back as, with faces named by the model faces written.
+fn read_back(
+    file: &str,
+    report: &catallax_step::StepReport,
+) -> (Pmi<FaceId>, Vec<catallax_import::SkippedPmi>) {
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    let faces = written_faces(file, report);
+    let pmi = read
+        .pmi
+        .try_map(|_, key| faces.get(key).copied().ok_or_else(|| key.clone()))
+        .unwrap();
+    (pmi, read.skipped)
+}
+
+fn try_write(part: &Bracket, pmi: &Pmi<FaceId>) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    write_step_with_pmi(
+        &part.model,
+        part.body,
+        &StepOptions::default(),
+        pmi,
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .map(|_| String::from_utf8(bytes).unwrap())
+    .map_err(|refusal| refusal.detail)
+}
+
+fn kind_of<'a>(pmi: &'a Pmi<FaceId>, id: &str) -> &'a ItemKind<FaceId> {
+    &pmi.items
+        .iter()
+        .find(|item| item.id == id)
+        .unwrap_or_else(|| panic!("{id} was not read"))
+        .kind
+}
+
+#[test]
+fn datum_targets_and_position_frames_read_back_on_their_faces() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let pmi = gdt_pmi(&f);
+    pmi.validate().unwrap();
+    let (file, report) = write(&part, &pmi);
+    if let Ok(directory) = std::env::var("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("c2b-targets-positions.step"),
+            &file,
+        )
+        .unwrap();
+    }
+    let (back, skipped) = read_back(&file, &report);
+    assert_eq!(skipped, Vec::new());
+
+    // Each target on the underside, with its own number, point and sizes.
+    for (id, number) in [("A1", 1), ("A2", 2), ("A3", 3), ("A4", 4)] {
+        let ItemKind::DatumTarget(target) = kind_of(&back, id) else {
+            panic!("{id} is not a datum target");
+        };
+        assert_eq!(
+            (target.datum.as_str(), target.number, target.face),
+            ("A", number, f.underside)
+        );
+    }
+    assert!(matches!(
+        kind_of(&back, "A4"),
+        ItemKind::DatumTarget(DatumTarget {
+            kind: TargetKind::Area(TargetArea::Rectangular { length_mm, width_mm, .. }),
+            ..
+        }) if *length_mm == q("10") && *width_mm == q("4")
+    ));
+
+    // The composite keeps its order, each segment's own modifier and its own
+    // datum boundaries: D(M) above, plain D below.
+    let ItemKind::Position(PositionControl {
+        features,
+        frame: PositionFrame::Composite { upper, lower },
+    }) = kind_of(&back, "Bolt pattern")
+    else {
+        panic!("the bolt pattern is not a composite frame");
+    };
+    assert_eq!(features.len(), 4);
+    assert_eq!(
+        (upper.value_mm.clone(), upper.material),
+        (q("0.4"), Some(MaterialCondition::Maximum))
+    );
+    assert_eq!(
+        (lower.value_mm.clone(), lower.material),
+        (q("0.1"), Some(MaterialCondition::Least))
+    );
+    assert_eq!(upper.datums[1], bounded("D", MaterialCondition::Maximum));
+    assert_eq!(lower.datums, vec![DatumRef::new("A"), DatumRef::new("D")]);
+
+    // Each projected zone starts on its own entry face and points out of it.
+    for (id, entry, height, up) in [
+        ("Bore projection", f.boss_top, "10", "1"),
+        ("Bolt projection", f.underside, "8", "-1"),
+    ] {
+        let ItemKind::Position(PositionControl {
+            frame:
+                PositionFrame::Single {
+                    projected_zone: Some(zone),
+                    ..
+                },
+            ..
+        }) = kind_of(&back, id)
+        else {
+            panic!("{id} has no projected zone");
+        };
+        assert!(zone.entry_faces.iter().all(|face| *face == entry), "{id}");
+        assert_eq!(zone.height_mm, q(height), "{id}");
+        assert!(
+            zone.direction[0].is_zero() && zone.direction[1].is_zero(),
+            "{id}"
+        );
+        assert_eq!(
+            zone.direction[2] > Rational::zero(),
+            q(up) > Rational::zero(),
+            "{id}"
+        );
+    }
+
+    // Everything else is what went out, the bore with its measured size.
+    let mut expected = pmi.clone();
+    for item in &mut expected.items {
+        if let ItemKind::Size(size) = &mut item.kind {
+            size.nominal = Some(q("8"));
+        }
+    }
+    assert_same(back.clone(), expected);
+
+    // The file counts one composite of two tolerances among four, and four targets.
+    let counts: Vec<String> = validation_items(&file)
+        .into_values()
+        .flatten()
+        .map(|(_, fields)| fields)
+        .collect();
+    for count in [
+        "'number of semantic pmi elements',12.",
+        "'number of geometric tolerances',4.",
+        "'number of composite tolerances',1.",
+        "'number of datums',4.",
+        "'number of datum targets',4.",
+    ] {
+        assert!(counts.iter().any(|fields| fields == count), "{count}");
+    }
+
+    // Writing what was read writes the same information again.
+    let mut again = back;
+    for item in &mut again.items {
+        if let ItemKind::Size(size) = &mut item.kind {
+            size.nominal = None;
+        }
+    }
+    let (file, report) = write(&part, &again);
+    let (twice, skipped) = read_back(&file, &report);
+    assert_eq!(skipped, Vec::new());
+    let mut expected = pmi;
+    for item in &mut expected.items {
+        if let ItemKind::Size(size) = &mut item.kind {
+            size.nominal = Some(q("8"));
+        }
+    }
+    assert_same(twice, expected);
+}
+
+#[test]
+fn malformed_targets_and_frames_are_refused_before_writing() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let wrong = std::cell::RefCell::new(Vec::new());
+    let refused = |change: &dyn Fn(&mut Pmi<FaceId>), reason: &str| {
+        let mut pmi = gdt_pmi(&f);
+        change(&mut pmi);
+        match try_write(&part, &pmi) {
+            Err(detail) if detail.contains(reason) => {}
+            Err(detail) => wrong
+                .borrow_mut()
+                .push(format!("{reason}: refused with {detail}")),
+            Ok(_) => wrong.borrow_mut().push(format!("{reason}: written")),
+        }
+    };
+    let set = |pmi: &mut Pmi<FaceId>, id: &str, kind: ItemKind<FaceId>| {
+        pmi.items
+            .iter_mut()
+            .find(|item| item.id == id)
+            .unwrap()
+            .kind = kind;
+    };
+    let with_frame =
+        |pmi: &mut Pmi<FaceId>, id: &str, change: &dyn Fn(&mut PositionControl<FaceId>)| {
+            let item = pmi.items.iter_mut().find(|item| item.id == id).unwrap();
+            let ItemKind::Position(control) = &mut item.kind else {
+                unreachable!()
+            };
+            change(control);
+        };
+    let composite = |change: fn(&mut PositionSegment, &mut PositionSegment)| {
+        move |control: &mut PositionControl<FaceId>| {
+            if let PositionFrame::Composite { upper, lower } = &mut control.frame {
+                change(upper, lower);
+            }
+        }
+    };
+    let projection = |change: fn(&mut ProjectedZone<FaceId>)| {
+        move |control: &mut PositionControl<FaceId>| {
+            if let PositionFrame::Single {
+                projected_zone: Some(zone),
+                ..
+            } = &mut control.frame
+            {
+                change(zone);
+            }
+        }
+    };
+
+    // Composite frames.
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt pattern",
+                &composite(|_, lower| lower.value_mm = q("0.5")),
+            )
+        },
+        "cannot be larger than the upper one",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt pattern",
+                &composite(|_, lower| lower.datums = vec![DatumRef::new("B")]),
+            )
+        },
+        "repeat the upper segment's first datums in order",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt pattern",
+                &composite(|upper, _| upper.datums.clear()),
+            )
+        },
+        "the upper segment of a composite needs datums",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt pattern",
+                &composite(|upper, _| upper.diameter_zone = false),
+            )
+        },
+        "zone is cylindrical",
+    );
+    // Datum boundaries: only on a feature of size that no target sets up.
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt pattern",
+                &composite(|upper, _| {
+                    upper.datums[2] = bounded("B", MaterialCondition::Maximum);
+                }),
+            )
+        },
+        "datum B is not a feature of size",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt pattern",
+                &composite(|upper, _| {
+                    upper.datums[0] = bounded("A", MaterialCondition::Least);
+                }),
+            )
+        },
+        "datum A is set up by datum targets",
+    );
+    // Projected zones.
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bore projection",
+                &projection(|zone| zone.height_mm = q("0")),
+            )
+        },
+        "a projected zone needs a positive height",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bore projection",
+                &projection(|zone| zone.direction = v("0", "0", "-1")),
+            )
+        },
+        "does not point out of the part",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bore projection",
+                &projection(|zone| zone.direction = v("1", "0", "1")),
+            )
+        },
+        "does not point out of the part",
+    );
+    refused(
+        &|pmi| {
+            let flange = f.flange_top;
+            with_frame(
+                pmi,
+                "Bore projection",
+                &move |control: &mut PositionControl<FaceId>| {
+                    if let PositionFrame::Single {
+                        projected_zone: Some(zone),
+                        ..
+                    } = &mut control.frame
+                    {
+                        zone.entry_faces = vec![flange];
+                    }
+                },
+            )
+        },
+        "does not meet its controlled feature",
+    );
+    refused(
+        &|pmi| {
+            with_frame(
+                pmi,
+                "Bolt projection",
+                &projection(|zone| {
+                    zone.entry_faces.pop();
+                }),
+            )
+        },
+        "one entry face per controlled feature",
+    );
+    refused(
+        &|pmi| {
+            with_frame(pmi, "Bore projection", &|control: &mut PositionControl<
+                FaceId,
+            >| {
+                if let PositionFrame::Single { projected_zone, .. } = &mut control.frame {
+                    *projected_zone = None;
+                }
+            })
+        },
+        "is a geometric tolerance",
+    );
+    // Datum targets.
+    let line = |direction: [Rational; 3]| TargetKind::Line {
+        length_mm: q("10"),
+        direction,
+    };
+    let cases: Vec<(&str, ItemKind<FaceId>, &str)> = vec![
+        (
+            "A1",
+            target(0, f.underside, v("5", "5", "0"), TargetKind::Point),
+            "number is positive",
+        ),
+        (
+            "A1",
+            target(2, f.underside, v("5", "5", "0"), TargetKind::Point),
+            "datum target A2 is defined twice",
+        ),
+        (
+            "A1",
+            target(1, f.boss_top, v("30", "25", "15"), TargetKind::Point),
+            "not on its datum's feature",
+        ),
+        (
+            "A1",
+            target(1, f.underside, v("5", "5", "1"), TargetKind::Point),
+            "not on its face's plane",
+        ),
+        (
+            "A1",
+            target(1, f.underside, v("10", "12", "0"), TargetKind::Point),
+            "the target point is outside its face",
+        ),
+        (
+            "A2",
+            target(2, f.underside, v("10", "12", "0"), line(v("1", "0", "0"))),
+            "outside its face",
+        ),
+        (
+            "A2",
+            target(2, f.underside, v("10", "8", "0"), line(v("0", "0", "1"))),
+            "does not run along its face",
+        ),
+        (
+            "A2",
+            target(2, f.underside, v("10", "6", "0"), line(v("0", "1", "0"))),
+            "the target line leaves its face",
+        ),
+        (
+            "A2",
+            target(
+                2,
+                f.underside,
+                v("10", "16", "0"),
+                TargetKind::Line {
+                    length_mm: q("12"),
+                    direction: v("0", "1", "0"),
+                },
+            ),
+            "the target line meets its face's boundary",
+        ),
+        (
+            "A3",
+            target(
+                3,
+                f.underside,
+                v("14", "12", "0"),
+                TargetKind::Area(TargetArea::Circular {
+                    diameter_mm: q("6"),
+                }),
+            ),
+            "the target area crosses its face's boundary",
+        ),
+        (
+            "A3",
+            target(
+                3,
+                f.underside,
+                v("58", "36", "0"),
+                TargetKind::Area(TargetArea::Circular {
+                    diameter_mm: q("6"),
+                }),
+            ),
+            "the target area crosses its face's boundary",
+        ),
+        (
+            "A4",
+            target(
+                4,
+                f.underside,
+                v("30", "21", "0"),
+                TargetKind::Area(TargetArea::Rectangular {
+                    length_mm: q("14"),
+                    width_mm: q("4"),
+                    direction: v("1", "0", "0"),
+                }),
+            ),
+            "the target area crosses its face's boundary",
+        ),
+        (
+            "A4",
+            target(
+                4,
+                f.underside,
+                v("30", "30", "0"),
+                TargetKind::Area(TargetArea::Rectangular {
+                    length_mm: q("20"),
+                    width_mm: q("20"),
+                    direction: v("1", "0", "0"),
+                }),
+            ),
+            "the target area crosses its face's boundary",
+        ),
+        (
+            "A3",
+            target(
+                3,
+                f.underside,
+                v("55", "36", "0"),
+                TargetKind::Area(TargetArea::Circular {
+                    diameter_mm: q("0"),
+                }),
+            ),
+            "sizes must be more than zero",
+        ),
+    ];
+    for (id, kind, reason) in cases {
+        refused(&|pmi| set(pmi, id, kind.clone()), reason);
+    }
+    refused(
+        &|pmi| {
+            set(
+                pmi,
+                "A1",
+                ItemKind::DatumTarget(DatumTarget {
+                    datum: "E".into(),
+                    number: 1,
+                    face: f.underside,
+                    point_mm: v("5", "5", "0"),
+                    kind: TargetKind::Point,
+                }),
+            )
+        },
+        "datum E is not defined",
+    );
+    assert_eq!(wrong.into_inner(), Vec::<String>::new());
+}
+
+/// The file with `from` replaced once by `to`.
+fn mutate(file: &str, from: &str, to: &str) -> String {
+    assert_eq!(file.matches(from).count(), 1, "{from}");
+    file.replacen(from, to, 1)
+}
+
+/// The entity number of the one line holding all of `parts`.
+fn line_with(file: &str, parts: &[&str]) -> String {
+    let lines: Vec<&str> = file
+        .lines()
+        .filter(|line| parts.iter().all(|part| line.contains(part)))
+        .collect();
+    assert_eq!(lines.len(), 1, "{parts:?}");
+    lines[0].split('=').next().unwrap().to_owned()
+}
+
+#[test]
+fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let (file, report) = write(&part, &gdt_pmi(&f));
+    let ids = |pmi: &Pmi<FaceId>| {
+        let mut ids: Vec<String> = pmi.items.iter().map(|item| item.id.clone()).collect();
+        ids.sort();
+        ids
+    };
+    let reasons = |skipped: &[catallax_import::SkippedPmi]| {
+        skipped
+            .iter()
+            .map(|skip| skip.reason.clone())
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+
+    // A1 loses its number: datum A and everything that needs it are left out,
+    // with their reasons; B, C, D, the bore size and the bore projection stay.
+    let a1 = line_with(&file, &["PLACED_DATUM_TARGET_FEATURE", "'A1'"]);
+    let record = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{a1}=")))
+        .unwrap();
+    let broken = mutate(&file, record, &record.replace(",'1');", ",'0');"));
+    let (back, skipped) = read_back(&broken, &report);
+    assert_eq!(
+        ids(&back),
+        ["Bore", "Bore projection", "Datum B", "Datum C", "Datum D"],
+        "{}",
+        reasons(&skipped)
+    );
+    let text = reasons(&skipped);
+    for reason in [
+        "its target number is not a positive whole number",
+        "was not read",
+        "it refers to datum A, which was not read",
+        "lower segment of the composite frame",
+    ] {
+        assert!(text.contains(reason), "{text} lacks {reason}");
+    }
+    assert!(matches!(
+        kind_of(&back, "Bore projection"),
+        ItemKind::Position(_)
+    ));
+
+    // A projected height of zero leaves out that control alone.
+    let zones: Vec<&str> = file
+        .lines()
+        .filter(|line| line.contains("PROJECTED_ZONE_DEFINITION"))
+        .collect();
+    assert_eq!(zones.len(), 2);
+    let bore_zone = zones
+        .iter()
+        .copied()
+        .find(|zone| {
+            let height = zone.trim_end_matches(");").rsplit('#').next().unwrap();
+            file.lines()
+                .any(|line| line.starts_with(&format!("#{height}=")) && line.contains("(10.)"))
+        })
+        .unwrap();
+    let height = bore_zone.trim_end_matches(");").rsplit('#').next().unwrap();
+    let record = file
+        .lines()
+        .find(|line| line.starts_with(&format!("#{height}=")))
+        .unwrap();
+    let broken = mutate(&file, record, &record.replace("(10.)", "(0.)"));
+    let (back, skipped) = read_back(&broken, &report);
+    assert!(
+        !ids(&back).contains(&"Bore projection".to_owned()),
+        "{}",
+        reasons(&skipped)
+    );
+    assert_eq!(back.items.len(), 11, "{}", reasons(&skipped));
+    assert!(reasons(&skipped).contains("a projected zone needs a positive height"));
+
+    // An unknown relationship between the segments leaves out both of them.
+    let broken = mutate(
+        &file,
+        "GEOMETRIC_TOLERANCE_RELATIONSHIP('composite'",
+        "GEOMETRIC_TOLERANCE_RELATIONSHIP('precedence'",
+    );
+    let (back, skipped) = read_back(&broken, &report);
+    assert!(!ids(&back).contains(&"Bolt pattern".to_owned()));
+    assert_eq!(back.items.len(), 11, "{}", reasons(&skipped));
+    let text = reasons(&skipped);
+    assert!(
+        text.contains("`precedence` tolerance relationship"),
+        "{text}"
+    );
+    assert!(
+        text.contains("lower segment of the composite frame"),
+        "{text}"
+    );
+
+    // A target moved into a hole is refused on the file's own face boundary.
+    let broken = mutate(
+        &file,
+        "CARTESIAN_POINT('',(55.,36.,0.))",
+        "CARTESIAN_POINT('',(50.,32.,0.))",
+    );
+    let (_, skipped) = read_back(&broken, &report);
+    assert!(
+        reasons(&skipped).contains("the target point is outside its face"),
+        "{}",
+        reasons(&skipped)
+    );
 }

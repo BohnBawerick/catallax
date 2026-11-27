@@ -7,20 +7,25 @@
 //! writes and the common forms of the CAx-IF recommended practices.
 //!
 //! Nothing is guessed. An item this reader cannot represent in full, such as
-//! an angular dimension, a datum target or a tolerance with a modifier it does
-//! not know, is left out and listed in [`StepPmi::skipped`] with its entity
-//! and the reason.
+//! an angular size, an explicit area datum target or a tolerance with a
+//! modifier it does not know, is left out and listed in [`StepPmi::skipped`]
+//! with its entity and the reason. A datum whose target is left out is left
+//! out too, with every item that refers to it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_numbers::Rational;
-use catallax_shapes::{RPoint3, RVector3};
+use catallax_numbers::{Decider, Rational, Real};
+use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
+use catallax_shapes::{Circle, Plane, Point3, RPoint3, RVector3, Vector3};
 use catallax_step::pmi::{
-    Anchor, At, BEVEL_ANGLE, CHAMFER, COUNTERBORE, COUNTERSINK, ChamferNominal, Characteristic,
-    Datum, EDGE_BREAK, FIRST_SIDE, Feature, GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER,
-    HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize, INCLUDED_ANGLE, Item, ItemError, ItemKind, Limits,
-    Location, MAX_SETBACK, MIN_SETBACK, MaterialCondition, PartNotes, PartValidator, Pmi, Process,
-    SECOND_SIDE, Size, SizeKind, SurfaceTexture, THREAD, THREAD_DEPTH, THROUGH, WIDTH,
+    Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, ChamferNominal,
+    Characteristic, Datum, DatumRef, DatumTarget, EDGE_BREAK, FIRST_SIDE, Feature,
+    GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead, HoleSize,
+    INCLUDED_ANGLE, Item, ItemError, ItemKind, Limits, Location, MAX_SETBACK, MIN_SETBACK,
+    MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl, PositionFrame,
+    PositionSegment, Process, ProjectedZone, SECOND_SIDE, Size, SizeKind, SurfaceTexture,
+    TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, TargetArea,
+    TargetKind, WIDTH, off_face,
 };
 
 use crate::ImportRefusal;
@@ -60,7 +65,7 @@ const ASPECT_PARTS: [&str; 9] = [
 ];
 
 /// Dimension and datum entities this reader knows of and does not read.
-const UNREAD: [(&str, &str); 8] = [
+const UNREAD: [(&str, &str); 7] = [
     ("ANGULAR_SIZE", "an angular size is not read"),
     (
         "DIMENSIONAL_LOCATION_WITH_PATH",
@@ -78,8 +83,10 @@ const UNREAD: [(&str, &str); 8] = [
         "DIMENSIONAL_SIZE_WITH_DATUM_FEATURE",
         "a size that is also a datum feature is not read",
     ),
-    ("DATUM_TARGET", "a datum target is not read"),
-    ("PLACED_DATUM_TARGET_FEATURE", "a datum target is not read"),
+    (
+        "DATUM_TARGET",
+        "a datum target with explicit geometry is not read",
+    ),
     ("COMMON_DATUM", "a common datum is not read"),
 ];
 
@@ -196,6 +203,92 @@ fn coordinates(param: Option<&Param>) -> Option<[Rational; 3]> {
         return None;
     };
     Some([number(Some(x))?, number(Some(y))?, number(Some(z))?])
+}
+
+/// A datum reference compartment's modifier: its material boundary, or none.
+fn datum_boundary(param: Option<&Param>) -> Result<Option<MaterialCondition>, String> {
+    let items = match param {
+        None | Some(Param::Unset) => return Ok(None),
+        Some(Param::List(items)) => items,
+        Some(_) => return Err("a datum reference has an unreadable modifier".into()),
+    };
+    let mut found = None;
+    for item in items {
+        let name = match item {
+            Param::Typed(kind, values) if kind == "SIMPLE_DATUM_REFERENCE_MODIFIER" => {
+                match values.as_slice() {
+                    [Param::Enum(name)] => name.as_str(),
+                    _ => return Err("a datum reference has an unreadable modifier".into()),
+                }
+            }
+            Param::Enum(name) => name.as_str(),
+            Param::Typed(kind, _) => return Err(format!("a datum reference has a {kind}")),
+            _ => return Err("a datum reference has an unreadable modifier".into()),
+        };
+        let material = match name {
+            "MAXIMUM_MATERIAL_REQUIREMENT" => MaterialCondition::Maximum,
+            "LEAST_MATERIAL_REQUIREMENT" => MaterialCondition::Least,
+            other => return Err(format!("a datum reference has the modifier {other}")),
+        };
+        if found.replace(material).is_some() {
+            return Err("a datum reference has more than one modifier".into());
+        }
+    }
+    Ok(found)
+}
+
+fn sub3(a: &[Rational; 3], b: &[Rational; 3]) -> [Rational; 3] {
+    [&a[0] - &b[0], &a[1] - &b[1], &a[2] - &b[2]]
+}
+
+fn neg3(a: &[Rational; 3]) -> [Rational; 3] {
+    sub3(&[Rational::zero(), Rational::zero(), Rational::zero()], a)
+}
+
+fn dot3(a: &[Rational; 3], b: &[Rational; 3]) -> Rational {
+    &(&(&a[0] * &b[0]) + &(&a[1] * &b[1])) + &(&a[2] * &b[2])
+}
+
+fn cross3(a: &[Rational; 3], b: &[Rational; 3]) -> [Rational; 3] {
+    [
+        &(&a[1] * &b[2]) - &(&a[2] * &b[1]),
+        &(&a[2] * &b[0]) - &(&a[0] * &b[2]),
+        &(&a[0] * &b[1]) - &(&a[1] * &b[0]),
+    ]
+}
+
+fn is_zero3(a: &[Rational; 3]) -> bool {
+    a.iter().all(Rational::is_zero)
+}
+
+/// A nonzero vector square to `axis`.
+fn perpendicular3(axis: &[Rational; 3]) -> [Rational; 3] {
+    let [x, y, _] = axis;
+    if x.is_zero() && y.is_zero() {
+        [Rational::one(), Rational::zero(), Rational::zero()]
+    } else {
+        [&Rational::zero() - y, x.clone(), Rational::zero()]
+    }
+}
+
+/// An `AXIS2_PLACEMENT_3D` with its defaults filled in, in file units.
+struct Placement {
+    name: String,
+    origin: [Rational; 3],
+    axis: [Rational; 3],
+    reference: Option<[Rational; 3]>,
+}
+
+/// One geometric tolerance entity: a plain tolerance or one segment of a
+/// position control.
+struct Segment {
+    value: Rational,
+    diameter_zone: bool,
+    material: Option<MaterialCondition>,
+    datums: Vec<(DatumRef, u64)>,
+    target: u64,
+    projected: Option<(Rational, u64)>,
+    name: Option<String>,
 }
 
 struct RoundSurface {
@@ -559,6 +652,7 @@ impl<'a> Reader<'a> {
             .ok_or("it has no identification letter")?;
         let mut features = Vec::new();
         let mut name = None;
+        let mut targeted = false;
         for user in self.sharing.get(&id).map_or(&[][..], Vec::as_slice) {
             let Some((_, relating, related)) = self.relationship(*user) else {
                 continue;
@@ -566,10 +660,12 @@ impl<'a> Reader<'a> {
             if related != id {
                 continue;
             }
-            if self.has(relating, "DATUM_TARGET")
-                || self.has(relating, "PLACED_DATUM_TARGET_FEATURE")
-            {
-                return Err("it is established by datum targets".into());
+            if self.has(relating, "DATUM_TARGET") {
+                return Err("it is established by datum targets with explicit geometry".into());
+            }
+            if self.has(relating, "PLACED_DATUM_TARGET_FEATURE") {
+                targeted = true;
+                continue;
             }
             if !self.has(relating, "DATUM_FEATURE") {
                 continue;
@@ -588,6 +684,12 @@ impl<'a> Reader<'a> {
                 }
             }
             features.push(faces);
+        }
+        if features.is_empty() && targeted {
+            return Err(
+                "it is set up only by datum targets, with no datum feature to name its faces"
+                    .into(),
+            );
         }
         let [feature] = <[Feature<String>; 1]>::try_from(features)
             .map_err(|_| "it does not have exactly one datum feature")?;
@@ -1165,9 +1267,10 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// The datum letters a tolerance refers to, primary first.
-    fn datum_letters(&self, systems: &[u64]) -> Result<Vec<String>, String> {
-        let mut letters = Vec::new();
+    /// The datum references a tolerance makes, primary first, each with the
+    /// `DATUM` entity it names.
+    fn datum_refs(&self, systems: &[u64]) -> Result<Vec<(DatumRef, u64)>, String> {
+        let mut found = Vec::new();
         let mut ranked = Vec::new();
         for system in systems {
             let entity = self.entity(*system).ok_or("a datum reference is missing")?;
@@ -1180,32 +1283,34 @@ impl<'a> Reader<'a> {
                             .filter(|e| e.type_name() == "DATUM_REFERENCE_COMPARTMENT")
                             .map(|e| e.parts[0].1.as_slice())
                             .ok_or("a datum reference is not a single compartment")?;
-                        if !matches!(fields.get(5), Some(Param::Unset) | None) {
-                            return Err("a datum reference has a modifier".into());
-                        }
-                        letters.push(
-                            reference(fields.get(4))
-                                .and_then(|datum| self.datum_letter(datum))
-                                .ok_or("it refers to a common datum")?,
-                        );
+                        let material = datum_boundary(fields.get(5))?;
+                        let datum = reference(fields.get(4))
+                            .filter(|datum| self.datum_letter(*datum).is_some())
+                            .ok_or("it refers to a common datum")?;
+                        let letter = self.datum_letter(datum).unwrap_or_default();
+                        found.push((DatumRef { letter, material }, datum));
                     }
                 }
                 "DATUM_REFERENCE" => {
                     let rank = number(params.first()).ok_or("a datum has no precedence")?;
-                    let letter = reference(params.get(1))
-                        .and_then(|datum| self.datum_letter(datum))
+                    let datum = reference(params.get(1))
+                        .filter(|datum| self.datum_letter(*datum).is_some())
                         .ok_or("a datum reference names no datum")?;
-                    ranked.push((rank, letter));
+                    ranked.push((rank, datum));
                 }
                 other => return Err(format!("it refers to datums through a {other}")),
             }
         }
         ranked.sort();
-        letters.extend(ranked.into_iter().map(|(_, letter)| letter));
-        Ok(letters)
+        found.extend(ranked.into_iter().map(|(_, datum)| {
+            let letter = self.datum_letter(datum).unwrap_or_default();
+            (DatumRef::new(&letter), datum)
+        }));
+        Ok(found)
     }
 
-    fn tolerance(&self, id: u64, characteristic: Characteristic) -> Result<Found, String> {
+    /// One geometric tolerance entity as the file states it.
+    fn segment(&self, id: u64, characteristic: Characteristic) -> Result<Segment, String> {
         let entity = self.entity(id).ok_or("it is missing")?;
         let own = characteristic.entity();
         for (part, _) in &entity.parts {
@@ -1276,7 +1381,8 @@ impl<'a> Reader<'a> {
             _ => return Err("it is not attached to a feature".into()),
         };
         let mut diameter_zone = false;
-        for (_, params) in self.sharing_at(id, "TOLERANCE_ZONE", 4) {
+        let mut projected = None;
+        for (zone, params) in self.sharing_at(id, "TOLERANCE_ZONE", 4) {
             let form = reference(params.get(5))
                 .and_then(|form| self.entity(form))
                 .and_then(|form| string(form.parts[0].1.first()))
@@ -1290,21 +1396,637 @@ impl<'a> Reader<'a> {
                 }
                 _ => {}
             }
+            for (_, definition) in self.sharing_at(zone, "PROJECTED_ZONE_DEFINITION", 0) {
+                if !references(definition.get(1)).is_empty() {
+                    return Err("its projected zone names boundaries, which are not read".into());
+                }
+                let start =
+                    reference(definition.get(2)).ok_or("its projected zone has no start")?;
+                let height = reference(definition.get(3))
+                    .and_then(|measure| self.length(measure))
+                    .map(|(_, value)| value)
+                    .ok_or("its projected zone's height is not a length with a known unit")?;
+                if projected.replace((height, start)).is_some() {
+                    return Err("it has more than one projected zone".into());
+                }
+            }
         }
         let name = string(base.first())
             .filter(|name| !name.is_empty())
             .or_else(|| self.id_attribute(id));
+        Ok(Segment {
+            value,
+            diameter_zone,
+            material,
+            datums: self.datum_refs(&systems)?,
+            target,
+            projected,
+            name,
+        })
+    }
+
+    /// The upper segment of the composite frame `id` is the lower segment of.
+    fn composite_upper(&self, id: u64) -> Option<u64> {
+        self.sharing_at(id, "GEOMETRIC_TOLERANCE_RELATIONSHIP", 3)
+            .first()
+            .and_then(|(_, params)| reference(params.get(2)))
+    }
+
+    /// The lower segment of the composite frame whose upper segment is `id`.
+    fn composite_lower(&self, id: u64) -> Result<Option<u64>, String> {
+        let mut lowers = Vec::new();
+        for (_, params) in self.sharing_at(id, "GEOMETRIC_TOLERANCE_RELATIONSHIP", 2) {
+            let name = string(params.first()).unwrap_or_default();
+            // CAx-IF writes `composite`; AP242's own example names it in full.
+            if name != COMPOSITE && name != "composite tolerance" {
+                return Err(format!(
+                    "it is in a `{name}` tolerance relationship, which is not read"
+                ));
+            }
+            lowers.extend(reference(params.get(3)));
+        }
+        match lowers.as_slice() {
+            [] => Ok(None),
+            [lower] => Ok(Some(*lower)),
+            _ => Err("it has more than one lower composite segment".into()),
+        }
+    }
+
+    /// Whether a datum's feature is a feature of size that can take a
+    /// material boundary: one cylinder, or two opposed parallel planes. A
+    /// datum that targets set up is not.
+    fn datum_feature_of_size(&self, datum: u64) -> bool {
+        if !self.placed_targets(datum).is_empty() {
+            return false;
+        }
+        let Ok(Found {
+            kind: ItemKind::Datum(Datum { feature, .. }),
+            ..
+        }) = self.datum(datum)
+        else {
+            return false;
+        };
+        if feature.iter().all(|face| self.round(face)) {
+            return self.round_feature(&feature, false).is_ok();
+        }
+        let [a, b] = feature.as_slice() else {
+            return false;
+        };
+        let (Some(a), Some(b)) = (self.outward_plane(a), self.outward_plane(b)) else {
+            return false;
+        };
+        is_zero3(&cross3(&a.1, &b.1))
+            && dot3(&a.1, &b.1) < Rational::zero()
+            && !dot3(&sub3(&b.0, &a.0), &a.1).is_zero()
+    }
+
+    fn position_segment(&self, segment: Segment) -> Result<PositionSegment, String> {
+        let mut datums = Vec::with_capacity(segment.datums.len());
+        for (reference, datum) in segment.datums {
+            if reference.material.is_some() && !self.datum_feature_of_size(datum) {
+                return Err(format!(
+                    "datum {} is not a feature of size and has no material boundary",
+                    reference.letter
+                ));
+            }
+            datums.push(reference);
+        }
+        Ok(PositionSegment {
+            value_mm: segment.value,
+            diameter_zone: segment.diameter_zone,
+            material: segment.material,
+            datums,
+        })
+    }
+
+    fn position_features(&self, target: u64) -> Result<Vec<Feature<String>>, String> {
+        let features = self.features(target, 0)?;
+        for feature in &features {
+            if self.round_feature(feature, false).is_err() {
+                return Err("a position control's features are each one cylinder".into());
+            }
+        }
+        Ok(features)
+    }
+
+    /// A projected zone from where each controlled feature meets the start
+    /// faces (recommended practices, section 6.9.2.2). Each feature shares an
+    /// edge with exactly one planar start face, whose outward normal gives the
+    /// zone's direction.
+    fn projection(
+        &self,
+        start: u64,
+        height_mm: Rational,
+        features: &[Feature<String>],
+    ) -> Result<ProjectedZone<String>, String> {
+        let starts = self
+            .used_faces(start)?
+            .ok_or("its projected zone's start names no face")?;
+        let mut planes = Vec::with_capacity(starts.len());
+        for face in &starts {
+            let (_, normal) = self
+                .outward_plane(face)
+                .ok_or("its projected zone starts on a face that is not planar")?;
+            planes.push((face, normal, self.face_edge_curves(face)));
+        }
+        let mut direction: Option<[Rational; 3]> = None;
+        let mut entry_faces = Vec::with_capacity(features.len());
+        for feature in features {
+            let edges: BTreeSet<u64> = feature
+                .iter()
+                .flat_map(|face| self.face_edge_curves(face))
+                .collect();
+            let meeting: Vec<_> = planes
+                .iter()
+                .filter(|(_, _, own)| !own.is_disjoint(&edges))
+                .collect();
+            let [(face, normal, _)] = meeting.as_slice() else {
+                return Err(
+                    "each controlled feature needs exactly one projected zone start face it meets"
+                        .into(),
+                );
+            };
+            match &direction {
+                None => direction = Some(normal.clone()),
+                Some(first) => {
+                    if !is_zero3(&cross3(first, normal)) || dot3(first, normal) <= Rational::zero()
+                    {
+                        return Err("the projected zone's start faces do not face one way".into());
+                    }
+                }
+            }
+            let axis = feature
+                .first()
+                .and_then(|face| self.face_surface(face))
+                .and_then(|surface| self.entity(surface))
+                .and_then(|surface| surface.part("CYLINDRICAL_SURFACE"))
+                .and_then(|params| reference(params.get(1)))
+                .and_then(|placement| self.placement(placement))
+                .ok_or("a controlled feature has no readable axis")?
+                .axis;
+            if !is_zero3(&cross3(&axis, normal)) {
+                return Err("a controlled axis is not square to its start face".into());
+            }
+            entry_faces.push((*face).clone());
+        }
+        Ok(ProjectedZone {
+            height_mm,
+            direction: direction.ok_or("the position control names no feature")?,
+            entry_faces,
+        })
+    }
+
+    fn tolerance(&self, id: u64, characteristic: Characteristic) -> Result<Found, String> {
+        let lower = self.composite_lower(id)?;
+        let upper = self.segment(id, characteristic)?;
+        if let Some(lower) = lower {
+            return self.composite(id, characteristic, upper, lower);
+        }
+        let boundary = upper
+            .datums
+            .iter()
+            .any(|(reference, _)| reference.material.is_some());
+        if characteristic == Characteristic::Position && (upper.projected.is_some() || boundary) {
+            let features = self.position_features(upper.target)?;
+            let projected_zone = match &upper.projected {
+                Some((height, start)) => {
+                    Some(self.projection(*start, height.clone(), &features)?)
+                }
+                None => None,
+            };
+            let name = upper.name.clone();
+            return Ok(Found {
+                order: id,
+                name,
+                kind: ItemKind::Position(PositionControl {
+                    features,
+                    frame: PositionFrame::Single {
+                        segment: self.position_segment(upper)?,
+                        projected_zone,
+                    },
+                }),
+            });
+        }
+        if boundary {
+            return Err("a datum reference has a modifier".into());
+        }
+        if upper.projected.is_some() {
+            return Err("only a position tolerance's projected zone is read".into());
+        }
+        Ok(Found {
+            order: id,
+            kind: ItemKind::Tolerance(GeometricTolerance {
+                characteristic,
+                value: upper.value,
+                diameter_zone: upper.diameter_zone,
+                material: upper.material,
+                datums: upper
+                    .datums
+                    .into_iter()
+                    .map(|(reference, _)| reference.letter)
+                    .collect(),
+                features: self.features(upper.target, 0)?,
+            }),
+            name: upper.name,
+        })
+    }
+
+    /// A composite position frame: the upper segment `id` and the lower one
+    /// its `composite` relationship names (section 6.9.9).
+    fn composite(
+        &self,
+        id: u64,
+        characteristic: Characteristic,
+        upper: Segment,
+        lower: u64,
+    ) -> Result<Found, String> {
+        if characteristic != Characteristic::Position
+            || self
+                .entity(lower)
+                .and_then(|entity| entity.part("POSITION_TOLERANCE"))
+                .is_none()
+        {
+            return Err("only a composite position frame is read".into());
+        }
+        if self.composite_lower(lower)?.is_some() {
+            return Err("its composite frame has more than two segments".into());
+        }
+        let lower = self
+            .segment(lower, Characteristic::Position)
+            .map_err(|reason| format!("its lower segment #{lower}: {reason}"))?;
+        if upper.projected.is_some() || lower.projected.is_some() {
+            return Err("a composite frame with a projected zone is not read".into());
+        }
+        let features = self.position_features(upper.target)?;
+        if lower.target != upper.target && self.features(lower.target, 0)? != features {
+            return Err("the composite frame's segments control different features".into());
+        }
+        let name = upper.name.clone();
         Ok(Found {
             order: id,
             name,
-            kind: ItemKind::Tolerance(GeometricTolerance {
-                characteristic,
-                value,
-                diameter_zone,
-                material,
-                datums: self.datum_letters(&systems)?,
-                features: self.features(target, 0)?,
+            kind: ItemKind::Position(PositionControl {
+                features,
+                frame: PositionFrame::Composite {
+                    upper: self.position_segment(upper)?,
+                    lower: self.position_segment(lower)?,
+                },
             }),
+        })
+    }
+
+    /// The placed datum targets that set up a datum.
+    fn placed_targets(&self, datum: u64) -> Vec<u64> {
+        let mut targets = Vec::new();
+        for user in self.sharing.get(&datum).map_or(&[][..], Vec::as_slice) {
+            if let Some((_, relating, related)) = self.relationship(*user)
+                && related == datum
+                && self.has(relating, "PLACED_DATUM_TARGET_FEATURE")
+            {
+                targets.push(relating);
+            }
+        }
+        targets
+    }
+
+    /// An `AXIS2_PLACEMENT_3D` as the file writes it.
+    fn placement(&self, id: u64) -> Option<Placement> {
+        let params = self.entity(id)?.part("AXIS2_PLACEMENT_3D")?;
+        let origin = self
+            .entity(reference(params.get(1))?)?
+            .part("CARTESIAN_POINT")?;
+        let direction = |param: Option<&Param>| -> Option<Option<[Rational; 3]>> {
+            match param {
+                Some(Param::Unset) | None => Some(None),
+                param => {
+                    let found =
+                        coordinates(self.entity(reference(param)?)?.part("DIRECTION")?.get(1))?;
+                    (!is_zero3(&found)).then_some(Some(found))
+                }
+            }
+        };
+        Some(Placement {
+            name: string(params.first()).unwrap_or_default(),
+            origin: coordinates(origin.get(1))?,
+            axis: direction(params.get(2))?.unwrap_or([
+                Rational::zero(),
+                Rational::zero(),
+                Rational::one(),
+            ]),
+            reference: direction(params.get(3))?,
+        })
+    }
+
+    /// The plane of a planar face and its normal pointing out of the material.
+    fn outward_plane(&self, face: &str) -> Option<([Rational; 3], [Rational; 3])> {
+        let id: u64 = face.strip_prefix('#')?.parse().ok()?;
+        let params = self.entity(id)?.part("ADVANCED_FACE")?;
+        let plane = self.entity(reference(params.get(2))?)?.part("PLANE")?;
+        let placement = self.placement(reference(plane.get(1))?)?;
+        let normal = match params.get(3) {
+            Some(Param::Enum(sense)) if sense == "T" => placement.axis,
+            Some(Param::Enum(sense)) if sense == "F" => neg3(&placement.axis),
+            _ => return None,
+        };
+        Some((placement.origin, normal))
+    }
+
+    /// The `EDGE_CURVE`s that bound a face.
+    fn face_edge_curves(&self, face: &str) -> BTreeSet<u64> {
+        let mut edges = BTreeSet::new();
+        let Some(params) = face
+            .strip_prefix('#')
+            .and_then(|id| id.parse().ok())
+            .and_then(|id| self.entity(id))
+            .and_then(|face| face.part("ADVANCED_FACE"))
+        else {
+            return edges;
+        };
+        for bound in references(params.get(1)) {
+            let Some(cycle) = self
+                .entity(bound)
+                .and_then(|bound| reference(bound.parts[0].1.get(1)))
+                .and_then(|cycle| self.entity(cycle))
+                .and_then(|cycle| cycle.part("EDGE_LOOP"))
+            else {
+                continue;
+            };
+            for oriented in references(cycle.get(1)) {
+                if let Some(edge) = self
+                    .entity(oriented)
+                    .and_then(|oriented| oriented.part("ORIENTED_EDGE"))
+                    .and_then(|params| reference(params.get(3)))
+                {
+                    edges.insert(edge);
+                }
+            }
+        }
+        edges
+    }
+
+    /// Millimetres in the length unit of a representation context.
+    fn context_millimetres(&self, context: u64) -> Option<Rational> {
+        let units = self
+            .entity(context)?
+            .part("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
+            .first();
+        references(units)
+            .into_iter()
+            .find_map(|unit| self.millimetres(unit, 0))
+    }
+
+    /// The complete trim of a planar face from the file's own edge records,
+    /// in millimetres, or `None` when an edge is not a line or a circle.
+    fn face_boundary(&self, face: &str, scale: &Rational) -> Option<PlanarBoundary> {
+        let id: u64 = face.strip_prefix('#')?.parse().ok()?;
+        let params = self.entity(id)?.part("ADVANCED_FACE")?;
+        let plane = self.entity(reference(params.get(2))?)?.part("PLANE")?;
+        let frame = self.placement(reference(plane.get(1))?)?;
+        let at = |p: &[Rational; 3]| {
+            Point3::new(
+                Real::from_rational(&p[0] * scale),
+                Real::from_rational(&p[1] * scale),
+                Real::from_rational(&p[2] * scale),
+            )
+        };
+        let along = |v: &[Rational; 3]| {
+            Vector3::new(
+                Real::from_rational(v[0].clone()),
+                Real::from_rational(v[1].clone()),
+                Real::from_rational(v[2].clone()),
+            )
+        };
+        let mut vertices = Vec::new();
+        let mut indices = BTreeMap::new();
+        let mut edges = Vec::new();
+        for bound in references(params.get(1)) {
+            let cycle = self.entity(reference(self.entity(bound)?.parts[0].1.get(1))?)?;
+            if cycle.part("VERTEX_LOOP").is_some() {
+                continue;
+            }
+            for oriented in references(cycle.part("EDGE_LOOP")?.get(1)) {
+                let edge = reference(self.entity(oriented)?.part("ORIENTED_EDGE")?.get(3))?;
+                let edge = self.entity(edge)?.part("EDGE_CURVE")?;
+                let mut ends = [0usize; 2];
+                for (slot, vertex) in ends.iter_mut().zip([edge.get(1), edge.get(2)]) {
+                    let vertex = reference(vertex)?;
+                    *slot = match indices.get(&vertex) {
+                        Some(index) => *index,
+                        None => {
+                            let point =
+                                reference(self.entity(vertex)?.part("VERTEX_POINT")?.get(1))?;
+                            let point =
+                                coordinates(self.entity(point)?.part("CARTESIAN_POINT")?.get(1))?;
+                            vertices.push(at(&point));
+                            indices.insert(vertex, vertices.len() - 1);
+                            vertices.len() - 1
+                        }
+                    };
+                }
+                let same_sense = match edge.get(4) {
+                    Some(Param::Enum(sense)) if sense == "T" => true,
+                    Some(Param::Enum(sense)) if sense == "F" => false,
+                    _ => return None,
+                };
+                let mut curve = self.entity(reference(edge.get(3))?)?;
+                for wrapper in ["SURFACE_CURVE", "SEAM_CURVE"] {
+                    if let Some(params) = curve.part(wrapper) {
+                        curve = self.entity(reference(params.get(1))?)?;
+                    }
+                }
+                if curve.part("LINE").is_some() {
+                    edges.push(PlanarEdge::Segment(ends));
+                } else {
+                    // A face bounded by another curve is not checked.
+                    let circle = curve.part("CIRCLE")?;
+                    let placement = self.placement(reference(circle.get(1))?)?;
+                    let radius = &number(circle.get(2))? * scale;
+                    let ref_dir = placement
+                        .reference
+                        .clone()
+                        .unwrap_or_else(|| perpendicular3(&placement.axis));
+                    edges.push(PlanarEdge::Arc {
+                        circle: Circle {
+                            center: at(&placement.origin),
+                            normal: along(&placement.axis),
+                            radius_sq: Real::from_rational(&radius * &radius),
+                            ref_dir: along(&ref_dir),
+                        },
+                        ends: (ends[0] != ends[1])
+                            .then(|| if same_sense { ends } else { [ends[1], ends[0]] }),
+                    });
+                }
+            }
+        }
+        let ref_dir = frame
+            .reference
+            .clone()
+            .unwrap_or_else(|| perpendicular3(&frame.axis));
+        (!edges.is_empty()).then(|| PlanarBoundary {
+            plane: Plane {
+                origin: at(&frame.origin),
+                normal: along(&frame.axis),
+                ref_dir: along(&ref_dir),
+            },
+            vertices,
+            edges,
+        })
+    }
+
+    /// A placed datum target (recommended practices, section 6.6): its datum,
+    /// its one face, its `orientation` and sizes. The placement's axis must
+    /// point out of the face, the point must lie on the face's plane, and the
+    /// whole target must lie on the face within its trim.
+    fn target(&self, id: u64, params: &[Param]) -> Result<Found, String> {
+        let description = string(params.get(1)).unwrap_or_default();
+        let number = string(params.get(4))
+            .and_then(|text| text.trim().parse::<u32>().ok())
+            .filter(|number| *number > 0)
+            .ok_or("its target number is not a positive whole number")?;
+        let mut datums = Vec::new();
+        for user in self.sharing.get(&id).map_or(&[][..], Vec::as_slice) {
+            if let Some((_, relating, related)) = self.relationship(*user)
+                && relating == id
+                && self.datum_letter(related).is_some()
+            {
+                datums.push(related);
+            }
+        }
+        let [datum] = datums.as_slice() else {
+            return Err("it does not belong to exactly one datum".into());
+        };
+        let letter = self.datum_letter(*datum).unwrap_or_default();
+        let links = self.sharing_at(id, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP", 3);
+        let [(_, link)] = links.as_slice() else {
+            return Err(if links.is_empty() {
+                "it is tied to no face".into()
+            } else {
+                "it is tied to more than one face feature".into()
+            });
+        };
+        let aspect = reference(link.get(2)).ok_or("its face feature is missing")?;
+        if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != reference(params.get(2))
+        {
+            return Err("its face feature belongs to another part".into());
+        }
+        let faces = self
+            .used_faces(aspect)?
+            .ok_or("its face feature names no face")?;
+        let [face] = faces.as_slice() else {
+            return Err("its face feature names more than one face".into());
+        };
+        let mut representations = Vec::new();
+        for (property, _) in self.sharing_at(id, "PROPERTY_DEFINITION", 2) {
+            for (_, link) in self.sharing_at(property, "SHAPE_DEFINITION_REPRESENTATION", 0) {
+                representations.extend(reference(link.get(1)));
+            }
+        }
+        let [representation] = representations.as_slice() else {
+            return Err("its parameters are not one shape representation".into());
+        };
+        let representation = self
+            .entity(*representation)
+            .and_then(|entity| entity.part("SHAPE_REPRESENTATION_WITH_PARAMETERS"))
+            .ok_or("its parameters are not a shape representation with parameters")?;
+        let scale = reference(representation.get(2))
+            .and_then(|context| self.context_millimetres(context))
+            .ok_or("its parameters have no known length unit")?;
+        let (mut orientation, mut length, mut width, mut diameter) = (None, None, None, None);
+        for item in references(representation.get(1)) {
+            if let Some(placement) = self.placement(item) {
+                if placement.name != ORIENTATION {
+                    return Err(format!(
+                        "its parameters include a placement named `{}`",
+                        placement.name
+                    ));
+                }
+                if orientation.replace(placement).is_some() {
+                    return Err("it has more than one orientation".into());
+                }
+                continue;
+            }
+            let Some((name, value)) = self.length(item) else {
+                let kind = self
+                    .entity(item)
+                    .map_or("missing entity", Entity::type_name);
+                return Err(format!("its parameters include a {kind}"));
+            };
+            let slot = match name.as_str() {
+                TARGET_LENGTH => &mut length,
+                TARGET_WIDTH => &mut width,
+                TARGET_DIAMETER => &mut diameter,
+                other => return Err(format!("its parameters include `{other}`")),
+            };
+            if slot.replace(value).is_some() {
+                return Err(format!("it states `{name}` twice"));
+            }
+        }
+        let orientation = orientation.ok_or("it has no orientation")?;
+        let direction = || {
+            orientation
+                .reference
+                .clone()
+                .ok_or_else(|| format!("the {description} target has no direction"))
+        };
+        let kind = match (description.as_str(), length, width, diameter) {
+            ("point", None, None, None) => TargetKind::Point,
+            ("line", Some(length_mm), None, None) => TargetKind::Line {
+                length_mm,
+                direction: direction()?,
+            },
+            ("circle", None, None, Some(diameter_mm)) => {
+                TargetKind::Area(TargetArea::Circular { diameter_mm })
+            }
+            ("rectangle", Some(length_mm), Some(width_mm), None) => {
+                TargetKind::Area(TargetArea::Rectangular {
+                    length_mm,
+                    width_mm,
+                    direction: direction()?,
+                })
+            }
+            ("point" | "line" | "circle" | "rectangle", ..) => {
+                return Err(format!("its sizes do not fit a {description} target"));
+            }
+            (other, ..) => return Err(format!("a `{other}` datum target is not read")),
+        };
+        let (origin, outward) = self
+            .outward_plane(face)
+            .ok_or("a datum target is read only on a planar face")?;
+        if !is_zero3(&cross3(&orientation.axis, &outward))
+            || dot3(&orientation.axis, &outward) <= Rational::zero()
+        {
+            return Err("its orientation does not point out of its face".into());
+        }
+        if !dot3(&sub3(&orientation.origin, &origin), &outward).is_zero() {
+            return Err("its point is not on its face's plane".into());
+        }
+        let target = DatumTarget {
+            datum: letter.clone(),
+            number,
+            face: face.clone(),
+            point_mm: orientation.origin.clone().map(|value| &value * &scale),
+            kind,
+        };
+        let boundary = self.face_boundary(face, &scale).ok_or(
+            "its face's boundary is not lines and circles, so the target cannot be checked on it",
+        )?;
+        match off_face(&boundary, &target, &mut Decider::default()) {
+            Ok(None) => {}
+            Ok(Some(reason)) => return Err(reason.into()),
+            Err(refusal) => {
+                return Err(format!(
+                    "the target could not be checked on its face: {}",
+                    refusal.detail
+                ));
+            }
+        }
+        Ok(Found {
+            order: id,
+            name: Some(
+                self.id_attribute(id)
+                    .unwrap_or_else(|| format!("Datum target {letter}{number}")),
+            ),
+            kind: ItemKind::DatumTarget(target),
         })
     }
 
@@ -1458,6 +2180,7 @@ pub(crate) fn read_assembly_pmi(
 enum PmiKind {
     Unread(&'static str, &'static str),
     Datum,
+    Target,
     Size,
     Location,
     BasicAngle,
@@ -1479,6 +2202,8 @@ fn candidate(id: u64, entity: &Entity) -> Option<Candidate<'_>> {
         PmiKind::Unread(part, reason)
     } else if name == "DATUM" && entity.parts.len() == 1 {
         PmiKind::Datum
+    } else if name == "PLACED_DATUM_TARGET_FEATURE" && entity.parts.len() == 1 {
+        PmiKind::Target
     } else if name == "DIMENSIONAL_SIZE" && entity.parts.len() == 1 {
         PmiKind::Size
     } else if entity.part("ANGULAR_LOCATION").is_some() {
@@ -1513,6 +2238,9 @@ fn read_items<'a>(
             reason,
         });
     };
+    // A lower composite segment is read with its upper one.
+    let mut lowers = Vec::new();
+    let mut failed = BTreeSet::new();
     for Candidate { id, entity, kind } in candidates {
         let read = match kind {
             PmiKind::Unread(part, reason) => {
@@ -1520,17 +2248,27 @@ fn read_items<'a>(
                 continue;
             }
             PmiKind::Datum => reader.datum(id),
+            PmiKind::Target => reader.target(id, &entity.parts[0].1),
             PmiKind::Size => reader.size(id, &entity.parts[0].1),
             PmiKind::Location => reader.location(id),
             PmiKind::BasicAngle => reader.basic_angle(id, entity.part("ANGULAR_LOCATION").unwrap()),
             PmiKind::Texture => reader.texture(id, &entity.parts[0].1),
-            PmiKind::Tolerance(characteristic) => reader.tolerance(id, characteristic),
+            PmiKind::Tolerance(characteristic) => {
+                if let Some(upper) = reader.composite_upper(id) {
+                    lowers.push((id, entity.type_name(), upper));
+                    continue;
+                }
+                reader.tolerance(id, characteristic)
+            }
         };
         let kind = entity.type_name();
         match read {
             Ok(item) if matches!(item.kind, ItemKind::Datum(_)) => datums.push((kind, item)),
             Ok(item) => later.push((kind, item)),
-            Err(reason) => skip(id, kind, reason),
+            Err(reason) => {
+                failed.insert(id);
+                skip(id, kind, reason);
+            }
         }
     }
     // A tolerance needs its datums, so datums are settled first.
@@ -1545,6 +2283,21 @@ fn read_items<'a>(
         let ItemKind::Datum(datum) = &item.kind else {
             unreachable!("datums were collected separately");
         };
+        // A datum its targets set up is not realized from its whole feature
+        // when one of them is missing.
+        if let Some(target) = reader
+            .placed_targets(item.order)
+            .into_iter()
+            .find(|target| failed.contains(target))
+        {
+            item.name = None;
+            skip(
+                item.order,
+                kind,
+                format!("its datum target #{target} was not read"),
+            );
+            continue;
+        }
         let name = item.name.take();
         let letter = datum.letter.as_str();
         let follows_conflict = conflicting_letters.contains(letter);
@@ -1598,11 +2351,20 @@ fn read_items<'a>(
         invalid_datum.or_else(|| datum_named_item.then(|| ItemError::DuplicateName.to_string()));
     for (kind, item) in &mut later {
         let name = item.name.take();
-        if let ItemKind::Tolerance(tolerance) = &item.kind
-            && let Some(letter) = tolerance.datums.iter().find(|letter| {
-                !validator.contains_datum(letter) && !conflicting_letters.contains(letter.as_str())
-            })
-        {
+        let referenced: Vec<&str> = match &item.kind {
+            ItemKind::Tolerance(tolerance) => tolerance.datums.iter().map(String::as_str).collect(),
+            ItemKind::Position(control) => control
+                .frame
+                .segments()
+                .into_iter()
+                .flat_map(|segment| segment.datums.iter().map(|datum| datum.letter.as_str()))
+                .collect(),
+            ItemKind::DatumTarget(target) => vec![target.datum.as_str()],
+            _ => Vec::new(),
+        };
+        if let Some(letter) = referenced.into_iter().find(|letter| {
+            !validator.contains_datum(letter) && !conflicting_letters.contains(*letter)
+        }) {
             skip(
                 item.order,
                 kind,
@@ -1614,6 +2376,12 @@ fn read_items<'a>(
             skip(item.order, kind, reason.clone());
             continue;
         }
+        if let ItemKind::DatumTarget(target) = &item.kind
+            && let Err(error) = validator.accept_target(target)
+        {
+            skip(item.order, kind, error.to_string());
+            continue;
+        }
         if let Err(error) = validator.check_kind(&item.kind) {
             skip(item.order, kind, error.to_string());
             continue;
@@ -1623,6 +2391,28 @@ fn read_items<'a>(
     }
     for (name, base) in recovered_names {
         *name = Some(validator.assign_name(base));
+    }
+    for (id, kind, upper) in lowers {
+        let read = later.iter().any(|(_, item)| {
+            item.order == upper
+                && item.name.is_some()
+                && matches!(
+                    &item.kind,
+                    ItemKind::Position(PositionControl {
+                        frame: PositionFrame::Composite { .. },
+                        ..
+                    })
+                )
+        });
+        if !read {
+            skip(
+                id,
+                kind,
+                format!(
+                    "it is the lower segment of the composite frame #{upper}, which was not read"
+                ),
+            );
+        }
     }
     drop(conflicting_letters);
     drop(validator);

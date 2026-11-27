@@ -16,21 +16,28 @@
 //! side roles. Chamfer angle and edge break bounds use named properties.
 
 mod callout;
+mod check;
 mod measure;
+mod position;
+mod target;
 mod write;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
+pub use check::check_on_model;
 pub use measure::nominals;
+pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
+pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
 pub(crate) use write::emit;
 pub use write::{
-    BEVEL_ANGLE, CHAMFER, COUNTERBORE, COUNTERSINK, EDGE_BREAK, FIRST_SIDE, HEAD_DEPTH,
-    HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, MAX_SETBACK, MIN_SETBACK, SECOND_SIDE,
-    THREAD, THREAD_DEPTH, THROUGH, WIDTH,
+    BEVEL_ANGLE, CHAMFER, COMPOSITE, COUNTERBORE, COUNTERSINK, DATUM_TARGET, EDGE_BREAK,
+    FIRST_SIDE, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, MAX_SETBACK,
+    MIN_SETBACK, ORIENTATION, SECOND_SIDE, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD,
+    THREAD_DEPTH, THROUGH, WIDTH,
 };
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
@@ -158,6 +165,44 @@ impl<F> Pmi<F> {
                     process: texture.process,
                     feature: feature(&texture.feature)?,
                 }),
+                ItemKind::DatumTarget(target) => ItemKind::DatumTarget(DatumTarget {
+                    datum: target.datum.clone(),
+                    number: target.number,
+                    face: map(item, &target.face)?,
+                    point_mm: target.point_mm.clone(),
+                    kind: target.kind.clone(),
+                }),
+                ItemKind::Position(control) => ItemKind::Position(PositionControl {
+                    features: control
+                        .features
+                        .iter()
+                        .map(&mut feature)
+                        .collect::<Result<_, _>>()?,
+                    frame: match &control.frame {
+                        PositionFrame::Single {
+                            segment,
+                            projected_zone,
+                        } => PositionFrame::Single {
+                            segment: segment.clone(),
+                            projected_zone: match projected_zone {
+                                Some(zone) => Some(ProjectedZone {
+                                    height_mm: zone.height_mm.clone(),
+                                    direction: zone.direction.clone(),
+                                    entry_faces: zone
+                                        .entry_faces
+                                        .iter()
+                                        .map(|face| map(item, face))
+                                        .collect::<Result<_, _>>()?,
+                                }),
+                                None => None,
+                            },
+                        },
+                        PositionFrame::Composite { upper, lower } => PositionFrame::Composite {
+                            upper: upper.clone(),
+                            lower: lower.clone(),
+                        },
+                    },
+                }),
             };
             items.push(Item {
                 id: item.id.clone(),
@@ -232,6 +277,12 @@ pub enum ItemKind<F> {
     Tolerance(GeometricTolerance<F>),
     /// A surface texture requirement.
     Texture(SurfaceTexture<F>),
+    /// A datum target on one face of a declared datum.
+    DatumTarget(DatumTarget<F>),
+    /// A position control with a composite frame, a projected zone or a
+    /// datum reference at a material boundary. A plain single position is a
+    /// [`GeometricTolerance`], and this variant refuses one.
+    Position(PositionControl<F>),
 }
 
 impl<F> ItemKind<F> {
@@ -256,7 +307,28 @@ impl<F> ItemKind<F> {
             } => vec![bevel, a, b],
             ItemKind::Tolerance(tolerance) => tolerance.features.iter().collect(),
             ItemKind::Texture(texture) => vec![&texture.feature],
+            ItemKind::Position(control) => control.features.iter().collect(),
+            ItemKind::DatumTarget(_) => Vec::new(),
         }
+    }
+
+    /// Every face the item names: its features' faces, a datum target's face
+    /// and a projected zone's entry faces.
+    pub fn faces(&self) -> Vec<&F> {
+        let mut faces: Vec<&F> = self.features().into_iter().flatten().collect();
+        match self {
+            ItemKind::DatumTarget(target) => faces.push(&target.face),
+            ItemKind::Position(PositionControl {
+                frame:
+                    PositionFrame::Single {
+                        projected_zone: Some(zone),
+                        ..
+                    },
+                ..
+            }) => faces.extend(&zone.entry_faces),
+            _ => {}
+        }
+        faces
     }
 }
 
@@ -625,6 +697,8 @@ pub enum ItemError<'a> {
     DuplicateDatumFeature,
     /// The tolerance references a letter that no accepted datum defines.
     UndefinedDatum(&'a str),
+    /// An accepted datum target already has this datum letter and number.
+    DuplicateTarget(&'a str, u32),
     /// Another item rule did not pass.
     Rule(&'static str),
 }
@@ -636,6 +710,9 @@ impl fmt::Display for ItemError<'_> {
             Self::DuplicateDatum(letter) => write!(f, "datum {letter} is defined twice"),
             Self::DuplicateDatumFeature => f.write_str("the feature already carries a datum"),
             Self::UndefinedDatum(letter) => write!(f, "datum {letter} is not defined"),
+            Self::DuplicateTarget(letter, number) => {
+                write!(f, "datum target {letter}{number} is defined twice")
+            }
             Self::Rule(reason) => f.write_str(reason),
         }
     }
@@ -661,6 +738,8 @@ pub struct PartValidator<'a, F> {
     names: BTreeSet<Cow<'a, str>>,
     letters: BTreeSet<&'a str>,
     datum_features: BTreeSet<Vec<&'a F>>,
+    datum_faces: BTreeMap<&'a str, Vec<&'a F>>,
+    targets: BTreeSet<(String, u32)>,
 }
 
 impl<F> Default for PartValidator<'_, F> {
@@ -669,6 +748,8 @@ impl<F> Default for PartValidator<'_, F> {
             names: BTreeSet::new(),
             letters: BTreeSet::new(),
             datum_features: BTreeSet::new(),
+            datum_faces: BTreeMap::new(),
+            targets: BTreeSet::new(),
         }
     }
 }
@@ -700,6 +781,30 @@ impl<'a, F: Ord> PartValidator<'a, F> {
             return Err(ItemError::DuplicateDatumFeature);
         }
         self.letters.insert(letter);
+        self.datum_faces
+            .insert(letter, datum.feature.iter().collect());
+        Ok(())
+    }
+
+    /// Checks a datum target against the accepted datums and targets, and
+    /// accepts it. Its datum must be accepted first, its face must be one of
+    /// that datum's faces, and its letter and number must be new.
+    pub fn accept_target<'t>(&mut self, target: &'t DatumTarget<F>) -> Result<(), ItemError<'t>> {
+        let letter = target.datum.as_str();
+        if target.number == 0 {
+            return Err(ItemError::Rule("a datum target's number is positive"));
+        }
+        let Some(faces) = self.datum_faces.get(letter) else {
+            return Err(ItemError::UndefinedDatum(letter));
+        };
+        if !faces.contains(&&target.face) {
+            return Err(ItemError::Rule(
+                "the target's face is not on its datum's feature",
+            ));
+        }
+        if !self.targets.insert((letter.to_owned(), target.number)) {
+            return Err(ItemError::DuplicateTarget(letter, target.number));
+        }
         Ok(())
     }
 
@@ -840,9 +945,111 @@ impl<'a, F: Ord> PartValidator<'a, F> {
                     return Err(Rule("the roughness value must be more than zero"));
                 }
             }
+            ItemKind::DatumTarget(target) => {
+                if !target.kind.sizes().into_iter().all(positive) {
+                    return Err(Rule("a datum target's sizes must be more than zero"));
+                }
+                if target.kind.direction().is_some_and(is_zero_vector) {
+                    return Err(Rule("a datum target's direction must not be zero"));
+                }
+            }
+            ItemKind::Position(control) => self.check_position(control)?,
         }
         Ok(())
     }
+
+    fn check_position<'item>(
+        &self,
+        control: &'item PositionControl<F>,
+    ) -> Result<(), ItemError<'item>> {
+        use ItemError::Rule;
+        if control.features.is_empty() {
+            return Err(Rule("the position control names no feature"));
+        }
+        for segment in control.frame.segments() {
+            if !positive(&segment.value_mm) {
+                return Err(Rule("a position zone must be more than zero"));
+            }
+            if !segment.diameter_zone {
+                return Err(Rule("a position control's zone is cylindrical"));
+            }
+            if segment.datums.len() > 3 {
+                return Err(Rule("a segment refers to at most three datums"));
+            }
+            for (index, datum) in segment.datums.iter().enumerate() {
+                if segment.datums[..index]
+                    .iter()
+                    .any(|other| other.letter == datum.letter)
+                {
+                    return Err(Rule("a datum is referred to twice"));
+                }
+                if !self.contains_datum(&datum.letter) {
+                    return Err(ItemError::UndefinedDatum(&datum.letter));
+                }
+            }
+        }
+        match &control.frame {
+            PositionFrame::Composite { upper, lower } => {
+                if upper.datums.is_empty() {
+                    return Err(Rule("the upper segment of a composite needs datums"));
+                }
+                if lower.datums.len() > upper.datums.len()
+                    || lower
+                        .datums
+                        .iter()
+                        .zip(&upper.datums)
+                        .any(|(low, up)| low.letter != up.letter)
+                {
+                    return Err(Rule(
+                        "the lower segment's datums must repeat the upper segment's first datums in order",
+                    ));
+                }
+                if lower.value_mm > upper.value_mm {
+                    return Err(Rule(
+                        "the lower segment's zone cannot be larger than the upper one",
+                    ));
+                }
+            }
+            PositionFrame::Single {
+                projected_zone: Some(zone),
+                ..
+            } => {
+                if !positive(&zone.height_mm) {
+                    return Err(Rule("a projected zone needs a positive height"));
+                }
+                if is_zero_vector(&zone.direction) {
+                    return Err(Rule("a projected zone needs a direction"));
+                }
+                if zone.entry_faces.len() != control.features.len() {
+                    return Err(Rule(
+                        "a projected zone needs one entry face per controlled feature",
+                    ));
+                }
+                if zone
+                    .entry_faces
+                    .iter()
+                    .any(|face| control.features.iter().flatten().any(|f| f == face))
+                {
+                    return Err(Rule("an entry face is one of the controlled faces"));
+                }
+            }
+            PositionFrame::Single {
+                projected_zone: None,
+                ..
+            } => {
+                if !control.has_datum_boundary() {
+                    return Err(Rule(
+                        "a single position with no projected zone and no datum boundary is a geometric tolerance",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn is_zero_vector(vector: &[Rational; 3]) -> bool {
+    vector.iter().all(Rational::is_zero)
 }
 
 fn feature_key<F: Ord>(faces: &[F]) -> Vec<&F> {
@@ -888,6 +1095,8 @@ fn check_features<F: Ord>(kind: &ItemKind<F>) -> Result<(), ItemError<'static>> 
         }
         ItemKind::Tolerance(tolerance) => tolerance.features.iter().try_for_each(check),
         ItemKind::Texture(texture) => check(&texture.feature),
+        ItemKind::Position(control) => control.features.iter().try_for_each(check),
+        ItemKind::DatumTarget(_) => Ok(()),
     }
 }
 
@@ -916,6 +1125,14 @@ impl<F: Ord> Pmi<F> {
                 validator
                     .accept_datum(datum)
                     .map_err(|reason| refuse(id, reason))?;
+            }
+        }
+        // A target needs its datum, which can come later in the list.
+        for item in &self.items {
+            if let ItemKind::DatumTarget(target) = &item.kind {
+                validator
+                    .accept_target(target)
+                    .map_err(|reason| refuse(&item.id, reason))?;
             }
         }
         for item in &self.items {

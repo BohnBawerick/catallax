@@ -316,9 +316,12 @@ diameter on a feature that carries the attribute `hole depth` with the value
 Nothing is guessed. An item the reader cannot represent in full is left out
 and listed in `StepPmi::skipped` with its entity, type and reason: an angular
 dimension, a dimension along a path, a reference dimension or one with
-another modifier or note, a datum target or
-common datum, a tolerance with a modifier other than a material condition, a
-datum reference with a modifier, an item on geometry other than faces. A
+another modifier or note, a datum target other than a placed
+target on one planar face, a common datum, a tolerance with a modifier other
+than a material condition, a datum reference with a modifier other than a
+material boundary, an item on geometry other than faces. A datum that only
+datum targets set up, with no `DATUM_FEATURE` naming its faces, is skipped
+with its targets. A composite frame's lower segment is skipped with its upper. A
 tolerance is skipped if no accepted datum defines the letter it refers to.
 A datum skipped because its faces already carry a datum does not reserve
 its letter. A later datum on a different feature can define that letter.

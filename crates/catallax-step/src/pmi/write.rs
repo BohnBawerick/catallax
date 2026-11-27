@@ -957,9 +957,10 @@ impl Emitter<'_> {
         let items = counts
             .into_iter()
             .map(|(name, count)| {
+                // AP242 declares INTEGER_REPRESENTATION_ITEM.the_value as REAL.
                 self.graph.add(
                     "INTEGER_REPRESENTATION_ITEM",
-                    vec![quoted(name), text(count.to_string())],
+                    vec![quoted(name), text(format!("{count}."))],
                 )
             })
             .collect();

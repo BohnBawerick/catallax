@@ -25,8 +25,6 @@ pub struct Record {
     pub span: Range<usize>,
     /// The bytes after `=` and before `;`.
     pub body: Range<usize>,
-    /// The entity type, or the first partial type of a complex instance.
-    pub kind: String,
     /// The entities it refers to, in order, without repeats.
     pub refs: Vec<u64>,
     reference_spans: Vec<(u64, Range<usize>)>,
@@ -67,55 +65,75 @@ fn skip(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
+fn layout(bytes: &[u8], mut at: usize) -> usize {
+    while let Some(byte) = bytes.get(at) {
+        if byte.is_ascii_whitespace() {
+            at += 1;
+        } else if *byte == b'/'
+            && let Some(next) = skip(bytes, at)
+        {
+            at = next;
+        } else {
+            break;
+        }
+    }
+    at
+}
+
+fn token(bytes: &[u8], at: usize, word: &[u8]) -> Option<usize> {
+    let tail = bytes.get(at..)?.strip_prefix(word)?;
+    let end = layout(bytes, bytes.len() - tail.len());
+    (bytes.get(end) == Some(&b';')).then_some(end + 1)
+}
+
 impl<'a> Records<'a> {
     /// Splits a file into records. Refuses text that is not UTF-8, a file
     /// with other than one data section, and a record that does not close.
     pub fn parse(bytes: &'a [u8]) -> Result<Self, Refusal> {
         let text = std::str::from_utf8(bytes).map_err(|_| refuse("the file is not UTF-8 text"))?;
         let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-        let mut i = 0;
-        let mut data = None;
-        let mut sections = 0;
-        // Find the data section outside strings and comments.
-        while i < bytes.len() {
-            if let Some(next) = skip(bytes, i) {
-                i = next;
-                continue;
+        let start = token(bytes, layout(bytes, 0), b"ISO-10303-21")
+            .and_then(|at| token(bytes, layout(bytes, at), b"HEADER"))
+            .ok_or_else(|| refuse("the Part 21 header is missing"))?;
+        let mut cursor = start;
+        let start = loop {
+            cursor = layout(bytes, cursor);
+            if cursor >= bytes.len() {
+                return Err(refuse("the Part 21 header does not end"));
             }
-            if bytes[i..].starts_with(b"DATA") {
-                let mut j = i + 4;
-                while bytes.get(j).is_some_and(u8::is_ascii_whitespace) {
-                    j += 1;
+            if let Some(end) = token(bytes, cursor, b"ENDSEC") {
+                break token(bytes, layout(bytes, end), b"DATA")
+                    .ok_or_else(|| refuse("unsupported exchange section before DATA"))?;
+            }
+            loop {
+                if cursor >= bytes.len() {
+                    return Err(refuse("a header record does not close"));
                 }
-                let preceded =
-                    i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
-                if preceded && bytes.get(j) == Some(&b';') {
-                    sections += 1;
-                    data.get_or_insert(j + 1);
-                    i = j + 1;
-                    continue;
+                if let Some(next) = skip(bytes, cursor) {
+                    cursor = next;
+                } else if bytes[cursor] == b';' {
+                    cursor += 1;
+                    break;
+                } else {
+                    cursor += 1;
                 }
             }
-            i += 1;
-        }
-        let start = match (data, sections) {
-            (Some(start), 1) => start,
-            _ => return Err(refuse("the file does not have exactly one data section")),
         };
         let mut records = Vec::new();
         let mut i = start;
         let end = loop {
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
+            i = layout(bytes, i);
             if i >= bytes.len() {
                 return Err(refuse("the data section does not end"));
             }
-            if let Some(next) = skip(bytes, i).filter(|_| bytes[i] == b'/') {
-                i = next;
-                continue;
-            }
-            if bytes[i..].starts_with(b"ENDSEC") {
+            if let Some(after_data) = token(bytes, i, b"ENDSEC") {
+                let end = token(bytes, layout(bytes, after_data), b"END-ISO-10303-21")
+                    .ok_or_else(|| refuse("unsupported exchange section after DATA"))?;
+                if layout(bytes, end) != bytes.len() {
+                    return Err(refuse(
+                        "unsupported exchange section after the closing token",
+                    ));
+                }
                 break i;
             }
             if bytes[i] != b'#' {
@@ -137,6 +155,7 @@ impl<'a> Records<'a> {
             }
             let body_start = j + 1;
             let mut refs = Vec::new();
+            let mut seen_refs = BTreeSet::new();
             let mut reference_spans = Vec::new();
             let mut k = body_start;
             let body_end = loop {
@@ -156,7 +175,7 @@ impl<'a> Records<'a> {
                         }
                         if let Ok(target) = text[k + 1..m].parse::<u64>() {
                             reference_spans.push((target, k..m));
-                            if !refs.contains(&target) {
+                            if seen_refs.insert(target) {
                                 refs.push(target);
                             }
                         }
@@ -171,17 +190,10 @@ impl<'a> Records<'a> {
             } else if bytes.get(span_end) == Some(&b'\n') {
                 span_end += 1;
             }
-            let body = text[body_start..body_end].trim_start();
-            let body = body.strip_prefix('(').unwrap_or(body).trim_start();
-            let kind: String = body
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
             records.push(Record {
                 id,
                 span: first..span_end,
                 body: body_start..body_end,
-                kind,
                 refs,
                 reference_spans,
             });
@@ -341,7 +353,6 @@ mod tests {
         let records = Records::parse(FILE.as_bytes()).unwrap();
         let ids: Vec<u64> = records.all().iter().map(|record| record.id).collect();
         assert_eq!(ids, [1, 2, 3]);
-        assert_eq!(records.get(2).unwrap().kind, "B");
         assert_eq!(records.get(3).unwrap().refs, [1, 2]);
         assert_eq!(records.users(2), [1, 3]);
         assert_eq!(records.text(1), Some("#1=A('a;b',#2);\r\n"));

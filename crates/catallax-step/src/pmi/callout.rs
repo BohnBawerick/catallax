@@ -13,7 +13,7 @@
 
 use catallax_numbers::{Integer, Rational};
 
-use super::{Process, SurfaceTexture};
+use super::{Camera, Process, SurfaceTexture};
 use crate::number::integer_sqrt;
 
 /// A point of the drawing in file units, millimetres.
@@ -302,10 +302,10 @@ pub(crate) fn drawable(text: &str) -> bool {
 /// Draws a label callout: a leader as for a texture, then `lines` upper line
 /// first, each in a compartment of one frame, as a feature control frame or
 /// a dimension label is drawn. Every character must be [`drawable`].
-pub(crate) fn label(lines: &[String], anchor: Option<&Point>, slot: usize) -> Drawing {
+pub(crate) fn label(lines: &[String]) -> Drawing {
     let zero = Rational::zero();
     let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
-    let origin = leader(anchor, slot, &mut flat);
+    let origin = [zero.clone(), zero.clone(), zero.clone()];
     // Lines 5 mm apart in compartments, with 1 mm around the 3 mm text.
     let pitch = Rational::from_i64(5);
     let gap = Rational::one();
@@ -357,21 +357,22 @@ fn root(value: &Rational) -> Rational {
     Rational::new(integer_sqrt(&whole), scale).expect("a nonzero denominator")
 }
 
-pub(crate) fn screen_axes(direction: &Point, up: &Point) -> [Point; 2] {
-    let unit = |axis: &Point| {
-        let largest = axis
-            .iter()
-            .map(Rational::abs)
-            .max()
-            .expect("three coordinates");
-        let scaled = axis.clone().map(|value| &value / &largest);
-        let squared = scaled
-            .iter()
-            .fold(Rational::zero(), |sum, value| &sum + &(value * value));
-        let length = root(&squared);
-        scaled.map(|value| presented(&(&value / &length)))
-    };
-    [unit(&cross(direction, up)), unit(up)]
+fn unit_axis(axis: &Point) -> Point {
+    let largest = axis
+        .iter()
+        .map(Rational::abs)
+        .max()
+        .expect("three coordinates");
+    let scaled = axis.each_ref().map(|value| value / &largest);
+    let squared = dot(&scaled, &scaled);
+    let scale = crate::number::rational(&(&Rational::one() / &(&largest * &root(&squared))), 17);
+    axis.each_ref().map(|value| value * &scale.value)
+}
+
+fn dot(a: &Point, b: &Point) -> Rational {
+    a.iter()
+        .zip(b)
+        .fold(Rational::zero(), |sum, (a, b)| &sum + &(a * b))
 }
 
 pub(crate) fn cross(a: &Point, b: &Point) -> Point {
@@ -383,12 +384,56 @@ pub(crate) fn cross(a: &Point, b: &Point) -> Point {
 }
 
 impl Drawing {
-    pub(crate) fn orient(&mut self, anchor: &Point, [right, up]: &[Point; 2]) {
-        for point in self.polylines.iter_mut().flatten() {
-            let x = &point[0] - &anchor[0];
-            let z = &point[2] - &anchor[2];
-            *point = std::array::from_fn(|i| &anchor[i] + &(&(&x * &right[i]) + &(&z * &up[i])));
+    pub(crate) fn in_view(
+        &mut self,
+        anchor: &Point,
+        camera: &Camera,
+        slot: usize,
+        count: usize,
+    ) -> Option<[Point; 2]> {
+        let across = cross(&camera.up, &camera.direction);
+        let right = unit_axis(&across);
+        let up = unit_axis(&camera.up);
+        let offset = std::array::from_fn(|i| &anchor[i] - &camera.eye[i]);
+        let depth = dot(&offset, &unit_axis(&camera.direction));
+        if depth <= Rational::zero() {
+            return None;
         }
+        let scale = if camera.perspective {
+            &depth / &camera.distance
+        } else {
+            Rational::one()
+        };
+        let [width, height] = &camera.window;
+        let rows = Rational::from_i64(i64::try_from(count).expect("view items fit i64"));
+        let cell = &(height * &q(9, 10)) / &rows;
+        let row = Rational::from_i64(i64::try_from(slot + 1).expect("view slot fits i64"));
+        let left = width * &q(-9, 20);
+        let bottom = &(height * &q(9, 20)) - &(&row * &cell);
+        let bounds: [(Rational, Rational); 2] = [0, 2].map(|axis| {
+            let mut values = self.polylines.iter().flatten().map(|point| &point[axis]);
+            let first = values.next().expect("a drawing has strokes");
+            let (lo, hi) = values.fold((first, first), |(lo, hi), v| (lo.min(v), hi.max(v)));
+            (lo.clone(), hi - lo)
+        });
+        let fit = Rational::one()
+            .min(&(width * &q(9, 10)) / &bounds[0].1)
+            .min(&(&cell * &q(4, 5)) / &bounds[1].1);
+        let at = |x: &Rational, y: &Rational| {
+            let x = &(&(&left + &(&(x - &bounds[0].0) * &fit)) * &scale) - &dot(&offset, &right);
+            let y = &(&(&bottom + &(&(y - &bounds[1].0) * &fit)) * &scale) - &dot(&offset, &up);
+            let x = crate::number::rational(&x, 17).value;
+            let y = crate::number::rational(&y, 17).value;
+            std::array::from_fn(|i| &anchor[i] + &(&(&x * &right[i]) + &(&y * &up[i])))
+        };
+        for point in self.polylines.iter_mut().flatten() {
+            *point = at(&point[0], &point[2]);
+        }
+        let end = at(&bounds[0].0, &bounds[1].0);
+        if *anchor != end {
+            self.polylines.insert(0, vec![anchor.clone(), end]);
+        }
+        Some([across, camera.direction.clone()])
     }
 
     /// The total length of the polylines and their centroid weighted by

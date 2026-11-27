@@ -1,5 +1,5 @@
 //! PMI-only edits of a STEP file's own records: no edit gives the same bytes,
-//! an edit changes only the item's records and the counts that include it, and
+//! an edit changes only the item's magnitude records, and
 //! an edit that cannot be proven safe is refused before anything is written.
 
 use std::collections::BTreeSet;
@@ -44,6 +44,10 @@ fn tolerance(
 /// reference on the base product, a property, and a group that names the
 /// parallelism tolerance.
 fn source() -> String {
+    assembly_source(false)
+}
+
+fn assembly_source(repeat_items: bool) -> String {
     let mut model = Model::new();
     let base = block(&mut model, [q("6"), q("8"), q("3")], &Pose::identity()).unwrap();
     let shaft = cylinder(&mut model, q("1"), q("5"), &Pose::identity()).unwrap();
@@ -110,7 +114,7 @@ fn source() -> String {
             )
         })
         .unwrap();
-    let shaft_pmi = Pmi {
+    let mut shaft_pmi = Pmi {
         items: vec![Item {
             id: "Shaft diameter".into(),
             kind: ItemKind::Size(Size {
@@ -125,6 +129,26 @@ fn source() -> String {
         part: PartNotes::default(),
         views: Vec::new(),
     };
+    if repeat_items {
+        let caps: Vec<_> = model
+            .faces_of_body(shaft)
+            .into_iter()
+            .filter(|face| *face != barrel)
+            .collect();
+        shaft_pmi.items.extend([
+            Item {
+                id: "Base datum".into(),
+                kind: ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![caps[0]],
+                }),
+            },
+            Item {
+                id: "Base parallelism".into(),
+                kind: tolerance(Characteristic::Parallelism, "0.04", &["A"], caps[1]),
+            },
+        ]);
+    }
     let at =
         |x: &str| Pose::from_rational(Rotation::identity(), RVector3::new(q(x), q("0"), q("0")));
     let products = vec![
@@ -222,7 +246,7 @@ fn a_tolerance_value_changes_its_own_records_only() {
     let out = patch_step_pmi(
         file.as_bytes(),
         &[PmiEdit::ToleranceValue {
-            item: "Base flatness".into(),
+            source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
             value: q("0.02"),
         }],
     )
@@ -314,31 +338,31 @@ fn an_unsafe_edit_is_refused_before_writing() {
     for (edit, reason) in [
         (
             PmiEdit::ToleranceValue {
-                item: "Base profile".into(),
+                source: read_step_pmi(file.as_bytes()).unwrap().sources["Base profile"].clone(),
                 value: q("0.1"),
             },
             "(DRAUGHTING_MODEL_ITEM_ASSOCIATION) may still depend on the old value",
         ),
         (
             PmiEdit::ToleranceValue {
-                item: "Shaft diameter".into(),
+                source: read_step_pmi(file.as_bytes()).unwrap().sources["Shaft diameter"].clone(),
                 value: q("2"),
             },
             "only a geometric tolerance's value is patched",
         ),
         (
             PmiEdit::ToleranceValue {
-                item: "Base flatness".into(),
+                source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
                 value: q("1/3"),
             },
             "not a decimal",
         ),
         (
             PmiEdit::ToleranceValue {
-                item: "No such item".into(),
+                source: "#900001".into(),
                 value: q("2"),
             },
-            "no such item was read",
+            "no item on one part was read",
         ),
     ] {
         let refusal = patch_step_pmi(file.as_bytes(), &[edit]).unwrap_err();
@@ -348,22 +372,15 @@ fn an_unsafe_edit_is_refused_before_writing() {
             refusal.detail
         );
     }
-    // A tolerance named by the opaque group keeps its number, so its value
-    // can change while the group still names it.
-    let out = patch_step_pmi(
+    let refusal = patch_step_pmi(
         file.as_bytes(),
         &[PmiEdit::ToleranceValue {
-            item: "Base parallelism".into(),
+            source: read_step_pmi(file.as_bytes()).unwrap().sources["Base parallelism"].clone(),
             value: q("0.03"),
         }],
     )
-    .unwrap();
-    let out = String::from_utf8(out).unwrap();
-    let group = file
-        .lines()
-        .find(|line| line.contains("APPLIED_GROUP_ASSIGNMENT("))
-        .unwrap();
-    assert!(out.contains(group));
+    .unwrap_err();
+    assert!(refusal.detail.contains("APPLIED_GROUP_ASSIGNMENT"));
 }
 
 #[test]
@@ -382,7 +399,7 @@ fn tolerance_patch_preserves_literals() {
         annotated.replacen(&format!(",{value},"), &format!(",/* {value} */{value},"), 1);
     let annotated_file = file.replacen(flatness_record, &annotated, 1);
     let edit = PmiEdit::ToleranceValue {
-        item: "Base flatness".into(),
+        source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
         value: q("0.02"),
     };
     let patched =
@@ -416,11 +433,100 @@ fn tolerance_patch_refuses_zone_properties() {
     let Err(refusal) = patch_step_pmi(
         with_dependency.as_bytes(),
         &[PmiEdit::ToleranceValue {
-            item: "Base flatness".into(),
+            source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
             value: q("0.02"),
         }],
     ) else {
         panic!("a property using the tolerance zone must prevent the edit");
     };
     assert!(refusal.detail.contains("#900000"), "{}", refusal.detail);
+}
+
+#[test]
+fn nonempty_patches_refuse_unindexed_exchange_sections() {
+    let file = source();
+    let edit = PmiEdit::ToleranceValue {
+        source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
+        value: q("0.02"),
+    };
+    for (marker, section) in [
+        (
+            "ENDSEC;\nDATA;",
+            "ENDSEC;\nANCHOR;\n<old-value>=#1;\nENDSEC;\nDATA;",
+        ),
+        (
+            "ENDSEC;\nDATA;",
+            "ENDSEC;\nREFERENCE;\n#900000=<ref.stp#target>;\nENDSEC;\nDATA;",
+        ),
+        (
+            "END-ISO-10303-21;",
+            "END-ISO-10303-21;\nSIGNATURE;\nYWJj\nENDSEC;",
+        ),
+    ] {
+        let outstanding = file.replacen(marker, section, 1);
+        assert_eq!(
+            patch_step_pmi(outstanding.as_bytes(), &[]).unwrap(),
+            outstanding.as_bytes()
+        );
+        assert!(
+            patch_step_pmi(outstanding.as_bytes(), std::slice::from_ref(&edit)).is_err(),
+            "{section}"
+        );
+    }
+}
+
+#[test]
+fn a_source_id_selects_the_second_parts_same_named_tolerance() {
+    let file = assembly_source(true);
+    let mut dec = Decider::default();
+    let read = |bytes: &[u8], dec: &mut Decider| {
+        let assembly = read_step_assembly(bytes, dec).unwrap();
+        assembly
+            .products
+            .into_iter()
+            .filter_map(|product| match product.content {
+                ProductContent::Part(part) => Some((product.name, part.pmi)),
+                ProductContent::Assembly(_) => None,
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let original = read(file.as_bytes(), &mut dec);
+    let base = &original["Base"];
+    let pin = &original["Pin"];
+    let name = "Base parallelism";
+    assert_ne!(pin.sources[name], base.sources[name]);
+    assert!(
+        base.skipped
+            .iter()
+            .any(|item| item.reason.contains("assembly saved-view"))
+    );
+    assert!(
+        base.skipped
+            .iter()
+            .any(|item| item.reason.contains("assembly graphical"))
+    );
+    assert!(pin.skipped.is_empty(), "{:?}", pin.skipped);
+    let changed = patch_step_pmi(
+        file.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: pin.sources[name].clone(),
+            value: q("0.06"),
+        }],
+    )
+    .unwrap();
+    let after = read(&changed, &mut dec);
+    assert_eq!(after["Base"], *base);
+    let mut expected = pin.clone();
+    let item = expected
+        .pmi
+        .items
+        .iter_mut()
+        .find(|item| item.id == name)
+        .unwrap();
+    let ItemKind::Tolerance(tol) = &mut item.kind else {
+        panic!("expected a tolerance")
+    };
+    assert_eq!(tol.value, q("0.04"));
+    tol.value = q("0.06");
+    assert_eq!(after["Pin"], expected);
 }

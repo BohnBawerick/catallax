@@ -30,7 +30,7 @@ use catallax_step::pmi::{
 
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph, Param, parse};
-use crate::recognize::unit_millimetres;
+use crate::recognize::{length_measure, placement_reference, unit_millimetres};
 
 /// The manufacturing information of a STEP file.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -301,16 +301,6 @@ fn cross3(a: &[Rational; 3], b: &[Rational; 3]) -> [Rational; 3] {
 
 fn is_zero3(a: &[Rational; 3]) -> bool {
     a.iter().all(Rational::is_zero)
-}
-
-/// A nonzero vector square to `axis`.
-fn perpendicular3(axis: &[Rational; 3]) -> [Rational; 3] {
-    let [x, y, _] = axis;
-    if x.is_zero() && y.is_zero() {
-        [Rational::one(), Rational::zero(), Rational::zero()]
-    } else {
-        [&Rational::zero() - y, x.clone(), Rational::zero()]
-    }
 }
 
 /// An `AXIS2_PLACEMENT_3D` with its defaults filled in, in file units.
@@ -641,10 +631,11 @@ impl<'a> Reader<'a> {
     fn length(&self, id: u64) -> Option<(String, Rational)> {
         let entity = self.entity(id)?;
         let (name, value, unit) = if let Some(measure) = entity.part("MEASURE_WITH_UNIT") {
+            let [value, unit] = measure else { return None };
             let name = entity
                 .part("REPRESENTATION_ITEM")
                 .and_then(|params| string(params.first()));
-            (name, measure.first(), measure.get(1))
+            (name, Some(value), Some(unit))
         } else {
             let params = entity.parts[0].1.as_slice();
             match (entity.type_name(), params.len()) {
@@ -657,34 +648,9 @@ impl<'a> Reader<'a> {
                 _ => return None,
             }
         };
-        let scale = self.millimetres(reference(unit)?, 0)?;
-        Some((name.unwrap_or_default(), &number(value)? * &scale))
-    }
-
-    /// Millimetres in one length unit. The importer's own conversion reads a
-    /// factor written as `LENGTH_MEASURE_WITH_UNIT`; files also write it as a
-    /// plain `MEASURE_WITH_UNIT` holding a length measure.
-    fn millimetres(&self, unit: u64, depth: u32) -> Option<Rational> {
-        if let Ok(scale) = unit_millimetres(self.g, unit, 0) {
-            return Some(scale);
-        }
-        if depth >= 8 {
-            return None;
-        }
-        let entity = self.entity(unit)?;
-        entity.part("LENGTH_UNIT")?;
-        let factor = reference(entity.part("CONVERSION_BASED_UNIT")?.get(1))?;
-        let factor = self.entity(factor)?;
-        if factor.parts.len() != 1 || factor.type_name() != "MEASURE_WITH_UNIT" {
-            return None;
-        }
-        let params = factor.parts[0].1.as_slice();
-        if !matches!(params.first(), Some(Param::Typed(kind, _)) if kind.contains("LENGTH_MEASURE"))
-        {
-            return None;
-        }
-        let value = number(params.first()).filter(|value| *value > Rational::zero())?;
-        Some(&value * &self.millimetres(reference(params.get(1))?, depth + 1)?)
+        let scale = unit_millimetres(self.g, reference(unit)?, 0).ok()?;
+        let (_, value) = length_measure(value?)?;
+        Some((name.unwrap_or_default(), &value * &scale))
     }
 
     fn datum_letter(&self, datum: u64) -> Option<String> {
@@ -1702,16 +1668,7 @@ impl<'a> Reader<'a> {
             let offset = &dot3(&sub3(point, &axis.origin), normal) / &dot3(&axis.axis, normal);
             let intersection: [Rational; 3] =
                 std::array::from_fn(|i| &axis.origin[i] + &(&offset * &axis.axis[i]));
-            let [x, y, z] = intersection.map(Real::from_rational);
-            let boundary = self
-                .face_boundary(face, &Rational::one())
-                .ok_or("the projected zone start trim cannot be checked")?;
-            if boundary
-                .contains(&Point3::new(x, y, z), &mut Decider::default())
-                .map_err(|refusal| refusal.detail)?
-            {
-                return Err("its projected zone's axis meets a closed end".into());
-            }
+            self.check_open_entry(face, &intersection, normal)?;
             entry_faces.push((*face).clone());
         }
         if starts.iter().any(|face| !entry_faces.contains(face)) {
@@ -1722,6 +1679,65 @@ impl<'a> Reader<'a> {
             direction: direction.ok_or("the position control names no feature")?,
             entry_faces,
         })
+    }
+
+    fn check_open_entry(
+        &self,
+        entry: &str,
+        intersection: &[Rational; 3],
+        normal: &[Rational; 3],
+    ) -> Result<(), String> {
+        let entry_id: u64 = entry[1..].parse().expect("a used face names its entity");
+        let shell_faces: BTreeSet<_> = ["CLOSED_SHELL", "OPEN_SHELL"]
+            .into_iter()
+            .flat_map(|kind| self.sharing_at(entry_id, kind, 1))
+            .flat_map(|(_, fields)| references(fields.get(1)))
+            .collect();
+        let [x, y, z] = intersection.clone().map(Real::from_rational);
+        let at = Point3::new(x, y, z);
+        let mut pending = vec![entry_id];
+        let mut visited = BTreeSet::new();
+        let mut dec = Decider::default();
+        while let Some(id) = pending.pop() {
+            if !visited.insert(id) || (!shell_faces.is_empty() && !shell_faces.contains(&id)) {
+                continue;
+            }
+            let face = format!("#{id}");
+            let Some((point, axis)) = self.outward_plane(&face) else {
+                continue;
+            };
+            if !is_zero3(&cross3(normal, &axis))
+                || !dot3(&sub3(intersection, &point), normal).is_zero()
+            {
+                continue;
+            }
+            let boundary = self
+                .face_boundary(&face, &Rational::one())
+                .ok_or("the projected zone start trim cannot be checked")?;
+            if boundary
+                .contains(&at, &mut dec)
+                .map_err(|refusal| refusal.detail)?
+            {
+                return Err("its projected zone's axis meets a closed end".into());
+            }
+            for edge in self.face_edge_curves(&face) {
+                for (oriented, _) in self.sharing_at(edge, "ORIENTED_EDGE", 3) {
+                    for (wire, _) in self.sharing_at(oriented, "EDGE_LOOP", 1) {
+                        for (bound, _) in ["FACE_BOUND", "FACE_OUTER_BOUND"]
+                            .into_iter()
+                            .flat_map(|kind| self.sharing_at(wire, kind, 1))
+                        {
+                            pending.extend(
+                                self.sharing_at(bound, "ADVANCED_FACE", 1)
+                                    .into_iter()
+                                    .map(|(face, _)| face),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn tolerance(
@@ -1931,7 +1947,7 @@ impl<'a> Reader<'a> {
             .first();
         references(units)
             .into_iter()
-            .find_map(|unit| self.millimetres(unit, 0))
+            .find_map(|unit| unit_millimetres(self.g, unit, 0).ok())
     }
 
     fn representation_scale(&self, representation: u64) -> Option<Rational> {
@@ -2008,10 +2024,7 @@ impl<'a> Reader<'a> {
                     let circle = curve.part("CIRCLE")?;
                     let placement = self.placement(reference(circle.get(1))?)?;
                     let radius = &number(circle.get(2))? * scale;
-                    let ref_dir = placement
-                        .reference
-                        .clone()
-                        .unwrap_or_else(|| perpendicular3(&placement.axis));
+                    let ref_dir = placement_reference(&placement.axis, placement.reference)?;
                     edges.push(PlanarEdge::Arc {
                         circle: Circle {
                             center: at(&placement.origin),
@@ -2025,10 +2038,7 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        let ref_dir = frame
-            .reference
-            .clone()
-            .unwrap_or_else(|| perpendicular3(&frame.axis));
+        let ref_dir = placement_reference(&frame.axis, frame.reference)?;
         (!edges.is_empty()).then(|| PlanarBoundary {
             plane: Plane {
                 origin: at(&frame.origin),
@@ -2135,9 +2145,7 @@ impl<'a> Reader<'a> {
         let plane = self.entity(id)?.part("ANNOTATION_PLANE")?;
         let surface = self.entity(reference(plane.get(2))?)?.part("PLANE")?;
         let frame = self.placement(reference(surface.get(1))?)?;
-        let reference = frame
-            .reference
-            .unwrap_or_else(|| perpendicular3(&frame.axis));
+        let reference = placement_reference(&frame.axis, frame.reference)?;
         (!is_zero3(&cross3(&frame.axis, &reference))).then(|| GraphicPlane {
             origin_mm: frame.origin.map(|value| &value * scale),
             normal: frame.axis,
@@ -2156,14 +2164,10 @@ impl<'a> Reader<'a> {
         let frame = reference(params.get(1))
             .and_then(|frame| self.placement(frame))
             .ok_or("the camera has no readable placement")?;
-        let across = frame
-            .reference
-            .ok_or("the camera's placement has no x axis")?;
+        let across = placement_reference(&frame.axis, frame.reference)
+            .ok_or("the camera's placement axes are parallel")?;
         let norm = dot3(&frame.axis, &frame.axis);
         let up = cross3(&frame.axis, &across).map(|value| &value / &norm);
-        if is_zero3(&up) {
-            return Err("the camera's placement axes are parallel".into());
-        }
         let volume = reference(params.get(2))
             .and_then(|volume| self.entity(volume))
             .and_then(|volume| volume.part("VIEW_VOLUME"))
@@ -2199,36 +2203,27 @@ impl<'a> Reader<'a> {
         };
         let dimensions = [size(1)?, size(2)?];
         let placement = reference(window.get(3))
-            .and_then(|id| self.entity(id)?.part("AXIS2_PLACEMENT_2D"))
-            .ok_or("the camera's window has no planar placement")?;
-        let corner = reference(placement.get(1))
-            .and_then(|id| self.entity(id)?.part("CARTESIAN_POINT"))
-            .and_then(|fields| match fields.get(1) {
-                Some(Param::List(at)) if at.len() == 2 => Some(at),
-                _ => None,
-            })
-            .ok_or("the camera's window has no corner")?;
+            .and_then(|id| self.placement(id))
+            .ok_or("the camera's window has no 3D placement")?;
         let negative_half = Rational::from_ratio(-1, 2).expect("a nonzero denominator");
-        if dimensions
-            .iter()
-            .zip(corner)
-            .any(|(size, at)| number(Some(at)) != Some(size * &negative_half))
+        if placement.origin[0] != &dimensions[0] * &negative_half
+            || placement.origin[1] != &dimensions[1] * &negative_half
         {
             return Err("the camera's window is off centre".into());
         }
-        if !matches!(placement.get(2), Some(Param::Unset)) {
-            let across = reference(placement.get(2))
-                .and_then(|id| self.entity(id)?.part("DIRECTION"))
-                .and_then(|fields| match fields.get(1) {
-                    Some(Param::List(direction)) if direction.len() == 2 => Some(direction),
-                    _ => None,
-                });
-            if !across.is_some_and(|axis| {
-                number(axis.first()).is_some_and(|x| x > Rational::zero())
-                    && number(axis.get(1)).is_some_and(|y| y.is_zero())
-            }) {
-                return Err("the camera's window is rotated or has no readable axis".into());
-            }
+        if placement.origin[2] != distance {
+            return Err("the camera's window depth differs from its view distance".into());
+        }
+        let across = placement_reference(&placement.axis, placement.reference)
+            .ok_or("the camera's window has parallel placement axes")?;
+        if !placement.axis[0].is_zero()
+            || !placement.axis[1].is_zero()
+            || placement.axis[2] <= Rational::zero()
+            || across[0] <= Rational::zero()
+            || !across[1].is_zero()
+            || !across[2].is_zero()
+        {
+            return Err("the camera's window is rotated".into());
         }
         Ok(Camera {
             eye: frame.origin.map(|value| &value * scale),
@@ -2514,39 +2509,32 @@ impl<'a> Reader<'a> {
             }
             _ => {}
         }
-        let mut lines = Vec::new();
+        let mut items = Vec::new();
         for (_, link) in self.sharing_at(id, "PROPERTY_DEFINITION_REPRESENTATION", 0) {
             let representation = reference(link.get(1))
                 .and_then(|id| self.entity(id))
                 .ok_or("its text is missing")?;
-            for item in references(representation.parts[0].1.get(1)) {
-                let fields = self
-                    .entity(item)
-                    .and_then(|entity| entity.part("DESCRIPTIVE_REPRESENTATION_ITEM"))
-                    .ok_or("its text holds an item that is not a string")?;
-                lines.push((
-                    string(fields.first()).unwrap_or_default(),
-                    string(fields.get(1)).unwrap_or_default(),
-                ));
-            }
+            items.extend(references(representation.parts[0].1.get(1)));
         }
-        let feature = self.one_feature(target)?;
-        let kind = match lines.as_slice() {
+        let item = match items.as_slice() {
             [] => return Err("it holds no text".into()),
-            [(name, designation)] if name == KNURL => ItemKind::Knurl {
-                designation: designation.clone(),
+            [item] => *item,
+            _ => return Err("its text has no defined order".into()),
+        };
+        let fields = self
+            .entity(item)
+            .and_then(|entity| entity.part("DESCRIPTIVE_REPRESENTATION_ITEM"))
+            .ok_or("its text holds an item that is not a string")?;
+        let name = string(fields.first()).ok_or("its text has no variable name")?;
+        let text = string(fields.get(1)).ok_or("its text is missing")?;
+        let feature = self.one_feature(target)?;
+        let kind = match name.as_str() {
+            "" => ItemKind::FaceNote { text, feature },
+            KNURL => ItemKind::Knurl {
+                designation: text,
                 feature,
             },
-            _ => {
-                if let Some((name, _)) = lines.iter().find(|(name, _)| !name.is_empty()) {
-                    return Err(format!("a text variable `{name}` is not read"));
-                }
-                let text: Vec<&str> = lines.iter().map(|(_, line)| line.as_str()).collect();
-                ItemKind::FaceNote {
-                    text: text.join("\n"),
-                    feature,
-                }
-            }
+            _ => return Err(format!("a text variable `{name}` is not read")),
         };
         Ok(Found {
             order: id,
@@ -2772,6 +2760,81 @@ impl<'a> Reader<'a> {
     }
 
     /// The notes written as user defined attributes of the product.
+    fn assembly_presentation(&self, shapes: &BTreeMap<u64, u64>) -> BTreeMap<u64, Vec<SkippedPmi>> {
+        let mut out = BTreeMap::<_, Vec<_>>::new();
+        let mut representation_owners = BTreeMap::<_, BTreeSet<_>>::new();
+        let mut models = BTreeMap::<_, BTreeSet<_>>::new();
+        for (&id, entity) in self.g {
+            if let Some(fields) = entity.part("SHAPE_DEFINITION_REPRESENTATION")
+                && let (Some(shape), Some(rep)) =
+                    (reference(fields.first()), reference(fields.get(1)))
+                && shapes.contains_key(&shape)
+            {
+                representation_owners.entry(rep).or_default().insert(shape);
+            }
+            if let Some(fields) = entity.part("DRAUGHTING_MODEL_ITEM_ASSOCIATION")
+                && let (Some(definition), Some(model)) =
+                    (reference(fields.get(2)), reference(fields.get(3)))
+            {
+                models
+                    .entry(model)
+                    .or_default()
+                    .extend(self.owner_shapes(definition));
+            }
+            if entity.type_name() == "DRAUGHTING_MODEL" {
+                models.entry(id).or_default();
+            }
+        }
+        for (model, mut owners) in models {
+            let Some(fields) = self.entity(model).and_then(|e| e.part("DRAUGHTING_MODEL")) else {
+                continue;
+            };
+            let members = references(fields.get(1));
+            for &member in &members {
+                let mapped = self
+                    .entity(member)
+                    .and_then(|e| e.part("MAPPED_ITEM"))
+                    .and_then(|fields| reference(fields.get(1)))
+                    .and_then(|id| self.entity(id)?.part("REPRESENTATION_MAP"))
+                    .and_then(|fields| reference(fields.get(1)));
+                if let Some(shapes) = mapped.and_then(|rep| representation_owners.get(&rep)) {
+                    owners.extend(shapes);
+                }
+            }
+            let has_view = members.iter().any(|id| {
+                self.entity(*id)
+                    .is_some_and(|e| e.type_name().starts_with("CAMERA_MODEL"))
+            });
+            let has_graphics = members.iter().any(|id| {
+                self.entity(*id).is_some_and(|e| {
+                    e.part("ANNOTATION_PLANE").is_some()
+                        || e.parts.iter().any(|(kind, _)| kind.ends_with("_CALLOUT"))
+                })
+            });
+            if !(has_view || has_graphics) {
+                continue;
+            }
+            let diagnostic = SkippedPmi {
+                entity: format!("#{model}"),
+                kind: "DRAUGHTING_MODEL".into(),
+                reason: if has_view {
+                    "assembly saved-view presentation is not read"
+                } else {
+                    "assembly graphical presentation is not read"
+                }
+                .into(),
+            };
+            owners.retain(|owner| shapes.contains_key(owner));
+            if owners.is_empty() {
+                owners.extend(shapes.keys().copied());
+            }
+            for owner in owners {
+                out.entry(owner).or_default().push(diagnostic.clone());
+            }
+        }
+        out
+    }
+
     fn part_notes(&self, scope: Option<(u64, u64)>) -> PartNotes {
         let mut notes = PartNotes::default();
         let mut numbered = Vec::new();
@@ -2866,14 +2929,17 @@ pub(crate) fn read_assembly_pmi(
         };
         items.entry(owner).or_default().push(item);
     }
+    let mut presentation = reader.assembly_presentation(shapes);
     Ok(shapes
         .iter()
         .map(|(&shape, &definition)| {
-            let pmi = read_items(
+            let mut pmi = read_items(
                 &reader,
                 items.remove(&shape).unwrap_or_default(),
                 Some((definition, shape)),
             );
+            pmi.skipped
+                .extend(presentation.remove(&shape).unwrap_or_default());
             (shape, pmi)
         })
         .collect())
@@ -3142,8 +3208,8 @@ fn read_items<'a>(
 pub enum PmiEdit {
     /// Gives a geometric tolerance a new zone value in millimetres.
     ToleranceValue {
-        /// The item's name as [`read_step_pmi`] gives it.
-        item: String,
+        /// The item's source entity (such as `#412`) from [`StepPmi::sources`].
+        source: String,
         /// The new value.
         value: Rational,
     },
@@ -3175,23 +3241,49 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
     if edits.is_empty() {
         return Ok(bytes.to_vec());
     }
-    let read = read_step_pmi(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    let graph = parse(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    let reader = Reader::new(&graph);
     let records = Records::parse(bytes)?;
+    let graph = parse(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
+    let shapes: BTreeMap<_, _> = graph
+        .iter()
+        .filter_map(|(&id, entity)| {
+            let shape = entity.part("PRODUCT_DEFINITION_SHAPE")?;
+            let definition = reference(shape.get(2))?;
+            graph.get(&definition)?.part("PRODUCT_DEFINITION")?;
+            Some((id, definition))
+        })
+        .collect();
+    let scoped = |graph: &Graph| {
+        read_assembly_pmi(graph, &shapes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))
+    };
+    let reader = Reader::new(&graph);
     let mut patch = Patch::new(&records);
-    let mut expected = read.clone();
+    let mut expected = scoped(&graph)?;
     let mut edited = BTreeSet::new();
-    for PmiEdit::ToleranceValue { item, value } in edits {
-        if !edited.insert(item.as_str()) {
-            return Err(patch_refusal(format!("{item}: it is edited twice")));
+    for PmiEdit::ToleranceValue { source, value } in edits {
+        let root: u64 = source
+            .strip_prefix('#')
+            .and_then(|id| id.parse().ok())
+            .ok_or_else(|| patch_refusal(format!("{source}: expected a source entity number")))?;
+        if !edited.insert(root) {
+            return Err(patch_refusal(format!("{source}: it is edited twice")));
         }
-        let changed = expected
+        let owners = reader.owner_shapes(root);
+        let part = owners
+            .first()
+            .filter(|_| owners.len() == 1)
+            .and_then(|owner| expected.get_mut(owner))
+            .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
+        let (item, _) = part
+            .sources
+            .iter()
+            .find(|(_, id)| *id == source)
+            .ok_or_else(|| patch_refusal(format!("{source}: no such item was read")))?;
+        let changed = part
             .pmi
             .items
             .iter_mut()
             .find(|found| &found.id == item)
-            .ok_or_else(|| patch_refusal(format!("{item}: no such item was read")))?;
+            .expect("read parts have an item for each source");
         let ItemKind::Tolerance(tolerance) = &mut changed.kind else {
             return Err(patch_refusal(format!(
                 "{item}: only a geometric tolerance's value is patched"
@@ -3202,9 +3294,6 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
                 "{item}: the value must be more than zero"
             )));
         }
-        let root: u64 = read.sources[item][1..]
-            .parse()
-            .expect("a source is an entity");
         let refuse_dependency = |id: u64| {
             let kind = graph.get(&id).map_or("unknown", Entity::type_name);
             patch_refusal(format!(
@@ -3216,7 +3305,6 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             let fields = entity.parts[0].1.as_slice();
             match (entity.parts.len(), entity.type_name()) {
                 (1, "ID_ATTRIBUTE") if reference(fields.get(1)) == Some(root) => {}
-                (1, "APPLIED_GROUP_ASSIGNMENT") if references(fields.get(1)).contains(&root) => {}
                 (1, "TOLERANCE_ZONE") if references(fields.get(4)) == [root] => {
                     if let Some(&dependent) = records.users(user).first() {
                         return Err(refuse_dependency(dependent));
@@ -3231,7 +3319,7 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             .unwrap_or(entity.parts[0].1.as_slice());
         let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
         let measure = &graph[&magnitude];
-        let (true, [Param::Typed(kind, _), Param::Ref(unit)]) = (
+        let (true, [select, Param::Ref(unit)]) = (
             measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
             measure.parts[0].1.as_slice(),
         ) else {
@@ -3239,9 +3327,11 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
                 "{item}: its value #{magnitude} is not a plain length measure"
             )));
         };
-        let scale = reader
-            .millimetres(*unit, 0)
-            .ok_or_else(|| patch_refusal(format!("{item}: its value's unit is not known")))?;
+        let (kind, _) = length_measure(select).ok_or_else(|| {
+            patch_refusal(format!("{item}: its value #{magnitude} is not a length"))
+        })?;
+        let scale = unit_millimetres(&graph, *unit, 0)
+            .map_err(|_| patch_refusal(format!("{item}: its value's unit is not known")))?;
         let written = file_real(value, &scale).ok_or_else(|| {
             patch_refusal(format!(
                 "{item}: the value is not a decimal in the file's unit"
@@ -3257,12 +3347,8 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
         tolerance.value = value.clone();
     }
     let out = patch.apply(&records);
-    let back = read_step_pmi(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    if back.pmi != expected.pmi
-        || back.sources != expected.sources
-        || back.skipped != expected.skipped
-        || back.graphics != expected.graphics
-    {
+    let graph = parse(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
+    if scoped(&graph)? != expected {
         return Err(patch_refusal(
             "the patched file does not read back as the edited PMI",
         ));

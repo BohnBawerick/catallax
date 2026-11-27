@@ -1387,6 +1387,24 @@ fn hole_fixture() -> (Bracket, Pmi<FaceId>) {
 #[test]
 fn compound_and_blind_holes_keep_separate_faces_and_depths() {
     let (part, pmi) = hole_fixture();
+    let mut with_view = pmi.clone();
+    with_view.views.push(SavedView {
+        name: "Hole detail".into(),
+        camera: Camera {
+            eye: v("10", "-50", "5"),
+            direction: v("0", "1", "0"),
+            up: v("0", "0", "1"),
+            distance: q("50"),
+            window: [q("80"), q("40")],
+            perspective: false,
+        },
+        items: vec![pmi.items[0].id.clone()],
+    });
+    assert!(
+        try_write(&part, &with_view)
+            .unwrap_err()
+            .contains("has no callout")
+    );
     let (file, report) = write(&part, &pmi);
     if let Ok(directory) = std::env::var("CATALLAX_PMI_OUT") {
         std::fs::write(
@@ -2563,6 +2581,17 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
     assert_eq!(back.items.len(), 11, "{}", reasons(&skipped));
     assert!(reasons(&skipped).contains("a projected zone needs a positive height"));
 
+    for select in ["PLANE_ANGLE_MEASURE(10.)", "LENGTH_MEASURE(10.,11.)"] {
+        let broken = mutate(
+            &file,
+            record,
+            &record.replace("LENGTH_MEASURE(10.)", select),
+        );
+        let (back, skipped) = read_back(&broken, &report);
+        assert!(!ids(&back).contains(&"Bore projection".to_owned()));
+        assert!(reasons(&skipped).contains("height is not a length"));
+    }
+
     // An unknown relationship between the segments leaves out both of them.
     let broken = mutate(
         &file,
@@ -3046,6 +3075,38 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
         assert_eq!(kind_of(&back, name), kind_of(&text, name));
     }
 
+    let records = records(&file);
+    let source = read_step_pmi(file.as_bytes()).unwrap().sources["Flange note"].clone();
+    let link = records
+        .values()
+        .find(|body| {
+            body.starts_with("PROPERTY_DEFINITION_REPRESENTATION(") && references(body)[0] == source
+        })
+        .unwrap();
+    let rep = &references(link)[1];
+    let body = &records[rep];
+    let value = &references(body)[0];
+    let unordered = mutate(
+        &file,
+        &format!("{rep}={body}"),
+        &format!(
+            "{rep}={}",
+            body.replace(&format!("({value})"), &format!("({value},#900000)"))
+        ),
+    );
+    let unordered = mutate(
+        &unordered,
+        "ENDSEC;\nEND-ISO",
+        "#900000=DESCRIPTIVE_REPRESENTATION_ITEM('','Append after plating');\nENDSEC;\nEND-ISO",
+    );
+    let read = read_step_pmi(unordered.as_bytes()).unwrap();
+    assert!(!read.sources.contains_key("Flange note"));
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("text has no defined order"))
+    );
+
     // A text variable this reader does not know is reported, and the rest stays.
     let (file, report) = write(&part, &text_pmi(&part, &f));
     let broken = mutate(&file, "'knurl designation'", "'surface treatment'");
@@ -3207,12 +3268,66 @@ fn saved_views_write_their_callouts_and_read_back() {
             );
         }
     }
-    for (view, axes, depth) in [("Bore", [0, 2], 1), ("Top", [0, 1], 2)] {
+    let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let cross = |a: &[f64], b: &[f64]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let unit = |axis: Vec<f64>| {
+        let norm = dot(&axis, &axis).sqrt();
+        axis.into_iter().map(|x| x / norm).collect::<Vec<_>>()
+    };
+    let style = |entity: &str, expected: &str| {
+        let assignment = references(entity)[0].clone();
+        let style = references(&all[&assignment])[0].clone();
+        assert!(all[&style].starts_with(expected), "{}", all[&style]);
+    };
+    assert_eq!(
+        all.values()
+            .filter(|body| body.starts_with("ANNOTATION_PLANE("))
+            .count(),
+        9
+    );
+    for view in ["Bore", "Top"] {
         let model = all
             .values()
             .find(|body| body.starts_with(&format!("DRAUGHTING_MODEL('{view}'")))
             .unwrap();
-        let planes: Vec<_> = references(model)
+        let members = references(model);
+        let camera = members
+            .iter()
+            .find(|id| all[*id].starts_with("CAMERA_MODEL_D3("))
+            .unwrap();
+        let camera = references(&all[camera]);
+        let axes = references(&all[&camera[0]]);
+        let eye = numbers(&all[&axes[0]]);
+        let depth = unit(numbers(&all[&axes[1]]));
+        let across = unit(numbers(&all[&axes[2]]));
+        let up = cross(&depth, &across);
+        let volume = &all[&camera[1]];
+        let perspective = volume.contains(".CENTRAL.");
+        let distance = volume.split(',').nth(2).unwrap().parse::<f64>().unwrap();
+        let window = references(volume).pop().unwrap();
+        let fields: Vec<_> = all[&window].split(',').collect();
+        let half = [
+            fields[1].parse::<f64>().unwrap() / 2.0,
+            fields[2].parse::<f64>().unwrap() / 2.0,
+        ];
+        let window_placement = &all[&references(&all[&window])[0]];
+        assert!(window_placement.starts_with("AXIS2_PLACEMENT_3D("));
+        assert_eq!(
+            numbers(&all[&references(window_placement)[0]]),
+            [-half[0], -half[1], distance]
+        );
+        let mapped = members
+            .iter()
+            .find(|id| all[*id].starts_with("STYLED_ITEM("))
+            .unwrap();
+        style(&all[mapped], "CURVE_STYLE(");
+        let planes: Vec<_> = members
             .into_iter()
             .filter(|id| all[id].starts_with("ANNOTATION_PLANE("))
             .collect();
@@ -3225,38 +3340,92 @@ fn saved_views_write_their_callouts_and_read_back() {
                 .items
                 .len()
         );
+        let mut preceding_bottom = half[1];
         for id in planes {
+            style(&all[&id], "FILL_AREA_STYLE(");
             let keys = references(&all[&id]);
             let surface = &all[&keys[1]];
             let frame = references(&all[&references(surface)[0]]);
             let origin = numbers(&all[&frame[0]]);
-            let direction = numbers(&all[&frame[1]]);
-            assert!(
-                (direction[depth].abs() - 1.0).abs() < 1e-9,
-                "{view}: {direction:?}"
-            );
+            let normal = unit(numbers(&all[&frame[1]]));
+            assert!(dot(&normal, &depth).abs() > 1.0 - 1e-9);
             let occurrence = references(&all[&keys[2]]).pop().unwrap();
             let set = references(&all[&occurrence]).pop().unwrap();
-            let strokes: Vec<_> = references(&all[&set])
-                .into_iter()
-                .flat_map(|line| references(&all[&line]))
-                .map(|point| numbers(&all[&point]))
+            let lines = references(&all[&set]);
+            let leader = references(&all[&lines[0]]);
+            assert_eq!(numbers(&all[&leader[0]]), origin);
+            let project = |id: String| {
+                let world = numbers(&all[&id]);
+                let from_eye: Vec<_> = world.iter().zip(&eye).map(|(p, eye)| p - eye).collect();
+                let from_plane: Vec<_> = world
+                    .iter()
+                    .zip(&origin)
+                    .map(|(p, plane)| p - plane)
+                    .collect();
+                assert!(dot(&from_plane, &normal).abs() < 1e-9);
+                let scale = if perspective {
+                    distance / dot(&from_eye, &depth)
+                } else {
+                    1.0
+                };
+                [dot(&from_eye, &across) * scale, dot(&from_eye, &up) * scale]
+            };
+            let strokes: Vec<_> = lines
+                .iter()
+                .skip(1)
+                .flat_map(|line| references(&all[line]))
+                .map(project)
                 .collect();
             assert!(
-                strokes
-                    .iter()
-                    .all(|point| (point[depth] - origin[depth]).abs() < 1e-9)
+                strokes[0][0] < strokes[1][0],
+                "{view}: the first stroke is mirrored"
             );
-            for axis in axes {
-                let (min, max) = strokes
+            for point in &strokes {
+                assert!(
+                    point
+                        .iter()
+                        .zip(half)
+                        .all(|(value, bound)| value.abs() < bound),
+                    "{view}: {point:?}"
+                );
+            }
+            for axis in 0..2 {
+                let (lo, hi) = strokes
                     .iter()
-                    .map(|point| point[axis])
-                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
-                        (min.min(value), max.max(value))
+                    .map(|p| p[axis])
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), x| {
+                        (lo.min(x), hi.max(x))
                     });
-                assert!(max - min > 2.0, "{view}: callout collapsed along {axis}");
+                assert!(hi - lo > 2.0, "{view}: callout collapsed along {axis}");
+                if axis == 1 {
+                    assert!(hi < preceding_bottom);
+                    preceding_bottom = lo;
+                }
             }
         }
+    }
+    for (id, expected) in [
+        ("Datum A", r"DTM\wA"),
+        ("Bore diameter", r"DIM\w⌀8 H7"),
+        ("Bore position", r"FCF\w⌖\w⌀0.05\wA\wB\wC"),
+    ] {
+        let association = callout_associations(&all, id).pop().unwrap().1;
+        let callout = references(&association).pop().unwrap();
+        let within = all
+            .iter()
+            .find(|(_, body)| {
+                body.starts_with("CHARACTERIZED_ITEM_WITHIN_REPRESENTATION(")
+                    && references(body)[0] == callout
+            })
+            .unwrap()
+            .0;
+        let properties = validation_items(&file);
+        let actual = &properties[within][0].1;
+        let expected = expected.replace('\\', r"\\");
+        let expected = expected
+            .replace('⌀', r"\X2\2300\X0\")
+            .replace('⌖', r"\X2\2316\X0\");
+        assert_eq!(*actual, format!("'equivalent unicode string','{expected}'"));
     }
     // Two views: a model named for each, its camera and its relation to the
     // global model.
@@ -3336,7 +3505,7 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
             graphic.text.as_deref(),
             graphic.presents.as_ref()
         ),
-        ("Datum A", "datum", Some("A"), None)
+        ("Datum A", "datum", Some(r"DTM\wA"), None)
     );
     assert_eq!(graphic.views, vec!["Bore".to_owned()]);
     assert!(!read.pmi.views[0].items.contains(&"Datum A".to_owned()));
@@ -3356,7 +3525,7 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
         panic!("{:?}", read.graphics);
     };
     assert_eq!(graphic.presents.as_deref(), Some(size.as_str()));
-    assert_eq!(graphic.text.as_deref(), Some("\u{2300}8 H7"));
+    assert_eq!(graphic.text.as_deref(), Some(r"DIM\w⌀8 H7"));
     assert_eq!(graphic.kind, "diameter dimension");
 }
 
@@ -3388,8 +3557,24 @@ fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
         }]
     );
 
+    let defaults = mutate(source, "#41,#42,#14", "#41,#42,$");
+    let defaults = read_step_pmi(defaults.as_bytes()).unwrap();
+    assert!(defaults.skipped.is_empty(), "{:?}", defaults.skipped);
+    assert_eq!(defaults.pmi.views[0].camera.up, v("0", "-1", "0"));
+
     for (from, to, reason) in [
-        ("(-10.,-8.)", "(-9.,-8.)", "off centre"),
+        ("(-10.,-8.,15.)", "(-9.,-8.,15.)", "off centre"),
+        ("(-10.,-8.,15.)", "(-10.,-8.,14.)", "window depth"),
+        (
+            "AXIS2_PLACEMENT_3D('',#45,$,$)",
+            "AXIS2_PLACEMENT_2D('',#45,$)",
+            "3D placement",
+        ),
+        (
+            "AXIS2_PLACEMENT_3D('',#45,$,$)",
+            "AXIS2_PLACEMENT_3D('',#45,#42,#14)",
+            "rotated",
+        ),
         ("15.,.F.,.F.,#47", "15.,.F.,.T.,#47", "clipping"),
         ("15.,15.,.F.", "0.,15.,.F.", "positive view distance"),
         ("#41,#42,#14", "#41,#42,#13", "placement axes are parallel"),
@@ -3404,4 +3589,186 @@ fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
             read.skipped
         );
     }
+}
+
+#[test]
+fn target_refuses_a_face_moved_by_step_rounding() {
+    use catallax_shapes::{RVector3, Rotation};
+    use catallax_topology::block;
+
+    let z = "0.1234567890123456789";
+    let pose = Pose::from_rational(Rotation::identity(), RVector3::new(q("0"), q("0"), q(z)));
+    let mut model = Model::new();
+    let body = block(&mut model, [q("10"), q("10"), q("10")], &pose).unwrap();
+    let part = Bracket { model, body };
+    let face = part.planes(2, z)[0];
+    let pmi = Pmi {
+        items: vec![
+            item(
+                "Datum A",
+                ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![face],
+                }),
+            ),
+            item("A1", target(1, face, v("5", "5", z), TargetKind::Point)),
+        ],
+        part: PartNotes::default(),
+        views: Vec::new(),
+    };
+    catallax_step::pmi::check_on_model(&part.model, &pmi, &mut Decider::default()).unwrap();
+    let mut out = Vec::new();
+    let refusal = write_step_with_pmi(
+        &part.model,
+        part.body,
+        &StepOptions::default(),
+        &pmi,
+        &mut Decider::default(),
+        &mut out,
+    )
+    .unwrap_err();
+    assert!(
+        refusal.detail.contains("A1") && refusal.detail.contains("written"),
+        "{refusal:?}"
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
+fn a_coplanar_disk_closes_a_projected_entry() {
+    use catallax_numbers::Real;
+    use catallax_shapes::{Circle, Curve};
+    use catallax_topology::{Coedge, Edge, Lump, Sense, Shell};
+
+    let mut model = Model::new();
+    let body = cylinder(&mut model, q("4"), q("5"), &Pose::identity()).unwrap();
+    let mut part = Bracket { model, body };
+    let barrel = part.round(2, "4", ["0", "0"]);
+    let top = part.planes(2, "5")[0];
+    let mut annulus = part.model.face(top).clone();
+    let model = &mut part.model;
+    let Surface::Plane(plane) = model.geom().surface(annulus.surface).clone() else {
+        panic!("expected top plane")
+    };
+    let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
+        center: plane.origin,
+        normal: plane.normal,
+        ref_dir: plane.ref_dir,
+        radius_sq: Real::one(),
+    }));
+    let edge = model.add_edge(Edge {
+        curve,
+        sense: Sense::Same,
+        start: None,
+        end: None,
+        tolerance: None,
+    });
+    let inner = model.add_coedge(Coedge {
+        edge,
+        sense: Sense::Reversed,
+    });
+    let outer = model.add_coedge(Coedge {
+        edge,
+        sense: Sense::Same,
+    });
+    let inner = model.add_loop(Loop::Coedges(vec![inner]));
+    let outer = model.add_loop(Loop::Coedges(vec![outer]));
+    annulus.loops = annulus
+        .loops
+        .iter()
+        .map(|id| {
+            let Loop::Coedges(coedges) = model.loop_(*id).clone() else {
+                panic!("expected top ring")
+            };
+            let coedges = coedges
+                .into_iter()
+                .map(|coedge| model.add_coedge(model.coedge(coedge).clone()))
+                .collect();
+            model.add_loop(Loop::Coedges(coedges))
+        })
+        .collect();
+    annulus.loops.push(inner);
+    let mut disk = annulus.clone();
+    disk.loops = vec![outer];
+    let annulus = model.add_face(annulus);
+    let disk = model.add_face(disk);
+    let mut faces = model.faces_of_body(body);
+    faces.retain(|face| *face != top);
+    faces.extend([annulus, disk]);
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let mut split = model.body(body).clone();
+    split.lumps = vec![lump];
+    part.body = model.add_body(split);
+
+    let mut pmi = Pmi {
+        items: vec![
+            item(
+                "Datum A",
+                ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![annulus],
+                }),
+            ),
+            item(
+                "Projection",
+                ItemKind::Position(PositionControl {
+                    features: vec![barrel.clone()],
+                    frame: PositionFrame::Single {
+                        segment: segment("0.05", None, Vec::new()),
+                        projected_zone: Some(ProjectedZone {
+                            height_mm: q("8"),
+                            direction: v("0", "0", "1"),
+                            entry_faces: vec![annulus],
+                        }),
+                    },
+                }),
+            ),
+        ],
+        part: PartNotes::default(),
+        views: Vec::new(),
+    };
+    let err = try_write(&part, &pmi).unwrap_err();
+    assert!(err.contains("axis meets a closed end"), "{err}");
+
+    pmi.items[1].kind = ItemKind::Tolerance(GeometricTolerance {
+        characteristic: Characteristic::Position,
+        value: q("0.05"),
+        diameter_zone: true,
+        material: None,
+        datums: Vec::new(),
+        features: vec![barrel],
+    });
+    let (file, _) = write(&part, &pmi);
+    let all = records(&file);
+    let (zone, _) = all
+        .iter()
+        .find(|(_, body)| body.starts_with("TOLERANCE_ZONE("))
+        .unwrap();
+    let (datum, _) = all
+        .iter()
+        .find(|(_, body)| body.starts_with("DATUM_FEATURE("))
+        .unwrap();
+    let (_, tol) = all
+        .iter()
+        .find(|(_, body)| body.starts_with("POSITION_TOLERANCE('Projection'"))
+        .unwrap();
+    let measure = references(tol)[0].clone();
+    let addition = format!("#900000=PROJECTED_ZONE_DEFINITION({zone},(),{datum},{measure});\n");
+    let source = mutate(
+        &file,
+        "ENDSEC;\nEND-ISO",
+        &format!("{addition}ENDSEC;\nEND-ISO"),
+    );
+    let read = read_step_pmi(source.as_bytes()).unwrap();
+    assert!(read.pmi.items.iter().all(|item| item.id != "Projection"));
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("axis meets a closed end")),
+        "{:?}",
+        read.skipped
+    );
 }

@@ -121,6 +121,11 @@ impl Graph {
         )
     }
 
+    pub(crate) fn record(&self, id: Id) -> (&'static str, &[Field]) {
+        let entity = &self.entities[id.0];
+        (entity.name, &entity.fields)
+    }
+
     pub(crate) fn duplicate(&mut self, id: Id) -> Id {
         let entity = &self.entities[id.0];
         self.add(entity.name, entity.fields.clone())

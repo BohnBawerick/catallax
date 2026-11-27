@@ -334,8 +334,8 @@ datum feature and a composite through either of its segments. View membership
 lists each resolved item once. `StepPmi::graphics` keeps graphical-only
 callouts with their strokes, annotation planes, face attachments, optional
 equivalent Unicode text and view names. Clipped cameras and off-centre or
-rotated windows produce a diagnostic. Assembly import reads semantic PMI per
-part.
+rotated windows produce a diagnostic. Assembly import reads semantic PMI per part and reports skipped presentation
+against its part.
 
 `cargo run -p catallax-import --example step_pmi -- part.step` prints what a
 file reads as and every item left out.
@@ -346,7 +346,8 @@ file reads as and every item left out.
 copies every other byte, so the assembly, colours, other annotations and
 records no Catallax reader knows stay as written. `ToleranceValue` gives a
 geometric tolerance a new value as a length measure under a fresh number above
-the file's highest, then replaces the magnitude reference. No edits give back
+the file's highest, then replaces the magnitude reference. Select the tolerance
+by its source entity from the owning part's `StepPmi::sources`. No edits give back
 the same bytes.
 
 The patch refuses with `step.pmi-patch` if it finds an unproven dependency on

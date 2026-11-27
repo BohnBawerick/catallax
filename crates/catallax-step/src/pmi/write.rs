@@ -185,8 +185,7 @@ fn stops(refusal: &Refusal) -> bool {
 #[derive(Clone, Copy)]
 struct Presentation {
     model: Id,
-    plane: Id,
-    unstyled: Id,
+    fill: Id,
     style: Id,
 }
 
@@ -204,6 +203,7 @@ struct Emitter<'a> {
     micrometre: Option<Id>,
     degree: Option<Id>,
     presentation: Option<Presentation>,
+    front_plane: Option<Id>,
     annotations: usize,
     /// The semantic entity each item is written as, by item name, for the
     /// association of its callout.
@@ -876,12 +876,10 @@ impl Emitter<'_> {
             .add("DIRECTION", vec![text("''"), Field::List(xyz)]))
     }
 
-    /// Editable text on an aspect of its own on the faces (recommended
-    /// practices, section 7.4): one descriptive item per line, each with its
-    /// variable name.
     fn face_text(
         &mut self,
-        lines: &[(&str, &str)],
+        variable: &str,
+        value: &str,
         feature: &[FaceId],
         item: &str,
     ) -> Result<(), Refusal> {
@@ -895,22 +893,17 @@ impl Emitter<'_> {
             ],
         );
         self.usage(aspect, feature, item)?;
-        let items = lines
-            .iter()
-            .map(|(name, line)| {
-                self.graph.add(
-                    "DESCRIPTIVE_REPRESENTATION_ITEM",
-                    vec![quoted(name), quoted(line)],
-                )
-            })
-            .collect::<Vec<_>>();
+        let value = self.graph.add(
+            "DESCRIPTIVE_REPRESENTATION_ITEM",
+            vec![quoted(variable), quoted(value)],
+        );
         let property = self.graph.add(
             "PROPERTY_DEFINITION",
             vec![quoted(SEMANTIC_TEXT), text("''"), aspect.into()],
         );
         let representation = self.graph.add(
             "REPRESENTATION",
-            vec![text("''"), refs(items), self.references.context.into()],
+            vec![text("''"), refs([value]), self.references.context.into()],
         );
         self.root(
             "PROPERTY_DEFINITION_REPRESENTATION",
@@ -936,7 +929,15 @@ impl Emitter<'_> {
                 format!("{item}: the target face's normal is not an exact vector"),
             )
         };
-        let normal = check::outward_normal(self.model, target.face).ok_or_else(not_exact)?;
+        let (_, normal) = check::outward_plane(self.model, target.face).ok_or_else(not_exact)?;
+        check::check_written_target(
+            self.graph,
+            &self.faces[&target.face],
+            target,
+            &normal,
+            item,
+            self.dec,
+        )?;
         let normal = [&normal.x, &normal.y, &normal.z]
             .map(|value| value.as_rational().ok_or_else(not_exact));
         let [x, y, z] = normal;
@@ -1082,49 +1083,7 @@ impl Emitter<'_> {
         Ok(())
     }
 
-    /// The draughting model, made with the first callout: one annotation
-    /// plane facing the front, whose x axis reads along +x and whose y axis
-    /// is +z (recommended practices, section 9.1), and one black continuous
-    /// curve style.
-    fn presentation(&mut self) -> Presentation {
-        if let Some(presentation) = self.presentation {
-            return presentation;
-        }
-        let origin = self
-            .graph
-            .add("CARTESIAN_POINT", vec![text("''"), text("(0.,0.,0.)")]);
-        let towards = self
-            .graph
-            .add("DIRECTION", vec![text("''"), text("(0.,-1.,0.)")]);
-        let along = self
-            .graph
-            .add("DIRECTION", vec![text("''"), text("(1.,0.,0.)")]);
-        let frame = self.graph.add(
-            "AXIS2_PLACEMENT_3D",
-            vec![text("''"), origin.into(), towards.into(), along.into()],
-        );
-        let surface = self.graph.add("PLANE", vec![text("''"), frame.into()]);
-        let unstyled = self.graph.add(
-            "PRESENTATION_STYLE_ASSIGNMENT",
-            vec![Field::List(vec![Field::Typed(
-                "NULL_STYLE",
-                vec![text(".NULL.")],
-            )])],
-        );
-        // The callouts join the plane's elements as they are drawn.
-        let plane = self.graph.add(
-            "ANNOTATION_PLANE",
-            vec![
-                text("''"),
-                refs([unstyled]),
-                surface.into(),
-                Field::List(Vec::new()),
-            ],
-        );
-        let model = self.graph.add(
-            "DRAUGHTING_MODEL",
-            vec![text("''"), refs([plane]), self.references.context.into()],
-        );
+    fn curve_style(&mut self) -> Id {
         let font = self.graph.add(
             "DRAUGHTING_PRE_DEFINED_CURVE_FONT",
             vec![text("'continuous'")],
@@ -1141,14 +1100,34 @@ impl Emitter<'_> {
                 colour.into(),
             ],
         );
-        let style = self
+        self.graph
+            .add("PRESENTATION_STYLE_ASSIGNMENT", vec![refs([curve])])
+    }
+
+    fn presentation(&mut self) -> Presentation {
+        if let Some(presentation) = self.presentation {
+            return presentation;
+        }
+        let colour = self
             .graph
-            .add("PRESENTATION_STYLE_ASSIGNMENT", vec![refs([curve])]);
+            .add("DRAUGHTING_PRE_DEFINED_COLOUR", vec![text("'black'")]);
+        let solid = self
+            .graph
+            .add("FILL_AREA_STYLE_COLOUR", vec![text("''"), colour.into()]);
+        let fill = self
+            .graph
+            .add("FILL_AREA_STYLE", vec![text("''"), refs([solid])]);
+        let fill = self
+            .graph
+            .add("PRESENTATION_STYLE_ASSIGNMENT", vec![refs([fill])]);
+        let model = self.graph.add(
+            "DRAUGHTING_MODEL",
+            vec![text("''"), refs([]), self.references.context.into()],
+        );
         let presentation = Presentation {
             model,
-            plane,
-            unstyled,
-            style,
+            fill,
+            style: self.curve_style(),
         };
         self.presentation = Some(presentation);
         presentation
@@ -1232,13 +1211,23 @@ impl Emitter<'_> {
         texture: &SurfaceTexture<FaceId>,
         item: &str,
         slot: usize,
-        camera: Option<&Camera>,
+        view: Option<(&Camera, usize)>,
     ) -> Result<Id, Refusal> {
         let anchor = self.anchor_point(&texture.feature)?;
         let value = plain(&texture.value, item)?;
-        let mut drawing = callout::draw(texture, &value, anchor.as_ref(), slot);
+        let mut drawing = callout::draw(
+            texture,
+            &value,
+            anchor.as_ref().filter(|_| view.is_none()),
+            if view.is_some() { 0 } else { slot },
+        );
         let equivalent = callout::equivalent_string(texture.process, &drawing.text);
-        let plane = self.callout_plane(camera, anchor.as_ref(), &mut drawing, item)?;
+        let plane = self.callout_plane(
+            view.map(|(camera, count)| (camera, slot, count)),
+            anchor.as_ref(),
+            &mut drawing,
+            item,
+        )?;
         let aspect = self.graph.add(
             "SHAPE_ASPECT",
             vec![
@@ -1262,43 +1251,72 @@ impl Emitter<'_> {
     fn label_callout(
         &mut self,
         item: &str,
-        set_name: &str,
-        lines: &[String],
-        feature: &[FaceId],
-        slot: usize,
-        camera: &Camera,
+        label: Label<'_>,
+        view: (&Camera, usize, usize),
     ) -> Result<Id, Refusal> {
-        if let Some(line) = lines.iter().find(|line| !callout::drawable(line)) {
+        if let Some(line) = label.lines.iter().find(|line| !callout::drawable(line)) {
             return Err(Refusal::new(
                 "step.pmi-invalid",
                 format!("{item}: the callout font cannot draw `{line}`"),
             ));
         }
         let definitions = self.semantic[item].clone();
-        let anchor = self.anchor_point(feature)?;
-        let mut drawing = callout::label(lines, anchor.as_ref(), slot);
-        let plane = self.callout_plane(Some(camera), anchor.as_ref(), &mut drawing, item)?;
-        Ok(self.graphic_callout(item, set_name, &drawing, &drawing.text, plane, &definitions))
+        let anchor = self.anchor_point(label.feature)?;
+        let mut drawing = callout::label(&label.lines);
+        let plane = self.callout_plane(Some(view), anchor.as_ref(), &mut drawing, item)?;
+        Ok(self.graphic_callout(
+            item,
+            label.kind,
+            &drawing,
+            &label.equivalent,
+            plane,
+            &definitions,
+        ))
     }
 
     fn callout_plane(
         &mut self,
-        camera: Option<&Camera>,
+        view: Option<(&Camera, usize, usize)>,
         anchor: Option<&callout::Point>,
         drawing: &mut callout::Drawing,
         item: &str,
     ) -> Result<Id, Refusal> {
         let presentation = self.presentation();
-        let Some(camera) = camera else {
-            return Ok(presentation.plane);
+        let (origin, normal, across) = if let Some((camera, slot, count)) = view {
+            let anchor = anchor.ok_or_else(|| {
+                Refusal::new(
+                    "step.pmi-invalid",
+                    format!("{item}: the callout has no face anchor"),
+                )
+            })?;
+            let [across, normal] =
+                drawing
+                    .in_view(anchor, camera, slot, count)
+                    .ok_or_else(|| {
+                        Refusal::new(
+                            "step.pmi-invalid",
+                            format!("{item}: the callout is behind the camera"),
+                        )
+                    })?;
+            (
+                anchor.clone(),
+                normal.map(|value| &Rational::zero() - &value),
+                across,
+            )
+        } else {
+            if let Some(plane) = self.front_plane {
+                return Ok(plane);
+            }
+            let [zero, one, minus] = [0, 1, -1].map(Rational::from_i64);
+            (
+                [zero.clone(), zero.clone(), zero.clone()],
+                [zero.clone(), minus, zero.clone()],
+                [one, zero.clone(), zero],
+            )
         };
-        let zero = std::array::from_fn(|_| Rational::zero());
-        let anchor = anchor.unwrap_or(&zero);
-        let axes = callout::screen_axes(&camera.direction, &camera.up);
-        drawing.orient(anchor, &axes);
-        let origin = self.point("", anchor);
-        let normal = self.direction(&callout::cross(&axes[0], &axes[1]), item)?;
-        let across = self.direction(&axes[0], item)?;
+        let origin = self.point("", &origin);
+        let normal = self.direction(&normal, item)?;
+        let across = self.direction(&across, item)?;
         let frame = self.graph.add(
             "AXIS2_PLACEMENT_3D",
             vec![text("''"), origin.into(), normal.into(), across.into()],
@@ -1308,12 +1326,15 @@ impl Emitter<'_> {
             "ANNOTATION_PLANE",
             vec![
                 text("''"),
-                refs([presentation.unstyled]),
+                refs([presentation.fill]),
                 surface.into(),
                 refs([]),
             ],
         );
         self.graph.extend_list(presentation.model, 1, [plane]);
+        if view.is_none() {
+            self.front_plane = Some(plane);
+        }
         Ok(plane)
     }
 
@@ -1402,7 +1423,6 @@ impl Emitter<'_> {
     /// null style and a camera of the same name, related to the global model.
     fn view(&mut self, view: &SavedView, mut items: Vec<Id>) -> Result<(), Refusal> {
         let name = view.name.as_str();
-        let presentation = self.presentation();
         let camera = &view.camera;
         let across = callout::cross(&camera.up, &camera.direction);
         let eye = self.exact_point(&camera.eye, name)?;
@@ -1416,17 +1436,17 @@ impl Emitter<'_> {
             .graph
             .add("CARTESIAN_POINT", vec![text("''"), text("(0.,0.,0.)")]);
         let half = Rational::from_ratio(-1, 2).expect("a nonzero denominator");
-        let corner = camera
-            .window
-            .iter()
-            .map(|size| real(&(size * &half), name).map(text))
-            .collect::<Result<_, _>>()?;
-        let corner = self
-            .graph
-            .add("CARTESIAN_POINT", vec![text("''"), Field::List(corner)]);
+        let corner = self.exact_point(
+            &[
+                &camera.window[0] * &half,
+                &camera.window[1] * &half,
+                camera.distance.clone(),
+            ],
+            name,
+        )?;
         let window_frame = self.graph.add(
-            "AXIS2_PLACEMENT_2D",
-            vec![text("''"), corner.into(), text("$")],
+            "AXIS2_PLACEMENT_3D",
+            vec![text("''"), corner.into(), text("$"), text("$")],
         );
         let window = self.graph.add(
             "PLANAR_BOX",
@@ -1481,31 +1501,31 @@ impl Emitter<'_> {
         let mapped = self
             .graph
             .add("MAPPED_ITEM", vec![text("''"), map.into(), target.into()]);
-        let unstyled = self.graph.add(
-            "PRESENTATION_STYLE_ASSIGNMENT",
-            vec![Field::List(vec![Field::Typed(
-                "NULL_STYLE",
-                vec![text(".NULL.")],
-            )])],
-        );
+        let style = self
+            .presentation
+            .map_or_else(|| self.curve_style(), |presentation| presentation.style);
         let styled = self.graph.add(
             "STYLED_ITEM",
-            vec![text("''"), refs([unstyled]), mapped.into()],
+            vec![text("''"), refs([style]), mapped.into()],
         );
         items.extend([mapped, styled, camera]);
         let model = self.graph.add(
             "DRAUGHTING_MODEL",
             vec![quoted(name), refs(items), self.references.context.into()],
         );
-        self.root(
-            "MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP",
-            vec![
-                text("''"),
-                text("''"),
-                model.into(),
-                presentation.model.into(),
-            ],
-        );
+        if let Some(presentation) = self.presentation {
+            self.root(
+                "MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP",
+                vec![
+                    text("''"),
+                    text("''"),
+                    model.into(),
+                    presentation.model.into(),
+                ],
+            );
+        } else {
+            self.roots.push(model);
+        }
         Ok(())
     }
 
@@ -1710,68 +1730,88 @@ fn circled(material: Option<MaterialCondition>) -> String {
 
 /// The name of a tolerance's graphic and its symbol as a label writes it
 /// (recommended practices, table 18).
-fn characteristic(characteristic: super::Characteristic) -> (&'static str, &'static str) {
+fn characteristic(
+    characteristic: super::Characteristic,
+) -> (&'static str, &'static str, &'static str) {
     use super::Characteristic as C;
     match characteristic {
-        C::Angularity => ("angularity", "ANG"),
-        C::CircularRunout => ("circular runout", "RUNOUT"),
-        C::Coaxiality => ("coaxiality", "COAX"),
-        C::Concentricity => ("concentricity", "CONC"),
-        C::Cylindricity => ("cylindricity", "CYL"),
-        C::Flatness => ("flatness", "FLAT"),
-        C::LineProfile => ("profile of line", "PROFILE LINE"),
-        C::Parallelism => ("parallelism", "PARL"),
-        C::Perpendicularity => ("perpendicularity", "PERP"),
-        C::Position => ("position", "POS"),
-        C::Roundness => ("roundness", "CIRC"),
-        C::Straightness => ("straightness", "STR"),
-        C::SurfaceProfile => ("profile of surface", "PROFILE SURFACE"),
-        C::Symmetry => ("symmetry", "SYM"),
-        C::TotalRunout => ("total runout", "TOTAL RUNOUT"),
+        C::Angularity => ("angularity", "ANG", "∠"),
+        C::CircularRunout => ("circular runout", "RUNOUT", "↗"),
+        C::Coaxiality => ("coaxiality", "COAX", "◎"),
+        C::Concentricity => ("concentricity", "CONC", "◎"),
+        C::Cylindricity => ("cylindricity", "CYL", "⌭"),
+        C::Flatness => ("flatness", "FLAT", "▱"),
+        C::LineProfile => ("profile of line", "PROFILE LINE", "⌒"),
+        C::Parallelism => ("parallelism", "PARL", "⫽"),
+        C::Perpendicularity => ("perpendicularity", "PERP", "⏊"),
+        C::Position => ("position", "POS", "⌖"),
+        C::Roundness => ("roundness", "CIRC", "○"),
+        C::Straightness => ("straightness", "STR", "⏤"),
+        C::SurfaceProfile => ("profile of surface", "PROFILE SURFACE", "⌓"),
+        C::Symmetry => ("symmetry", "SYM", "⌯"),
+        C::TotalRunout => ("total runout", "TOTAL RUNOUT", "⌰"),
     }
 }
 
 /// One compartment line of a feature control frame, such as
 /// `POS|⌀0.4(M)|A|D(M)|B`.
 fn frame(
-    symbol: &str,
+    symbols: (&str, &str),
     diameter: bool,
     value: &Rational,
     material: Option<MaterialCondition>,
-    extra: &str,
+    extra: (&str, &str),
     datums: &[DatumRef],
     item: &str,
-) -> Result<String, Refusal> {
-    let zone = format!(
-        "{}{}{}{extra}",
-        if diameter { "\u{2300}" } else { "" },
-        plain(value, item)?,
-        circled(material)
-    );
-    let mut cells = vec![symbol.to_owned(), zone];
-    cells.extend(
-        datums
-            .iter()
-            .map(|datum| format!("{}{}", datum.letter, circled(datum.material))),
-    );
-    Ok(cells.join("|"))
+) -> Result<(String, String), Refusal> {
+    let value = plain(value, item)?;
+    let diameter = if diameter { "⌀" } else { "" };
+    let display = circled;
+    let unicode = |material| match material {
+        Some(MaterialCondition::Maximum) => "Ⓜ",
+        Some(MaterialCondition::Least) => "Ⓛ",
+        None => "",
+    };
+    let mut cells = vec![
+        symbols.0.to_owned(),
+        format!("{diameter}{value}{}{}", display(material), extra.0),
+    ];
+    let mut equivalent = vec![
+        symbols.1.to_owned(),
+        format!("{diameter}{value}{}{}", unicode(material), extra.1),
+    ];
+    for datum in datums {
+        cells.push(format!("{}{}", datum.letter, display(datum.material)));
+        equivalent.push(format!("{}{}", datum.letter, unicode(datum.material)));
+    }
+    Ok((cells.join("|"), equivalent.join(r"\w")))
+}
+
+struct Label<'a> {
+    kind: &'static str,
+    lines: Vec<String>,
+    equivalent: String,
+    feature: &'a [FaceId],
 }
 
 /// The graphic name, text lines and leader feature of an item's label
 /// callout. `nominal` is a size's measured value as the file writes it.
-fn label<'a>(
-    item: &'a super::Item<FaceId>,
-    nominal: Option<&str>,
-) -> Result<(&'static str, Vec<String>, &'a [FaceId]), Refusal> {
+fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Label<'a>, Refusal> {
     let id = item.id.as_str();
-    Ok(match &item.kind {
-        ItemKind::Datum(datum) => ("datum", vec![datum.letter.clone()], &datum.feature),
-        ItemKind::Size(size) => {
+    let (kind, lines, equivalent, feature) = match &item.kind {
+        ItemKind::Datum(datum) => (
+            "datum",
+            vec![datum.letter.clone()],
+            format!(r"DTM\w{}", datum.letter),
+            datum.feature.as_slice(),
+        ),
+        ItemKind::Size(size) if !matches!(size.kind, SizeKind::Hole(_)) => {
             let value = nominal.expect("a size has a measured value");
             let value = value.strip_suffix('.').unwrap_or(value);
-            let (set, mut main) = match size.kind {
-                SizeKind::Radius => ("radial dimension", format!("R{value}")),
-                _ => ("diameter dimension", format!("\u{2300}{value}")),
+            let (set, mut main) = if matches!(size.kind, SizeKind::Radius) {
+                ("radial dimension", format!("R{value}"))
+            } else {
+                ("diameter dimension", format!("⌀{value}"))
             };
             match &size.limits {
                 None => {}
@@ -1788,51 +1828,67 @@ fn label<'a>(
             }
             let mut lines = vec![main];
             lines.extend(size.thread.clone());
-            (set, lines, &size.features[0])
+            let equivalent = format!(r"DIM\w{}", lines.join(r"\n"));
+            (set, lines, equivalent, size.features[0].as_slice())
         }
         ItemKind::Tolerance(tolerance) => {
-            let (set, symbol) = characteristic(tolerance.characteristic);
+            let (set, display, symbol) = characteristic(tolerance.characteristic);
             let datums: Vec<DatumRef> = tolerance
                 .datums
                 .iter()
                 .map(|letter| DatumRef::new(letter))
                 .collect();
-            let line = frame(
-                symbol,
+            let (line, equivalent) = frame(
+                (display, symbol),
                 tolerance.diameter_zone,
                 &tolerance.value,
                 tolerance.material,
-                "",
+                ("", ""),
                 &datums,
                 id,
             )?;
-            (set, vec![line], &tolerance.features[0])
+            (
+                set,
+                vec![line],
+                format!(r"FCF\w{equivalent}"),
+                tolerance.features[0].as_slice(),
+            )
         }
         ItemKind::Position(control) => {
             let extra = match &control.frame {
                 PositionFrame::Single {
                     projected_zone: Some(zone),
                     ..
-                } => format!("(P){}", plain(&zone.height_mm, id)?),
-                _ => String::new(),
+                } => {
+                    let height = plain(&zone.height_mm, id)?;
+                    (format!("(P){height}"), format!("Ⓟ{height}"))
+                }
+                _ => (String::new(), String::new()),
             };
-            let lines = control
+            let (lines, equivalents): (Vec<_>, Vec<_>) = control
                 .frame
                 .segments()
                 .into_iter()
                 .map(|segment| {
                     frame(
-                        "POS",
+                        ("POS", "⌖"),
                         segment.diameter_zone,
                         &segment.value_mm,
                         segment.material,
-                        &extra,
+                        (&extra.0, &extra.1),
                         &segment.datums,
                         id,
                     )
                 })
-                .collect::<Result<_, _>>()?;
-            ("position", lines, &control.features[0])
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .unzip();
+            (
+                "position",
+                lines,
+                format!(r"FCF\w{}", equivalents.join(r"\n\w")),
+                control.features[0].as_slice(),
+            )
         }
         _ => {
             return Err(Refusal::new(
@@ -1840,6 +1896,12 @@ fn label<'a>(
                 format!("{id}: the writer draws no callout for this item"),
             ));
         }
+    };
+    Ok(Label {
+        kind,
+        lines,
+        equivalent,
+        feature,
     })
 }
 
@@ -1889,11 +1951,12 @@ pub(crate) fn emit(
         micrometre: None,
         degree: None,
         presentation: None,
+        front_plane: None,
         annotations: 0,
         semantic: BTreeMap::new(),
         dec,
     };
-    check::check_on_model(model, pmi, emitter.dec)?;
+    check::check_on_model_for_export(model, pmi, Some(faces), emitter.dec)?;
     if !pmi.items.is_empty() {
         emitter.standard();
     }
@@ -2035,14 +2098,11 @@ pub(crate) fn emit(
             }
             ItemKind::Tolerance(tolerance) => emitter.tolerance(tolerance, id)?,
             ItemKind::DatumTarget(target) => emitter.datum_target(target, id)?,
-            ItemKind::FaceNote { text, feature } => {
-                let lines: Vec<(&str, &str)> = text.split('\n').map(|line| ("", line)).collect();
-                emitter.face_text(&lines, feature, id)?;
-            }
+            ItemKind::FaceNote { text, feature } => emitter.face_text("", text, feature, id)?,
             ItemKind::Knurl {
                 designation,
                 feature,
-            } => emitter.face_text(&[(KNURL, designation)], feature, id)?,
+            } => emitter.face_text(KNURL, designation, feature, id)?,
             ItemKind::Position(control) => emitter.position(control, id)?,
             ItemKind::Texture(texture) => {
                 emitter.texture(texture, id)?;
@@ -2059,11 +2119,15 @@ pub(crate) fn emit(
         for (slot, id) in view.items.iter().enumerate() {
             let item = by_name[id];
             let plane = if let ItemKind::Texture(texture) = &item.kind {
-                emitter.texture_callout(texture, id, slot, Some(&view.camera))?
+                emitter.texture_callout(
+                    texture,
+                    id,
+                    slot,
+                    Some((&view.camera, view.items.len())),
+                )?
             } else {
-                let (set, lines, feature) =
-                    label(item, sizes.get(id.as_str()).map(String::as_str))?;
-                emitter.label_callout(id, set, &lines, feature, slot, &view.camera)?
+                let label = label(item, sizes.get(id.as_str()).map(String::as_str))?;
+                emitter.label_callout(id, label, (&view.camera, slot, view.items.len()))?
             };
             planes.push(plane);
         }

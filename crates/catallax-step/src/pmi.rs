@@ -1264,13 +1264,16 @@ impl<F> Pmi<F> {
 
 impl<F> ItemKind<F> {
     /// Whether a saved view can show the item: the writer draws a callout for
-    /// datums, sizes, geometric tolerances, position controls
+    /// datums, diameters and radii, geometric tolerances, position controls
     /// and surface textures.
     pub fn has_callout(&self) -> bool {
         matches!(
             self,
             ItemKind::Datum(_)
-                | ItemKind::Size(_)
+                | ItemKind::Size(Size {
+                    kind: SizeKind::Diameter | SizeKind::Radius,
+                    ..
+                })
                 | ItemKind::Tolerance(_)
                 | ItemKind::Position(_)
                 | ItemKind::Texture(_)

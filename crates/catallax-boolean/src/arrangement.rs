@@ -106,7 +106,7 @@ pub fn arrange(
     };
     let body = run!(
         Stage::Sew,
-        crate::sewing::sew(model, &imprinted, &selection, dec)
+        crate::sewing::sew(model, &imprinted, &selection, dec, None)
     );
     marks.extend(&model.body(source).marks);
     Ok(BooleanAnswer {

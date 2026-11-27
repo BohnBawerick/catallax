@@ -49,9 +49,9 @@ FINGERPRINTS = {
     'offset': ('30fd8b0c12cfeb0f123abf5affe1491c80cc3fbad43145f96186ff3502abd477',
                'e27f4728884555a27fdbc300553408f161cf14257a96d8d85e85c92f59cbb2ef'),
     'second': ('a69cfe0f941f6ed11502316403d84c83d0c458097f047bb31040db1765883ea9',
-               'b7e2ccb8ac5e5193dad528a7b63614e465cccea54ebcf6183952adae8340d567'),
+               'ef3e113c55eac30ddcc7350bd2603838935e49402fbc6f4e8bc9556242526dbe'),
     'after_trim': ('ed1ec54082e4776bd689ebef58772649b79f22b18c5a5d2389af0d837a704f4f',
-                   'ac1ae0fa58242073f4aa519e67984815294ce95c75dcdb459df914755b125794'),
+                   'a78560fba31c0467f03913f56b70c3ce440be28e999da380da82607314075285'),
 }
 # Orthonormal frame of the sweep: n, then the ellipse's a=2 and b=8/5 axes.
 AXIS = (Fraction(3, 5), Fraction(0), Fraction(4, 5))
@@ -568,10 +568,9 @@ class CertifiedSplineSeams(unittest.TestCase):
 
                 geometry, certificate = FINGERPRINTS[scenario['id']]
                 self.assertEqual(reassembled(sides), geometry)
-                step = problem['recipe']['result']
                 for case in (writer, full):
                     self.assertEqual(canonical(certificate_by_face_rank(
-                        case['response']['manifest']['certificate'], step)), certificate)
+                        case['response']['manifest']['certificate'], problem['recipe'])), certificate)
 
                 lower, upper = (Fraction(value) for value in scenario['axial'])
                 goal = target(Fraction(scenario['distance']), upper - lower)

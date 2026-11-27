@@ -4,18 +4,52 @@ import hashlib
 import re
 
 
-def face_key(revision, step, handle):
-    """The legacy `catallax_features::certified::key` for label `face`."""
+def _key(revision, step, label, index):
+    """The key encoding in `catallax_features::certified::key`."""
     digest = hashlib.sha256(b'catallax.elliptic-prism-certificate/1\0')
     digest.update(bytes.fromhex(revision))
-    for text in (step.encode(), b'face'):
+    for text in (step.encode(), label.encode()):
         digest.update(len(text).to_bytes(8, 'little'))
         digest.update(text)
-    digest.update(handle.to_bytes(4, 'little'))
+    digest.update(index.to_bytes(4, 'little'))
     return digest.hexdigest()
 
 
-def _project_certificate(certificate, step):
+def face_key(revision, step, handle):
+    return _key(revision, step, 'face', handle)
+
+
+def _prior_prism_keys(certificate, recipe, result_keys):
+    if certificate['retained_target'].get('kind') != 'elliptic-normal-offset-prism':
+        return {}
+    revision = certificate['identity']['revision']
+    records = {row['id']: row for row in certificate['evidence_records']}
+    keys = {}
+    for step in recipe['steps']:
+        step = step['id']
+        if step == recipe['result']:
+            continue
+        for rank in range(3):  # Lower cap, upper cap, side.
+            record = records.get(_key(revision, step, 'face-correspondence', rank))
+            if record is None:
+                continue
+            identity = record['identity']
+            handle_key = identity['representation']
+            target = _key(revision, step, 'target-face', rank)
+            context = record['context']
+            # Intermediate faces are not listed in result regions. The proof ID
+            # and target identify the step-local rank without guessing a handle.
+            if (identity['revision'] != revision or identity['target'] != target
+                    or context['step'] != _key(revision, step, 'step', 0)
+                    or identity['scope'] != {
+                        'kind': 'complete-entities-and-trims', 'entities': [handle_key]}
+                    or handle_key in result_keys or handle_key in keys):
+                raise ValueError('invalid intermediate prism face correspondence')
+            keys[handle_key] = {'step': step, 'face_rank': rank}
+    return keys
+
+
+def _project_certificate(certificate, recipe):
     regions = certificate['regions']
     # Junction regions follow faces_of_body; prism regions are lower, upper, side.
     ranks = {row['face']: rank for rank, row in enumerate(regions)}
@@ -25,10 +59,11 @@ def _project_certificate(certificate, step):
     revision = certificate['identity']['revision']
     for row in regions:
         handle = row['face']
-        if row['id'] != face_key(revision, step, handle):
+        if row['id'] != face_key(revision, recipe['result'], handle):
             raise ValueError('certificate region key does not bind its face')
         keys[row['id']] = {'face_rank': ranks[handle]}
         row['face'] = ranks[handle]
+    keys.update(_prior_prism_keys(certificate, recipe, keys))
 
     def key(value):
         return keys.get(value, value)
@@ -55,9 +90,9 @@ def _project_certificate(certificate, step):
     return ranks, keys
 
 
-def certificate_by_face_rank(certificate, step):
+def certificate_by_face_rank(certificate, recipe):
     result = deepcopy(certificate)
-    _project_certificate(result, step)
+    _project_certificate(result, recipe)
     return result
 
 
@@ -69,8 +104,8 @@ def _generated_name(name, handle, rank):
     return name
 
 
-def _project_named_result(result, step):
-    ranks, keys = _project_certificate(result['certificate'], step)
+def _project_named_result(result, recipe):
+    ranks, keys = _project_certificate(result['certificate'], recipe)
     for row in result['names']['faces']:
         row['face'] = ranks[row['face']]
     result['names']['faces'].sort(key=lambda row: row['face'])
@@ -95,11 +130,11 @@ def manifest_by_face_rank(manifest, request):
     problem = request['problem']
     recipe = problem.get('recipe', problem)
     result = deepcopy(manifest)
-    ranks, keys = _project_named_result(result, recipe['result'])
+    ranks, keys = _project_named_result(result, recipe)
     _project_outputs(result, ranks, keys)
     edit = result.get('edit') or {}
     if 'certificate' in edit:
-        edited_ranks, _ = _project_named_result(edit, recipe['result'])
+        edited_ranks, _ = _project_named_result(edit, recipe)
         for row in edit['resolved']:
             if row['kind'] == 'face':
                 row['old_handle'] = ranks[row['old_handle']]

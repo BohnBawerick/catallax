@@ -293,7 +293,10 @@ impl SectionTracePiece {
                     .unwrap();
                 parameters[cell.solved][n] =
                     (-&residual).checked_div(&derivative).ok_or_else(|| {
-                        failure("section trace jets need a strict transverse derivative enclosure")
+                        Refusal::new(
+                            "intersect.section-trace-derivative",
+                            "section trace jets need a strict transverse derivative enclosure",
+                        )
                     })?;
             }
         }

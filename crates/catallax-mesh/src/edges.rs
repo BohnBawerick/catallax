@@ -429,22 +429,30 @@ impl Sampler<'_, '_> {
         let acceleration = if let Some(acceleration) = inherited_acceleration
             && distance(acceleration) <= self.options.chord_tolerance.mul_pow2(-3)
         {
-            acceleration.clone()
+            Some(acceleration.clone())
         } else {
-            self.acceleration(&lo, &hi)?
+            match self.acceleration(&lo, &hi) {
+                Ok(acceleration) => Some(acceleration),
+                // Section isolation proves a regular branch. A wide power
+                // enclosure can still include zero; check its subarcs.
+                Err(error) if error.code == "intersect.section-trace-derivative" => None,
+                Err(error) => return Err(error),
+            }
         };
-        let bound = distance(&acceleration);
+        let bound = acceleration.as_ref().map(distance);
         let mid = (&lo + &hi).mul_pow2(-1);
         let middle_point = Rc::new(self.enclose_point(&mid)?);
         let middle = middle_point.position()?;
         self.piece
             .admit_sample(&middle_point, middle, self.options, self.dec)?;
-        let mut small = bound <= self.options.chord_tolerance.mul_pow2(-3);
+        let mut small = bound
+            .as_ref()
+            .is_some_and(|bound| *bound <= self.options.chord_tolerance.mul_pow2(-3));
         if let Some(limit) = &self.options.max_edge_length {
             small &= crate::controls::length_squared(self.positions[first], self.positions[last])
                 <= limit * limit;
         }
-        for incident in self.charts {
+        for incident in self.charts.iter().filter(|_| acceleration.is_some()) {
             let chart = incident.chart;
             if let (Some(spline), Surface::BSpline(support)) = (chart.spline(), &chart.surface) {
                 if small {
@@ -512,7 +520,7 @@ impl Sampler<'_, '_> {
                 self.dec,
             )?;
         }
-        if small && !split_leaf {
+        if let Some(bound) = bound.filter(|_| small && !split_leaf) {
             if let Some(planar) = &mut self.planar {
                 planar.insert(
                     [first.min(last), first.max(last)],
@@ -552,7 +560,7 @@ impl Sampler<'_, '_> {
             mid.clone(),
             [first, index],
             depth + 1,
-            Some(&acceleration),
+            acceleration.as_ref(),
             [a, &middle_point],
         )?;
         self.segment(
@@ -560,7 +568,7 @@ impl Sampler<'_, '_> {
             hi,
             [index, last],
             depth + 1,
-            Some(&acceleration),
+            acceleration.as_ref(),
             [&middle_point, b],
         )
     }

@@ -1,0 +1,177 @@
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package libarchive-tools.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 56372 files and directories currently installed.)
+Preparing to unpack .../libarchive-tools_3.7.2-2ubuntu0.9_amd64.deb ...
+Unpacking libarchive-tools (3.7.2-2ubuntu0.9) ...
+Setting up libarchive-tools (3.7.2-2ubuntu0.9) ...
+/usr/bin/bsdtar
+/tmp/tmp.FkGpu9jfd0/kit.tar.gz: OK
+total 52
+-rwxr-xr-x 1 ubuntu ubuntu  7066 Nov 26 13:48 baseline-long.py
+-rwxr-xr-x 1 ubuntu ubuntu 12215 Nov 26 14:55 census-cloud.py
+-rwxr-xr-x 1 ubuntu ubuntu  2097 Nov 26 13:48 cloud-baseline-long.sh
+-rwxr-xr-x 1 ubuntu ubuntu  1551 Nov 26 14:55 cloud-resolved-validity.sh
+-rwxr-xr-x 1 ubuntu ubuntu  6684 Nov 26 14:33 compare-captures.py
+-rwxr-xr-x 1 ubuntu ubuntu   973 Nov 26 06:56 profile-rustc
+-rwxr-xr-x 1 ubuntu ubuntu  4416 Nov 26 14:55 resolved-validity.py
+-rw-r--r-- 1 ubuntu ubuntu  2057 Nov 26 07:14 written-check.rs
+From https://github.com/BohnBawerick/catallax
+ * branch              9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 -> FETCH_HEAD
+ * branch              ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 -> FETCH_HEAD
+/home/user/t9-repaired-long-caps-12/abc_0000_step_v00.7z: OK
+{"shard": 0, "shards": 1, "skipped": 2999, "models": 1, "found": 1, "missing": []}
+Warning: you are leaving 2 commits behind, not connected to
+any of your branches:
+
+  ad4da2d1 Preserve fitted seam anchors for closed periodic import trims
+  fe8beba5 Use closed-form projection for native analytic STEP surfaces
+
+If you want to keep them by creating a new branch, this may be a good time
+to do so with:
+
+ git branch <new-branch-name> ad4da2d1
+
+HEAD is now at 80c987d5 Batch bohnbawerick / 16 (#767)
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling typenum v1.20.1
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling generic-array v0.14.7
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling bitmaps v2.1.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling digest v0.10.7
+   Compiling sized-chunks v0.6.5
+   Compiling syn v2.0.119
+   Compiling libm v0.2.16
+   Compiling cfg-if v1.0.5
+   Compiling memchr v2.8.3
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling catallax-transfer-derive v0.5.0 (/home/user/catallax/crates/catallax-transfer-derive)
+   Compiling num-bigint v0.4.8
+   Compiling catallax-trace v0.5.0 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-numbers v0.5.0 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.5.0 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.5.0 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.5.0 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.5.0 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.5.0 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.5.0 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-step v0.5.0 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-iges v0.5.0 (/home/user/catallax/crates/catallax-iges)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2m 17s
+T9BASELINE {"capture": "/home/user/t9-repaired-long-caps-12/captures/00001839", "cpu_seconds": 1013.8485119999999, "files": {"document.step": ["e9a54d6d08ff7f1f3a47e1c8e58023d458dfc4429f4bd8233e11057235c4330f", [0, 1], "selected_document"]}, "model": "00001839", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "process": "complete", "source_sha256": "83f137e5b2034cd1d6dd97f0d69b1e83758b2ae0df0c3369dea3dab35d047022", "system_seconds": 0.934993, "user_seconds": 1012.913519, "wall_seconds": 1021.5284217000001, "work": [13730332129, 2659993805]}
+T9BASELINECOMPLETE 1 of 1
+Previous HEAD position was 80c987d5 Batch bohnbawerick / 16 (#767)
+HEAD is now at ad4da2d1 Preserve fitted seam anchors for closed periodic import trims
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+    Finished `release` profile [optimized + debuginfo] target(s) in 35.55s
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-import v0.5.0 (/home/user/catallax/crates/catallax-import)
+warning: missing documentation for the crate
+  --> /tmp/tmp.FkGpu9jfd0/kit/written-check.rs:1:1
+   |
+ 1 | / use catallax_import::{geometry_source::ParsedStep, sha256_hex};
+ 2 | | use catallax_numbers::{Decider, with_operation_budget};
+ 3 | | use serde_json::Value;
+ 4 | | use std::path::Path;
+...  |
+43 | |     Ok(())
+44 | | }
+   | |_^
+   |
+   = note: requested on the command line with `-W missing-docs`
+
+warning: `catallax-import` (example "opened_import") generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.70s
+Collecting cadquery-ocp==8.0.1.1.0
+  Downloading cadquery_ocp-8.0.1.1.0-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (831 bytes)
+Collecting cadquery-ocp-proxy==8.0.1.1.0 (from cadquery-ocp==8.0.1.1.0)
+  Downloading cadquery_ocp_proxy-8.0.1.1.0-py3-none-any.whl.metadata (4.7 kB)
+Collecting vtk==9.6.2 (from cadquery-ocp==8.0.1.1.0)
+  Downloading vtk-9.6.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.6 kB)
+Collecting matplotlib>=2.0.0 (from vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading matplotlib-3.11.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (80 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.3/80.3 kB 13.0 MB/s eta 0:00:00
+Collecting contourpy>=1.0.1 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (5.5 kB)
+Collecting cycler>=0.10 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading cycler-0.12.1-py3-none-any.whl.metadata (3.8 kB)
+Collecting fonttools>=4.28.2 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading fonttools-4.69.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (147 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 147.7/147.7 kB 23.3 MB/s eta 0:00:00
+Collecting kiwisolver>=1.3.1 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading kiwisolver-1.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.2 kB)
+Collecting numpy>=1.25 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading numpy-2.4.6-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+Collecting packaging>=20.0 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading packaging-26.4-py3-none-any.whl.metadata (3.5 kB)
+Collecting pillow>=9 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading pillow-13.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+Collecting pyparsing>=3 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading pyparsing-3.3.3-py3-none-any.whl.metadata (5.9 kB)
+Collecting python-dateutil>=2.7 (from matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading python_dateutil-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+Collecting tzdata (from python-dateutil>=2.7->matplotlib>=2.0.0->vtk==9.6.2->cadquery-ocp==8.0.1.1.0)
+  Downloading tzdata-2026.6-py2.py3-none-any.whl.metadata (1.4 kB)
+Downloading cadquery_ocp-8.0.1.1.0-cp311-cp311-manylinux_2_28_x86_64.whl (67.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.0/67.0 MB 4.6 MB/s eta 0:00:00
+Downloading cadquery_ocp_proxy-8.0.1.1.0-py3-none-any.whl (3.2 kB)
+Downloading vtk-9.6.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (146.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 146.0/146.0 MB 6.0 MB/s eta 0:00:00
+Downloading matplotlib-3.11.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (9.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.9/9.9 MB 8.1 MB/s eta 0:00:00
+Downloading contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (355 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 355.2/355.2 kB 10.1 MB/s eta 0:00:00
+Downloading cycler-0.12.1-py3-none-any.whl (8.3 kB)
+Downloading fonttools-4.69.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (6.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.8/6.8 MB 10.7 MB/s eta 0:00:00
+Downloading kiwisolver-1.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (1.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 11.4 MB/s eta 0:00:00
+Downloading numpy-2.4.6-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.9/16.9 MB 8.1 MB/s eta 0:00:00
+Downloading packaging-26.4-py3-none-any.whl (140 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 140.0/140.0 kB 5.4 MB/s eta 0:00:00
+Downloading pillow-13.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (7.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.1/7.1 MB 5.6 MB/s eta 0:00:00
+Downloading pyparsing-3.3.3-py3-none-any.whl (126 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 126.4/126.4 kB 5.8 MB/s eta 0:00:00
+Downloading python_dateutil-4.0.0-py3-none-any.whl (92 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 92.9/92.9 kB 6.1 MB/s eta 0:00:00
+Downloading tzdata-2026.6-py2.py3-none-any.whl (348 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 348.2/348.2 kB 6.3 MB/s eta 0:00:00
+Installing collected packages: tzdata, pyparsing, pillow, packaging, numpy, kiwisolver, fonttools, cycler, cadquery-ocp-proxy, python-dateutil, contourpy, matplotlib, vtk, cadquery-ocp
+Successfully installed cadquery-ocp-8.0.1.1.0 cadquery-ocp-proxy-8.0.1.1.0 contourpy-1.3.3 cycler-0.12.1 fonttools-4.69.1 kiwisolver-1.5.1 matplotlib-3.11.2 numpy-2.4.6 packaging-26.4 pillow-13.0.0 pyparsing-3.3.3 python-dateutil-4.0.0 tzdata-2026.6 vtk-9.6.2
+
+[notice] A new release of pip is available: 24.0 -> 26.3
+[notice] To update, run: /home/user/t9-repaired-long-caps-12/venv/bin/python -m pip install --upgrade pip
+T9CANDIDATE ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7
+T9LONGPAIR {"after": {"files": {"document.step": ["9e9d3a7fec0201c17f7402541a13e39e64c9a88a7ddb666186f2615192f923e4", [0, 1], "selected_document"]}, "open_checkpoint_sha256": "889c4c19d63799c2196713c63a04709f1acdf16424a5b81ff19740c7bb7ea095", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "work": [8920527566, 2519701626]}, "before": {"capture": "/home/user/t9-repaired-long-caps-12/captures/00001839", "cpu_seconds": 1013.8485119999999, "files": {"document.step": ["e9a54d6d08ff7f1f3a47e1c8e58023d458dfc4429f4bd8233e11057235c4330f", [0, 1], "selected_document"]}, "model": "00001839", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "process": "complete", "source_sha256": "83f137e5b2034cd1d6dd97f0d69b1e83758b2ae0df0c3369dea3dab35d047022", "system_seconds": 0.934993, "user_seconds": 1012.913519, "wall_seconds": 1021.5284217000001, "work": [13730332129, 2659993805]}, "changed_files": ["document.step"], "model": "00001839", "status": "pass", "thread_runs": {"1": {"files": {"document.step": ["9e9d3a7fec0201c17f7402541a13e39e64c9a88a7ddb666186f2615192f923e4", [0, 1], "selected_document"]}, "open_checkpoint_sha256": "889c4c19d63799c2196713c63a04709f1acdf16424a5b81ff19740c7bb7ea095", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "work": [8920527566, 2519701626]}, "2": {"files": {"document.step": ["9e9d3a7fec0201c17f7402541a13e39e64c9a88a7ddb666186f2615192f923e4", [0, 1], "selected_document"]}, "open_checkpoint_sha256": "889c4c19d63799c2196713c63a04709f1acdf16424a5b81ff19740c7bb7ea095", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "work": [8920527566, 2519701626]}, "24": {"files": {"document.step": ["9e9d3a7fec0201c17f7402541a13e39e64c9a88a7ddb666186f2615192f923e4", [0, 1], "selected_document"]}, "open_checkpoint_sha256": "889c4c19d63799c2196713c63a04709f1acdf16424a5b81ff19740c7bb7ea095", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "work": [8920527566, 2519701626]}, "4": {"files": {"document.step": ["9e9d3a7fec0201c17f7402541a13e39e64c9a88a7ddb666186f2615192f923e4", [0, 1], "selected_document"]}, "open_checkpoint_sha256": "889c4c19d63799c2196713c63a04709f1acdf16424a5b81ff19740c7bb7ea095", "outcome": {"bodies": [{"body": 0, "checked_refusal": null, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "numerical", "refusal": null, "tier": "repaired_solid", "upgrade_refusal": null}, {"body": 1, "checked_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}, "declared_solid": true, "exportable": true, "first_blocker": null, "healing_refusal": null, "proof": "native_sampled", "refusal": null, "tier": "tolerant_solid", "upgrade_refusal": {"code": "not_solid", "detail": "#10582: retained inner shells require material nesting admission"}}], "failed_body": null, "first_refusal": {"code": "unsupported", "entity": "#10582", "type_name": "BREP_WITH_VOIDS"}, "open_outcome": "opened", "open_refusal": null, "outcome": "complete", "refusal": null, "stage": "export"}, "work": [8920527566, 2519701626]}}, "timing": {"1": {"cpu_seconds": 363.034346, "wall_seconds": 368.6376295099999}, "2": {"cpu_seconds": 367.613051, "wall_seconds": 373.8573314280002}, "24": {"cpu_seconds": 369.47149099999984, "wall_seconds": 376.0502977790002}, "4": {"cpu_seconds": 368.9953450000001, "wall_seconds": 375.55790279500025}}, "validation": {"document.step": {"kernel_written_check": true, "raw": [[1, 1, true, 0, true], [1, 1, true, 0, true]], "raw_not_worse": true, "standard": [{"nonempty": true, "read_ok": true, "roots": 2, "solid_count": 2, "transferred": 2, "valid": true, "valid_solid_count": 2}, {"nonempty": true, "read_ok": true, "roots": 2, "solid_count": 2, "transferred": 2, "valid": true, "valid_solid_count": 2}], "standard_not_worse": true}}}
+T9LONGPAIRCOMPLETE 1 of 1

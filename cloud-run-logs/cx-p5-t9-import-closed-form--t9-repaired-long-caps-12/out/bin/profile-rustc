@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Compile the census example with the owner's 2^62 observer allowance."""
+
+import os
+from pathlib import Path
+import sys
+
+rustc, *args = sys.argv[1:]
+observer = "crates/catallax-import/examples/opened_import.rs"
+for i, arg in enumerate(args):
+    if arg == observer or arg.endswith(f"/{observer}"):
+        if probe := os.environ.get("CENSUS_PROJECTION_PROBE"):
+            args[i] = probe
+            break
+        source = Path(arg).read_text()
+        default = "use catallax_topology::{BodyKind, numerical::DEFAULT_WORK};"
+        if source.count(default) != 1:
+            raise SystemExit("could not identify the observer's default work import")
+        scratch = Path(__file__).with_name("opened_import.rs")
+        scratch.write_text(source.replace(
+            default, "use catallax_topology::BodyKind;\nconst DEFAULT_WORK: u64 = 1 << 62;",
+        ))
+        args[i] = str(scratch.resolve())
+        break
+os.execv(rustc, [rustc, *args])

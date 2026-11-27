@@ -1,0 +1,70 @@
+{
+  "complete_source_body_bound_established": false,
+  "files": [
+    {
+      "bodies": [
+        0,
+        1
+      ],
+      "kind": "selected_document",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 0,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "valid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#10578",
+          "topology": {
+            "edges": 24,
+            "euler_with_face_holes": 2,
+            "faces": 11,
+            "solids": 1,
+            "two_loop_faces": 1,
+            "vertices": 16
+          },
+          "valid_solid_count": 1
+        },
+        {
+          "body": 1,
+          "detail": "native topology counts differ from the emitted body",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#10582",
+          "topology": {
+            "edges": 8158,
+            "euler_with_face_holes": -200,
+            "faces": 3121,
+            "solids": 1,
+            "two_loop_faces": 384,
+            "vertices": 5435
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "e9a54d6d08ff7f1f3a47e1c8e58023d458dfc4429f4bd8233e11057235c4330f",
+      "topology": {
+        "edges": 9374,
+        "euler_with_face_holes": -130,
+        "faces": 3516,
+        "solids": 2,
+        "two_loop_faces": 143,
+        "vertices": 6085
+      },
+      "valid_solid_count": 1,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    }
+  ],
+  "ocp_version": "8.0.1.1",
+  "source_sha256": "83f137e5b2034cd1d6dd97f0d69b1e83758b2ae0df0c3369dea3dab35d047022",
+  "unhealed_validity_established": false
+}

@@ -1,0 +1,7 @@
+./captures/00001839/response.json 73073082
+./captures/00001839-pair/t4/response.json 73079925
+./captures/00001839-pair/t1/response.json 73079925
+./captures/00001839-pair/t24/response.json 73079925
+./captures/00001839-pair/t2/response.json 73079925
+./bin/written-check 138587056
+./bin/candidate 162663896

@@ -281,6 +281,21 @@ retain unbounded planar regions and check translated local gaps. Unsupported or
 unsettled optional bounds keep the ordinary query path. No mathematical expected
 answer, ignore gate, search bound or numeric allowance changes.
 
+For two solid operands, a face box strictly outside the entire opposite
+solid's box also excludes that face from section construction. A face with no
+box, or one touching the opposite box, stays in the section pass. The imprint
+keeps excluded faces in their original order and uses the same split boundary
+edges as their neighbors. On a single shell, an edge strictly outside the
+other solid's box cannot gain a cut and keeps its original endpoints.
+Classification records excluded faces as outside without an interior probe.
+On two single-shell operands, only section meetings can add new boundary cuts.
+Arrangement of faces within one body does not use these exclusions.
+
+Planar winding may replace a trace with its chord once a convex chart box
+contains both and excludes the query. Periodic charts keep their subdivision
+and seam handling. The section pass keeps inactive carriers for discovery
+order, but does not build pieces on them.
+
 ## Disconnected Bezier unions
 
 `catallax-features/tests/disjoint_bezier.rs` exercises the whole boolean entry

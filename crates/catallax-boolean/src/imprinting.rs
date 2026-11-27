@@ -10,7 +10,7 @@ use crate::region::{Location, RegionCache, locate};
 use crate::stages::{Imprinted, IntersectionGraph};
 use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
-    Answer, Answered, Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, ZeroProof,
+    Answer, Answered, Decider, Fact, FactKind, FactOrigin, Refusal, Sign, ZeroProof,
 };
 use catallax_shapes::{Curve, CurveId, GeomKey, PointId, Surface};
 use catallax_topology::{
@@ -24,30 +24,27 @@ mod bezier;
 /// `b`, when it is that arc.
 fn reusable(
     model: &mut Model,
-    fitted: bool,
     edge: EdgeId,
     curve: CurveId,
     (a, b): (Option<PointId>, Option<PointId>),
     dec: &mut Decider,
 ) -> Result<Option<Sense>, Refusal> {
-    let other = model.edge(edge).clone();
-    let verdict = same_curve(model.geom(), curve, other.curve, dec);
     let (x, y) = natural_ends(model, edge);
-    // Only an edge with these two ends is reused below. Without a
-    // spline equivalence proof, a different-ended edge stays distinct.
-    if fitted
-        && let Outcome::Refused(refused) = &verdict
-        && refused.code == "intersect.parametric-coincidence"
-        && !((a == x && b == y) || (a == y && b == x))
-    {
+    // Endpoints are canonical. Different ends cannot bound the same arc,
+    // even if their complete carriers coincide.
+    if !((a == x && b == y) || (a == y && b == x)) {
         return Ok(None);
     }
-    if !coincident(verdict, "boolean.imprint-ambiguous")? {
+    let other = model.edge(edge).curve;
+    if !coincident(
+        same_curve(model.geom(), curve, other, dec),
+        "boolean.imprint-ambiguous",
+    )? {
         return Ok(None);
     }
     let sample = curve_sample(model, curve, a, b, dec)?;
     let ours = tangent_at(model.geom(), curve, sample, dec)?[1].clone();
-    let theirs = tangent_at(model.geom(), other.curve, sample, dec)?[1].clone();
+    let theirs = tangent_at(model.geom(), other, sample, dec)?[1].clone();
     let same = match sign(&ours.dot(&theirs), dec, "boolean.imprint-ambiguous")? {
         Sign::Positive => true,
         Sign::Negative => false,
@@ -62,7 +59,7 @@ fn reusable(
         model.geom_mut().record_fact(Fact {
             kind: FactKind::Coincident,
             a: GeomKey::Curve(curve),
-            b: GeomKey::Curve(other.curve),
+            b: GeomKey::Curve(other),
             at: None,
             origin: FactOrigin::Proof(ZeroProof::Algebraic),
         });
@@ -73,10 +70,9 @@ fn reusable(
 
 #[derive(Clone)]
 struct Builder {
-    // Whether an operand has a fitted band, whose spline edges may lack a
-    // coincidence proof against an edge with other ends.
-    fitted: bool,
     points: Vec<PointId>,
+    canonical: BTreeMap<PointId, PointId>,
+    cuts: Option<Vec<PointId>>,
     vertices: BTreeMap<PointId, VertexId>,
     edges: Vec<EdgeId>,
 }
@@ -87,7 +83,12 @@ impl Builder {
         p: PointId,
         dec: &mut Decider,
     ) -> Result<PointId, Refusal> {
-        canonical_point(model, &mut self.points, p, dec, "boolean.imprint-ambiguous")
+        if let Some(&known) = self.canonical.get(&p) {
+            return Ok(known);
+        }
+        let known = canonical_point(model, &mut self.points, p, dec, "boolean.imprint-ambiguous")?;
+        self.canonical.insert(p, known);
+        Ok(known)
     }
     fn vertex(&mut self, model: &mut Model, p: PointId) -> VertexId {
         *self.vertices.entry(p).or_insert_with(|| {
@@ -117,12 +118,12 @@ impl Builder {
             #[cfg(feature = "work-span")]
             let _span_task = span_tasks.task();
             ahead.at(index, || {
-                let (model, edges, fitted) = (model.clone(), self.edges.clone(), self.fitted);
+                let (model, edges) = (model.clone(), self.edges.clone());
                 move |index: usize, dec: &mut Decider| {
-                    let _ = reusable(&mut model.clone(), fitted, edges[index], curve, (a, b), dec);
+                    let _ = reusable(&mut model.clone(), edges[index], curve, (a, b), dec);
                 }
             });
-            if let Some(sense) = reusable(model, self.fitted, edge, curve, (a, b), dec)? {
+            if let Some(sense) = reusable(model, edge, curve, (a, b), dec)? {
                 return Ok((edge, sense));
             }
         }
@@ -145,11 +146,18 @@ impl Builder {
         &mut self,
         model: &mut Model,
         edge: EdgeId,
+        outside: bool,
         dec: &mut Decider,
     ) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
         let original = model.edge(edge).clone();
         let (from, to) = natural_ends(model, edge);
-        let mut result = self.split_arc(model, original.curve, from, to, dec)?;
+        let mut result = if outside {
+            let from = from.map(|p| self.point(model, p, dec)).transpose()?;
+            let to = to.map(|p| self.point(model, p, dec)).transpose()?;
+            vec![self.edge(model, original.curve, from, to, dec)?]
+        } else {
+            self.split_arc(model, original.curve, from, to, dec)?
+        };
         if original.sense == Sense::Reversed {
             result.reverse();
             for (_, s) in &mut result {
@@ -172,19 +180,26 @@ impl Builder {
         if let Some(p) = from {
             cuts.push(p);
         }
+        let points = self.cuts.as_deref().unwrap_or(&self.points);
+        let end = self.cuts.is_some().then_some(to).flatten();
+        if let Some(end) = end
+            && Some(end) != from
+        {
+            cuts.push(end);
+        }
         // Whether a point lies on the arc is a value of what every thread
         // shares, so other threads test later points whole.
-        let mut ahead = catallax_numbers::values_ahead!(dec, self.points.len());
-        for (index, &p) in self.points.iter().enumerate() {
-            if Some(p) == from {
+        let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
+        for (index, &p) in points.iter().enumerate() {
+            if Some(p) == from || Some(p) == end {
                 continue;
             }
             let adopted = ahead.take(index, dec, || {
-                let (model, points) = (model.clone(), self.points.clone());
+                let (model, points) = (model.clone(), points.to_vec());
                 move |index: usize, dec: &mut Decider| {
                     let p = points[index];
-                    // The loop skips the arc's own start; its value is not read.
-                    if Some(p) == from {
+                    // The loop does not read values for preloaded endpoints.
+                    if Some(p) == from || Some(p) == end {
                         return Ok(false);
                     }
                     on_arc(&model, curve, from, to, p, dec, "boolean.imprint-ambiguous")
@@ -389,6 +404,86 @@ fn cell(
         let signature = regions.signatures_prepared(model, f.surface, groups, point, dec)?;
         Ok(Some((inside, signature)))
     })
+}
+
+/// An edge outside the other solid can still contain a singular carrier cut.
+/// Only a strict separation from every such point permits the unsplit path.
+fn clear_of_singular(model: &Model, edge: EdgeId, singular: &BTreeSet<PointId>) -> bool {
+    if singular.is_empty() {
+        return true;
+    }
+    let edge = model.edge(edge);
+    let bounds = if matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+        let (Some(start), Some(end)) = (edge.start, edge.end) else {
+            return false;
+        };
+        let point = |vertex| model.geom().position(model.vertex(vertex).point);
+        let (a, b) = (point(start), point(end));
+        Some([
+            a.x.approx().hull(&b.x.approx()),
+            a.y.approx().hull(&b.y.approx()),
+            a.z.approx().hull(&b.z.approx()),
+        ])
+    } else {
+        crate::carrier_bounds::enclosure(model.geom(), edge.curve)
+    };
+    bounds.is_some_and(|bounds| {
+        singular.iter().all(|&point| {
+            crate::carrier_bounds::excludes_point(&bounds, &model.geom().position(point))
+        })
+    })
+}
+
+/// Reuse the split boundary of a fitted face without probing its winding.
+/// A repeated vertex can change the walk successors; use the arrangement then.
+fn unsectioned_piece(
+    model: &mut Model,
+    face: FaceId,
+    boundary: &BTreeMap<EdgeId, Vec<(EdgeId, Sense)>>,
+) -> Option<FaceId> {
+    let mut f = model.face(face).clone();
+    let mut starts = BTreeSet::new();
+    let mut walks = Vec::new();
+    for &lp in &f.loops {
+        let Loop::Coedges(coedges) = model.loop_(lp) else {
+            walks.push(None);
+            continue;
+        };
+        let mut walk = Vec::with_capacity(coedges.len());
+        for &coedge in coedges {
+            let c = model.coedge(coedge);
+            let parts = &boundary[&c.edge];
+            if parts.is_empty() {
+                return None;
+            }
+            if c.sense == Sense::Same {
+                walk.extend(parts.iter().copied());
+            } else {
+                walk.extend(parts.iter().rev().map(|&(e, s)| (e, reverse(s))));
+            }
+        }
+        for &(edge, sense) in &walk {
+            if let Some(start) = ends(model, edge, sense).0
+                && !starts.insert(start)
+            {
+                return None;
+            }
+        }
+        walks.push(Some(walk));
+    }
+    if walks.iter().all(Option::is_none) {
+        return Some(face);
+    }
+    for (lp, walk) in f.loops.iter_mut().zip(walks) {
+        if let Some(walk) = walk {
+            let coedges = walk
+                .into_iter()
+                .map(|(edge, sense)| model.add_coedge(Coedge { edge, sense }))
+                .collect();
+            *lp = model.add_loop(Loop::Coedges(coedges));
+        }
+    }
+    Some(model.add_named_face(f, model.face_origins(face).to_vec()))
 }
 
 fn pieces(
@@ -632,17 +727,20 @@ fn imprint_groups(
     mut visit: impl FnMut(FaceId, &[FaceId]),
 ) -> Answered<Imprinted> {
     let mut builder = Builder {
-        fitted: groups.iter().any(|(_, faces)| {
-            faces
-                .iter()
-                .any(|face| crate::trim_bounds::fitted_band(model, *face))
-        }),
+        canonical: BTreeMap::new(),
+        cuts: None,
         points: Vec::new(),
         vertices: BTreeMap::new(),
         edges: Vec::new(),
     };
     let mut additional_edges = None;
-    if !builder.fitted || graph.a == graph.b {
+    if graph.a == graph.b
+        || !groups.iter().any(|(_, faces)| {
+            faces
+                .iter()
+                .any(|face| crate::trim_bounds::fitted_band(model, *face))
+        })
+    {
         context.fitted_operands = None;
     }
     if graph.a == graph.b {
@@ -678,14 +776,36 @@ fn imprint_groups(
             }
         }
     }
-    for &point in graph.points.iter().chain(graph.singular.iter()) {
-        builder.point(model, point, dec)?;
-    }
-    for edge in &graph.edges {
-        for point in [edge.start, edge.end].into_iter().flatten() {
-            builder.point(model, point, dec)?;
+    let local = graph.a != graph.b
+        && groups.iter().all(|&(body, _)| {
+            let body = model.body(body);
+            matches!(body.lumps.as_slice(), [lump] if model.lump(*lump).shells.len() == 1)
+        });
+    let mut meetings = BTreeSet::new();
+    for point in graph.points.iter().chain(&graph.singular).copied().chain(
+        graph
+            .edges
+            .iter()
+            .flat_map(|edge| [edge.start, edge.end].into_iter().flatten()),
+    ) {
+        let canonical = builder.point(model, point, dec)?;
+        if local {
+            meetings.insert(canonical);
         }
     }
+    if local {
+        // For an embedded shell, keep only section points and singular
+        // carrier cuts; the original edge endpoints are added separately.
+        builder.cuts = Some(
+            builder
+                .points
+                .iter()
+                .copied()
+                .filter(|p| meetings.contains(p))
+                .collect(),
+        );
+    }
+
     // Each boundary edge once, under the first body that has it. A body's own
     // edges do not change while its edges are split.
     let mut boundary_edges = Vec::new();
@@ -696,7 +816,12 @@ fn imprint_groups(
             .unwrap_or_else(|| model.edges_of_body(body))
         {
             if listed.insert(edge) {
-                boundary_edges.push((body, edge));
+                boundary_edges.push((
+                    body,
+                    edge,
+                    graph.outside_edges.contains(&edge)
+                        && clear_of_singular(model, edge, &graph.singular),
+                ));
             }
         }
     }
@@ -706,18 +831,19 @@ fn imprint_groups(
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("split boundary edges");
     let mut ahead = catallax_numbers::run_ahead!(dec, boundary_edges.len());
-    for (index, &(body, edge)) in boundary_edges.iter().enumerate() {
+    for (index, &(body, edge, outside)) in boundary_edges.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, builder, edges) = (model.clone(), builder.clone(), boundary_edges.clone());
             move |index: usize, dec: &mut Decider| {
+                let (_, edge, outside) = edges[index];
                 let _ = builder
                     .clone()
-                    .split(&mut model.clone(), edges[index].1, dec);
+                    .split(&mut model.clone(), edge, outside, dec);
             }
         });
-        let parts = builder.split(model, edge, dec)?;
+        let parts = builder.split(model, edge, outside, dec)?;
         let mut names = model.edge_constructions(edge).to_vec();
         if names.is_empty() {
             names.extend(model.edge_name(body, edge));
@@ -763,7 +889,9 @@ fn imprint_groups(
     drop(ahead);
     #[cfg(feature = "work-span")]
     drop(span_tasks);
+    let fitted = context.fitted_operands.is_some();
     let mut all = Vec::with_capacity(groups.len());
+    let mut outside = BTreeSet::new();
     // Each face is cut on its own. Other threads cut later faces whole, each
     // on a copy of the model as it was when the loop was handed over. This
     // thread takes such a result when the face would have been cut the same
@@ -779,6 +907,21 @@ fn imprint_groups(
     for &(_, faces) in groups {
         let mut group_pieces = Vec::new();
         for &face in faces {
+            // A fitted trim's boundary may not have the equations needed by
+            // the ordinary winding probe. A face without cuts needs no probe.
+            if fitted {
+                let face_outside = graph.outside.contains(&face);
+                if (face_outside || (local && !sections.contains_key(&face)))
+                    && let Some(piece) = unsectioned_piece(model, face, &boundary)
+                {
+                    if face_outside {
+                        outside.insert(piece);
+                    }
+                    group_pieces.push(piece);
+                    index += 1;
+                    continue;
+                }
+            }
             #[cfg(feature = "work-span")]
             let _span_task = span_tasks.task();
             let planned = ahead.take_if(
@@ -823,6 +966,9 @@ fn imprint_groups(
                     context,
                 ),
             }?;
+            if graph.outside.contains(&face) {
+                outside.extend(split.iter().copied());
+            }
             visit(face, &split);
             group_pieces.extend(split);
         }
@@ -834,6 +980,7 @@ fn imprint_groups(
         b: graph.b,
         first: all.next().unwrap_or_default(),
         second: all.next().unwrap_or_default(),
+        outside,
         common,
         singular: graph.singular.clone(),
         marks: graph.marks.clone(),
@@ -900,6 +1047,8 @@ mod tests {
         let graph = IntersectionGraph {
             a: fitted,
             b: analytic,
+            outside: BTreeSet::new(),
+            outside_edges: BTreeSet::new(),
             edges: Vec::new(),
             points: Vec::new(),
             singular: BTreeSet::new(),

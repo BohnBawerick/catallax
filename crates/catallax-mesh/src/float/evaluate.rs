@@ -235,6 +235,14 @@ impl<'a> Projector<'a> {
         }
     }
 
+    pub(super) fn position(&mut self, uv: Uv) -> Xyz {
+        if let Some(patch) = &mut self.spline {
+            patch.at(uv)
+        } else {
+            self.jet(uv).0
+        }
+    }
+
     // Closest-parameter surface point and its two parametric tangents. The
     // analytic projection is a chart inverse on the carrier; off it, only the
     // tangents and normal component of the displacement are used.

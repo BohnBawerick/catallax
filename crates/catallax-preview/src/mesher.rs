@@ -379,15 +379,23 @@ impl PackedMesh {
         if self.surfaces.len() == self.max_surfaces {
             return Err(FaceRefusal::MeshSize);
         }
-        let trim = trim::triangulate(
+        let first = self.positions.len();
+        let trim = match trim::triangulate(
             face,
             &self.edges,
-            &self.positions,
+            &mut self.positions,
+            self.max_positions,
             detail,
             self.max_vertices - self.inputs.len(),
             self.max_indices - self.indices.len(),
-        )?;
-        let first = self.positions.len();
+        ) {
+            Ok(trim) => trim,
+            Err(error) => {
+                self.positions.truncate(first);
+                return Err(error);
+            }
+        };
+        let first_surface = self.positions.len();
         let first_knot = self.knots.len();
         let params = match surface::pack(
             face,
@@ -399,9 +407,25 @@ impl PackedMesh {
         ) {
             Ok(params) => params,
             Err(error) => {
-                self.positions.truncate(first);
+                self.positions.truncate(first_surface);
                 self.knots.truncate(first_knot);
-                return Err(error);
+                if !matches!(error, FaceRefusal::GpuRange | FaceRefusal::UnsupportedTrim) {
+                    self.positions.truncate(first);
+                    return Err(error);
+                }
+                match surface::sampled(
+                    face,
+                    trim.bounds,
+                    detail,
+                    &mut self.positions,
+                    self.max_positions,
+                ) {
+                    Ok(params) => params,
+                    Err(_) => {
+                        self.positions.truncate(first);
+                        return Err(error);
+                    }
+                }
             }
         };
         let base = self.inputs.len() as u32;

@@ -444,7 +444,14 @@ async fn check_corpus(adapter: wgpu::Adapter) {
     let mut failures = Vec::new();
     let mut rows = 0;
     let mut grid_faces = 0;
+    let selected = std::env::var("CATALLAX_DISPLAY_CASES").ok();
     for (id, outcome) in corpus::bodies() {
+        if selected
+            .as_ref()
+            .is_some_and(|s| !s.split(',').any(|name| name == id))
+        {
+            continue;
+        }
         rows += 1;
         let started = std::time::Instant::now();
         let result: Result<(), String> = async {
@@ -452,7 +459,7 @@ async fn check_corpus(adapter: wgpu::Adapter) {
                 EvaluationOutcome::Exact(checkpoint) => {
                     let built = checkpoint.built();
                     let description =
-                        describe_body(&built.model, built.result, &DisplayOptions::default())
+                        describe_body(&built.model, built.result, &corpus_display_options())
                             .map_err(|error| error.to_string())?;
                     let gpu = corpus_gpu(id, &mesher, &device, &description, started, &mut grid_faces)
                         .await;
@@ -484,7 +491,7 @@ async fn check_corpus(adapter: wgpu::Adapter) {
                     .map_err(|_| "geometry check failed".to_owned())
                 }
                 EvaluationOutcome::Numerical(built) => {
-                    let description = describe_numerical_body(built.body(), &DisplayOptions::default())
+                    let description = describe_numerical_body(built.body(), &corpus_display_options())
                         .map_err(|error| error.to_string())?;
                     let gpu = corpus_gpu(id, &mesher, &device, &description, started, &mut grid_faces)
                         .await?;
@@ -519,8 +526,17 @@ async fn check_corpus(adapter: wgpu::Adapter) {
             failures.push(format!("{id}: {error}"));
         }
     }
+    assert!(rows > 0, "no selected corpus rows");
     eprintln!("GPU corpus: {rows} rows, {grid_faces} sampled-grid faces");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn corpus_display_options() -> DisplayOptions {
+    DisplayOptions {
+        chord_tolerance: TOLERANCE / 4.0,
+        ..Default::default()
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -560,9 +576,6 @@ async fn corpus_gpu<F: Clone + std::fmt::Debug, E>(
         match &result.draw {
             Ok(draw) if draw.sampled_grid => {
                 *grids.entry(kind).or_default() += 1;
-                if !matches!(face.surface, Grid(_)) {
-                    refusals.push(format!("{:?} {kind}: unexpectedly sampled", face.face));
-                }
             }
             Ok(_) => (),
             Err(error) => refusals.push(format!("{:?} {kind}: {error}", face.face)),
@@ -708,10 +721,9 @@ fn assert_closed<F: Eq + std::fmt::Debug, E: std::fmt::Debug>(
     }
     assert_eq!(next_index as usize, indices.len());
     assert!(used.into_iter().all(|used| used));
-    assert!(
-        edges.values().all(|&usage| usage == (2, 0)),
-        "GPU preview is not a closed, oriented mesh"
-    );
+    if let Some((edge, usage)) = edges.iter().find(|&(_, &usage)| usage != (2, 0)) {
+        panic!("GPU preview is not a closed, oriented mesh: {edge:?} used {usage:?}");
+    }
     for edge in &description.edges {
         for pair in edge.points.windows(2) {
             let key = |p: [f64; 3]| {

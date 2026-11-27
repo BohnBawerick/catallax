@@ -41,7 +41,14 @@ fn mesh(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) g
             let uv = surface.x.xy + input.uv * surface.y.xy;
             let wrapped = select(uv, fract(uv), surface.z.xy != vec2(0.0));
             let sample = spline_sample(surface.spline, wrapped);
-            vertex = Vertex(vec4(sample.position, 1.0), vec4(sample.normal, 0.0));
+            var normal = sample.normal;
+            if all(normal == vec3(0.0)) {
+                // A collapsed boundary tangent uses its limit from the chart interior.
+                let near = mix(input.uv, vec2(0.5), 0.0001) * surface.y.xy + surface.x.xy;
+                let inside = select(near, fract(near), surface.z.xy != vec2(0.0));
+                normal = spline_sample(surface.spline, inside).normal;
+            }
+            vertex = Vertex(vec4(sample.position, 1.0), vec4(normal, 0.0));
         }
         case 4u, 5u, 6u: { vertex = analytic_face(surface, input.uv); }
         default: { vertex = grid(surface, input.uv); }

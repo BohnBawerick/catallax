@@ -147,6 +147,36 @@ fn radius32(radius: f64) -> Result<f32, FaceRefusal> {
     Ok(radius)
 }
 
+pub(super) fn sampled<F>(
+    face: &DisplayFace<F>,
+    bounds: Bounds,
+    detail: [u32; 2],
+    positions: &mut Vec<[f32; 4]>,
+    limit: usize,
+) -> Result<SurfaceParams, FaceRefusal> {
+    let mut at = face.carrier_points().ok_or(FaceRefusal::InvalidSurface)?;
+    let size = detail.map(|n| (n as usize).saturating_add(1));
+    let count = check_grid(size, positions, limit)?;
+    let mode = grid_mode(positions.len(), size);
+    let [du, dv] =
+        std::array::from_fn(|axis| (bounds[axis][1] - bounds[axis][0]) / (size[axis] - 1) as f64);
+    positions.reserve(count);
+    for v in 0..size[1] {
+        for u in 0..size[0] {
+            positions.push(position32(at([
+                bounds[0][0] + u as f64 * du,
+                bounds[1][0] + v as f64 * dv,
+            ]))?);
+        }
+    }
+    Ok(SurfaceParams {
+        origin: [0.0, 0.0, 0.0, if face.reversed { -1.0 } else { 1.0 }],
+        y: [1.0, 1.0, 0.0, 0.0],
+        mode,
+        ..Default::default()
+    })
+}
+
 fn grid_mode(first: usize, size: [usize; 2]) -> [u32; 4] {
     [GRID, first as u32, size[0] as u32, size[1] as u32]
 }

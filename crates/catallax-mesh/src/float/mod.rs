@@ -72,6 +72,21 @@ impl<F> DisplayFace<F> {
             evaluate::norm(sub(position, point))
         })
     }
+
+    /// Evaluate the body-relative binary64 carrier in this face's chart.
+    /// The evaluator reuses scratch storage and wraps periodic coordinates.
+    pub fn carrier_points(&self) -> Option<impl FnMut([f64; 2]) -> [f64; 3] + '_> {
+        let mut carrier = Projector::new(&self.surface, None)?;
+        Some(move |mut uv| {
+            for (i, period) in self.periods.iter().enumerate() {
+                if let Some(period) = period {
+                    let base = self.bounds[i][0];
+                    uv[i] = base + (uv[i] - base).rem_euclid(*period);
+                }
+            }
+            carrier.position(uv)
+        })
+    }
 }
 
 /// Consecutive oriented uses around a boundary loop.

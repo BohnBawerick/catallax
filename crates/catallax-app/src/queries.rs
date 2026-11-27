@@ -98,6 +98,16 @@ pub struct SectionCurves {
     pub points: Vec<PointId>,
 }
 
+/// An immediate source of section topology.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionSource<Id> {
+    /// A face or edge of the original input body, not of the cutter.
+    Original(Id),
+    /// A cap face in [`SectionSolid::model`]. For a cap face this is its own
+    /// ID; for an edge it is a cap whose boundary uses that edge.
+    Cap(FaceId),
+}
+
 /// A closed solid clipped to the retained side of a drawing section.
 #[derive(Clone, Debug)]
 pub struct SectionSolid {
@@ -105,6 +115,12 @@ pub struct SectionSolid {
     pub model: Model,
     /// The body on the side opposite the section normal.
     pub body: BodyId,
+    /// Every retained face's sources, keyed by face ID in the clipped body.
+    /// A merged face may have more than one source.
+    pub face_sources: BTreeMap<FaceId, Vec<SectionSource<FaceId>>>,
+    /// Every retained edge's sources, keyed by edge ID in the clipped body.
+    /// A new cut edge points to its cap instead of claiming an input edge.
+    pub edge_sources: BTreeMap<EdgeId, Vec<SectionSource<EdgeId>>>,
 }
 
 /// Orthographic outline generators in model coordinates, before projection.
@@ -251,8 +267,9 @@ pub fn section_curves(
 
 /// Clip a solid to the negative half-space of a rational plane. The new
 /// planar face caps the cut so a hidden-line view along the normal sees the
-/// section and the geometry behind it. Use [`section_curves`] for the cut
-/// curves alone, including isolated contacts.
+/// section and the geometry behind it. The section maps the view's face
+/// and edge IDs to original body IDs or cap faces. Use [`section_curves`]
+/// for the cut curves alone, including isolated contacts.
 pub fn section_solid(
     model: &Model,
     body: BodyId,

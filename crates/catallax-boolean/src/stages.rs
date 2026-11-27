@@ -184,13 +184,16 @@ pub(crate) fn imprint_for_boolean(
     graph: &IntersectionGraph,
     dec: &mut Decider,
     proof: &mut Option<crate::trim_bounds::BodyApartProof>,
+    sources: Option<&mut crate::imprinting::ImprintSources>,
 ) -> Answered<Imprinted> {
-    crate::imprinting::imprint_for_boolean(model, graph, dec, proof).map_err(|mut refusal| {
-        if refusal.code == "boolean.classify-ambiguous" {
-            refusal.code = "boolean.imprint-ambiguous";
-        }
-        refusal
-    })
+    crate::imprinting::imprint_for_boolean(model, graph, dec, proof, sources).map_err(
+        |mut refusal| {
+            if refusal.code == "boolean.classify-ambiguous" {
+                refusal.code = "boolean.imprint-ambiguous";
+            }
+            refusal
+        },
+    )
 }
 
 fn excludes_finite_point(
@@ -412,7 +415,7 @@ pub fn sew(
     selection: &Selection,
     dec: &mut Decider,
 ) -> Answered<BodyId> {
-    crate::sewing::sew(model, imprinted, selection, dec)
+    crate::sewing::sew(model, imprinted, selection, dec, None)
 }
 
 /// Remove redundant same-support boundaries and degree-two vertices from a

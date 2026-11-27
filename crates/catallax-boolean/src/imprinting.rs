@@ -20,6 +20,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod bezier;
 
+#[derive(Default)]
+pub(crate) struct ImprintSources {
+    pub(crate) faces: BTreeMap<FaceId, FaceId>,
+    pub(crate) edges: BTreeMap<EdgeId, Vec<EdgeId>>,
+}
+
 /// The sense in which stored `edge` is the arc of `curve` between `a` and
 /// `b`, when it is that arc.
 fn reusable(
@@ -648,6 +654,7 @@ pub(crate) fn imprint(
         graph,
         dec,
         &mut crate::germ::Context::new("boolean.imprint-ambiguous"),
+        None,
     )
 }
 
@@ -656,10 +663,11 @@ pub(crate) fn imprint_for_boolean(
     graph: &IntersectionGraph,
     dec: &mut Decider,
     proof: &mut Option<crate::trim_bounds::BodyApartProof>,
+    sources: Option<&mut ImprintSources>,
 ) -> Answered<Imprinted> {
     let mut context = crate::germ::Context::new("boolean.imprint-ambiguous");
     context.fitted_operands = Some((graph.a, graph.b));
-    let answer = match imprint_graph(model, graph, dec, &mut context) {
+    let answer = match imprint_graph(model, graph, dec, &mut context, sources) {
         Err(refusal)
             if refusal.code == "numbers.operation-budget"
                 && let Some(query) = context.fitted_query =>
@@ -684,16 +692,25 @@ fn imprint_graph(
     graph: &IntersectionGraph,
     dec: &mut Decider,
     context: &mut crate::germ::Context,
+    sources: Option<&mut ImprintSources>,
 ) -> Answered<Imprinted> {
     let first = model.faces_of_body(graph.a);
     let second = model.faces_of_body(graph.b);
+    let (mut face_sources, edge_sources) = sources.map_or((None, None), |sources| {
+        (Some(&mut sources.faces), Some(&mut sources.edges))
+    });
     imprint_groups(
         model,
         graph,
         &[(graph.a, &first), (graph.b, &second)],
         dec,
         context,
-        |_, _| {},
+        edge_sources,
+        |face, pieces| {
+            if let Some(sources) = &mut face_sources {
+                sources.extend(pieces.iter().map(|&piece| (piece, face)));
+            }
+        },
     )
 }
 
@@ -711,6 +728,7 @@ pub(crate) fn arrangement(
         &[(graph.a, faces)],
         dec,
         &mut context,
+        None,
         |face, pieces| {
             owners.extend(pieces.iter().map(|&piece| (piece, face)));
         },
@@ -724,6 +742,7 @@ fn imprint_groups(
     groups: &[(catallax_topology::BodyId, &[FaceId])],
     dec: &mut Decider,
     context: &mut crate::germ::Context,
+    mut edge_sources: Option<&mut BTreeMap<EdgeId, Vec<EdgeId>>>,
     mut visit: impl FnMut(FaceId, &[FaceId]),
 ) -> Answered<Imprinted> {
     let mut builder = Builder {
@@ -850,6 +869,9 @@ fn imprint_groups(
         }
         for &(part, _) in &parts {
             model.record_edge_constructions(part, names.clone());
+            if let Some(sources) = &mut edge_sources {
+                sources.entry(part).or_default().push(edge);
+            }
         }
         boundary.insert(edge, parts);
     }
@@ -917,6 +939,7 @@ fn imprint_groups(
                     if face_outside {
                         outside.insert(piece);
                     }
+                    visit(face, &[piece]);
                     group_pieces.push(piece);
                     index += 1;
                     continue;
@@ -1055,7 +1078,7 @@ mod tests {
             marks: MarkLog::new(),
         };
         let (answer, work) = with_operation_budget(0, || {
-            imprint_for_boolean(&mut model, &graph, &mut Decider::default(), &mut None)
+            imprint_for_boolean(&mut model, &graph, &mut Decider::default(), &mut None, None)
         });
         assert!(work.exhausted);
         let refusal = answer.expect_err("an exhausted imprint refuses");

@@ -1,12 +1,13 @@
 //! Sew selected face uses, split contact fans, then remove internal
 //! boundaries and degree-two vertices before writing the result topology.
 
-use crate::Containment;
 use crate::geometry::{
     coincident, oriented, product, record_incident, refusal, reverse, sign, undecided,
 };
+use crate::imprinting::ImprintSources;
 use crate::points::curve_sample;
 use crate::stages::{Imprinted, Selection};
+use crate::{Containment, SubtractionHistory};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces, same_curve, tangent_at};
 use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, Sign};
 use catallax_recipe::{EdgeName, Origin};
@@ -81,7 +82,8 @@ type FaceUses = (
     Vec<Use>,
     BTreeMap<catallax_topology::EdgeId, Vec<usize>>,
 );
-type MergedFaces = (Vec<FaceData>, Vec<bool>, Vec<usize>, Groups);
+type MergedFaces = (Vec<FaceData>, Vec<bool>, Vec<usize>, Groups, Groups);
+type SewHistory<'a> = (&'a ImprintSources, &'a mut SubtractionHistory);
 
 fn read(model: &Model, selection: &Selection) -> FaceUses {
     let mut faces = Vec::new();
@@ -392,7 +394,7 @@ fn merge_faces(
         }
         result[face].loops.push(loop_uses);
     }
-    Ok((result, removed, next, components))
+    Ok((result, removed, next, components, merged))
 }
 
 fn singular(
@@ -439,6 +441,7 @@ fn maximal_edges(
     edges: &mut Vec<EdgeData>,
     points: &BTreeMap<usize, PointId>,
     nodes: &BTreeSet<PointId>,
+    sources: &mut BTreeMap<usize, Vec<EdgeId>>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     loop {
@@ -490,6 +493,11 @@ fn maximal_edges(
                 reverse(a.sense)
             };
             let merged = edges.len();
+            let mut originals = sources.remove(&first).unwrap_or_default();
+            originals.extend(sources.remove(&second).into_iter().flatten());
+            if !originals.is_empty() {
+                sources.insert(merged, originals);
+            }
             edges.push(EdgeData {
                 curve: a.curve,
                 sense,
@@ -619,6 +627,11 @@ fn shell_inside(
     })
 }
 
+enum ShellPartition {
+    Preserve(BodyId),
+    Classify { outer_shells_proven: bool },
+}
+
 pub(crate) fn make_maximal(model: &mut Model, body: BodyId, dec: &mut Decider) -> Answered<BodyId> {
     if model.body(body).kind == BodyKind::Empty {
         return checked(model, body);
@@ -639,8 +652,8 @@ pub(crate) fn make_maximal(model: &mut Model, body: BodyId, dec: &mut Decider) -
         &BTreeSet::new(),
         &selection,
         marks,
-        Some(body),
-        false,
+        ShellPartition::Preserve(body),
+        None,
         dec,
     )
 }
@@ -650,6 +663,7 @@ pub(crate) fn sew(
     imprinted: &Imprinted,
     selection: &Selection,
     dec: &mut Decider,
+    history: Option<SewHistory<'_>>,
 ) -> Answered<BodyId> {
     let mut marks = selection.marks.clone();
     marks.extend(&model.body(imprinted.a).marks);
@@ -673,8 +687,10 @@ pub(crate) fn sew(
         &imprinted.singular,
         selection,
         marks,
-        None,
-        outer_shells_proven,
+        ShellPartition::Classify {
+            outer_shells_proven,
+        },
+        history,
         dec,
     )
 }
@@ -684,8 +700,8 @@ fn rebuild(
     nodes: &BTreeSet<PointId>,
     selection: &Selection,
     marks: MarkLog,
-    source: Option<BodyId>,
-    outer_shells_proven: bool,
+    partition: ShellPartition,
+    mut history: Option<SewHistory<'_>>,
     dec: &mut Decider,
 ) -> Answered<BodyId> {
     if selection.faces.is_empty() {
@@ -699,8 +715,9 @@ fn rebuild(
     }
     let (original, uses, by_edge) = read(model, selection);
     let twins = pair(model, &original, &uses, &by_edge, dec)?;
-    let (mut faces, removed, next, mut components) =
+    let (mut faces, removed, next, mut components, mut merged) =
         merge_faces(model, &original, &uses, &twins, dec)?;
+    let mut edge_sources = BTreeMap::new();
     for list in by_edge.values() {
         if list.len() > 2 {
             let mut seen = BTreeSet::new();
@@ -804,6 +821,28 @@ fn rebuild(
             active: true,
             constructions,
         });
+        if let Some((input, _)) = &history
+            && let Some(sources) = input.edges.get(&u.edge)
+        {
+            let faces = [u.face, uses[partner].face].map(|i| input.faces[&selection.faces[i].0]);
+            let originals: Vec<_> = sources
+                .iter()
+                .copied()
+                .filter(|&source| {
+                    // One geometric imprint edge can bound several disjoint
+                    // material fans. Keep only the edges incident on this fan.
+                    faces.iter().any(|&face| {
+                        model.face(face).loops.iter().any(|&lp| {
+                            matches!(model.loop_(lp), Loop::Coedges(coedges)
+                                if coedges.iter().any(|&c| model.coedge(c).edge == source))
+                        })
+                    })
+                })
+                .collect();
+            if !originals.is_empty() {
+                edge_sources.insert(index, originals);
+            }
+        }
         edge_for_use.insert(h, index);
         edge_for_use.insert(partner, index);
     }
@@ -816,7 +855,15 @@ fn rebuild(
             }
         }
     }
-    maximal_edges(model, &mut faces, &mut edges, &fan_points, nodes, dec)?;
+    maximal_edges(
+        model,
+        &mut faces,
+        &mut edges,
+        &fan_points,
+        nodes,
+        &mut edge_sources,
+        dec,
+    )?;
     let mut vertices = BTreeMap::new();
     for edge in &edges {
         if edge.active {
@@ -852,6 +899,12 @@ fn rebuild(
             tolerance: None,
         });
         model.record_edge_constructions(stored, std::mem::take(&mut edge.constructions));
+        if let Some((_, history)) = &mut history {
+            let mut originals = edge_sources.remove(&i).unwrap_or_default();
+            originals.sort_unstable();
+            originals.dedup();
+            history.edges.insert(stored, originals);
+        }
         stored_edges.insert(i, stored);
     }
     let mut stored_faces = Vec::new();
@@ -889,7 +942,24 @@ fn rebuild(
             face.origins.clone(),
         ));
     }
-    if let Some(source) = source {
+    if let Some((input, history)) = history {
+        let mut by_root = vec![None; selection.faces.len()];
+        for (face, &stored) in faces.iter().zip(&stored_faces) {
+            by_root[face.original] = Some(stored);
+        }
+        for (i, &(face, _)) in selection.faces.iter().enumerate() {
+            history
+                .faces
+                .entry(by_root[merged.root(i)].expect("every merged root has a result face"))
+                .or_default()
+                .push(input.faces[&face]);
+        }
+        for originals in history.faces.values_mut() {
+            originals.sort_unstable();
+            originals.dedup();
+        }
+    }
+    if let ShellPartition::Preserve(source) = partition {
         // Removing redundant boundaries does not change shell orientation or
         // containment. Retain the constructor's proven lump/void partition.
         let mut owner = BTreeMap::new();
@@ -929,6 +999,12 @@ fn rebuild(
         });
         return checked(model, body);
     }
+    let ShellPartition::Classify {
+        outer_shells_proven,
+    } = partition
+    else {
+        unreachable!("the preserved partition was returned above");
+    };
     let mut shell_faces: BTreeMap<usize, Vec<FaceId>> = BTreeMap::new();
     for (i, face) in faces.iter().enumerate() {
         shell_faces

@@ -51,6 +51,7 @@ fn mesh(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) g
             vertex = Vertex(vec4(sample.position, 1.0), vec4(normal, 0.0));
         }
         case 4u, 5u, 6u: { vertex = analytic_face(surface, input.uv); }
+        case 7u: { vertex = stereographic_sphere(surface, input.uv); }
         default: { vertex = grid(surface, input.uv); }
     }
     if input.boundary != 0xffffffffu {

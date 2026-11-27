@@ -9,11 +9,13 @@ type Bounds = [[f64; 2]; 2];
 pub(super) const GRID: u32 = 2;
 const SPLINE: u32 = 3;
 const ANALYTIC: u32 = 4;
+const STEREOGRAPHIC: u32 = 7;
 const MAX_SPLINE_DEGREE: usize = 12;
 
 pub(super) fn pack<F>(
     face: &DisplayFace<F>,
     bounds: Bounds,
+    sphere_chart: Option<DisplayFrame>,
     positions: &mut Vec<[f32; 4]>,
     max_positions: usize,
     knots: &mut Vec<f32>,
@@ -39,7 +41,11 @@ pub(super) fn pack<F>(
             params = analytic(frame, Kind::Cone, *slope, None, bounds)?;
         }
         DisplaySurface::Sphere { frame, radius } => {
-            params = analytic(frame, Kind::Sphere, *radius, None, bounds)?;
+            params = if let Some(chart) = sphere_chart {
+                stereographic(chart, *radius, bounds)?
+            } else {
+                analytic(frame, Kind::Sphere, *radius, None, bounds)?
+            };
         }
         DisplaySurface::Torus {
             frame,
@@ -131,6 +137,26 @@ fn analytic(
             scalar32(u0.rem_euclid(1.0))?.to_bits(),
             scalar32(v_base)?.to_bits(),
             scalar32(u1 - u0)?.to_bits(),
+        ],
+        ..Default::default()
+    })
+}
+
+fn stereographic(
+    frame: DisplayFrame,
+    radius: f64,
+    [[u0, u1], [v0, v1]]: Bounds,
+) -> Result<SurfaceParams, FaceRefusal> {
+    Ok(SurfaceParams {
+        origin: position32(frame.origin)?,
+        x: vector(frame.x, f64::from(radius32(radius)?))?,
+        y: vector(frame.y, v1 - v0)?,
+        z: vector(frame.z, u1 - u0)?,
+        mode: [
+            STEREOGRAPHIC,
+            scalar32(u0)?.to_bits(),
+            scalar32(v0)?.to_bits(),
+            0,
         ],
         ..Default::default()
     })

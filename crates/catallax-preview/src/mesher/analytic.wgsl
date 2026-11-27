@@ -37,3 +37,12 @@ fn analytic_face(surface: Surface, uv: vec2<f32>) -> Vertex {
     );
     return Vertex(result.position, result.normal);
 }
+
+fn stereographic_sphere(surface: Surface, uv: vec2<f32>) -> Vertex {
+    let base = bitcast<vec2<f32>>(surface.mode.yz);
+    let st = base + uv * vec2(surface.z.w, surface.y.w);
+    let r2 = dot(st, st);
+    let n = (2.0 * (st.x * surface.x.xyz + st.y * surface.y.xyz)
+        + (1.0 - r2) * surface.z.xyz) / (1.0 + r2);
+    return Vertex(vec4(surface.origin.xyz + surface.x.w * n, 1.0), vec4(n, 0.0));
+}

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 
-use catallax_mesh::float::{DisplayFace, DisplayLoop, DisplaySurface};
+use catallax_mesh::float::{DisplayFace, DisplayFrame, DisplayLoop, DisplaySurface};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
@@ -40,6 +40,7 @@ pub(super) struct Triangulated {
     pub vertices: Vec<InputVertex>,
     pub indices: Vec<u32>,
     pub bounds: [[f64; 2]; 2],
+    pub sphere_chart: Option<DisplayFrame>,
 }
 
 pub(super) fn triangulate<F>(
@@ -83,6 +84,17 @@ pub(super) fn triangulate<F>(
         trim_count += ring.points.len();
         rings.push(ring);
     }
+    let sphere_chart = match face.surface {
+        DisplaySurface::Sphere { frame, radius }
+            if !rings.is_empty() && face.periods[0].is_some() =>
+        {
+            spherical_chart(frame, radius, face.reversed, &mut rings, positions)
+        }
+        _ => None,
+    };
+    if sphere_chart.is_some() {
+        poles.clear();
+    }
     let mut seam_count = 0;
     let pole_start = positions.len() as u32;
     let wrapped: Vec<_> = rings
@@ -90,8 +102,9 @@ pub(super) fn triangulate<F>(
         .enumerate()
         .filter_map(|(i, ring)| (ring.winding != [0, 0]).then_some(i))
         .collect();
-    if !poles.is_empty()
-        || matches!(face.surface, DisplaySurface::Sphere { .. }) && wrapped.len() < 2
+    if sphere_chart.is_none()
+        && (!poles.is_empty()
+            || matches!(face.surface, DisplaySurface::Sphere { .. }) && wrapped.len() < 2)
     {
         let needed = if rings.is_empty() { 2 } else { 1 };
         if (rings.is_empty() || wrapped.len() == 1)
@@ -146,7 +159,8 @@ pub(super) fn triangulate<F>(
         uv[0] = a.points.last().unwrap().uv[0];
         let b = pole_ring(uv, boundary, twin, -a.winding[0], period);
         trim_count = trim_count.saturating_add(poles.len() * 2);
-        rings.push(join_band(a, b, face.periods, seam_count)?);
+        let band = join_band(a, b, &mut rings, face.periods, face.reversed, seam_count)?;
+        rings.push(band);
     } else {
         match wrapped.as_slice() {
             [] if rings.is_empty() => return Err(FaceRefusal::UnsupportedTrim),
@@ -155,7 +169,8 @@ pub(super) fn triangulate<F>(
                 let b = rings.remove(b);
                 let a = rings.remove(a);
                 seam_count = detail.into_iter().max().unwrap() as usize - 1;
-                rings.push(join_band(a, b, face.periods, seam_count)?);
+                let band = join_band(a, b, &mut rings, face.periods, face.reversed, seam_count)?;
+                rings.push(band);
             }
             _ => return Err(FaceRefusal::UnsupportedTrim),
         }
@@ -320,6 +335,7 @@ pub(super) fn triangulate<F>(
         vertices,
         indices,
         bounds,
+        sphere_chart,
     })
 }
 
@@ -452,12 +468,80 @@ fn pole_ring(uv: [f64; 2], boundary: u32, twin: usize, direction: i32, period: f
     }
 }
 
+// A geographic pole can be inside a face or on its boundary. Project from
+// the antipode of the oriented patch instead, so the pole has no special status.
+fn spherical_chart(
+    frame: DisplayFrame,
+    radius: f64,
+    reversed: bool,
+    rings: &mut [Ring],
+    positions: &[[f32; 4]],
+) -> Option<DisplayFrame> {
+    let dot = |a: [f64; 3], b: [f64; 3]| a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let cross =
+        |[x, y, z]: [f64; 3], [u, v, w]: [f64; 3]| [y * w - z * v, z * u - x * w, x * v - y * u];
+    let unit = |a: [f64; 3]| {
+        let length = dot(a, a).sqrt();
+        (length.is_finite() && length > 0.0).then(|| a.map(|x| x / length))
+    };
+    let radial = |point: &TrimPoint| {
+        let p = positions[point.boundary as usize];
+        std::array::from_fn(|i| (f64::from(p[i]) - frame.origin[i]) / radius)
+    };
+    let mut area = [0.0; 3];
+    for ring in &*rings {
+        let mut previous = radial(ring.points.last()?);
+        for point in &ring.points {
+            let next = radial(point);
+            let contribution = cross(previous, next);
+            for i in 0..3 {
+                area[i] += contribution[i];
+            }
+            previous = next;
+        }
+    }
+    let z = unit(if reversed { area.map(|x| -x) } else { area })?;
+    let reference = if z[0].abs() < 0.8 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let y = unit(cross(z, reference))?;
+    let x = cross(y, z);
+    if rings.iter().flat_map(|ring| &ring.points).any(|p| {
+        let r = radial(p);
+        let length_sq = dot(r, r);
+        !length_sq.is_finite() || length_sq <= f64::MIN_POSITIVE || dot(r, z) < -0.99
+    }) {
+        return None;
+    }
+    for ring in rings {
+        if ring.winding != [0, 0] {
+            ring.points.pop();
+            ring.winding = [0, 0];
+        }
+        for p in &mut ring.points {
+            let r = unit(radial(p)).unwrap();
+            let scale = 1.0 / (1.0 + dot(r, z));
+            p.uv = [dot(r, x) * scale, dot(r, y) * scale];
+        }
+    }
+    Some(DisplayFrame {
+        origin: frame.origin,
+        x,
+        y,
+        z,
+    })
+}
+
 // A periodic band has two rings of opposite winding. Cut it at paired
 // endpoints and give each artificial seam point one vertex index on both sides.
 fn join_band(
-    a: Ring,
+    mut a: Ring,
     mut b: Ring,
+    holes: &mut [Ring],
     periods: [Option<f64>; 2],
+    reversed: bool,
     seam_count: usize,
 ) -> Result<Ring, FaceRefusal> {
     let axis = usize::from(a.winding[0] == 0);
@@ -469,30 +553,50 @@ fn join_band(
         return Err(FaceRefusal::UnsupportedTrim);
     }
     let period = periods[axis].ok_or(FaceRefusal::InvalidChart)?;
+    let across = 1 - axis;
+    let direction = f64::from(a.winding[axis]);
+    let start = seam_start(&a, holes, axis, period);
+    rotate_ring(&mut a, start, axis, period, 0.0);
     let a_last = *a.points.last().unwrap();
-    b.points.pop();
+    if b.points.len() == 2 && b.points[0].seam_twin.is_some() {
+        b.points[0].uv[axis] = a_last.uv[axis];
+    }
+    // Score B's canonical points: the repeated endpoint is the first point.
     let distance = |p: &TrimPoint| {
         let d = (p.uv[axis] - a_last.uv[axis]) / period;
         (d - d.round()).abs()
     };
     let start = b
         .points
-        .iter()
+        .take(b.points.len() - 1)
         .enumerate()
         .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))
         .unwrap()
         .0;
-    let shift = ((a_last.uv[axis] - b.points[start].uv[axis]) / period).round() * period;
-    let turn = f64::from(b.winding[axis]) * period;
-    for (i, point) in b.points.iter_mut().enumerate() {
-        point.uv[axis] += shift + if i < start { turn } else { 0.0 };
+    let phase = ((a_last.uv[axis] - b.points[start].uv[axis]) / period).round() * period;
+    rotate_ring(&mut b, start, axis, period, phase);
+    if let Some(across_period) = periods[across] {
+        // The opposite rail has two lifts on a doubly periodic carrier. Pick
+        // the one on the interior side of the oriented first rail.
+        let sign = direction * if (axis == 1) ^ reversed { -1.0 } else { 1.0 };
+        let delta = b.points[0].uv[across] - a_last.uv[across];
+        let offset = sign * (sign * delta).rem_euclid(across_period) - delta;
+        for p in &mut b.points {
+            p.uv[across] += offset;
+        }
     }
-    b.points.rotate_left(start);
-    let mut b_last = b.points[0];
-    b_last.uv[axis] += turn;
+    let b_last = b.points.pop().unwrap();
     let mut points = a.points;
     let a_first = points[0];
     let b_first = b.points[0];
+    let middle = a_first.uv[axis].midpoint(a_last.uv[axis]);
+    for hole in holes {
+        let anchor = hole.points[0].uv[axis];
+        let shift = ((middle - anchor) / period).round() * period;
+        for p in &mut hole.points {
+            p.uv[axis] += shift;
+        }
+    }
     let interpolate = |p: TrimPoint, q: TrimPoint, twin: usize| {
         let t = (twin + 1) as f64 / (seam_count + 1) as f64;
         TrimPoint {
@@ -513,6 +617,45 @@ fn join_band(
         points,
         winding: [0, 0],
     })
+}
+
+fn rotate_ring(ring: &mut Ring, start: usize, axis: usize, period: f64, shift: f64) {
+    ring.points.pop();
+    let turn = f64::from(ring.winding[axis]) * period;
+    for (i, p) in ring.points.iter_mut().enumerate() {
+        p.uv[axis] += shift + if i < start { turn } else { 0.0 };
+    }
+    ring.points.rotate_left(start);
+    let mut last = ring.points[0];
+    last.uv[axis] += turn;
+    ring.points.push(last);
+}
+
+fn seam_start(ring: &Ring, holes: &[Ring], axis: usize, period: f64) -> usize {
+    let intervals: Vec<_> = holes
+        .iter()
+        .map(|hole| {
+            hole.points
+                .iter()
+                .fold([f64::INFINITY, f64::NEG_INFINITY], |[lo, hi], p| {
+                    [lo.min(p.uv[axis]), hi.max(p.uv[axis])]
+                })
+        })
+        .collect();
+    let points = &ring.points[..ring.points.len() - 1];
+    let count = points.len();
+    let midpoint = count / 2;
+    points
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            intervals.iter().all(|&[lo, hi]| {
+                let local = (p.uv[axis] - lo).rem_euclid(period);
+                local > hi - lo + 0.02 * period && local < 0.98 * period
+            })
+        })
+        .min_by_key(|(i, _)| i.abs_diff(midpoint))
+        .map_or(0, |(i, _)| i)
 }
 
 // Crossing a constraint toggles the inside label, including at holes. Visit

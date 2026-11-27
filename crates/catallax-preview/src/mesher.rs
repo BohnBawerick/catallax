@@ -400,6 +400,7 @@ impl PackedMesh {
         let params = match surface::pack(
             face,
             trim.bounds,
+            trim.sphere_chart,
             &mut self.positions,
             self.max_positions,
             &mut self.knots,
@@ -409,7 +410,9 @@ impl PackedMesh {
             Err(error) => {
                 self.positions.truncate(first_surface);
                 self.knots.truncate(first_knot);
-                if !matches!(error, FaceRefusal::GpuRange | FaceRefusal::UnsupportedTrim) {
+                if trim.sphere_chart.is_some()
+                    || !matches!(error, FaceRefusal::GpuRange | FaceRefusal::UnsupportedTrim)
+                {
                     self.positions.truncate(first);
                     return Err(error);
                 }

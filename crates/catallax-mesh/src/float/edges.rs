@@ -28,7 +28,31 @@ impl Reader<'_> {
         let tolerance = self.options.chord_tolerance;
         let geom = self.model.geom();
         let mut points = match geom.curve(edge.curve) {
-            Curve::Line(_) => vec![ends[0]?, ends[1]?],
+            Curve::Line(_) => {
+                let [a, b] = [ends[0]?, ends[1]?];
+                // A straight 3D chord need not be straight in a spline chart.
+                // Shared intermediate stations also disambiguate retraced trim ends.
+                let spline = self.model.coedges_of_edge(id).into_iter().any(|coedge| {
+                    self.model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
+                        matches!(
+                            geom.surface(self.model.face(face).surface),
+                            Surface::BSpline(_)
+                        )
+                    })
+                });
+                if spline {
+                    let d = sub(b, a);
+                    vec![
+                        a,
+                        add(a, scale(d, 0.25)),
+                        add(a, scale(d, 0.5)),
+                        add(a, scale(d, 0.75)),
+                        b,
+                    ]
+                } else {
+                    vec![a, b]
+                }
+            }
             Curve::Circle(c) => {
                 let f = frame(&c.center, &c.normal, &c.ref_dir, origin)?;
                 let r = positive(libm::sqrt(scalar(&c.radius_sq)))?;

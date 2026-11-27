@@ -547,7 +547,7 @@ fn seed(
         .map_err(|e| failure(format!("source chart triangulation: {e}")))
 }
 
-pub(super) const GRID_TRIM_REFUSAL: &str = "mesh.tolerant-grid-trim";
+const GRID_TRIM_REFUSAL: &str = "mesh.tolerant-grid-trim";
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn grid_face(

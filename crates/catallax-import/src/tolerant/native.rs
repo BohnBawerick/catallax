@@ -738,6 +738,12 @@ impl NativeSurface {
     pub fn periods(&self) -> [Option<f64>; 2] {
         self.1
     }
+    /// The axial source parameter where an analytic cone collapses, for
+    /// unproved display sampling. Other carriers have no conical apex.
+    pub fn cone_apex_parameter(&self) -> Option<f64> {
+        self.3.as_ref()?.cone_apex_parameter()
+    }
+
     /// Keep equivalent periodic UV on one sheet. The first location uses the
     /// native carrier's nonnegative angular branch.
     pub fn align_parameters(

@@ -3,7 +3,7 @@
 //! The carriers are sampled in binary64 through their display variants: the
 //! preview takes thousands of samples per face and claims no bound on any of
 //! them, and an enclosing evaluation of each costs a body's whole allowance.
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use catallax_import::{
     Curve,
@@ -17,8 +17,8 @@ use catallax_numbers::{Decider, Rational, Refusal, refund_on_refusal};
 use spade::Triangulation;
 
 use super::imported::{
-    Cdt, FaceOutput, GRID_TRIM_REFUSAL, Node, SourceChart, SurfaceSamples, finish_face, grid_face,
-    insert, push, seed_rectangles,
+    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, grid_face, insert, push,
+    seed_rectangles,
 };
 use crate::{PreviewEdge, PreviewMesh, PreviewOptions};
 
@@ -245,28 +245,18 @@ fn cut_to_pole(
     let (pole_v, on_oriented_side) = if let Some(bound) = bound {
         (bound.to_f64_nearest(), true)
     } else {
-        // STEP cones have an unbounded axial chart. Intersect two sampled
-        // meridians, then check that the other meridians meet there too.
-        let radial = |h, dec: &mut Decider| -> Result<P, Refusal> {
-            let mut a = first;
-            a[normal] = h;
-            let mut b = a;
-            b[axis] += period * 0.5;
-            let (a, b) = (carrier.position(a, dec)?, carrier.position(b, dec)?);
-            Ok(std::array::from_fn(|i| b[i] - a[i]))
-        };
-        let h = first[normal];
-        let step = h.abs().max(1.0) * if side == 0 { -1.0 } else { 1.0 };
-        let a = radial(h, dec)?;
-        let b = radial(h + step, dec)?;
-        let i = (0..3)
-            .max_by(|&i, &j| (b[i] - a[i]).abs().total_cmp(&(b[j] - a[j]).abs()))
-            .unwrap();
-        let t = a[i] / (a[i] - b[i]);
-        if !t.is_finite() || t == 0.0 || (t < 0.0 && vertex_loop.is_none()) {
+        if normal != 1 {
             return Err(failure());
         }
-        (h + t * step, t > 0.0)
+        let apex = source.cone_apex_parameter().ok_or_else(failure)?;
+        (
+            apex,
+            if side == 0 {
+                apex < first[1]
+            } else {
+                apex > first[1]
+            },
+        )
     };
     uv[normal] = pole_v;
     let pole = carrier.position(uv, dec)?;
@@ -431,39 +421,11 @@ pub fn preview_tolerant_body(
     if index >= import.bodies().len() {
         return Err(failure("body index is out of range"));
     }
-    let empty = BTreeSet::new();
-    let mut refine = BTreeSet::new();
-    refund_on_refusal(|| build(import, index, options, None, (&empty, &mut refine), dec))
-        .or_else(|_| {
-            super::coarsen(options, dec, |divisions, _, dec| {
-                build(
-                    import,
-                    index,
-                    options,
-                    Some(divisions),
-                    (&empty, &mut refine),
-                    dec,
-                )
-            })
+    refund_on_refusal(|| build(import, index, options, None, dec)).or_else(|_| {
+        super::coarsen(options, dec, |divisions, _, dec| {
+            build(import, index, options, Some(divisions), dec)
         })
-        .or_else(|refusal| {
-            if refusal.code != GRID_TRIM_REFUSAL || refine.is_empty() {
-                return Err(refusal);
-            }
-            // Try denser shared chords only after all normal levels failed.
-            // Do not discard a usable coarse preview to refine its trims.
-            refund_on_refusal(|| {
-                build(
-                    import,
-                    index,
-                    options,
-                    Some(8),
-                    (&refine, &mut BTreeSet::new()),
-                    dec,
-                )
-            })
-            .or(Err(refusal))
-        })
+    })
 }
 
 fn build(
@@ -471,7 +433,6 @@ fn build(
     index: usize,
     options: &PreviewOptions,
     grid: Option<u32>,
-    edge_detail: (&BTreeSet<usize>, &mut BTreeSet<usize>),
     dec: &mut Decider,
 ) -> Result<PreviewMesh<String, String>, Refusal> {
     let body = import.bodies()[index].definition();
@@ -500,7 +461,7 @@ fn build(
         .map(|vertex| push(&mut mesh, point(&vertex.source.point)?, options))
         .collect::<Result<Vec<_>, _>>()?;
     let mut edges = BTreeMap::new();
-    for (edge_index, edge) in body.edges().iter().enumerate() {
+    for edge in body.edges() {
         let Some(trim) = first_trim.get(edge.name.as_str()) else {
             continue;
         };
@@ -538,19 +499,7 @@ fn build(
             )
         };
         let samples = if let Some(divisions) = grid {
-            let detail = if edge_detail.0.contains(&edge_index) {
-                64
-            } else {
-                divisions
-            };
-            grid_edge(
-                &carrier,
-                ends,
-                detail.max(divisions),
-                &mut mesh,
-                options,
-                dec,
-            )?
+            grid_edge(&carrier, ends, divisions, &mut mesh, options, dec)?
         } else {
             edge_samples(
                 &carrier,
@@ -795,7 +744,7 @@ fn build(
             }
         }
         if let Some(divisions) = grid {
-            if let Err(refusal) = grid_face(
+            grid_face(
                 &face.name,
                 face.same_sense,
                 &carrier,
@@ -805,21 +754,7 @@ fn build(
                 divisions,
                 &face_options,
                 dec,
-            ) {
-                if refusal.code == GRID_TRIM_REFUSAL {
-                    edge_detail.1.extend(
-                        face.loops
-                            .iter()
-                            .flat_map(|ring| &ring.edges)
-                            .map(|usage| usage.edge)
-                            .filter(|&i| {
-                                let edge = &body.edges()[i];
-                                !edge.degenerate && !matches!(edge.curve, Curve::Line(..))
-                            }),
-                    );
-                }
-                return Err(refusal);
-            }
+            )?;
             continue;
         }
         let mut cdt = Cdt::new();

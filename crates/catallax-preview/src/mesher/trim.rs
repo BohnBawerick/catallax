@@ -179,6 +179,20 @@ pub(super) fn triangulate<F>(
     }
     let normalized =
         |uv: [f64; 2]| std::array::from_fn(|axis| (uv[axis] - bounds[axis][0]) / span[axis]);
+    // The outer coedge loop gives the draw orientation. In charts whose
+    // parameterization flips, a face's geometric sense alone does not.
+    let outer_area = rings
+        .iter()
+        .map(|ring| {
+            let uv = ring.points.iter().map(|p| normalized(p.uv));
+            uv.clone()
+                .zip(uv.cycle().skip(1))
+                .map(|([u0, v0], [u1, v1])| u0 * v1 - u1 * v0)
+                .sum::<f64>()
+        })
+        .max_by(|a, b| a.abs().total_cmp(&b.abs()))
+        .ok_or(FaceRefusal::InvalidTrim)?;
+    let reversed = outer_area < 0.0;
 
     let mut cdt = Cdt::new();
     let mut inputs = Vec::with_capacity(trim_count + grid_count - seam_count);
@@ -206,6 +220,7 @@ pub(super) fn triangulate<F>(
                 })
                 .map_err(|_| FaceRefusal::InvalidTrim)?;
             if cdt.num_vertices() == before {
+                trim_diagnostic("duplicate projected vertex", [point.uv, uv]);
                 return Err(FaceRefusal::InvalidTrim);
             }
             handles.push(handle);
@@ -216,6 +231,10 @@ pub(super) fn triangulate<F>(
     }
     for &(a, b) in &constraints {
         if !cdt.can_add_constraint(a, b) || !cdt.add_constraint(a, b) {
+            trim_diagnostic(
+                "crossing constraint",
+                [cdt.vertex(a).position(), cdt.vertex(b).position()],
+            );
             return Err(FaceRefusal::InvalidTrim);
         }
         // A third boundary point on this segment would silently split the
@@ -224,6 +243,10 @@ pub(super) fn triangulate<F>(
             .get_edge_from_neighbors(a, b)
             .is_some_and(|e| e.is_constraint_edge())
         {
+            trim_diagnostic(
+                "split constraint",
+                [cdt.vertex(a).position(), cdt.vertex(b).position()],
+            );
             return Err(FaceRefusal::InvalidTrim);
         }
     }
@@ -279,7 +302,7 @@ pub(super) fn triangulate<F>(
             }
             return Err(FaceRefusal::InvalidTrim);
         }
-        if face.reversed {
+        if reversed {
             ids.swap(1, 2);
         }
         indices.extend(ids.map(|id| {
@@ -298,6 +321,12 @@ pub(super) fn triangulate<F>(
         indices,
         bounds,
     })
+}
+
+fn trim_diagnostic(message: &str, points: impl std::fmt::Debug) {
+    if std::env::var_os("CATALLAX_TRIM_DIAGNOSTICS").is_some() {
+        eprintln!("{message}: {points:?}");
+    }
 }
 
 fn collect_ring(

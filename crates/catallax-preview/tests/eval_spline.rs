@@ -11,7 +11,6 @@ mod spline;
 
 use bytemuck::{Pod, Zeroable, cast_slice};
 use catallax_features::EvaluationOutcome;
-use catallax_numbers::Decider;
 use catallax_shapes::{BSplineSurface, SplineSupport, Surface};
 use wgpu::util::DeviceExt;
 

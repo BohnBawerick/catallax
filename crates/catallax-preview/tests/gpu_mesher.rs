@@ -467,7 +467,10 @@ async fn check_corpus(adapter: wgpu::Adapter) {
                         mesh_body(
                             &built.model,
                             built.result,
-                            &MeshOptions::default(),
+                            &MeshOptions {
+                                chord_tolerance: Rational::from_ratio(1, 200).unwrap(),
+                                ..Default::default()
+                            },
                             &mut Decider::default(),
                         )
                     });
@@ -508,9 +511,10 @@ async fn check_corpus(adapter: wgpu::Adapter) {
                                 for i in face_vertices {
                                     let [x, y, z, _] = vertices[i as usize].position;
                                     let p = [x, y, z].map(f64::from);
+                                    let gap = distance(p);
                                     assert!(
-                                        distance(p) <= TOLERANCE,
-                                        "{id}: {:?}: vertex {p:?} outside {TOLERANCE} mm of the admitted carrier",
+                                        gap <= TOLERANCE,
+                                        "{id}: {:?}: vertex {p:?} is {gap:.6} mm from the admitted carrier",
                                         face.face
                                     );
                                 }
@@ -658,11 +662,16 @@ fn assert_geometry(
                 let vertex = vertices[index as usize];
                 let position =
                     std::array::from_fn(|i| f64::from(vertex.position[i]) + gpu.origin[i]);
-                assert!(
-                    reference.within_tolerance(position),
-                    "face {:?}: vertex {position:?} outside {TOLERANCE} mm of its checked face",
-                    face.face
-                );
+                if !reference.within_tolerance(position) {
+                    let [x, y, z, _] = vertex.position;
+                    let local = [x, y, z].map(f64::from);
+                    let carrier = face.carrier_distance().map(|mut distance| distance(local));
+                    let closest = reference.distance(position);
+                    panic!(
+                        "face {:?}: vertex {position:?} is {closest:.6} mm from checked face; carrier {carrier:?}",
+                        face.face
+                    );
+                }
             }
         },
     );
@@ -779,6 +788,14 @@ impl DistanceGrid {
                     .iter()
                     .any(|&i| distance_sq(p, self.triangles[i]) <= TOLERANCE * TOLERANCE)
             })
+    }
+
+    fn distance(&self, p: [f64; 3]) -> f64 {
+        self.triangles
+            .iter()
+            .map(|&t| distance_sq(p, t))
+            .fold(f64::INFINITY, f64::min)
+            .sqrt()
     }
 }
 

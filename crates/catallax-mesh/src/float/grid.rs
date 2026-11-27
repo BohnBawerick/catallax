@@ -199,8 +199,8 @@ fn trimmed<F: Clone, E>(
         };
         indices.push(index);
     }
-    for triangle in trim.indices.chunks_exact(3) {
-        let vertices = [triangle[0], triangle[1], triangle[2]].map(|i| indices[i as usize]);
+    for &triangle in trim.indices.as_chunks::<3>().0 {
+        let vertices = triangle.map(|i| indices[i as usize]);
         emit(mesh, face, vertices);
     }
     Ok(())

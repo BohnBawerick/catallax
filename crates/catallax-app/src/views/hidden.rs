@@ -142,7 +142,7 @@ pub struct HiddenLineView {
 }
 
 /// Exact shape of a stroke's carrier, as far as the exact cuts read it.
-pub(super) enum Form {
+enum Form {
     Line {
         origin: Point3,
         dir: Vector3,

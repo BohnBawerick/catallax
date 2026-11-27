@@ -163,7 +163,9 @@ fn check_position(
     let mut axes = Vec::with_capacity(control.features.len());
     for feature in &control.features {
         match feature_shape(model, feature, item, dec) {
-            Ok(Shape::Axis { direction, .. }) => axes.push(direction),
+            Ok(Shape::Axis {
+                point, direction, ..
+            }) => axes.push((point, direction)),
             Ok(Shape::Plane { .. }) | Err(_) => {
                 return Err(refuse(
                     item,
@@ -204,7 +206,20 @@ fn check_position(
     } = &control.frame
     {
         let direction = target::vector(&zone.direction);
-        for ((feature, axis), entry) in control.features.iter().zip(&axes).zip(&zone.entry_faces) {
+        if zone.entry_faces.len() != control.features.len() {
+            return Err(refuse(
+                item,
+                "a projected zone needs one entry face per feature",
+            ));
+        }
+        let entries: BTreeMap<_, BTreeSet<_>> = zone
+            .entry_faces
+            .iter()
+            .map(|entry| (*entry, face_edges(model, *entry).collect()))
+            .collect();
+        for ((feature, (point, axis)), entry) in
+            control.features.iter().zip(&axes).zip(&zone.entry_faces)
+        {
             let normal = outward_normal(model, *entry)
                 .ok_or_else(|| refuse(item, "a projected zone's entry face is planar"))?;
             if !is_zero_vector(&axis.cross(&normal), dec)? {
@@ -221,15 +236,22 @@ fn check_position(
                     "the projected zone does not point out of the part from its entry face",
                 ));
             }
-            let edges: BTreeSet<_> = face_edges(model, *entry).collect();
-            if !feature
+            let edges: BTreeSet<_> = feature
                 .iter()
-                .any(|face| face_edges(model, *face).any(|edge| edges.contains(&edge)))
-            {
+                .flat_map(|face| face_edges(model, *face))
+                .collect();
+            let mut meeting = entries.iter().filter(|(_, own)| !own.is_disjoint(&edges));
+            if meeting.next().map(|(face, _)| face) != Some(entry) || meeting.next().is_some() {
                 return Err(refuse(
                     item,
-                    "a projected zone's entry face does not meet its controlled feature",
+                    "each controlled feature needs exactly one projected zone entry face it meets",
                 ));
+            }
+            let boundary = face_boundary(model, *entry, dec)?
+                .ok_or_else(|| refuse(item, "the projected zone entry trim cannot be checked"))?;
+            let offset = boundary.plane.origin.minus(point).dot(&normal) / axis.dot(&normal);
+            if boundary.contains(&point.plus(&axis.scaled(&offset)), dec)? {
+                return Err(refuse(item, "a projected zone's axis meets a closed end"));
             }
         }
     }
@@ -246,6 +268,17 @@ pub fn check_on_model(model: &Model, pmi: &Pmi<FaceId>, dec: &mut Decider) -> Re
     let mut datums = BTreeMap::new();
     let mut targeted = BTreeSet::new();
     for item in &pmi.items {
+        if item
+            .kind
+            .faces()
+            .into_iter()
+            .any(|face| !model.has_face(*face))
+        {
+            return Err(refuse(
+                &item.id,
+                "a face it is attached to is not in the model",
+            ));
+        }
         match &item.kind {
             ItemKind::Datum(datum) => {
                 datums.insert(datum.letter.as_str(), &datum.feature);

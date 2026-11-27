@@ -184,20 +184,15 @@ fn arc_ends(boundary: &PlanarBoundary, ends: Option<[usize; 2]>) -> Option<[&Poi
     ends.map(|[a, b]| [&boundary.vertices[a], &boundary.vertices[b]])
 }
 
-/// Whether a boundary edge has a point strictly inside the open segment from
-/// `a` to `b`, both on the boundary's plane.
-fn edge_meets_open_segment(
+fn segment_breaks(
     boundary: &PlanarBoundary,
     edge: &PlanarEdge,
     a: &Point3,
     b: &Point3,
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
+) -> Result<Vec<Real>, Refusal> {
     let normal = &boundary.plane.normal;
     let d = b.minus(a);
-    let inside = |t: &Real, dec: &mut Decider| -> Result<bool, Refusal> {
-        Ok(sign(t, dec)? == Sign::Positive && less(t, &Real::one(), dec)?)
-    };
     match edge {
         PlanarEdge::Segment([e, f]) => {
             let e = &boundary.vertices[*e];
@@ -208,24 +203,18 @@ fn edge_meets_open_segment(
             if sign(&denominator, dec)? != Sign::Zero {
                 let t = from.cross(&along).dot(normal) / denominator.clone();
                 let s = from.cross(&d).dot(normal) / denominator;
-                return Ok(inside(&t, dec)?
-                    && sign(&s, dec)? != Sign::Negative
-                    && !less(&Real::one(), &s, dec)?);
+                return Ok(
+                    (sign(&s, dec)? != Sign::Negative && !less(&Real::one(), &s, dec)?)
+                        .then_some(t)
+                        .into_iter()
+                        .collect(),
+                );
             }
             if sign(&from.cross(&d).dot(normal), dec)? != Sign::Zero {
-                return Ok(false);
+                return Ok(Vec::new());
             }
-            // Collinear: the open segment meets the closed edge when their
-            // parameter ranges overlap.
             let norm = d.norm_squared();
-            let te = from.dot(&d) / norm.clone();
-            let tf = f.minus(a).dot(&d) / norm;
-            let (low, high) = if less(&tf, &te, dec)? {
-                (tf, te)
-            } else {
-                (te, tf)
-            };
-            Ok(less(&low, &Real::one(), dec)? && sign(&high, dec)? == Sign::Positive)
+            Ok(vec![from.dot(&d) / norm.clone(), f.minus(a).dot(&d) / norm])
         }
         PlanarEdge::Arc { circle, ends } => {
             let from = a.minus(&circle.center);
@@ -235,26 +224,24 @@ fn edge_meets_open_segment(
             let discriminant = &linear.square() - &(&quadratic * &constant);
             let discriminant_sign = sign(&discriminant, dec)?;
             if discriminant_sign == Sign::Negative {
-                return Ok(false);
+                return Ok(Vec::new());
             }
             let root = if discriminant_sign == Sign::Zero {
                 Real::zero()
             } else {
                 discriminant.sqrt()
             };
+            let mut parameters = Vec::new();
             for t in [
                 (&(-&linear) - &root) / quadratic.clone(),
                 (&(-&linear) + &root) / quadratic.clone(),
             ] {
-                if !inside(&t, dec)? {
-                    continue;
-                }
                 let v = from.plus(&d.scaled(&t));
                 if arc_holds(circle, arc_ends(boundary, *ends), &v, dec)? {
-                    return Ok(true);
+                    parameters.push(t);
                 }
             }
-            Ok(false)
+            Ok(parameters)
         }
     }
 }
@@ -442,6 +429,14 @@ pub fn off_face(
     target: &DatumTarget<impl Sized>,
     dec: &mut Decider,
 ) -> Result<Option<&'static str>, Refusal> {
+    if target
+        .kind
+        .sizes()
+        .into_iter()
+        .any(|size| size <= &Rational::zero())
+    {
+        return Ok(Some("a datum target's sizes must be more than zero"));
+    }
     let plane = &boundary.plane;
     let centre = point(&target.point_mm);
     if sign(&centre.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero {
@@ -475,9 +470,28 @@ pub fn off_face(
                     return Ok(Some("the target line leaves its face"));
                 }
             }
+            let direction = ends[1].minus(&ends[0]);
+            let mut breaks = vec![Real::zero(), Real::one()];
             for edge in &boundary.edges {
-                if edge_meets_open_segment(boundary, edge, &ends[0], &ends[1], dec)? {
-                    return Ok(Some("the target line meets its face's boundary"));
+                for t in segment_breaks(boundary, edge, &ends[0], &ends[1], dec)? {
+                    for (index, next) in breaks.iter().enumerate().skip(1) {
+                        match sign(&(&t - next), dec)? {
+                            Sign::Zero => break,
+                            Sign::Positive => continue,
+                            Sign::Negative => {
+                                if less(&breaks[index - 1], &t, dec)? {
+                                    breaks.insert(index, t);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            for pair in breaks.windows(2) {
+                let mid = (&pair[0] + &pair[1]) / Real::from_i64(2);
+                if !boundary.contains(&ends[0].plus(&direction.scaled(&mid)), dec)? {
+                    return Ok(Some("the target line leaves its face"));
                 }
             }
         }

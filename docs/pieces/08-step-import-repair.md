@@ -329,12 +329,13 @@ The only refusal is a file that is not readable Part 21 text.
 
 Saved views come back in `Pmi::views`: one per `CAMERA_MODEL_D3` in a
 draughting model, with its camera in millimetres and the items whose callouts
-it holds. A callout is paired with the item its association names, through a
-composite's lower segment or a surface texture's own aspect, so an item is
-never counted twice. A callout that presents nothing read is graphical-only
-PMI: `StepPmi::graphics` lists it with its type, its equivalent Unicode
-string, its faces, the unread entity it names and the views that show it. Views
-and graphics are read for a single part, not for the parts of an assembly.
+it holds. A callout can present several items, including a datum through its
+datum feature and a composite through either of its segments. View membership
+lists each resolved item once. `StepPmi::graphics` keeps graphical-only
+callouts with their strokes, annotation planes, face attachments, optional
+equivalent Unicode text and view names. Clipped cameras and off-centre or
+rotated windows produce a diagnostic. Assembly import reads semantic PMI per
+part.
 
 `cargo run -p catallax-import --example step_pmi -- part.step` prints what a
 file reads as and every item left out.
@@ -345,15 +346,13 @@ file reads as and every item left out.
 copies every other byte, so the assembly, colours, other annotations and
 records no Catallax reader knows stay as written. `ToleranceValue` gives a
 geometric tolerance a new value as a length measure under a fresh number above
-the file's highest. `Remove` takes out the records the item owns and lowers
-the part's validation counts. No edits give back the same bytes.
+the file's highest, then replaces the magnitude reference. No edits give back
+the same bytes.
 
-The edit is refused with `step.pmi-patch` before anything is written when it
-is not proven safe: a record outside the item still refers to the records it
-removes, another item refers to a datum it removes, a callout or validation
-property would still show the item or its old value, or the value is not an
-exact decimal in the file's unit. The patched file must also read back as the
-edited PMI with every untouched record byte for byte the same.
+The patch refuses with `step.pmi-patch` if it finds an unproven dependency on
+the tolerance or its zone, or if the new value lacks an exact decimal in the
+file's unit. The patched file must read back as the edited PMI, and every
+untouched record must match the original bytes.
 `StepPmi::sources` names the entity each item was read from.
 
 ## Immutable source

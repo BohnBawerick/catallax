@@ -64,8 +64,23 @@ pub struct GraphicCallout {
     pub faces: Option<Feature<String>>,
     /// The semantic entity it presents when that entity was not read.
     pub presents: Option<String>,
+    /// Polyline strokes in part coordinates, in millimetres.
+    pub polylines_mm: Vec<Vec<[Rational; 3]>>,
+    /// Annotation planes that contain the callout.
+    pub planes: Vec<GraphicPlane>,
     /// The saved views that show it.
     pub views: Vec<String>,
+}
+
+/// An annotation plane in part coordinates.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct GraphicPlane {
+    /// The plane's origin in millimetres.
+    pub origin_mm: [Rational; 3],
+    /// Its normal.
+    pub normal: [Rational; 3],
+    /// Its reference direction.
+    pub reference: [Rational; 3],
 }
 
 /// An item of manufacturing information that was not read.
@@ -306,11 +321,17 @@ struct Placement {
     reference: Option<[Rational; 3]>,
 }
 
+enum ZoneForm {
+    Cylinder,
+    Circle,
+    Other,
+}
+
 /// One geometric tolerance entity: a plain tolerance or one segment of a
 /// position control.
 struct Segment {
     value: Rational,
-    diameter_zone: bool,
+    zone_form: ZoneForm,
     material: Option<MaterialCondition>,
     datums: Vec<(DatumRef, u64)>,
     target: u64,
@@ -333,6 +354,7 @@ struct Reader<'a> {
 /// One item as read, before names are made unique.
 struct Found {
     order: u64,
+    datum_sources: Vec<u64>,
     name: Option<String>,
     kind: ItemKind<String>,
 }
@@ -722,6 +744,7 @@ impl<'a> Reader<'a> {
             .map_err(|_| "it does not have exactly one datum feature")?;
         Ok(Found {
             order: id,
+            datum_sources: Vec::new(),
             name,
             kind: ItemKind::Datum(Datum { letter, feature }),
         })
@@ -1054,6 +1077,7 @@ impl<'a> Reader<'a> {
         };
         Ok(Found {
             order: id,
+            datum_sources: Vec::new(),
             name: self.id_attribute(id),
             kind,
         })
@@ -1153,6 +1177,7 @@ impl<'a> Reader<'a> {
         }
         Ok(Found {
             order: id,
+            datum_sources: Vec::new(),
             name: self.id_attribute(id),
             kind: ItemKind::Size(Size {
                 kind,
@@ -1235,6 +1260,7 @@ impl<'a> Reader<'a> {
         let (nominal, limits) = self.dimension_value(id)?;
         Ok(Found {
             order: id,
+            datum_sources: Vec::new(),
             name: self.id_attribute(id),
             kind: ItemKind::Location(Location {
                 from: Anchor {
@@ -1283,6 +1309,7 @@ impl<'a> Reader<'a> {
             .ok_or("the angular location has no owning part")?;
         Ok(Found {
             order: id,
+            datum_sources: Vec::new(),
             name: self.id_attribute(id),
             kind: ItemKind::BasicAngle {
                 planes: [
@@ -1340,6 +1367,7 @@ impl<'a> Reader<'a> {
     fn segment(&self, id: u64, characteristic: Characteristic) -> Result<Segment, String> {
         let entity = self.entity(id).ok_or("it is missing")?;
         let own = characteristic.entity();
+        let mut seen = BTreeSet::new();
         for (part, _) in &entity.parts {
             let known = [
                 own,
@@ -1348,6 +1376,9 @@ impl<'a> Reader<'a> {
                 "GEOMETRIC_TOLERANCE_WITH_MODIFIERS",
                 "MODIFIED_GEOMETRIC_TOLERANCE",
             ];
+            if !seen.insert(part.as_str()) {
+                return Err(format!("it states {part} more than once"));
+            }
             if !known.contains(&part.as_str()) {
                 return Err(format!("it is also a {part}"));
             }
@@ -1364,6 +1395,7 @@ impl<'a> Reader<'a> {
             None => Vec::new(),
         };
         let mut material = None;
+        let mut has_modifier = false;
         for part in [
             "GEOMETRIC_TOLERANCE_WITH_MODIFIERS",
             "MODIFIED_GEOMETRIC_TOLERANCE",
@@ -1371,15 +1403,20 @@ impl<'a> Reader<'a> {
             let Some(params) = entity.part(part) else {
                 continue;
             };
-            let modifiers: Vec<&Param> = match params.first() {
-                Some(Param::List(items)) => items.iter().collect(),
-                Some(other) => vec![other],
-                None => Vec::new(),
+            let [modifiers] = params else {
+                return Err("it has an unreadable modifier".into());
+            };
+            let modifiers = match modifiers {
+                Param::List(items) => items.as_slice(),
+                modifier => std::slice::from_ref(modifier),
             };
             for modifier in modifiers {
                 let Param::Enum(name) = modifier else {
                     return Err("it has an unreadable modifier".into());
                 };
+                if std::mem::replace(&mut has_modifier, true) {
+                    return Err("its material modifier is stated more than once".into());
+                }
                 material = Some(match name.as_str() {
                     "MAXIMUM_MATERIAL_REQUIREMENT" | "MAXIMUM_MATERIAL_CONDITION" => {
                         MaterialCondition::Maximum
@@ -1407,35 +1444,40 @@ impl<'a> Reader<'a> {
             Some(_) if self.aspect_params(target).is_some() => target,
             _ => return Err("it is not attached to a feature".into()),
         };
-        let mut diameter_zone = false;
+        let zones = self
+            .sharing
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .filter_map(|user| {
+                let zone = self.entity(*user)?;
+                let fields = zone.part("TOLERANCE_ZONE")?;
+                let defining = if zone.parts.len() == 1 { 4 } else { 0 };
+                references(fields.get(defining))
+                    .contains(&id)
+                    .then_some((*user, reference(fields.get(defining + 1))))
+            })
+            .collect::<Vec<_>>();
+        if zones.len() > 1 {
+            return Err("it has more than one tolerance zone".into());
+        }
+        let mut zone_form = ZoneForm::Other;
         let mut projected = None;
-        for (zone, params) in self.sharing_at(id, "TOLERANCE_ZONE", 4) {
-            let form = reference(params.get(5))
+        if let [(zone, form)] = zones.as_slice() {
+            let form = form
                 .and_then(|form| self.entity(form))
-                .and_then(|form| string(form.parts[0].1.first()))
-                .unwrap_or_default();
-            match form.as_str() {
-                "cylindrical or circular" | "within a cylinder" | "within a circle" => {
-                    diameter_zone = true;
-                }
-                "spherical" | "within a sphere" => {
-                    return Err("its zone is a sphere".into());
-                }
-                _ => {}
-            }
-            for (_, definition) in self.sharing_at(zone, "PROJECTED_ZONE_DEFINITION", 0) {
-                if !references(definition.get(1)).is_empty() {
-                    return Err("its projected zone names boundaries, which are not read".into());
-                }
-                let start =
-                    reference(definition.get(2)).ok_or("its projected zone has no start")?;
-                let height = reference(definition.get(3))
-                    .and_then(|measure| self.length(measure))
-                    .map(|(_, value)| value)
-                    .ok_or("its projected zone's height is not a length with a known unit")?;
-                if projected.replace((height, start)).is_some() {
-                    return Err("it has more than one projected zone".into());
-                }
+                .and_then(|form| form.part("TOLERANCE_ZONE_FORM"))
+                .and_then(|form| string(form.first()))
+                .ok_or("its zone has no readable form")?;
+            zone_form = match form.as_str() {
+                "cylindrical or circular" | "within a cylinder" => ZoneForm::Cylinder,
+                "within a circle" => ZoneForm::Circle,
+                "spherical" | "within a sphere" => return Err("its zone is a sphere".into()),
+                _ => ZoneForm::Other,
+            };
+            projected = self.projected_definition(*zone)?;
+            if projected.is_some() && !matches!(zone_form, ZoneForm::Cylinder) {
+                return Err("its projected zone needs a cylindrical zone".into());
             }
         }
         let name = string(base.first())
@@ -1443,7 +1485,7 @@ impl<'a> Reader<'a> {
             .or_else(|| self.id_attribute(id));
         Ok(Segment {
             value,
-            diameter_zone,
+            zone_form,
             material,
             datums: self.datum_refs(&systems)?,
             target,
@@ -1452,31 +1494,92 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// The upper segment of the composite frame `id` is the lower segment of.
-    fn composite_upper(&self, id: u64) -> Option<u64> {
-        self.sharing_at(id, "GEOMETRIC_TOLERANCE_RELATIONSHIP", 3)
-            .first()
-            .and_then(|(_, params)| reference(params.get(2)))
+    fn projected_definition(&self, zone: u64) -> Result<Option<(Rational, u64)>, String> {
+        let mut projected = None;
+        for user in self.sharing.get(&zone).into_iter().flatten() {
+            let Some(entity) = self.entity(*user) else {
+                continue;
+            };
+            let kind = entity.type_name();
+            let simple = entity.parts.len() == 1;
+            let base = if simple
+                && matches!(
+                    kind,
+                    "TOLERANCE_ZONE_DEFINITION"
+                        | "PROJECTED_ZONE_DEFINITION"
+                        | "PROJECTED_ZONE_DEFINITION_WITH_OFFSET"
+                        | "NON_UNIFORM_ZONE_DEFINITION"
+                        | "RUNOUT_ZONE_DEFINITION"
+                ) {
+                Some(entity.parts[0].1.as_slice())
+            } else {
+                entity.part("TOLERANCE_ZONE_DEFINITION")
+            };
+            let Some(base) = base.filter(|params| reference(params.first()) == Some(zone)) else {
+                continue;
+            };
+            let fields = match (simple, kind, entity.part("PROJECTED_ZONE_DEFINITION")) {
+                (true, "PROJECTED_ZONE_DEFINITION", _) => base.get(2..),
+                (false, _, Some(fields)) if entity.parts.len() == 2 => Some(fields),
+                _ => {
+                    return Err(format!(
+                        "its zone definition uses {kind}, which is not read"
+                    ));
+                }
+            };
+            let Some([start, height]) = fields else {
+                return Err("its projected zone has unreadable parameters".into());
+            };
+            if !matches!(base.get(1), Some(Param::List(bounds)) if bounds.is_empty()) {
+                return Err("its projected zone names boundaries, which are not read".into());
+            }
+            let start = reference(Some(start)).ok_or("its projected zone has no start")?;
+            let height = reference(Some(height))
+                .and_then(|measure| self.length(measure))
+                .map(|(_, value)| value)
+                .ok_or("its projected zone's height is not a length with a known unit")?;
+            if projected.replace((height, start)).is_some() {
+                return Err("it has more than one projected zone".into());
+            }
+        }
+        Ok(projected)
     }
 
-    /// The lower segment of the composite frame whose upper segment is `id`.
-    fn composite_lower(&self, id: u64) -> Result<Option<u64>, String> {
-        let mut lowers = Vec::new();
-        for (_, params) in self.sharing_at(id, "GEOMETRIC_TOLERANCE_RELATIONSHIP", 2) {
-            let name = string(params.first()).unwrap_or_default();
-            // CAx-IF writes `composite`; AP242's own example names it in full.
-            if name != COMPOSITE && name != "composite tolerance" {
-                return Err(format!(
-                    "it is in a `{name}` tolerance relationship, which is not read"
-                ));
-            }
-            lowers.extend(reference(params.get(3)));
+    fn tolerance_relationships(&self, id: u64) -> impl Iterator<Item = &'a [Param]> + '_ {
+        self.sharing
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .filter_map(move |user| {
+                let params = self
+                    .entity(*user)?
+                    .part("GEOMETRIC_TOLERANCE_RELATIONSHIP")?;
+                (reference(params.get(2)) == Some(id) || reference(params.get(3)) == Some(id))
+                    .then_some(params)
+            })
+    }
+
+    fn composite_link(&self, id: u64) -> Result<Option<(u64, u64)>, String> {
+        let mut links = self.tolerance_relationships(id);
+        let Some(params) = links.next() else {
+            return Ok(None);
+        };
+        let name = string(params.first()).unwrap_or_default();
+        if name != COMPOSITE {
+            return Err(format!(
+                "it is in a `{name}` tolerance relationship, which is not read"
+            ));
         }
-        match lowers.as_slice() {
-            [] => Ok(None),
-            [lower] => Ok(Some(*lower)),
-            _ => Err("it has more than one lower composite segment".into()),
+        let upper = reference(params.get(2)).ok_or("its composite frame has no upper segment")?;
+        let lower = reference(params.get(3)).ok_or("its composite frame has no lower segment")?;
+        let other = if id == upper { lower } else { upper };
+        if upper == lower
+            || links.next().is_some()
+            || self.tolerance_relationships(other).count() != 1
+        {
+            return Err("its composite frame does not have two uniquely paired segments".into());
         }
+        Ok(Some((upper, lower)))
     }
 
     /// Whether a datum's feature is a feature of size that can take a
@@ -1518,9 +1621,12 @@ impl<'a> Reader<'a> {
             }
             datums.push(reference);
         }
+        if !matches!(segment.zone_form, ZoneForm::Cylinder) {
+            return Err("a position control's zone is cylindrical".into());
+        }
         Ok(PositionSegment {
             value_mm: segment.value,
-            diameter_zone: segment.diameter_zone,
+            diameter_zone: true,
             material: segment.material,
             datums,
         })
@@ -1551,10 +1657,10 @@ impl<'a> Reader<'a> {
             .ok_or("its projected zone's start names no face")?;
         let mut planes = Vec::with_capacity(starts.len());
         for face in &starts {
-            let (_, normal) = self
+            let (point, normal) = self
                 .outward_plane(face)
                 .ok_or("its projected zone starts on a face that is not planar")?;
-            planes.push((face, normal, self.face_edge_curves(face)));
+            planes.push((face, point, normal, self.face_edge_curves(face)));
         }
         let mut direction: Option<[Rational; 3]> = None;
         let mut entry_faces = Vec::with_capacity(features.len());
@@ -1565,9 +1671,9 @@ impl<'a> Reader<'a> {
                 .collect();
             let meeting: Vec<_> = planes
                 .iter()
-                .filter(|(_, _, own)| !own.is_disjoint(&edges))
+                .filter(|(_, _, _, own)| !own.is_disjoint(&edges))
                 .collect();
-            let [(face, normal, _)] = meeting.as_slice() else {
+            let [(face, point, normal, _)] = meeting.as_slice() else {
                 return Err(
                     "each controlled feature needs exactly one projected zone start face it meets"
                         .into(),
@@ -1589,12 +1695,27 @@ impl<'a> Reader<'a> {
                 .and_then(|surface| surface.part("CYLINDRICAL_SURFACE"))
                 .and_then(|params| reference(params.get(1)))
                 .and_then(|placement| self.placement(placement))
-                .ok_or("a controlled feature has no readable axis")?
-                .axis;
-            if !is_zero3(&cross3(&axis, normal)) {
+                .ok_or("a controlled feature has no readable axis")?;
+            if !is_zero3(&cross3(&axis.axis, normal)) {
                 return Err("a controlled axis is not square to its start face".into());
             }
+            let offset = &dot3(&sub3(point, &axis.origin), normal) / &dot3(&axis.axis, normal);
+            let intersection: [Rational; 3] =
+                std::array::from_fn(|i| &axis.origin[i] + &(&offset * &axis.axis[i]));
+            let [x, y, z] = intersection.map(Real::from_rational);
+            let boundary = self
+                .face_boundary(face, &Rational::one())
+                .ok_or("the projected zone start trim cannot be checked")?;
+            if boundary
+                .contains(&Point3::new(x, y, z), &mut Decider::default())
+                .map_err(|refusal| refusal.detail)?
+            {
+                return Err("its projected zone's axis meets a closed end".into());
+            }
             entry_faces.push((*face).clone());
+        }
+        if starts.iter().any(|face| !entry_faces.contains(face)) {
+            return Err("its projected zone names an unused start face".into());
         }
         Ok(ProjectedZone {
             height_mm,
@@ -1603,12 +1724,17 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn tolerance(&self, id: u64, characteristic: Characteristic) -> Result<Found, String> {
-        let lower = self.composite_lower(id)?;
+    fn tolerance(
+        &self,
+        id: u64,
+        characteristic: Characteristic,
+        lower: Option<u64>,
+    ) -> Result<Found, String> {
         let upper = self.segment(id, characteristic)?;
         if let Some(lower) = lower {
             return self.composite(id, characteristic, upper, lower);
         }
+        let datum_sources = upper.datums.iter().map(|(_, source)| *source).collect();
         let boundary = upper
             .datums
             .iter()
@@ -1624,6 +1750,7 @@ impl<'a> Reader<'a> {
             let name = upper.name.clone();
             return Ok(Found {
                 order: id,
+                datum_sources,
                 name,
                 kind: ItemKind::Position(PositionControl {
                     features,
@@ -1642,10 +1769,11 @@ impl<'a> Reader<'a> {
         }
         Ok(Found {
             order: id,
+            datum_sources,
             kind: ItemKind::Tolerance(GeometricTolerance {
                 characteristic,
                 value: upper.value,
-                diameter_zone: upper.diameter_zone,
+                diameter_zone: matches!(upper.zone_form, ZoneForm::Cylinder | ZoneForm::Circle),
                 material: upper.material,
                 datums: upper
                     .datums
@@ -1675,9 +1803,6 @@ impl<'a> Reader<'a> {
         {
             return Err("only a composite position frame is read".into());
         }
-        if self.composite_lower(lower)?.is_some() {
-            return Err("its composite frame has more than two segments".into());
-        }
         let lower = self
             .segment(lower, Characteristic::Position)
             .map_err(|reason| format!("its lower segment #{lower}: {reason}"))?;
@@ -1688,9 +1813,16 @@ impl<'a> Reader<'a> {
         if lower.target != upper.target && self.features(lower.target, 0)? != features {
             return Err("the composite frame's segments control different features".into());
         }
+        let datum_sources = upper
+            .datums
+            .iter()
+            .chain(&lower.datums)
+            .map(|(_, source)| *source)
+            .collect();
         let name = upper.name.clone();
         Ok(Found {
             order: id,
+            datum_sources,
             name,
             kind: ItemKind::Position(PositionControl {
                 features,
@@ -1800,6 +1932,14 @@ impl<'a> Reader<'a> {
         references(units)
             .into_iter()
             .find_map(|unit| self.millimetres(unit, 0))
+    }
+
+    fn representation_scale(&self, representation: u64) -> Option<Rational> {
+        let entity = self.entity(representation)?;
+        let fields = entity
+            .part("REPRESENTATION")
+            .or_else(|| (entity.parts.len() == 1).then(|| entity.parts[0].1.as_slice()))?;
+        self.context_millimetres(reference(fields.get(2))?)
     }
 
     /// The complete trim of a planar face from the file's own edge records,
@@ -1927,28 +2067,82 @@ impl<'a> Reader<'a> {
         None
     }
 
-    /// The presented PMI type a callout's geometry is named with.
-    fn callout_kind(&self, callout: u64) -> String {
-        let Some(entity) = self.entity(callout) else {
-            return String::new();
-        };
-        let params = entity
-            .part("DRAUGHTING_CALLOUT")
-            .unwrap_or(entity.parts[0].1.as_slice());
-        for occurrence in references(params.get(1)) {
-            let Some(occurrence) = self.entity(occurrence) else {
-                continue;
-            };
-            let fields = occurrence.parts[0].1.as_slice();
-            if let Some(name) = reference(fields.get(2))
-                .and_then(|set| self.entity(set))
-                .and_then(|set| string(set.parts[0].1.first()))
-                .filter(|name| !name.is_empty())
-            {
-                return name;
+    fn point_coordinates(&self, id: u64) -> Option<[Rational; 3]> {
+        coordinates(self.entity(id)?.part("CARTESIAN_POINT")?.get(1))
+    }
+
+    fn graphic_geometry(
+        &self,
+        occurrences: &[u64],
+        scale: &Rational,
+    ) -> Result<(String, Vec<Vec<[Rational; 3]>>), String> {
+        let mut kind = String::new();
+        let mut strokes = Vec::new();
+        for id in occurrences {
+            let occurrence = self
+                .entity(*id)
+                .ok_or("an annotation occurrence is missing")?;
+            if !self.has(*id, "ANNOTATION_CURVE_OCCURRENCE") {
+                return Err(format!(
+                    "a {} has no supported strokes",
+                    occurrence.type_name()
+                ));
+            }
+            let fields = occurrence
+                .part("STYLED_ITEM")
+                .unwrap_or(occurrence.parts[0].1.as_slice());
+            let item = reference(fields.get(2))
+                .and_then(|id| self.entity(id))
+                .ok_or("an annotation occurrence has no geometry")?;
+            let mut curves = vec![item];
+            if let Some(set) = item.part("GEOMETRIC_CURVE_SET") {
+                if kind.is_empty() {
+                    kind = string(set.first()).unwrap_or_default();
+                }
+                curves = references(set.get(1))
+                    .into_iter()
+                    .map(|id| self.entity(id).ok_or("an annotation curve is missing"))
+                    .collect::<Result<_, _>>()?;
+            }
+            for curve in curves {
+                let polyline = curve.part("POLYLINE").ok_or_else(|| {
+                    format!(
+                        "an annotation curve is a {}, which is not read",
+                        curve.type_name()
+                    )
+                })?;
+                let points = references(polyline.get(1))
+                    .into_iter()
+                    .map(|id| {
+                        self.point_coordinates(id)
+                            .map(|point| point.map(|value| &value * scale))
+                            .ok_or("an annotation polyline has an unreadable point")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                if points.len() < 2 {
+                    return Err("an annotation polyline needs at least two points".into());
+                }
+                strokes.push(points);
             }
         }
-        String::new()
+        if strokes.is_empty() {
+            return Err("the callout has no supported strokes".into());
+        }
+        Ok((kind, strokes))
+    }
+
+    fn annotation_plane(&self, id: u64, scale: &Rational) -> Option<GraphicPlane> {
+        let plane = self.entity(id)?.part("ANNOTATION_PLANE")?;
+        let surface = self.entity(reference(plane.get(2))?)?.part("PLANE")?;
+        let frame = self.placement(reference(surface.get(1))?)?;
+        let reference = frame
+            .reference
+            .unwrap_or_else(|| perpendicular3(&frame.axis));
+        (!is_zero3(&cross3(&frame.axis, &reference))).then(|| GraphicPlane {
+            origin_mm: frame.origin.map(|value| &value * scale),
+            normal: frame.axis,
+            reference,
+        })
     }
 
     /// A saved view's camera (recommended practices, section 9.4.2.6), with
@@ -1967,6 +2161,9 @@ impl<'a> Reader<'a> {
             .ok_or("the camera's placement has no x axis")?;
         let norm = dot3(&frame.axis, &frame.axis);
         let up = cross3(&frame.axis, &across).map(|value| &value / &norm);
+        if is_zero3(&up) {
+            return Err("the camera's placement axes are parallel".into());
+        }
         let volume = reference(params.get(2))
             .and_then(|volume| self.entity(volume))
             .and_then(|volume| volume.part("VIEW_VOLUME"))
@@ -1976,22 +2173,69 @@ impl<'a> Reader<'a> {
             Some(Param::Enum(kind)) if kind == "PARALLEL" => false,
             _ => return Err("the camera's projection is neither central nor parallel".into()),
         };
-        let distance = number(volume.get(2)).ok_or("the camera has no view distance")?;
+        let projection = reference(volume.get(1))
+            .and_then(|id| self.point_coordinates(id))
+            .ok_or("the camera has no projection point")?;
+        if !is_zero3(&projection) {
+            return Err("the camera's projection point is outside the placement origin".into());
+        }
+        if [4, 6, 7]
+            .iter()
+            .any(|&index| !matches!(volume.get(index), Some(Param::Enum(flag)) if flag == "F"))
+        {
+            return Err("the camera has active or unreadable clipping".into());
+        }
+        let distance = number(volume.get(2))
+            .filter(|value| *value > Rational::zero())
+            .ok_or("the camera needs a positive view distance")?;
         let window = reference(volume.get(8))
             .and_then(|window| self.entity(window))
             .and_then(|window| window.part("PLANAR_BOX"))
             .ok_or("the camera has no view window")?;
         let size = |index: usize| {
             number(window.get(index))
-                .map(|value| &value * scale)
-                .ok_or("the camera's window has no size")
+                .filter(|value| *value > Rational::zero())
+                .ok_or("the camera's window needs a positive size")
         };
+        let dimensions = [size(1)?, size(2)?];
+        let placement = reference(window.get(3))
+            .and_then(|id| self.entity(id)?.part("AXIS2_PLACEMENT_2D"))
+            .ok_or("the camera's window has no planar placement")?;
+        let corner = reference(placement.get(1))
+            .and_then(|id| self.entity(id)?.part("CARTESIAN_POINT"))
+            .and_then(|fields| match fields.get(1) {
+                Some(Param::List(at)) if at.len() == 2 => Some(at),
+                _ => None,
+            })
+            .ok_or("the camera's window has no corner")?;
+        let negative_half = Rational::from_ratio(-1, 2).expect("a nonzero denominator");
+        if dimensions
+            .iter()
+            .zip(corner)
+            .any(|(size, at)| number(Some(at)) != Some(size * &negative_half))
+        {
+            return Err("the camera's window is off centre".into());
+        }
+        if !matches!(placement.get(2), Some(Param::Unset)) {
+            let across = reference(placement.get(2))
+                .and_then(|id| self.entity(id)?.part("DIRECTION"))
+                .and_then(|fields| match fields.get(1) {
+                    Some(Param::List(direction)) if direction.len() == 2 => Some(direction),
+                    _ => None,
+                });
+            if !across.is_some_and(|axis| {
+                number(axis.first()).is_some_and(|x| x > Rational::zero())
+                    && number(axis.get(1)).is_some_and(|y| y.is_zero())
+            }) {
+                return Err("the camera's window is rotated or has no readable axis".into());
+            }
+        }
         Ok(Camera {
             eye: frame.origin.map(|value| &value * scale),
             direction: frame.axis,
             up,
             distance: &distance * scale,
-            window: [size(1)?, size(2)?],
+            window: dimensions.map(|value| &value * scale),
             perspective,
         })
     }
@@ -2009,6 +2253,18 @@ impl<'a> Reader<'a> {
             .iter()
             .map(|(entity, item)| (*entity, item.id.as_str()))
             .collect();
+        for (datum, item) in items {
+            if matches!(item.kind, ItemKind::Datum(_)) {
+                for link in self.sharing.get(datum).into_iter().flatten() {
+                    if let Some((_, feature, related)) = self.relationship(*link)
+                        && related == *datum
+                        && self.has(feature, "DATUM_FEATURE")
+                    {
+                        by_entity.insert(feature, item.id.as_str());
+                    }
+                }
+            }
+        }
         for (lower, upper) in lowers {
             if let Some(name) = by_entity.get(upper).copied() {
                 by_entity.insert(*lower, name);
@@ -2026,63 +2282,125 @@ impl<'a> Reader<'a> {
             if !is_callout(entity) {
                 continue;
             }
-            let mut item = None;
+            let params = entity
+                .part("DRAUGHTING_CALLOUT")
+                .unwrap_or(entity.parts[0].1.as_slice());
+            let occurrences = references(params.get(1));
+            let subjects: Vec<_> = std::iter::once(callout)
+                .chain(occurrences.iter().copied())
+                .collect();
+            let mut linked = Vec::new();
             let mut presents = None;
-            let mut faces = None;
-            for (_, association) in self.sharing_at(callout, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
-            {
-                let Some(definition) = reference(association.get(2)) else {
-                    continue;
-                };
-                if let Some(name) = by_entity.get(&definition) {
-                    item = Some((*name).to_owned());
-                    break;
-                }
-                if let Some(params) = self.aspect_params(definition) {
-                    let feature: Option<Feature<String>> = self
-                        .features(definition, 0)
-                        .ok()
-                        .map(|features| features.into_iter().flatten().collect());
-                    let name = string(params.first()).unwrap_or_default();
-                    if let Some((_, texture)) = items.iter().find(|(_, texture)| {
-                        texture.id == name
-                            && matches!(&texture.kind, ItemKind::Texture(t)
-                            if feature.as_ref().is_some_and(|faces| {
-                                let mut a = faces.clone();
-                                let mut b = t.feature.clone();
-                                a.sort();
-                                b.sort();
-                                a == b
-                            }))
-                    }) {
-                        item = Some(texture.id.clone());
-                        break;
+            let mut faces = Vec::new();
+            let mut models = BTreeSet::new();
+            let mut planes = BTreeSet::new();
+            for &subject in &subjects {
+                for (_, association) in
+                    self.sharing_at(subject, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
+                {
+                    models.extend(reference(association.get(3)));
+                    let Some(definition) = reference(association.get(2)) else {
+                        continue;
+                    };
+                    if let Some(name) = by_entity.get(&definition) {
+                        linked.push((*name).to_owned());
+                        continue;
                     }
-                    faces = feature;
-                } else {
-                    presents = Some(format!("#{definition}"));
+                    if let Some(params) = self.aspect_params(definition) {
+                        let Ok(features) = self.features(definition, 0) else {
+                            continue;
+                        };
+                        let mut feature: Feature<String> = features.into_iter().flatten().collect();
+                        feature.sort();
+                        feature.dedup();
+                        let name = string(params.first()).unwrap_or_default();
+                        if let Some((_, texture)) = items.iter().find(|(_, texture)| {
+                            texture.id == name
+                                && matches!(&texture.kind, ItemKind::Texture(t) if {
+                                    let mut attached = t.feature.clone();
+                                    attached.sort();
+                                    attached == feature
+                                })
+                        }) {
+                            linked.push(texture.id.clone());
+                        } else {
+                            faces.extend(feature);
+                        }
+                    } else if presents.is_none() {
+                        presents = Some(format!("#{definition}"));
+                    }
                 }
+                models.extend(
+                    self.sharing_at(subject, "DRAUGHTING_MODEL", 1)
+                        .into_iter()
+                        .map(|(id, _)| id),
+                );
+                planes.extend(
+                    self.sharing_at(subject, "ANNOTATION_PLANE", 3)
+                        .into_iter()
+                        .map(|(id, _)| id),
+                );
             }
-            match item {
-                Some(name) => {
-                    presented.insert(callout, name);
-                }
-                None => {
-                    let params = entity.parts[0].1.as_slice();
-                    graphics.insert(
-                        callout,
-                        GraphicCallout {
-                            entity: format!("#{callout}"),
-                            name: string(params.first()).unwrap_or_default(),
-                            kind: self.callout_kind(callout),
-                            text: self.callout_text(callout),
-                            faces,
-                            presents,
-                            views: Vec::new(),
-                        },
-                    );
-                }
+            if !linked.is_empty() {
+                presented.insert(callout, linked);
+                continue;
             }
+            for &plane in &planes {
+                models.extend(
+                    self.sharing_at(plane, "DRAUGHTING_MODEL", 1)
+                        .into_iter()
+                        .map(|(id, _)| id),
+                );
+            }
+            let geometry = (|| -> Result<_, String> {
+                let mut scale = None;
+                for model in models {
+                    let unit = self
+                        .representation_scale(model)
+                        .ok_or("the callout has no known length unit")?;
+                    if scale.as_ref().is_some_and(|known| known != &unit) {
+                        return Err("the callout has conflicting length units".into());
+                    }
+                    scale = Some(unit);
+                }
+                let scale = scale.ok_or("the callout has no known length unit")?;
+                let (kind, polylines) = self.graphic_geometry(&occurrences, &scale)?;
+                let planes = planes
+                    .into_iter()
+                    .map(|id| {
+                        self.annotation_plane(id, &scale)
+                            .ok_or("the callout's annotation plane is unreadable")
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok((kind, polylines, planes))
+            })();
+            let (kind, polylines_mm, planes) = match geometry {
+                Ok(geometry) => geometry,
+                Err(reason) => {
+                    skipped.push(SkippedPmi {
+                        entity: format!("#{callout}"),
+                        kind: entity.type_name().into(),
+                        reason,
+                    });
+                    continue;
+                }
+            };
+            faces.sort();
+            faces.dedup();
+            graphics.insert(
+                callout,
+                GraphicCallout {
+                    entity: format!("#{callout}"),
+                    name: string(params.first()).unwrap_or_default(),
+                    kind,
+                    text: subjects.iter().find_map(|&id| self.callout_text(id)),
+                    faces: (!faces.is_empty()).then_some(faces),
+                    presents,
+                    polylines_mm,
+                    planes,
+                    views: Vec::new(),
+                },
+            );
         }
         let mut views: Vec<SavedView> = Vec::new();
         for (&model, entity) in self.g {
@@ -2110,11 +2428,20 @@ impl<'a> Reader<'a> {
                 if is_callout(entity) {
                     shown.push(*member);
                 } else if let Some(plane) = entity.part("ANNOTATION_PLANE") {
-                    shown.extend(
-                        references(plane.get(3))
-                            .into_iter()
-                            .filter(|element| self.entity(*element).is_some_and(is_callout)),
-                    );
+                    for element in references(plane.get(3)) {
+                        if self.entity(element).is_some_and(is_callout) {
+                            shown.push(element);
+                        } else {
+                            shown.extend(
+                                self.sharing
+                                    .get(&element)
+                                    .into_iter()
+                                    .flatten()
+                                    .filter(|id| self.entity(**id).is_some_and(is_callout))
+                                    .copied(),
+                            );
+                        }
+                    }
                 }
             }
             let Some(scale) =
@@ -2151,9 +2478,11 @@ impl<'a> Reader<'a> {
                 };
                 let mut view_items: Vec<String> = Vec::new();
                 for callout in &shown {
-                    if let Some(item) = presented.get(callout) {
-                        if !view_items.contains(item) {
-                            view_items.push(item.clone());
+                    if let Some(items) = presented.get(callout) {
+                        for item in items {
+                            if !view_items.contains(item) {
+                                view_items.push(item.clone());
+                            }
                         }
                     } else if let Some(graphic) = graphics.get_mut(callout)
                         && !graphic.views.contains(&name)
@@ -2221,6 +2550,7 @@ impl<'a> Reader<'a> {
         };
         Ok(Found {
             order: id,
+            datum_sources: Vec::new(),
             name: self.id_attribute(id),
             kind,
         })
@@ -2240,7 +2570,7 @@ impl<'a> Reader<'a> {
         for user in self.sharing.get(&id).map_or(&[][..], Vec::as_slice) {
             if let Some((_, relating, related)) = self.relationship(*user)
                 && relating == id
-                && self.datum_letter(related).is_some()
+                && self.has(related, "DATUM")
             {
                 datums.push(related);
             }
@@ -2248,7 +2578,7 @@ impl<'a> Reader<'a> {
         let [datum] = datums.as_slice() else {
             return Err("it does not belong to exactly one datum".into());
         };
-        let letter = self.datum_letter(*datum).unwrap_or_default();
+        let letter = self.datum_letter(*datum).ok_or("its datum has no letter")?;
         let links = self.sharing_at(id, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP", 3);
         let [(_, link)] = links.as_slice() else {
             return Err(if links.is_empty() {
@@ -2342,16 +2672,13 @@ impl<'a> Reader<'a> {
             }
             (other, ..) => return Err(format!("a `{other}` datum target is not read")),
         };
-        let (origin, outward) = self
+        let (_, outward) = self
             .outward_plane(face)
             .ok_or("a datum target is read only on a planar face")?;
         if !is_zero3(&cross3(&orientation.axis, &outward))
             || dot3(&orientation.axis, &outward) <= Rational::zero()
         {
             return Err("its orientation does not point out of its face".into());
-        }
-        if !dot3(&sub3(&orientation.origin, &origin), &outward).is_zero() {
-            return Err("its point is not on its face's plane".into());
         }
         let target = DatumTarget {
             datum: letter.clone(),
@@ -2360,7 +2687,27 @@ impl<'a> Reader<'a> {
             point_mm: orientation.origin.clone().map(|value| &value * &scale),
             kind,
         };
-        let boundary = self.face_boundary(face, &scale).ok_or(
+        let face_id = face[1..].parse().expect("a used face names its entity");
+        let mut face_scale = None;
+        for kind in [
+            "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+            "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
+        ] {
+            for (_, usage) in self.sharing_at(aspect, kind, 2) {
+                if !references(usage.get(4)).contains(&face_id) {
+                    continue;
+                }
+                let scale = reference(usage.get(3))
+                    .and_then(|id| self.representation_scale(id))
+                    .ok_or("its face has no known length unit")?;
+                if face_scale.as_ref().is_some_and(|known| known != &scale) {
+                    return Err("its face has conflicting length units".into());
+                }
+                face_scale = Some(scale);
+            }
+        }
+        let face_scale = face_scale.ok_or("its face has no known length unit")?;
+        let boundary = self.face_boundary(face, &face_scale).ok_or(
             "its face's boundary is not lines and circles, so the target cannot be checked on it",
         )?;
         match off_face(&boundary, &target, &mut Decider::default()) {
@@ -2375,6 +2722,7 @@ impl<'a> Reader<'a> {
         }
         Ok(Found {
             order: id,
+            datum_sources: vec![*datum],
             name: Some(
                 self.id_attribute(id)
                     .unwrap_or_else(|| format!("Datum target {letter}{number}")),
@@ -2412,6 +2760,7 @@ impl<'a> Reader<'a> {
             .unwrap_or_default();
         Ok(Found {
             order: property,
+            datum_sources: Vec::new(),
             name: self.id_attribute(property),
             kind: ItemKind::Texture(SurfaceTexture {
                 parameter,
@@ -2599,7 +2948,6 @@ fn read_items<'a>(
     };
     // A lower composite segment is read with its upper one.
     let mut lowers = Vec::new();
-    let mut failed = BTreeSet::new();
     for Candidate { id, entity, kind } in candidates {
         let read = match kind {
             PmiKind::Unread(part, reason) => {
@@ -2613,22 +2961,20 @@ fn read_items<'a>(
             PmiKind::Location => reader.location(id),
             PmiKind::BasicAngle => reader.basic_angle(id, entity.part("ANGULAR_LOCATION").unwrap()),
             PmiKind::Texture => reader.texture(id, &entity.parts[0].1),
-            PmiKind::Tolerance(characteristic) => {
-                if let Some(upper) = reader.composite_upper(id) {
+            PmiKind::Tolerance(characteristic) => match reader.composite_link(id) {
+                Ok(Some((upper, lower))) if id == lower => {
                     lowers.push((id, entity.type_name(), upper));
                     continue;
                 }
-                reader.tolerance(id, characteristic)
-            }
+                Ok(link) => reader.tolerance(id, characteristic, link.map(|(_, lower)| lower)),
+                Err(reason) => Err(reason),
+            },
         };
         let kind = entity.type_name();
         match read {
             Ok(item) if matches!(item.kind, ItemKind::Datum(_)) => datums.push((kind, item)),
             Ok(item) => later.push((kind, item)),
-            Err(reason) => {
-                failed.insert(id);
-                skip(id, kind, reason);
-            }
+            Err(reason) => skip(id, kind, reason),
         }
     }
     // A tolerance needs its datums, so datums are settled first.
@@ -2636,21 +2982,51 @@ fn read_items<'a>(
     later.sort_by_key(|(_, item)| item.order);
     let mut validator = PartValidator::default();
     let mut conflicting_letters = BTreeSet::new();
-    let mut recovered_names = Vec::new();
-    let mut invalid_datum = None;
-    let mut datum_named_item = false;
+    let mut accepted_datums = BTreeSet::new();
+    let mut rejected_targets = BTreeSet::new();
+    let targets: BTreeMap<_, _> = later
+        .iter()
+        .filter_map(|(_, item)| {
+            if let ItemKind::DatumTarget(target) = &item.kind {
+                Some((item.order, (&item.kind, target)))
+            } else {
+                None
+            }
+        })
+        .collect();
     for (kind, item) in &mut datums {
         let ItemKind::Datum(datum) = &item.kind else {
             unreachable!("datums were collected separately");
         };
-        // A datum its targets set up is not realized from its whole feature
-        // when one of them is missing.
-        if let Some(target) = reader
-            .placed_targets(item.order)
-            .into_iter()
-            .find(|target| failed.contains(target))
-        {
-            item.name = None;
+        let name = item.name.take();
+        let letter = datum.letter.as_str();
+        if let Err(error) = datum.validate_letter() {
+            skip(item.order, kind, error.to_string());
+            continue;
+        }
+        let mut local = PartValidator::default();
+        local
+            .accept_datum(datum)
+            .expect("the first datum cannot conflict");
+        let mut bad_target = None;
+        for target in reader.placed_targets(item.order) {
+            match targets.get(&target) {
+                Some((kind, target_item)) => {
+                    if let Err(error) = local
+                        .check_kind(kind)
+                        .and_then(|()| local.accept_target(target_item))
+                    {
+                        bad_target.get_or_insert(target);
+                        rejected_targets.insert(target);
+                        skip(target, "PLACED_DATUM_TARGET_FEATURE", error.to_string());
+                    }
+                }
+                None => {
+                    bad_target.get_or_insert(target);
+                }
+            }
+        }
+        if let Some(target) = bad_target {
             skip(
                 item.order,
                 kind,
@@ -2658,22 +3034,8 @@ fn read_items<'a>(
             );
             continue;
         }
-        let name = item.name.take();
-        let letter = datum.letter.as_str();
-        let follows_conflict = conflicting_letters.contains(letter);
-        let letter_error = datum.validate_letter().err();
-        if follows_conflict && letter_error.is_some() {
-            skip(
-                item.order,
-                kind,
-                ItemError::DuplicateDatum(letter).to_string(),
-            );
-            continue;
-        }
         if let Err(error) = validator.accept_datum(datum) {
             let reason = match error {
-                // Remember these letters for diagnostic precedence only.
-                // A later datum can still claim the letter on a free feature.
                 ItemError::DuplicateDatumFeature if conflicting_letters.insert(letter) => {
                     "its feature already carries a datum".into()
                 }
@@ -2683,63 +3045,29 @@ fn read_items<'a>(
             skip(item.order, kind, reason);
             continue;
         }
-        let base = name.unwrap_or_else(|| format!("Datum {letter}"));
-        if follows_conflict {
-            // The recovered datum can satisfy references now. Give it a
-            // name after the other items so it does not take an existing name.
-            recovered_names.push((&mut item.name, base));
-            continue;
-        }
-        let id = validator.assign_name(base);
-        // Older imports kept such a datum, but its authoring error was the
-        // first refusal for each later item. Keep that diagnostic here.
-        if invalid_datum.is_none()
-            && let Some(error) = letter_error
-        {
-            invalid_datum = Some(if id == "item" {
-                error.to_string()
-            } else {
-                let name = id.strip_prefix("item: ").unwrap_or(&id);
-                format!("{name}: {error}")
-            });
-        }
-        datum_named_item |= id == "item";
-        item.name = Some(id);
+        accepted_datums.insert(item.order);
+        item.name = Some(validator.assign_name(name.unwrap_or_else(|| format!("Datum {letter}"))));
     }
-    // A datum named `item` collided with the candidate's temporary name.
-    let datum_error =
-        invalid_datum.or_else(|| datum_named_item.then(|| ItemError::DuplicateName.to_string()));
+    drop(targets);
     for (kind, item) in &mut later {
         let name = item.name.take();
-        let referenced: Vec<&str> = match &item.kind {
-            ItemKind::Tolerance(tolerance) => tolerance.datums.iter().map(String::as_str).collect(),
-            ItemKind::Position(control) => control
-                .frame
-                .segments()
-                .into_iter()
-                .flat_map(|segment| segment.datums.iter().map(|datum| datum.letter.as_str()))
-                .collect(),
-            ItemKind::DatumTarget(target) => vec![target.datum.as_str()],
-            _ => Vec::new(),
-        };
-        if let Some(letter) = referenced.into_iter().find(|letter| {
-            !validator.contains_datum(letter) && !conflicting_letters.contains(*letter)
-        }) {
-            skip(
-                item.order,
-                kind,
-                format!("it refers to datum {letter}, which was not read"),
-            );
+        if rejected_targets.contains(&item.order) {
             continue;
         }
-        if let Some(reason) = &datum_error {
-            skip(item.order, kind, reason.clone());
-            continue;
-        }
-        if let ItemKind::DatumTarget(target) = &item.kind
-            && let Err(error) = validator.accept_target(target)
+        if let Some(source) = item
+            .datum_sources
+            .iter()
+            .find(|source| !accepted_datums.contains(source))
         {
-            skip(item.order, kind, error.to_string());
+            let letter = reader.datum_letter(*source).unwrap_or_default();
+            let reason = if conflicting_letters.contains(letter.as_str())
+                && !validator.contains_datum(&letter)
+            {
+                ItemError::UndefinedDatum(&letter).to_string()
+            } else {
+                format!("it refers to datum {letter}, which was not read")
+            };
+            skip(item.order, kind, reason);
             continue;
         }
         if let Err(error) = validator.check_kind(&item.kind) {
@@ -2748,9 +3076,6 @@ fn read_items<'a>(
         }
         let base = name.unwrap_or_else(|| format!("#{}", item.order));
         item.name = Some(validator.assign_name(base));
-    }
-    for (name, base) in recovered_names {
-        *name = Some(validator.assign_name(base));
     }
     let mut paired_lowers = BTreeMap::new();
     for (id, kind, upper) in lowers {
@@ -2776,7 +3101,6 @@ fn read_items<'a>(
             );
         }
     }
-    drop(conflicting_letters);
     drop(validator);
     // Each read item with the entity it was read from.
     let items: Vec<(u64, Item<String>)> = datums
@@ -2823,11 +3147,6 @@ pub enum PmiEdit {
         /// The new value.
         value: Rational,
     },
-    /// Removes an item and every record only it uses.
-    Remove {
-        /// The item's name as [`read_step_pmi`] gives it.
-        item: String,
-    },
 }
 
 fn patch_refusal(what: impl std::fmt::Display) -> Refusal {
@@ -2844,50 +3163,13 @@ fn file_real(value: &Rational, scale: &Rational) -> Option<String> {
     })
 }
 
-/// The validation counts that include an item of this kind, with how many
-/// each counts it (recommended practices, sections 7.4.3 and 10.1.1.2).
-fn counted(kind: &ItemKind<String>) -> Vec<(&'static str, u64)> {
-    let mut counts = Vec::new();
-    if kind.is_text() {
-        counts.push(("number of semantic text notes", 1));
-        counts.push(("number of semantic text notes on geometry", 1));
-        return counts;
-    }
-    counts.push(("number of semantic pmi elements", 1));
-    match kind {
-        ItemKind::Size(_)
-        | ItemKind::Width { .. }
-        | ItemKind::Chamfer { .. }
-        | ItemKind::EdgeBreak { .. } => counts.push(("number of dimensional sizes", 1)),
-        ItemKind::Location(_) | ItemKind::BasicAngle { .. } => {
-            counts.push(("number of dimensional locations", 1));
-        }
-        ItemKind::Tolerance(_) => counts.push(("number of geometric tolerances", 1)),
-        ItemKind::Position(control) => {
-            let segments = control.frame.segments().len() as u64;
-            counts.push(("number of geometric tolerances", segments));
-            if segments == 2 {
-                counts.push(("number of composite tolerances", 1));
-            }
-        }
-        ItemKind::Datum(_) => counts.push(("number of datums", 1)),
-        ItemKind::DatumTarget(_) => counts.push(("number of datum targets", 1)),
-        _ => {}
-    }
-    counts
-}
-
 /// Edits the PMI of a STEP file in its own records, keeping every other
 /// record as it was written: the assembly, colours, other annotations and
 /// records this reader does not know. No edits give back the same bytes.
 ///
-/// A tolerance value is a new length measure under a fresh number, and the
-/// tolerance record names it; a removal takes out the item's own records and
-/// lowers the part's validation counts. The patch refuses, before anything is
-/// written, when another record outside the item still refers to what it
-/// changes, when a callout or validation property would show the old value,
-/// or when the patched file does not read back as the edited PMI with every
-/// untouched record unchanged.
+/// A tolerance value is a new length measure under a fresh number. The patch
+/// refuses when a dependent record could retain the old meaning or when the
+/// edited file fails read-back.
 pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusal> {
     use catallax_step::pmi::patch::{Patch, Records};
     if edits.is_empty() {
@@ -2900,224 +3182,84 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
     let mut patch = Patch::new(&records);
     let mut expected = read.clone();
     let mut edited = BTreeSet::new();
-    let mut counts: BTreeMap<u64, Rational> = BTreeMap::new();
-    for edit in edits {
-        let (PmiEdit::ToleranceValue { item, .. } | PmiEdit::Remove { item }) = edit;
+    for PmiEdit::ToleranceValue { item, value } in edits {
         if !edited.insert(item.as_str()) {
             return Err(patch_refusal(format!("{item}: it is edited twice")));
         }
-        let position = read
+        let changed = expected
             .pmi
             .items
-            .iter()
-            .position(|found| &found.id == item)
+            .iter_mut()
+            .find(|found| &found.id == item)
             .ok_or_else(|| patch_refusal(format!("{item}: no such item was read")))?;
-        let kind = &read.pmi.items[position].kind;
+        let ItemKind::Tolerance(tolerance) = &mut changed.kind else {
+            return Err(patch_refusal(format!(
+                "{item}: only a geometric tolerance's value is patched"
+            )));
+        };
+        if *value <= Rational::zero() {
+            return Err(patch_refusal(format!(
+                "{item}: the value must be more than zero"
+            )));
+        }
         let root: u64 = read.sources[item][1..]
             .parse()
             .expect("a source is an entity");
-        match edit {
-            PmiEdit::ToleranceValue { value, .. } => {
-                let ItemKind::Tolerance(tolerance) = kind else {
-                    return Err(patch_refusal(format!(
-                        "{item}: only a geometric tolerance's value is patched"
-                    )));
-                };
-                if *value <= Rational::zero() {
-                    return Err(patch_refusal(format!(
-                        "{item}: the value must be more than zero"
-                    )));
-                }
-                for user in records.users(root) {
-                    let user_kind = records.get(*user).map_or("", |r| r.kind.as_str());
-                    if matches!(
-                        user_kind,
-                        "DRAUGHTING_MODEL_ITEM_ASSOCIATION" | "PROPERTY_DEFINITION"
-                    ) {
-                        return Err(patch_refusal(format!(
-                            "{item}: #{user} ({user_kind}) would still show the old value"
-                        )));
+        let refuse_dependency = |id: u64| {
+            let kind = graph.get(&id).map_or("unknown", Entity::type_name);
+            patch_refusal(format!(
+                "{item}: #{id} ({kind}) may still depend on the old value"
+            ))
+        };
+        for &user in records.users(root) {
+            let entity = graph.get(&user).ok_or_else(|| refuse_dependency(user))?;
+            let fields = entity.parts[0].1.as_slice();
+            match (entity.parts.len(), entity.type_name()) {
+                (1, "ID_ATTRIBUTE") if reference(fields.get(1)) == Some(root) => {}
+                (1, "APPLIED_GROUP_ASSIGNMENT") if references(fields.get(1)).contains(&root) => {}
+                (1, "TOLERANCE_ZONE") if references(fields.get(4)) == [root] => {
+                    if let Some(&dependent) = records.users(user).first() {
+                        return Err(refuse_dependency(dependent));
                     }
                 }
-                let entity = graph.get(&root).expect("a read item's entity");
-                let base = entity
-                    .part("GEOMETRIC_TOLERANCE")
-                    .unwrap_or(entity.parts[0].1.as_slice());
-                let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
-                let measure = graph.get(&magnitude).expect("a read tolerance's value");
-                let (true, [Param::Typed(kind, _), Param::Ref(unit)]) = (
-                    measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
-                    measure.parts[0].1.as_slice(),
-                ) else {
-                    return Err(patch_refusal(format!(
-                        "{item}: its value #{magnitude} is not a plain length measure"
-                    )));
-                };
-                let scale = reader.millimetres(*unit, 0).ok_or_else(|| {
-                    patch_refusal(format!("{item}: its value's unit is not known"))
-                })?;
-                let written = file_real(value, &scale).ok_or_else(|| {
-                    patch_refusal(format!(
-                        "{item}: the value is not a decimal in the file's unit"
-                    ))
-                })?;
-                let fresh = patch.add(format!(
-                    "LENGTH_MEASURE_WITH_UNIT({kind}({written}),#{unit})"
-                ));
-                let body = records.body(root).expect("a read item's record");
-                let old = format!("#{magnitude}");
-                let mut rewritten = String::with_capacity(body.len());
-                let mut rest = body;
-                while let Some(at) = rest.find(&old) {
-                    let after = &rest[at + old.len()..];
-                    rewritten.push_str(&rest[..at]);
-                    if after.starts_with(|c: char| c.is_ascii_digit()) {
-                        rewritten.push_str(&old);
-                    } else {
-                        rewritten.push_str(&format!("#{fresh}"));
-                    }
-                    rest = after;
-                }
-                rewritten.push_str(rest);
-                patch.rewrite(root, rewritten);
-                if records.users(magnitude) == [root] {
-                    patch.remove(magnitude);
-                }
-                let mut changed = tolerance.clone();
-                changed.value = value.clone();
-                expected.pmi.items[position].kind = ItemKind::Tolerance(changed);
-            }
-            PmiEdit::Remove { .. } => {
-                let mut roots = vec![root];
-                if let Ok(Some(lower)) = reader.composite_lower(root) {
-                    roots.push(lower);
-                }
-                if let ItemKind::Datum(datum) = kind {
-                    let letter = datum.letter.as_str();
-                    if let Some(user) = read.pmi.items.iter().find(|other| {
-                        let mut letters: Vec<&str> = Vec::new();
-                        match &other.kind {
-                            ItemKind::Tolerance(tolerance) => {
-                                letters.extend(tolerance.datums.iter().map(String::as_str));
-                            }
-                            ItemKind::Position(control) => {
-                                for segment in control.frame.segments() {
-                                    letters
-                                        .extend(segment.datums.iter().map(|d| d.letter.as_str()));
-                                }
-                            }
-                            ItemKind::DatumTarget(target) => letters.push(target.datum.as_str()),
-                            _ => {}
-                        }
-                        letters.contains(&letter)
-                    }) {
-                        return Err(patch_refusal(format!(
-                            "{item}: {} refers to datum {letter}",
-                            user.id
-                        )));
-                    }
-                }
-                let mut owned = BTreeSet::new();
-                for root in roots {
-                    owned.extend(records.owned(root));
-                }
-                if let Some(association) = owned.iter().find(|id| {
-                    records
-                        .get(**id)
-                        .is_some_and(|record| record.kind == "DRAUGHTING_MODEL_ITEM_ASSOCIATION")
-                }) {
-                    return Err(patch_refusal(format!(
-                        "{item}: #{association} (DRAUGHTING_MODEL_ITEM_ASSOCIATION) presents it in a callout that would stay"
-                    )));
-                }
-                if let Some(user) = records.outside_users(&owned).first() {
-                    let user_kind = records.get(*user).map_or("", |r| r.kind.as_str());
-                    return Err(patch_refusal(format!(
-                        "{item}: #{user} ({user_kind}) still refers to its records, so removing them is not proven safe"
-                    )));
-                }
-                for id in &owned {
-                    patch.remove(*id);
-                }
-                let shapes = reader.owner_shapes(root);
-                let [shape] = shapes.iter().copied().collect::<Vec<_>>()[..] else {
-                    return Err(patch_refusal(format!(
-                        "{item}: it does not belong to one part"
-                    )));
-                };
-                for (name, by) in counted(kind) {
-                    for (property, params) in reader.sharing_at(shape, "PROPERTY_DEFINITION", 2) {
-                        if string(params.first()).as_deref() != Some("pmi validation property") {
-                            continue;
-                        }
-                        for (_, link) in
-                            reader.sharing_at(property, "PROPERTY_DEFINITION_REPRESENTATION", 0)
-                        {
-                            let Some(representation) =
-                                reference(link.get(1)).and_then(|id| graph.get(&id))
-                            else {
-                                continue;
-                            };
-                            for count in references(representation.parts[0].1.get(1)) {
-                                let Some(fields) = graph
-                                    .get(&count)
-                                    .and_then(|entity| entity.part("INTEGER_REPRESENTATION_ITEM"))
-                                else {
-                                    continue;
-                                };
-                                if string(fields.first()).as_deref() != Some(name) {
-                                    continue;
-                                }
-                                let current = match counts.get(&count) {
-                                    Some(current) => current.clone(),
-                                    None => number(fields.get(1)).ok_or_else(|| {
-                                        patch_refusal(format!(
-                                            "#{count}: the count is not a number"
-                                        ))
-                                    })?,
-                                };
-                                let left = &current
-                                    - &Rational::from_i64(i64::try_from(by).unwrap_or(i64::MAX));
-                                if left < Rational::zero() {
-                                    return Err(patch_refusal(format!(
-                                        "#{count}: the count would go below zero"
-                                    )));
-                                }
-                                let body = records.body(count).expect("a parsed count");
-                                let (head, _) =
-                                    body.rsplit_once(',').expect("a count has two fields");
-                                patch.rewrite(
-                                    count,
-                                    format!(
-                                        "{head},{}.)",
-                                        left.to_decimal_exact().unwrap_or_default()
-                                    ),
-                                );
-                                counts.insert(count, left);
-                            }
-                        }
-                    }
-                }
-                expected.pmi.items.remove(position);
-                expected.sources.remove(item);
+                _ => return Err(refuse_dependency(user)),
             }
         }
+        let entity = &graph[&root];
+        let base = entity
+            .part("GEOMETRIC_TOLERANCE")
+            .unwrap_or(entity.parts[0].1.as_slice());
+        let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
+        let measure = &graph[&magnitude];
+        let (true, [Param::Typed(kind, _), Param::Ref(unit)]) = (
+            measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
+            measure.parts[0].1.as_slice(),
+        ) else {
+            return Err(patch_refusal(format!(
+                "{item}: its value #{magnitude} is not a plain length measure"
+            )));
+        };
+        let scale = reader
+            .millimetres(*unit, 0)
+            .ok_or_else(|| patch_refusal(format!("{item}: its value's unit is not known")))?;
+        let written = file_real(value, &scale).ok_or_else(|| {
+            patch_refusal(format!(
+                "{item}: the value is not a decimal in the file's unit"
+            ))
+        })?;
+        let fresh = patch.add(format!(
+            "LENGTH_MEASURE_WITH_UNIT({kind}({written}),#{unit})"
+        ))?;
+        patch.rewrite(root, records.replace_reference(root, magnitude, fresh)?);
+        if records.users(magnitude) == [root] {
+            patch.remove(magnitude);
+        }
+        tolerance.value = value.clone();
     }
     let out = patch.apply(&records);
     let back = read_step_pmi(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    if back.pmi == expected.pmi
-        && back.skipped == expected.skipped
-        && let Some(left) = back
-            .graphics
-            .iter()
-            .find(|graphic| !expected.graphics.contains(graphic))
-    {
-        return Err(patch_refusal(format!(
-            "callout {} ({}) presented an edited item and would stay as graphics",
-            left.entity, left.name
-        )));
-    }
     if back.pmi != expected.pmi
+        || back.sources != expected.sources
         || back.skipped != expected.skipped
         || back.graphics != expected.graphics
     {

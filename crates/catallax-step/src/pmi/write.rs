@@ -17,7 +17,7 @@
 //! datum and distance, and the string, length and centre of each callout. A
 //! size or a geometric tolerance takes a property only from edition 2 on.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::Surface;
@@ -25,9 +25,9 @@ use catallax_topology::{FaceId, Loop, Model};
 
 use super::callout::{self, presented};
 use super::{
-    Anchor, At, DatumRef, DatumTarget, Feature, GeometricTolerance, HoleHead, HoleSize, ItemKind,
-    Limits, MaterialCondition, Pmi, PositionControl, PositionFrame, PositionSegment, SavedView,
-    Size, SizeKind, SurfaceTexture, TargetArea, TargetKind, check, measure,
+    Anchor, At, Camera, DatumRef, DatumTarget, Feature, GeometricTolerance, HoleHead, HoleSize,
+    ItemKind, Limits, MaterialCondition, Pmi, PositionControl, PositionFrame, PositionSegment,
+    SavedView, Size, SizeKind, SurfaceTexture, TargetArea, TargetKind, check, measure,
 };
 use crate::document::PartReferences;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
@@ -186,6 +186,7 @@ fn stops(refusal: &Refusal) -> bool {
 struct Presentation {
     model: Id,
     plane: Id,
+    unstyled: Id,
     style: Id,
 }
 
@@ -206,9 +207,7 @@ struct Emitter<'a> {
     annotations: usize,
     /// The semantic entity each item is written as, by item name, for the
     /// association of its callout.
-    semantic: BTreeMap<String, Id>,
-    /// The callout already drawn for an item, by item name.
-    callouts: BTreeMap<String, Id>,
+    semantic: BTreeMap<String, Vec<Id>>,
     dec: &'a mut Decider,
 }
 
@@ -447,7 +446,7 @@ impl Emitter<'_> {
             vec![text("''"), text("''"), aspect.into(), datum.into()],
         );
         self.datums.insert(letter.to_owned(), datum);
-        self.semantic.insert(item.to_owned(), datum);
+        self.semantic.insert(item.to_owned(), vec![aspect]);
         self.root("ID_ATTRIBUTE", vec![quoted(item), aspect.into()]);
         self.equivalent(datum, &format!("DTM\\w{letter}"));
         Ok(())
@@ -701,7 +700,7 @@ impl Emitter<'_> {
             target,
             item,
         )?;
-        self.semantic.insert(item.to_owned(), id);
+        self.semantic.insert(item.to_owned(), vec![id]);
         Ok(())
     }
 
@@ -804,7 +803,7 @@ impl Emitter<'_> {
                 projected_zone,
             } => {
                 let (single, zone) = self.segment(segment, target, item)?;
-                self.semantic.insert(item.to_owned(), single);
+                self.semantic.insert(item.to_owned(), vec![single]);
                 if let Some(projection) = projected_zone {
                     let zone = zone.ok_or_else(|| {
                         Refusal::new(
@@ -830,8 +829,8 @@ impl Emitter<'_> {
             }
             PositionFrame::Composite { upper, lower } => {
                 let (upper, _) = self.segment(upper, target, item)?;
-                self.semantic.insert(item.to_owned(), upper);
                 let (lower, _) = self.segment(lower, target, item)?;
+                self.semantic.insert(item.to_owned(), vec![upper, lower]);
                 self.root(
                     "GEOMETRIC_TOLERANCE_RELATIONSHIP",
                     vec![quoted(COMPOSITE), text("''"), upper.into(), lower.into()],
@@ -918,7 +917,6 @@ impl Emitter<'_> {
             vec![property.into(), representation.into()],
         );
         self.root("ID_ATTRIBUTE", vec![quoted(item), property.into()]);
-        self.semantic.insert(item.to_owned(), property);
         Ok(())
     }
 
@@ -1026,12 +1024,7 @@ impl Emitter<'_> {
         Ok(())
     }
 
-    fn texture(
-        &mut self,
-        texture: &SurfaceTexture<FaceId>,
-        item: &str,
-        slot: usize,
-    ) -> Result<(), Refusal> {
+    fn texture(&mut self, texture: &SurfaceTexture<FaceId>, item: &str) -> Result<(), Refusal> {
         let aspect = self.aspect(&texture.feature, item)?;
         let micrometre = match self.micrometre {
             Some(unit) => unit,
@@ -1086,7 +1079,7 @@ impl Emitter<'_> {
             vec![text("''"), text("''"), general.into(), property.into()],
         );
         self.root("ID_ATTRIBUTE", vec![quoted(item), property.into()]);
-        self.callout(texture, item, slot)
+        Ok(())
     }
 
     /// The draughting model, made with the first callout: one annotation
@@ -1154,6 +1147,7 @@ impl Emitter<'_> {
         let presentation = Presentation {
             model,
             plane,
+            unstyled,
             style,
         };
         self.presentation = Some(presentation);
@@ -1233,39 +1227,18 @@ impl Emitter<'_> {
             .add("CARTESIAN_POINT", vec![quoted(name), Field::List(xyz)])
     }
 
-    /// The graphic callout of a surface texture (recommended practices,
-    /// sections 8.1 and 9.3.1), linked to an aspect of its own on the
-    /// texture's faces. On the feature's shared aspect OpenCASCADE merges the
-    /// callout into a dimension there; on its own it reads a presentation on
-    /// the faces.
-    fn callout(
+    fn texture_callout(
         &mut self,
         texture: &SurfaceTexture<FaceId>,
         item: &str,
         slot: usize,
-    ) -> Result<(), Refusal> {
+        camera: Option<&Camera>,
+    ) -> Result<Id, Refusal> {
         let anchor = self.anchor_point(&texture.feature)?;
         let value = plain(&texture.value, item)?;
-        let drawing = callout::draw(texture, &value, anchor.as_ref(), slot);
-        let presentation = self.presentation();
-        let mut curves = Vec::with_capacity(drawing.polylines.len());
-        for line in &drawing.polylines {
-            let points: Vec<Id> = line.iter().map(|at| self.point("", at)).collect();
-            curves.push(self.graph.add("POLYLINE", vec![text("''"), refs(points)]));
-        }
-        let set = self.graph.add(
-            "GEOMETRIC_CURVE_SET",
-            vec![text("'surface roughness'"), refs(curves)],
-        );
-        let occurrence = self.graph.add(
-            "ANNOTATION_CURVE_OCCURRENCE",
-            vec![quoted(item), refs([presentation.style]), set.into()],
-        );
-        let callout = self
-            .graph
-            .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
-        self.graph.extend_list(presentation.plane, 3, [callout]);
-        self.callouts.insert(item.to_owned(), callout);
+        let mut drawing = callout::draw(texture, &value, anchor.as_ref(), slot);
+        let equivalent = callout::equivalent_string(texture.process, &drawing.text);
+        let plane = self.callout_plane(camera, anchor.as_ref(), &mut drawing, item)?;
         let aspect = self.graph.add(
             "SHAPE_ASPECT",
             vec![
@@ -1276,78 +1249,83 @@ impl Emitter<'_> {
             ],
         );
         self.usage(aspect, &texture.feature, item)?;
-        self.root(
-            "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
-            vec![
-                quoted(item),
-                text("''"),
-                aspect.into(),
-                presentation.model.into(),
-                callout.into(),
-            ],
-        );
-        // What the callout shows, how long its lines are and where they
-        // stand (section 10.2.3).
-        let within = self.graph.add(
-            "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION",
-            vec![
-                text("''"),
-                text("''"),
-                callout.into(),
-                presentation.model.into(),
-            ],
-        );
-        let (length, centre) = drawing.length_and_centre();
-        let string = self.graph.add(
-            "DESCRIPTIVE_REPRESENTATION_ITEM",
-            vec![
-                text("'equivalent unicode string'"),
-                quoted(&callout::equivalent_string(texture.process, &drawing.text)),
-            ],
-        );
-        let length = self.graph.add(
-            "MEASURE_REPRESENTATION_ITEM",
-            vec![
-                text("'polyline curve length'"),
-                Field::Typed(
-                    "POSITIVE_LENGTH_MEASURE",
-                    vec![text(decimal(
-                        &presented(&length)
-                            .to_decimal_exact()
-                            .expect("a rounded length is a decimal"),
-                    ))],
-                ),
-                self.references.length_unit.into(),
-            ],
-        );
-        let centre = self.point("polyline centre point", &centre.map(|c| presented(&c)));
-        self.validation(within.into(), vec![string, length, centre]);
-        self.annotations += 1;
-        Ok(())
+        Ok(self.graphic_callout(
+            item,
+            "surface roughness",
+            &drawing,
+            &equivalent,
+            plane,
+            &[aspect],
+        ))
     }
 
-    /// The label callout of an item a saved view shows: a leader to a point on
-    /// `feature` and the framed lines, associated with the item's semantic
-    /// entity so a reader pairs the two rather than counting both.
     fn label_callout(
         &mut self,
         item: &str,
         set_name: &str,
         lines: &[String],
         feature: &[FaceId],
-    ) -> Result<(), Refusal> {
+        slot: usize,
+        camera: &Camera,
+    ) -> Result<Id, Refusal> {
         if let Some(line) = lines.iter().find(|line| !callout::drawable(line)) {
             return Err(Refusal::new(
                 "step.pmi-invalid",
                 format!("{item}: the callout font cannot draw `{line}`"),
             ));
         }
-        let definition = *self
-            .semantic
-            .get(item)
-            .expect("a shown item was written first");
+        let definitions = self.semantic[item].clone();
         let anchor = self.anchor_point(feature)?;
-        let drawing = callout::label(lines, anchor.as_ref(), self.annotations);
+        let mut drawing = callout::label(lines, anchor.as_ref(), slot);
+        let plane = self.callout_plane(Some(camera), anchor.as_ref(), &mut drawing, item)?;
+        Ok(self.graphic_callout(item, set_name, &drawing, &drawing.text, plane, &definitions))
+    }
+
+    fn callout_plane(
+        &mut self,
+        camera: Option<&Camera>,
+        anchor: Option<&callout::Point>,
+        drawing: &mut callout::Drawing,
+        item: &str,
+    ) -> Result<Id, Refusal> {
+        let presentation = self.presentation();
+        let Some(camera) = camera else {
+            return Ok(presentation.plane);
+        };
+        let zero = std::array::from_fn(|_| Rational::zero());
+        let anchor = anchor.unwrap_or(&zero);
+        let axes = callout::screen_axes(&camera.direction, &camera.up);
+        drawing.orient(anchor, &axes);
+        let origin = self.point("", anchor);
+        let normal = self.direction(&callout::cross(&axes[0], &axes[1]), item)?;
+        let across = self.direction(&axes[0], item)?;
+        let frame = self.graph.add(
+            "AXIS2_PLACEMENT_3D",
+            vec![text("''"), origin.into(), normal.into(), across.into()],
+        );
+        let surface = self.graph.add("PLANE", vec![text("''"), frame.into()]);
+        let plane = self.graph.add(
+            "ANNOTATION_PLANE",
+            vec![
+                text("''"),
+                refs([presentation.unstyled]),
+                surface.into(),
+                refs([]),
+            ],
+        );
+        self.graph.extend_list(presentation.model, 1, [plane]);
+        Ok(plane)
+    }
+
+    fn graphic_callout(
+        &mut self,
+        item: &str,
+        set_name: &str,
+        drawing: &callout::Drawing,
+        equivalent: &str,
+        plane: Id,
+        definitions: &[Id],
+    ) -> Id {
         let presentation = self.presentation();
         let mut curves = Vec::with_capacity(drawing.polylines.len());
         for line in &drawing.polylines {
@@ -1364,18 +1342,26 @@ impl Emitter<'_> {
         let callout = self
             .graph
             .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
-        self.graph.extend_list(presentation.plane, 3, [callout]);
-        self.callouts.insert(item.to_owned(), callout);
-        self.root(
-            "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
-            vec![
-                quoted(item),
-                text("''"),
-                definition.into(),
-                presentation.model.into(),
-                callout.into(),
-            ],
-        );
+        self.graph.extend_list(plane, 3, [callout]);
+        let link_name = if set_name == "surface roughness" {
+            item
+        } else {
+            "PMI representation to presentation link"
+        };
+        for &definition in definitions {
+            self.root(
+                "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+                vec![
+                    quoted(link_name),
+                    text("''"),
+                    definition.into(),
+                    presentation.model.into(),
+                    callout.into(),
+                ],
+            );
+        }
+        // What the callout shows, how long its lines are and where they
+        // stand (section 10.2.3).
         let within = self.graph.add(
             "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION",
             vec![
@@ -1388,7 +1374,7 @@ impl Emitter<'_> {
         let (length, centre) = drawing.length_and_centre();
         let string = self.graph.add(
             "DESCRIPTIVE_REPRESENTATION_ITEM",
-            vec![text("'equivalent unicode string'"), quoted(&drawing.text)],
+            vec![text("'equivalent unicode string'"), quoted(equivalent)],
         );
         let length = self.graph.add(
             "MEASURE_REPRESENTATION_ITEM",
@@ -1408,24 +1394,17 @@ impl Emitter<'_> {
         let centre = self.point("polyline centre point", &centre.map(|c| presented(&c)));
         self.validation(within.into(), vec![string, length, centre]);
         self.annotations += 1;
-        Ok(())
+        plane
     }
 
     /// A saved view (recommended practices, section 9.4): a draughting model
     /// named for the view holding its callouts, the part's geometry under a
     /// null style and a camera of the same name, related to the global model.
-    fn view(&mut self, view: &SavedView) -> Result<(), Refusal> {
+    fn view(&mut self, view: &SavedView, mut items: Vec<Id>) -> Result<(), Refusal> {
         let name = view.name.as_str();
         let presentation = self.presentation();
         let camera = &view.camera;
-        let [ux, uy, uz] = &camera.up;
-        let [dx, dy, dz] = &camera.direction;
-        // The view's x axis reads to the right: up cross the direction of view.
-        let across = [
-            &(uy * dz) - &(uz * dy),
-            &(uz * dx) - &(ux * dz),
-            &(ux * dy) - &(uy * dx),
-        ];
+        let across = callout::cross(&camera.up, &camera.direction);
         let eye = self.exact_point(&camera.eye, name)?;
         let axis = self.direction(&camera.direction, name)?;
         let across = self.direction(&across, name)?;
@@ -1513,16 +1492,6 @@ impl Emitter<'_> {
             "STYLED_ITEM",
             vec![text("''"), refs([unstyled]), mapped.into()],
         );
-        let mut items: Vec<Id> = view
-            .items
-            .iter()
-            .map(|id| {
-                *self
-                    .callouts
-                    .get(id)
-                    .expect("each shown item has a callout")
-            })
-            .collect();
         items.extend([mapped, styled, camera]);
         let model = self.graph.add(
             "DRAUGHTING_MODEL",
@@ -1865,15 +1834,6 @@ fn label<'a>(
                 .collect::<Result<_, _>>()?;
             ("position", lines, &control.features[0])
         }
-        ItemKind::FaceNote { text, feature } => (
-            "note",
-            text.split('\n').map(str::to_owned).collect(),
-            feature,
-        ),
-        ItemKind::Knurl {
-            designation,
-            feature,
-        } => ("note", vec![designation.clone()], feature),
         _ => {
             return Err(Refusal::new(
                 "step.pmi-invalid",
@@ -1902,6 +1862,19 @@ pub(crate) fn emit(
     digits: u32,
     dec: &mut Decider,
 ) -> Result<Vec<Id>, Refusal> {
+    for item in &pmi.items {
+        if item
+            .kind
+            .faces()
+            .into_iter()
+            .any(|face| !faces.contains_key(face))
+        {
+            return Err(Refusal::new(
+                "step.pmi-face-not-written",
+                format!("{}: a face it is attached to is not in the file", item.id),
+            ));
+        }
+    }
     let mut emitter = Emitter {
         graph,
         model,
@@ -1918,7 +1891,6 @@ pub(crate) fn emit(
         presentation: None,
         annotations: 0,
         semantic: BTreeMap::new(),
-        callouts: BTreeMap::new(),
         dec,
     };
     check::check_on_model(model, pmi, emitter.dec)?;
@@ -1932,6 +1904,7 @@ pub(crate) fn emit(
             emitter.datum(&datum.letter, &datum.feature, &item.id)?;
         }
     }
+    let shown: BTreeSet<_> = pmi.views.iter().flat_map(|view| &view.items).collect();
     let mut texture_slot = 0;
     let mut sizes = BTreeMap::new();
     for item in &pmi.items {
@@ -1967,7 +1940,7 @@ pub(crate) fn emit(
                 let dimension = emitter
                     .graph
                     .add("DIMENSIONAL_SIZE", vec![target.into(), text(name)]);
-                emitter.semantic.insert(id.to_owned(), dimension);
+                emitter.semantic.insert(id.to_owned(), vec![dimension]);
                 sizes.insert(id, nominal().to_owned());
                 emitter.dimension(
                     dimension,
@@ -2072,27 +2045,29 @@ pub(crate) fn emit(
             } => emitter.face_text(&[(KNURL, designation)], feature, id)?,
             ItemKind::Position(control) => emitter.position(control, id)?,
             ItemKind::Texture(texture) => {
-                emitter.texture(texture, id, texture_slot)?;
-                texture_slot += 1;
+                emitter.texture(texture, id)?;
+                if !shown.contains(&item.id) {
+                    emitter.texture_callout(texture, id, texture_slot, None)?;
+                    texture_slot += 1;
+                }
             }
         }
     }
-    // A callout for each item a saved view shows, in item order, then the views.
-    let shown: std::collections::BTreeSet<&str> = pmi
-        .views
-        .iter()
-        .flat_map(|view| view.items.iter().map(String::as_str))
-        .collect();
-    for item in &pmi.items {
-        let id = item.id.as_str();
-        if !shown.contains(id) || emitter.callouts.contains_key(id) {
-            continue;
-        }
-        let (set, lines, feature) = label(item, sizes.get(id).map(String::as_str))?;
-        emitter.label_callout(id, set, &lines, feature)?;
-    }
+    let by_name: BTreeMap<_, _> = pmi.items.iter().map(|item| (&item.id, item)).collect();
     for view in &pmi.views {
-        emitter.view(view)?;
+        let mut planes = Vec::with_capacity(view.items.len());
+        for (slot, id) in view.items.iter().enumerate() {
+            let item = by_name[id];
+            let plane = if let ItemKind::Texture(texture) = &item.kind {
+                emitter.texture_callout(texture, id, slot, Some(&view.camera))?
+            } else {
+                let (set, lines, feature) =
+                    label(item, sizes.get(id.as_str()).map(String::as_str))?;
+                emitter.label_callout(id, set, &lines, feature, slot, &view.camera)?
+            };
+            planes.push(plane);
+        }
+        emitter.view(view, planes)?;
     }
     if let Some(value) = &pmi.part.general_tolerance {
         emitter.note(GENERAL_TOLERANCE, value);

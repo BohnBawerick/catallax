@@ -1000,27 +1000,13 @@ impl<'a, F: Ord> PartValidator<'a, F> {
             }
             ItemKind::Position(control) => self.check_position(control)?,
             ItemKind::FaceNote { text, .. } => {
-                let lines: Vec<&str> = text.split('\n').collect();
-                if text.trim().is_empty()
-                    || lines.iter().any(|line| line.trim().is_empty())
-                    || text.chars().any(|c| c.is_control() && c != '\n')
-                {
-                    return Err(Rule(
-                        "a face note is lines of text with no empty line or control character",
-                    ));
+                if text.trim().is_empty() {
+                    return Err(Rule("a face note needs text"));
                 }
             }
             ItemKind::Knurl { designation, .. } => {
-                let plain = !designation.trim().is_empty()
-                    && designation.len() <= 60
-                    && designation
-                        .bytes()
-                        .all(|b| b.is_ascii_graphic() || b == b' ')
-                    && !designation.contains(['\'', '\\']);
-                if !plain {
-                    return Err(Rule(
-                        "a knurl designation is plain text of at most 60 characters",
-                    ));
+                if designation.trim().is_empty() {
+                    return Err(Rule("a knurl designation needs text"));
                 }
             }
         }
@@ -1278,8 +1264,8 @@ impl<F> Pmi<F> {
 
 impl<F> ItemKind<F> {
     /// Whether a saved view can show the item: the writer draws a callout for
-    /// datums, sizes, geometric tolerances, position controls, surface
-    /// textures and text.
+    /// datums, sizes, geometric tolerances, position controls
+    /// and surface textures.
     pub fn has_callout(&self) -> bool {
         matches!(
             self,
@@ -1288,8 +1274,6 @@ impl<F> ItemKind<F> {
                 | ItemKind::Tolerance(_)
                 | ItemKind::Position(_)
                 | ItemKind::Texture(_)
-                | ItemKind::FaceNote { .. }
-                | ItemKind::Knurl { .. }
         )
     }
 }

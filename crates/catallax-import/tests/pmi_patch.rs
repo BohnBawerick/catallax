@@ -205,13 +205,6 @@ fn lines(file: &str) -> BTreeSet<&str> {
     file.lines().collect()
 }
 
-fn count(file: &str, name: &str) -> Vec<String> {
-    file.lines()
-        .filter(|line| line.contains(&format!("INTEGER_REPRESENTATION_ITEM('{name}'")))
-        .map(|line| line.rsplit(',').next().unwrap().to_owned())
-        .collect()
-}
-
 #[test]
 fn no_edit_gives_the_same_bytes() {
     let file = source();
@@ -316,81 +309,15 @@ fn a_tolerance_value_changes_its_own_records_only() {
 }
 
 #[test]
-fn removing_an_item_takes_its_records_and_lowers_its_counts() {
-    let file = source();
-    let out = patch_step_pmi(
-        file.as_bytes(),
-        &[PmiEdit::Remove {
-            item: "Shaft diameter".into(),
-        }],
-    )
-    .unwrap();
-    let out = String::from_utf8(out).unwrap();
-    let after = read_step_pmi(out.as_bytes()).unwrap();
-    assert!(
-        after
-            .pmi
-            .items
-            .iter()
-            .all(|item| item.id != "Shaft diameter")
-    );
-    assert_eq!(
-        after.pmi.items.len(),
-        read_step_pmi(file.as_bytes()).unwrap().pmi.items.len() - 1
-    );
-    assert!(!out.contains("DIMENSIONAL_SIZE("));
-    // The pin's own counts drop to zero; the base keeps its own.
-    let mut before = count(&file, "number of dimensional sizes");
-    before.sort();
-    let mut now = count(&out, "number of dimensional sizes");
-    now.sort();
-    assert_eq!(before, ["0.);", "1.);"]);
-    assert_eq!(now, ["0.);", "0.);"]);
-    let mut elements = count(&out, "number of semantic pmi elements");
-    elements.sort();
-    assert_eq!(elements, ["0.);", "5.);"]);
-    // No record of the file refers to a number that is gone.
-    let numbers: BTreeSet<String> = out
-        .lines()
-        .filter_map(|line| Some(line.strip_prefix('#')?.split('=').next()?.to_owned()))
-        .collect();
-    for line in out.lines().filter(|line| line.starts_with('#')) {
-        let body = line.split_once('=').unwrap().1;
-        for reference in body.split('#').skip(1) {
-            let digits: String = reference.chars().take_while(char::is_ascii_digit).collect();
-            assert!(numbers.contains(&digits), "{line} names #{digits}");
-        }
-    }
-}
-
-#[test]
 fn an_unsafe_edit_is_refused_before_writing() {
     let file = source();
     for (edit, reason) in [
-        (
-            PmiEdit::Remove {
-                item: "Base parallelism".into(),
-            },
-            "(APPLIED_GROUP_ASSIGNMENT) still refers to its records",
-        ),
-        (
-            PmiEdit::Remove {
-                item: "Base datum".into(),
-            },
-            "Base parallelism refers to datum A",
-        ),
-        (
-            PmiEdit::Remove {
-                item: "Base profile".into(),
-            },
-            "presents it in a callout that would stay",
-        ),
         (
             PmiEdit::ToleranceValue {
                 item: "Base profile".into(),
                 value: q("0.1"),
             },
-            "(DRAUGHTING_MODEL_ITEM_ASSOCIATION) would still show the old value",
+            "(DRAUGHTING_MODEL_ITEM_ASSOCIATION) may still depend on the old value",
         ),
         (
             PmiEdit::ToleranceValue {
@@ -407,14 +334,9 @@ fn an_unsafe_edit_is_refused_before_writing() {
             "not a decimal",
         ),
         (
-            PmiEdit::Remove {
-                item: "Base finish".into(),
-            },
-            "presented an edited item and would stay as graphics",
-        ),
-        (
-            PmiEdit::Remove {
+            PmiEdit::ToleranceValue {
                 item: "No such item".into(),
+                value: q("2"),
             },
             "no such item was read",
         ),
@@ -442,4 +364,63 @@ fn an_unsafe_edit_is_refused_before_writing() {
         .find(|line| line.contains("APPLIED_GROUP_ASSIGNMENT("))
         .unwrap();
     assert!(out.contains(group));
+}
+
+#[test]
+fn tolerance_patch_preserves_literals() {
+    let file = source();
+    let before = read_step_pmi(file.as_bytes()).unwrap();
+    let flatness = &before.sources["Base flatness"];
+    let flatness_record = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{flatness}=")))
+        .unwrap();
+    let value = flatness_record.split(',').nth(2).unwrap();
+    let description = format!("'Audit refers to {value}'");
+    let annotated = flatness_record.replacen("''", &description, 1);
+    let annotated =
+        annotated.replacen(&format!(",{value},"), &format!(",/* {value} */{value},"), 1);
+    let annotated_file = file.replacen(flatness_record, &annotated, 1);
+    let edit = PmiEdit::ToleranceValue {
+        item: "Base flatness".into(),
+        value: q("0.02"),
+    };
+    let patched =
+        String::from_utf8(patch_step_pmi(annotated_file.as_bytes(), &[edit]).unwrap()).unwrap();
+    assert!(patched.contains(&description));
+    assert!(patched.contains(&format!("/* {value} */#")));
+}
+
+#[test]
+fn tolerance_patch_refuses_zone_properties() {
+    let file = source();
+    let before = read_step_pmi(file.as_bytes()).unwrap();
+    let flatness = &before.sources["Base flatness"];
+    let part = file
+        .lines()
+        .find_map(|line| {
+            line.split_once("=PRODUCT_DEFINITION_SHAPE(")
+                .map(|(id, _)| id)
+        })
+        .unwrap();
+    let dependent = format!(
+        "#900000=PROPERTY_DEFINITION('zone validation','',#900001);\n\
+         #900001=TOLERANCE_ZONE('','',{part},.F.,({flatness}),#900002);\n\
+         #900002=TOLERANCE_ZONE_FORM('between two parallel planes');\n"
+    );
+    let with_dependency = file.replacen(
+        "ENDSEC;\nEND-ISO",
+        &format!("{dependent}ENDSEC;\nEND-ISO"),
+        1,
+    );
+    let Err(refusal) = patch_step_pmi(
+        with_dependency.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            item: "Base flatness".into(),
+            value: q("0.02"),
+        }],
+    ) else {
+        panic!("a property using the tolerance zone must prevent the edit");
+    };
+    assert!(refusal.detail.contains("#900000"), "{}", refusal.detail);
 }

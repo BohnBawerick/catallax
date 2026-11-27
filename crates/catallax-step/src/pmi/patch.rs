@@ -5,8 +5,7 @@
 //! by their exact bytes. A [`Patch`] removes or rewrites some of them and adds
 //! new ones under fresh numbers above the file's highest. Everything else,
 //! including the header, comments, spacing and line ends, is copied byte for
-//! byte. Which records an edit may touch is decided by [`Records::owned`]: the
-//! records only one PMI item uses.
+//! byte.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -30,6 +29,7 @@ pub struct Record {
     pub kind: String,
     /// The entities it refers to, in order, without repeats.
     pub refs: Vec<u64>,
+    reference_spans: Vec<(u64, Range<usize>)>,
 }
 
 /// The records of a Part 21 file.
@@ -137,6 +137,7 @@ impl<'a> Records<'a> {
             }
             let body_start = j + 1;
             let mut refs = Vec::new();
+            let mut reference_spans = Vec::new();
             let mut k = body_start;
             let body_end = loop {
                 let Some(&c) = bytes.get(k) else {
@@ -153,10 +154,11 @@ impl<'a> Records<'a> {
                         while bytes.get(m).is_some_and(u8::is_ascii_digit) {
                             m += 1;
                         }
-                        if let Ok(target) = text[k + 1..m].parse::<u64>()
-                            && !refs.contains(&target)
-                        {
-                            refs.push(target);
+                        if let Ok(target) = text[k + 1..m].parse::<u64>() {
+                            reference_spans.push((target, k..m));
+                            if !refs.contains(&target) {
+                                refs.push(target);
+                            }
                         }
                         k = m;
                     }
@@ -181,6 +183,7 @@ impl<'a> Records<'a> {
                 body: body_start..body_end,
                 kind,
                 refs,
+                reference_spans,
             });
             i = span_end;
         };
@@ -209,11 +212,6 @@ impl<'a> Records<'a> {
         self.index.get(&id).map(|position| &self.records[*position])
     }
 
-    /// A record's bytes between `=` and `;`.
-    pub fn body(&self, id: u64) -> Option<&'a str> {
-        self.get(id).map(|record| &self.text[record.body.clone()])
-    }
-
     /// A record's full text from `#` to and with its line end.
     pub fn text(&self, id: u64) -> Option<&'a str> {
         self.get(id).map(|record| &self.text[record.span.clone()])
@@ -229,106 +227,26 @@ impl<'a> Records<'a> {
         &self.records
     }
 
-    /// The records one PMI item owns, starting from its root entity: the
-    /// records only those records use, and the records of the kinds that
-    /// attach to an item (its name, zone, limits, usages, properties and
-    /// relationships) together with what only they use. The part, its
-    /// geometry, contexts, units, datums and the shared presentation are never
-    /// owned.
-    pub fn owned(&self, root: u64) -> BTreeSet<u64> {
-        let mut owned = BTreeSet::from([root]);
-        loop {
-            let mut grown = Vec::new();
-            for id in &owned {
-                let Some(record) = self.get(*id) else {
-                    continue;
-                };
-                for target in &record.refs {
-                    if owned.contains(target) {
-                        continue;
-                    }
-                    let Some(child) = self.get(*target) else {
-                        continue;
-                    };
-                    if !shared(&child.kind)
-                        && self.users(*target).iter().all(|user| owned.contains(user))
-                    {
-                        grown.push(*target);
-                    }
-                }
-                for user in self.users(*id) {
-                    if !owned.contains(user)
-                        && self.get(*user).is_some_and(|record| attaches(&record.kind))
-                    {
-                        grown.push(*user);
-                    }
-                }
-            }
-            if grown.is_empty() {
-                return owned;
-            }
-            owned.extend(grown);
-        }
+    /// Substitutes a unique reference token in a record's body.
+    pub fn replace_reference(&self, id: u64, old: u64, new: u64) -> Result<String, Refusal> {
+        let record = self
+            .get(id)
+            .ok_or_else(|| refuse(format!("record #{id} is missing")))?;
+        let mut matches = record
+            .reference_spans
+            .iter()
+            .filter(|(target, _)| *target == old);
+        let (Some((_, span)), None) = (matches.next(), matches.next()) else {
+            return Err(refuse(format!(
+                "record #{id} does not refer to #{old} exactly once"
+            )));
+        };
+        Ok(format!(
+            "{}#{new}{}",
+            &self.text[record.body.start..span.start],
+            &self.text[span.end..record.body.end],
+        ))
     }
-
-    /// The records outside `set` that refer to a record in it.
-    pub fn outside_users(&self, set: &BTreeSet<u64>) -> Vec<u64> {
-        let mut found = BTreeSet::new();
-        for id in set {
-            for user in self.users(*id) {
-                if !set.contains(user) {
-                    found.insert(*user);
-                }
-            }
-        }
-        found.into_iter().collect()
-    }
-}
-
-/// Kinds a PMI item shares with the rest of the file and never owns.
-fn shared(kind: &str) -> bool {
-    matches!(
-        kind,
-        "PRODUCT_DEFINITION_SHAPE"
-            | "PRODUCT_DEFINITION"
-            | "PRODUCT"
-            | "ADVANCED_FACE"
-            | "FACE_SURFACE"
-            | "DATUM"
-            | "DATUM_FEATURE"
-            | "DRAUGHTING_MODEL"
-            | "ANNOTATION_PLANE"
-            | "PRESENTATION_STYLE_ASSIGNMENT"
-            | "APPLICATION_CONTEXT"
-            | "DOCUMENT"
-            | "DIMENSIONAL_EXPONENTS"
-    ) || kind.ends_with("_CONTEXT")
-        || kind.ends_with("UNIT")
-        || kind.ends_with("SHAPE_REPRESENTATION")
-}
-
-/// Kinds that attach to a PMI item and go with it.
-fn attaches(kind: &str) -> bool {
-    matches!(
-        kind,
-        "ID_ATTRIBUTE"
-            | "TOLERANCE_ZONE"
-            | "PROJECTED_ZONE_DEFINITION"
-            | "GEOMETRIC_TOLERANCE_RELATIONSHIP"
-            | "PLUS_MINUS_TOLERANCE"
-            | "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"
-            | "PROPERTY_DEFINITION"
-            | "PROPERTY_DEFINITION_REPRESENTATION"
-            | "SHAPE_DEFINITION_REPRESENTATION"
-            | "GEOMETRIC_ITEM_SPECIFIC_USAGE"
-            | "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
-            | "SHAPE_ASPECT_RELATIONSHIP"
-            | "SHAPE_ASPECT_DERIVING_RELATIONSHIP"
-            | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
-            | "GENERAL_PROPERTY_ASSOCIATION"
-            | "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION"
-            | "DRAUGHTING_MODEL_ITEM_ASSOCIATION"
-    )
 }
 
 /// Removals, rewrites and new records for one file.
@@ -336,7 +254,7 @@ pub struct Patch {
     removed: BTreeSet<u64>,
     rewritten: BTreeMap<u64, String>,
     added: Vec<(u64, String)>,
-    next: u64,
+    highest: u64,
 }
 
 impl Patch {
@@ -352,7 +270,7 @@ impl Patch {
             removed: BTreeSet::new(),
             rewritten: BTreeMap::new(),
             added: Vec::new(),
-            next: highest + 1,
+            highest,
         }
     }
 
@@ -368,11 +286,13 @@ impl Patch {
     }
 
     /// Adds a record under a fresh number and returns the number.
-    pub fn add(&mut self, body: String) -> u64 {
-        let id = self.next;
-        self.next += 1;
-        self.added.push((id, body));
-        id
+    pub fn add(&mut self, body: String) -> Result<u64, Refusal> {
+        self.highest = self
+            .highest
+            .checked_add(1)
+            .ok_or_else(|| refuse("no fresh record number is available"))?;
+        self.added.push((self.highest, body));
+        Ok(self.highest)
     }
 
     /// The records this patch removes or rewrites.
@@ -432,7 +352,7 @@ mod tests {
     fn a_patch_changes_only_its_records() {
         let records = Records::parse(FILE.as_bytes()).unwrap();
         let mut patch = Patch::new(&records);
-        let fresh = patch.add("E()".into());
+        let fresh = patch.add("E()".into()).unwrap();
         assert_eq!(fresh, 4);
         patch.rewrite(3, format!("D('x',#1,#{fresh})"));
         patch.remove(2);

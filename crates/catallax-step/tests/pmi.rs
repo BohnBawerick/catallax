@@ -958,6 +958,32 @@ fn a_conflicting_datum_does_not_reserve_its_letter() {
     assert_eq!(sorted(retained.clone()), sorted(pmi));
     assert_eq!(write(&part, &retained).0, clean);
 
+    let wrong_source = file
+        .lines()
+        .find(|line| {
+            line.contains("=DATUM_REFERENCE_COMPARTMENT(")
+                && references(line).contains(&b.to_owned())
+        })
+        .unwrap();
+    let broken = mutate(
+        &file,
+        wrong_source,
+        &wrong_source.replace(&format!(",{b},"), &format!(",{conflict},")),
+    );
+    let read = read_step_pmi(broken.as_bytes()).unwrap();
+    assert!(read.pmi.items.iter().any(|item| item.id == "Datum B"));
+    assert!(
+        read.pmi
+            .items
+            .iter()
+            .all(|item| item.id != "Parallelism to B")
+    );
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("datum B, which was not read"))
+    );
+
     // With no valid B, the tolerance still has the same diagnostic as before.
     let without_b = file.replacen(relationship(b), "", 1);
     let read = read_step_pmi(without_b.as_bytes()).unwrap();
@@ -979,9 +1005,9 @@ fn a_conflicting_datum_does_not_reserve_its_letter() {
     assert_eq!(
         reasons,
         [
-            "its feature already carries a datum",
-            "datum b is defined twice",
-            "datum b is not defined",
+            "a datum letter is one or two capital letters",
+            "a datum letter is one or two capital letters",
+            "it refers to datum b, which was not read",
         ]
     );
 
@@ -2272,7 +2298,7 @@ fn malformed_targets_and_frames_are_refused_before_writing() {
                 },
             )
         },
-        "does not meet its controlled feature",
+        "needs exactly one projected zone entry face it meets",
     );
     refused(
         &|pmi| {
@@ -2355,7 +2381,7 @@ fn malformed_targets_and_frames_are_refused_before_writing() {
                     direction: v("0", "1", "0"),
                 },
             ),
-            "the target line meets its face's boundary",
+            "the target line leaves its face",
         ),
         (
             "A3",
@@ -2551,10 +2577,188 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
         text.contains("`precedence` tolerance relationship"),
         "{text}"
     );
-    assert!(
-        text.contains("lower segment of the composite frame"),
+    assert_eq!(
+        text.matches("`precedence` tolerance relationship").count(),
+        2,
         "{text}"
     );
+
+    for extra in [
+        ".LEAST_MATERIAL_REQUIREMENT.",
+        ".REGARDLESS_OF_FEATURE_SIZE.",
+    ] {
+        let upper = file
+            .lines()
+            .find(|line| {
+                line.contains("GEOMETRIC_TOLERANCE('Bolt pattern'")
+                    && line.contains(".MAXIMUM_MATERIAL_REQUIREMENT.")
+            })
+            .unwrap();
+        let bad = mutate(
+            &file,
+            upper,
+            &upper.replace(
+                ".MAXIMUM_MATERIAL_REQUIREMENT.",
+                &format!(".MAXIMUM_MATERIAL_REQUIREMENT.,{extra}"),
+            ),
+        );
+        let (back, skipped) = read_back(&bad, &report);
+        assert!(!ids(&back).contains(&"Bolt pattern".to_owned()));
+        assert!(reasons(&skipped).contains("material modifier is stated more than once"));
+    }
+
+    let composite = file
+        .lines()
+        .find(|line| line.contains("GEOMETRIC_TOLERANCE_RELATIONSHIP('composite'"))
+        .unwrap();
+    let [upper, lower] =
+        <[String; 2]>::try_from(references(composite.split_once('=').unwrap().1)).unwrap();
+    let second_upper = &read_step_pmi(file.as_bytes()).unwrap().sources["Bore projection"];
+    let owner = file
+        .lines()
+        .find_map(|line| {
+            line.split_once("=PRODUCT_DEFINITION_SHAPE(")
+                .map(|(id, _)| id)
+        })
+        .unwrap();
+    for (additional, refused, reason) in [
+        (
+            format!(
+                "#900000=GEOMETRIC_TOLERANCE_RELATIONSHIP('composite','',{second_upper},{lower});\n"
+            ),
+            "Bolt pattern",
+            "two uniquely paired segments",
+        ),
+        (
+            format!(
+                "#900000=TOLERANCE_ZONE('','',{owner},.F.,({upper}),#900001);\n#900001=TOLERANCE_ZONE_FORM('between two parallel planes');\n"
+            ),
+            "Bolt pattern",
+            "more than one tolerance zone",
+        ),
+    ] {
+        let broken = mutate(
+            &file,
+            "ENDSEC;\nEND-ISO",
+            &format!("{additional}ENDSEC;\nEND-ISO"),
+        );
+        let (back, skipped) = read_back(&broken, &report);
+        assert!(!ids(&back).contains(&refused.to_owned()));
+        assert!(reasons(&skipped).contains(reason));
+    }
+
+    let projection = references(bore_zone.split_once('=').unwrap().1);
+    let start = &projection[1];
+    let values = records(&file);
+    let zone = &projection[0];
+    let definition = bore_zone.split_once('=').unwrap().0;
+    let [owner, tolerance, form] = <[String; 3]>::try_from(references(&values[zone])).unwrap();
+    let complex_zone =
+        format!("{zone}=(SHAPE_ASPECT('','',{owner},.F.)TOLERANCE_ZONE(({tolerance}),{form}));");
+    let complex_definition = format!(
+        "{definition}=(PROJECTED_ZONE_DEFINITION({start},{})TOLERANCE_ZONE_DEFINITION({zone},()));",
+        projection[2],
+    );
+    let complex = mutate(&file, &format!("{zone}={}", values[zone]), &complex_zone);
+    let complex = mutate(&complex, bore_zone, &complex_definition);
+    let (back, skipped) = read_back(&complex, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    assert!(matches!(
+        kind_of(&back, "Bore projection"),
+        ItemKind::Position(_)
+    ));
+
+    let additional = format!("#900000=TOLERANCE_ZONE_DEFINITION({zone},());\n");
+    let mixed = mutate(
+        &complex,
+        "ENDSEC;\nEND-ISO",
+        &format!("{additional}ENDSEC;\nEND-ISO"),
+    );
+    let (back, skipped) = read_back(&mixed, &report);
+    assert!(!ids(&back).contains(&"Bore projection".to_owned()));
+    assert!(reasons(&skipped).contains("zone definition uses TOLERANCE_ZONE_DEFINITION"));
+
+    let circle = mutate(&file, bore_zone, "");
+    let circle = mutate(
+        &circle,
+        &format!("{form}={}", values[&form]),
+        &format!("{form}=TOLERANCE_ZONE_FORM('within a circle');"),
+    );
+    let (back, skipped) = read_back(&circle, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    assert!(
+        matches!(kind_of(&back, "Bore projection"), ItemKind::Tolerance(tol) if tol.diameter_zone)
+    );
+
+    let usage = file
+        .lines()
+        .find(|line| {
+            line.contains("=GEOMETRIC_ITEM_SPECIFIC_USAGE(")
+                && references(line.split_once('=').unwrap().1).first() == Some(start)
+        })
+        .unwrap();
+    let [aspect, shape, entry] =
+        <[String; 3]>::try_from(references(usage.split_once('=').unwrap().1)).unwrap();
+    let wrong = written_faces(&file, &report)
+        .into_iter()
+        .find_map(|(entity, face)| (face == f.flange_top).then_some(entity))
+        .unwrap();
+    assert_ne!(wrong, entry);
+    let usage_id = usage.split_once('=').unwrap().0;
+    let additional = format!(
+        "{usage_id}=ITEM_IDENTIFIED_REPRESENTATION_USAGE('','',{aspect},{shape},SET_REPRESENTATION_ITEM(({entry},{wrong})));"
+    );
+    let broken = mutate(&file, usage, &additional);
+    let (_, skipped) = read_back(&broken, &report);
+    assert!(reasons(&skipped).contains("unused start face"));
+
+    let target = &a1;
+    let (property, _) = values
+        .iter()
+        .find(|(_, record)| {
+            record.starts_with("PROPERTY_DEFINITION(") && references(record).contains(target)
+        })
+        .unwrap();
+    let representation = references(
+        values
+            .values()
+            .find(|record| {
+                record.starts_with("SHAPE_DEFINITION_REPRESENTATION(")
+                    && references(record).first() == Some(property)
+            })
+            .unwrap(),
+    )[1]
+    .clone();
+    let target_rep = &values[&representation];
+    let old_context = references(target_rep).pop().unwrap();
+    let changed_rep = target_rep.replace(&format!("{old_context});"), "#900004);");
+    let mixed_units = mutate(
+        &file,
+        &format!("{representation}={target_rep}"),
+        &format!("{representation}={changed_rep}"),
+    );
+    let units = "#900001=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n\
+                 #900002=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#900001);\n\
+                 #900003=(CONVERSION_BASED_UNIT('inch',#900002)LENGTH_UNIT()NAMED_UNIT(*));\n\
+                 #900004=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#900003))REPRESENTATION_CONTEXT('',''));\n";
+    let mixed_units = mutate(
+        &mixed_units,
+        "ENDSEC;\nEND-ISO",
+        &format!("{units}ENDSEC;\nEND-ISO"),
+    );
+    let (_, skipped) = read_back(&mixed_units, &report);
+    assert!(reasons(&skipped).contains("the target point is outside its face"));
+    let valid = mutate(
+        &mixed_units,
+        "CARTESIAN_POINT('',(5.,5.,0.))",
+        "CARTESIAN_POINT('',(0.2,0.2,0.))",
+    );
+    let (back, skipped) = read_back(&valid, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    let ItemKind::DatumTarget(target) = kind_of(&back, "A1") else {
+        panic!("expected datum target");
+    };
+    assert_eq!(target.point_mm, v("5.08", "5.08", "0"));
 
     // A target moved into a hole is refused on the file's own face boundary.
     let broken = mutate(
@@ -2568,6 +2772,99 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
         "{}",
         reasons(&skipped)
     );
+}
+
+#[test]
+fn unavailable_or_closed_projection_entries_are_refused() {
+    let mut model = Model::new();
+    let body = cylinder(&mut model, q("4"), q("5"), &Pose::identity()).unwrap();
+    let part = Bracket { model, body };
+    let barrel = part.round(2, "4", ["0", "0"]);
+    let top = part.planes(2, "5")[0];
+    let mut pmi = Pmi {
+        items: vec![item(
+            "Projection",
+            ItemKind::Position(PositionControl {
+                features: vec![barrel],
+                frame: PositionFrame::Single {
+                    segment: segment("0.05", None, Vec::new()),
+                    projected_zone: Some(ProjectedZone {
+                        height_mm: q("8"),
+                        direction: v("0", "0", "1"),
+                        entry_faces: vec![top],
+                    }),
+                },
+            }),
+        )],
+        part: PartNotes::default(),
+        views: Vec::new(),
+    };
+    let err = try_write(&part, &pmi).unwrap_err();
+    assert!(err.contains("axis meets a closed end"), "{err}");
+    let ItemKind::Position(control) = &mut pmi.items[0].kind else {
+        panic!("expected a position control");
+    };
+    let PositionFrame::Single {
+        projected_zone: Some(zone),
+        ..
+    } = &mut control.frame
+    else {
+        panic!("expected a projected zone");
+    };
+    zone.entry_faces[0] = top.moved(100_000);
+    let err =
+        catallax_step::pmi::check_on_model(&part.model, &pmi, &mut Decider::default()).unwrap_err();
+    assert!(err.detail.contains("Projection"), "{}", err.detail);
+    assert!(
+        try_write(&part, &pmi)
+            .unwrap_err()
+            .contains("not in the file")
+    );
+}
+
+#[test]
+fn duplicate_target_number_invalidates_only_its_datum_and_dependents() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let (file, report) = write(&part, &gdt_pmi(&f));
+    let a2 = file
+        .lines()
+        .find(|line| line.contains("PLACED_DATUM_TARGET_FEATURE('A2'"))
+        .unwrap();
+    let broken = mutate(&file, a2, &a2.replace(",'2');", ",'1');"));
+    let (back, skipped) = read_back(&broken, &report);
+    let mut names: Vec<_> = back.items.iter().map(|item| item.id.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["Bore", "Bore projection", "Datum B", "Datum C", "Datum D"]
+    );
+    assert!(
+        skipped
+            .iter()
+            .any(|item| item.reason.contains("defined twice"))
+    );
+}
+
+#[test]
+fn straight_datum_target_can_lie_on_the_face_boundary() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let mut pmi = gdt_pmi(&f);
+    for (centre, length) in [(v("30", "0", "0"), q("20")), (v("10", "10", "0"), q("6"))] {
+        let ItemKind::DatumTarget(line) = &mut pmi.items[2].kind else {
+            panic!("A2 should be the line target");
+        };
+        line.point_mm = centre;
+        line.kind = TargetKind::Line {
+            length_mm: length,
+            direction: v("1", "0", "0"),
+        };
+        let (file, report) = write(&part, &pmi);
+        let (back, skipped) = read_back(&file, &report);
+        assert!(skipped.is_empty(), "{skipped:?}");
+        assert_eq!(kind_of(&back, "A2"), kind_of(&pmi, "A2"));
+    }
 }
 
 /// The C-2B fixture plus a knurl on the boss, a two-line note on the flange top
@@ -2706,21 +3003,14 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
                 text: " ".into(),
                 feature: vec![f.flange_top],
             },
-            "a face note is lines of text",
-        ),
-        (
-            ItemKind::FaceNote {
-                text: "One\n\nThree".into(),
-                feature: vec![f.flange_top],
-            },
-            "a face note is lines of text",
+            "a face note needs text",
         ),
         (
             ItemKind::Knurl {
-                designation: "RGE 0.8 'DIN' 82".into(),
+                designation: " ".into(),
                 feature: vec![f.flange_top],
             },
-            "a knurl designation is plain text",
+            "a knurl designation needs text",
         ),
         (
             ItemKind::Knurl {
@@ -2734,6 +3024,26 @@ fn bad_text_is_refused_and_unknown_text_is_reported() {
         pmi.items.push(item("Text", kind));
         let detail = try_write(&part, &pmi).expect_err(reason);
         assert!(detail.contains(reason), "{detail} lacks {reason}");
+    }
+
+    let mut text = text_pmi(&part, &f);
+    let note = "One\n\nThree, café";
+    let designation = format!("RGE 'Ø' \\ DIN 82 {}", "x".repeat(60));
+    for item in &mut text.items {
+        match &mut item.kind {
+            ItemKind::FaceNote { text, .. } if item.id == "Flange note" => *text = note.into(),
+            ItemKind::Knurl {
+                designation: value, ..
+            } => *value = designation.clone(),
+            _ => {}
+        }
+    }
+    let (file, report) = write(&part, &text);
+    let (back, skipped) = read_back(&file, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    let (back, text) = (sorted(back), sorted(text));
+    for name in ["Flange note", "Knurl"] {
+        assert_eq!(kind_of(&back, name), kind_of(&text, name));
     }
 
     // A text variable this reader does not know is reported, and the rest stays.
@@ -2796,7 +3106,13 @@ fn viewed_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static s
                 ["90", "60"],
                 true,
             ),
-            items: names(&["Datum B", "Datum C", "Hole position", "Bore position"]),
+            items: names(&[
+                "Datum B",
+                "Datum C",
+                "Hole position",
+                "Bore position",
+                "Bore finish",
+            ]),
         },
     ];
     (pmi, nominal)
@@ -2810,6 +3126,17 @@ fn records(file: &str) -> BTreeMap<String, String> {
             id.starts_with('#')
                 .then(|| (id.to_owned(), rest.to_owned()))
         })
+        .collect()
+}
+
+fn callout_associations(file: &BTreeMap<String, String>, item: &str) -> Vec<(String, String)> {
+    file.iter()
+        .filter(|(_, record)| record.starts_with("DRAUGHTING_MODEL_ITEM_ASSOCIATION("))
+        .filter(|(_, record)| {
+            let callout = references(record).pop().unwrap();
+            file[&callout].starts_with(&format!("DRAUGHTING_CALLOUT('{item}'"))
+        })
+        .map(|(id, record)| (id.clone(), record.clone()))
         .collect()
 }
 
@@ -2848,10 +3175,8 @@ fn saved_views_write_their_callouts_and_read_back() {
     assert_eq!(back.items.len(), pmi.items.len());
     assert_same(back, expected);
 
-    // One callout per shown item, the finish's own and six labels, each
-    // associated with the entity of its item.
     let all = records(&file);
-    assert_eq!(file.matches("=DRAUGHTING_CALLOUT(").count(), 7);
+    assert_eq!(file.matches("=DRAUGHTING_CALLOUT(").count(), 9);
     let counts: Vec<String> = validation_items(&file)
         .into_values()
         .flatten()
@@ -2860,26 +3185,78 @@ fn saved_views_write_their_callouts_and_read_back() {
     assert!(
         counts
             .iter()
-            .any(|fields| fields == "'number of annotations',7.")
+            .any(|fields| fields == "'number of annotations',9.")
     );
-    for (item, entity) in [
-        ("Datum A", "DATUM("),
-        ("Bore diameter", "DIMENSIONAL_SIZE("),
-        ("Bore position", "POSITION_TOLERANCE("),
-        ("Hole position", "POSITION_TOLERANCE("),
+    for (item, entity, count) in [
+        ("Datum A", "DATUM_FEATURE(", 1),
+        ("Bore diameter", "DIMENSIONAL_SIZE(", 1),
+        ("Bore position", "POSITION_TOLERANCE(", 2),
+        ("Hole position", "POSITION_TOLERANCE(", 1),
     ] {
-        let association = all
+        let associations = callout_associations(&all, item);
+        assert_eq!(associations.len(), count, "{item}");
+        for (_, association) in associations {
+            assert!(association.starts_with(
+                "DRAUGHTING_MODEL_ITEM_ASSOCIATION('PMI representation to presentation link'"
+            ));
+            let definition = references(&association)[0].clone();
+            assert!(
+                all[&definition].contains(entity),
+                "{item}: {}",
+                all[&definition]
+            );
+        }
+    }
+    for (view, axes, depth) in [("Bore", [0, 2], 1), ("Top", [0, 1], 2)] {
+        let model = all
             .values()
-            .find(|record| {
-                record.starts_with(&format!("DRAUGHTING_MODEL_ITEM_ASSOCIATION('{item}'"))
-            })
-            .unwrap_or_else(|| panic!("{item} has no association"));
-        let definition = references(association)[0].clone();
-        assert!(
-            all[&definition].contains(entity),
-            "{item}: {}",
-            all[&definition]
+            .find(|body| body.starts_with(&format!("DRAUGHTING_MODEL('{view}'")))
+            .unwrap();
+        let planes: Vec<_> = references(model)
+            .into_iter()
+            .filter(|id| all[id].starts_with("ANNOTATION_PLANE("))
+            .collect();
+        assert_eq!(
+            planes.len(),
+            pmi.views
+                .iter()
+                .find(|entry| entry.name == view)
+                .unwrap()
+                .items
+                .len()
         );
+        for id in planes {
+            let keys = references(&all[&id]);
+            let surface = &all[&keys[1]];
+            let frame = references(&all[&references(surface)[0]]);
+            let origin = numbers(&all[&frame[0]]);
+            let direction = numbers(&all[&frame[1]]);
+            assert!(
+                (direction[depth].abs() - 1.0).abs() < 1e-9,
+                "{view}: {direction:?}"
+            );
+            let occurrence = references(&all[&keys[2]]).pop().unwrap();
+            let set = references(&all[&occurrence]).pop().unwrap();
+            let strokes: Vec<_> = references(&all[&set])
+                .into_iter()
+                .flat_map(|line| references(&all[&line]))
+                .map(|point| numbers(&all[&point]))
+                .collect();
+            assert!(
+                strokes
+                    .iter()
+                    .all(|point| (point[depth] - origin[depth]).abs() < 1e-9)
+            );
+            for axis in axes {
+                let (min, max) = strokes
+                    .iter()
+                    .map(|point| point[axis])
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
+                        (min.min(value), max.max(value))
+                    });
+                assert!(max - min > 2.0, "{view}: callout collapsed along {axis}");
+            }
+        }
     }
     // Two views: a model named for each, its camera and its relation to the
     // global model.
@@ -2916,14 +3293,30 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
     let (pmi, _) = viewed_pmi(&part);
     let (file, report) = write(&part, &pmi);
     let all = records(&file);
-    let association = |item: &str| {
-        all.iter()
-            .find(|(_, record)| {
-                record.starts_with(&format!("DRAUGHTING_MODEL_ITEM_ASSOCIATION('{item}'"))
-            })
-            .map(|(id, record)| (id.clone(), record.clone()))
-            .unwrap()
-    };
+    let association = |item| callout_associations(&all, item).pop().unwrap();
+
+    let (_, size_link) = association("Bore diameter");
+    let (datum_link_id, datum_link) = association("Datum A");
+    let size_callout = references(&size_link).pop().unwrap();
+    let size_occurrence = references(&all[&size_callout]).pop().unwrap();
+    let datum_callout = references(&datum_link).pop().unwrap();
+    let new_link = datum_link.replace(&datum_callout, &size_occurrence);
+    let shared = mutate(
+        &file,
+        &format!("{datum_link_id}={datum_link}"),
+        &format!("{datum_link_id}={new_link}"),
+    );
+    let read = read_step_pmi(shared.as_bytes()).unwrap();
+    for name in ["Datum A", "Bore diameter"] {
+        assert_eq!(
+            read.pmi.views[0]
+                .items
+                .iter()
+                .filter(|id| *id == name)
+                .count(),
+            1
+        );
+    }
 
     // Without its association the datum callout presents nothing read: it is
     // graphics in the Bore view, and the datum is still one semantic item.
@@ -2965,4 +3358,50 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
     assert_eq!(graphic.presents.as_deref(), Some(size.as_str()));
     assert_eq!(graphic.text.as_deref(), Some("\u{2300}8 H7"));
     assert_eq!(graphic.kind, "diameter dimension");
+}
+
+#[test]
+fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
+    let source = include_str!("fixtures/graphical-only-pmi.step");
+    let read = read_step_pmi(source.as_bytes()).unwrap();
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+    assert!(read.pmi.items.is_empty());
+    assert_eq!(read.pmi.views[0].name, "Top");
+    let [callout] = read.graphics.as_slice() else {
+        panic!("expected one callout, got {:?}", read.graphics);
+    };
+    assert_eq!(callout.name, "Plate mark");
+    assert_eq!(callout.kind, "surface roughness");
+    assert_eq!(callout.text, None);
+    assert_eq!(callout.faces, Some(vec!["#19".to_owned()]));
+    assert_eq!(callout.views, ["Top"]);
+    assert_eq!(
+        callout.polylines_mm,
+        [vec![v("2", "2", "5"), v("4", "4", "5"), v("8", "4", "5")]]
+    );
+    assert_eq!(
+        callout.planes,
+        [catallax_import::GraphicPlane {
+            origin_mm: v("0", "0", "5"),
+            normal: v("0", "0", "1"),
+            reference: v("1", "0", "0"),
+        }]
+    );
+
+    for (from, to, reason) in [
+        ("(-10.,-8.)", "(-9.,-8.)", "off centre"),
+        ("15.,.F.,.F.,#47", "15.,.F.,.T.,#47", "clipping"),
+        ("15.,15.,.F.", "0.,15.,.F.", "positive view distance"),
+        ("#41,#42,#14", "#41,#42,#13", "placement axes are parallel"),
+        ("(0.,0.,0.)", "(1.,0.,0.)", "projection point"),
+    ] {
+        let broken = mutate(source, from, to);
+        let read = read_step_pmi(broken.as_bytes()).unwrap();
+        assert!(read.pmi.views.is_empty());
+        assert!(
+            read.skipped.iter().any(|item| item.reason.contains(reason)),
+            "{:?}",
+            read.skipped
+        );
+    }
 }

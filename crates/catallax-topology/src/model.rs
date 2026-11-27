@@ -445,6 +445,11 @@ impl Model {
         self.faces.get(id)
     }
 
+    /// Checks if a face handle is in the model's arena.
+    pub fn has_face(&self, id: FaceId) -> bool {
+        (id.index() as usize) < self.faces.len()
+    }
+
     /// The shell behind a handle.
     pub fn shell(&self, id: ShellId) -> &Shell {
         self.shells.get(id)

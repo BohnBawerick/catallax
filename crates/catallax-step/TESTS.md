@@ -217,14 +217,13 @@ reported while the other items stay.
 
 The saved-view test writes the P1 items unchanged with two views, one parallel
 and one in perspective. It checks that the views read back exactly, with
-camera, window and the items each shows. Each shown item has one callout,
-associated with that item's datum, size or tolerance entity, so the reader
-reports no graphics. A view naming an item the writer cannot draw, or a camera
-whose up direction is not square to its view, is refused. The graphical test
-removes a callout's association, or makes its size unreadable. It checks that
-the callout comes back as graphics with its type, its text, the size entity it
-presents and the view that shows it, while the semantic items are not counted
-twice.
+camera, window and the items each shows. An independent walk of the emitted
+records checks the datum feature and tolerance associations, each plane, and
+the extent of the labels and finish symbols along both screen dimensions. A
+handwritten fixture with no equivalent Unicode property checks graphical-only
+strokes, plane, attachment and view membership. Mutations check that a
+callout can present more than one semantic item and that malformed cameras
+produce diagnostics.
 
 ## Exact oracles
 

@@ -62,7 +62,9 @@ pub use gap::{ImportOptions, propose, propose_source};
 pub use iges::{SourceFormat, read_iges, read_iges_with_decider};
 pub use incidence::measure_incidence;
 pub use intersect::check_self_intersection;
-pub use pmi::{GraphicCallout, PmiEdit, SkippedPmi, StepPmi, patch_step_pmi, read_step_pmi};
+pub use pmi::{
+    GraphicCallout, GraphicPlane, PmiEdit, SkippedPmi, StepPmi, patch_step_pmi, read_step_pmi,
+};
 pub use recognize::*;
 pub use repair::{Imported, apply, apply_source, canonical_bytes, rebuild, rebuild_source};
 

@@ -357,7 +357,40 @@ fn root(value: &Rational) -> Rational {
     Rational::new(integer_sqrt(&whole), scale).expect("a nonzero denominator")
 }
 
+pub(crate) fn screen_axes(direction: &Point, up: &Point) -> [Point; 2] {
+    let unit = |axis: &Point| {
+        let largest = axis
+            .iter()
+            .map(Rational::abs)
+            .max()
+            .expect("three coordinates");
+        let scaled = axis.clone().map(|value| &value / &largest);
+        let squared = scaled
+            .iter()
+            .fold(Rational::zero(), |sum, value| &sum + &(value * value));
+        let length = root(&squared);
+        scaled.map(|value| presented(&(&value / &length)))
+    };
+    [unit(&cross(direction, up)), unit(up)]
+}
+
+pub(crate) fn cross(a: &Point, b: &Point) -> Point {
+    std::array::from_fn(|i| {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+        &(&a[j] * &b[k]) - &(&a[k] * &b[j])
+    })
+}
+
 impl Drawing {
+    pub(crate) fn orient(&mut self, anchor: &Point, [right, up]: &[Point; 2]) {
+        for point in self.polylines.iter_mut().flatten() {
+            let x = &point[0] - &anchor[0];
+            let z = &point[2] - &anchor[2];
+            *point = std::array::from_fn(|i| &anchor[i] + &(&(&x * &right[i]) + &(&z * &up[i])));
+        }
+    }
+
     /// The total length of the polylines and their centroid weighted by
     /// length, the `polyline curve length` and `polyline centre point`
     /// validation properties (recommended practices, section 10.2.3.1).

@@ -3,6 +3,5 @@
 //! This crate never supplies a checked mesh, a proof, an export, or a
 //! geometric query. Face IDs identify draw ranges; they do not resolve picks.
 
-mod eval;
 mod gpu;
 pub mod mesher;

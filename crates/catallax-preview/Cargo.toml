@@ -16,13 +16,10 @@ spade = "2.15"
 
 [dev-dependencies]
 catallax-app.workspace = true
-catallax-features.workspace = true
 catallax-numbers.workspace = true
 catallax-recipe.workspace = true
-catallax-shapes.workspace = true
 futures-channel = "0.3"
 naga = { version = "30", features = ["wgsl-in"] }
-serde_json = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 pollster = "0.4"

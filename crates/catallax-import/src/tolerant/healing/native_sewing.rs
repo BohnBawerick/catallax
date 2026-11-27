@@ -15,10 +15,10 @@ pub(super) struct Source<'a> {
     pub angles: &'a AngleUnit,
 }
 fn norm(point: &[f64; 3]) -> f64 {
-    point.iter().fold(0.0, |result, value| result.hypot(*value))
+    point.iter().copied().fold(0.0, libm::hypot)
 }
 fn distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
-    (0..3).fold(0.0, |result, axis| result.hypot(a[axis] - b[axis]))
+    (0..3).fold(0.0, |result, axis| libm::hypot(result, a[axis] - b[axis]))
 }
 fn point(value: &Vec3) -> Result<[f64; 3], Error> {
     let point = value.each_ref().map(Rational::to_f64_nearest);

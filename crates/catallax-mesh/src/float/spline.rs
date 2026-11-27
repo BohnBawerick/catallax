@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use catallax_shapes::{BSplineCurve, BSplineSurface};
 
 use super::{DisplaySpline, Xyz, evaluate::*};
@@ -60,7 +62,10 @@ pub(super) fn net(s: &BSplineSurface, origin: Xyz) -> Option<DisplaySpline> {
         ],
         size: [nu, nv],
         points,
-        weights: (!weights.iter().all(|w| *w == weights[0])).then_some(weights),
+        weights: (!weights
+            .iter()
+            .all(|w| w.partial_cmp(&weights[0]) == Some(Ordering::Equal)))
+        .then_some(weights),
     })
 }
 
@@ -244,10 +249,10 @@ impl SplineEdge {
         let mut at = self.evaluator();
         let mut domain = [lo, hi];
         for (i, end) in ends.into_iter().enumerate() {
-            if let Some(end) = end {
-                if norm(sub(end, at(domain[i]))) > tolerance * 0.001 {
-                    domain[i] = nearest_parameter(&mut at, &self.knots[self.degree..=count], end);
-                }
+            if let Some(end) = end
+                && norm(sub(end, at(domain[i]))) > tolerance * 0.001
+            {
+                domain[i] = nearest_parameter(&mut at, &self.knots[self.degree..=count], end);
             }
         }
         if domain[1] <= domain[0] {
@@ -264,10 +269,14 @@ impl SplineEdge {
             .filter(|&k| k > domain[0] && k < domain[1])
             .chain([domain[1]])
         {
-            if b == a {
+            if b.partial_cmp(&a) == Some(Ordering::Equal) {
                 continue;
             }
-            let end = if b == domain[1] { last } else { at(b) };
+            let end = if b.partial_cmp(&domain[1]) == Some(Ordering::Equal) {
+                last
+            } else {
+                at(b)
+            };
             super::edges::sample_span(&mut at, [a, b], [start, end], tolerance, &mut |_, p| {
                 (result.len() < max).then(|| result.push(p))
             })?;
@@ -285,7 +294,7 @@ fn nearest_parameter<F: FnMut(f64) -> Xyz>(at: &mut F, knots: &[f64], point: Xyz
     let mut best = (knots[0], f64::INFINITY);
     for pair in knots.windows(2) {
         let [lo, hi] = [pair[0], pair[1]];
-        if lo == hi {
+        if lo.partial_cmp(&hi) == Some(Ordering::Equal) {
             continue;
         }
         // Bracket a local minimum before narrowing, even if the whole knot

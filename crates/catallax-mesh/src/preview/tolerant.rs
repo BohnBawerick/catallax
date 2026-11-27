@@ -242,8 +242,8 @@ fn cut_to_pole(
     let bound = (0..source.chart_count()).filter_map(|i| source.domain(i)[normal][side].as_ref());
     let bound = if side == 0 { bound.min() } else { bound.max() };
     let mut uv = first;
-    uv[normal] = if let Some(bound) = bound {
-        bound.to_f64_nearest()
+    let (pole_v, on_oriented_side) = if let Some(bound) = bound {
+        (bound.to_f64_nearest(), true)
     } else {
         // STEP cones have an unbounded axial chart. Intersect two sampled
         // meridians, then check that the other meridians meet there too.
@@ -266,10 +266,16 @@ fn cut_to_pole(
         if !t.is_finite() || t == 0.0 || (t < 0.0 && vertex_loop.is_none()) {
             return Err(failure());
         }
-        h + t * step
+        (h + t * step, t > 0.0)
     };
+    uv[normal] = pole_v;
     let pole = carrier.position(uv, dec)?;
-    let rounding = pole.iter().fold(1.0_f64, |scale, x| scale.max(x.abs())) * 128.0 * f64::EPSILON;
+    let rounding = body.positions[rim[0].mesh]
+        .iter()
+        .chain(&pole)
+        .fold(1.0_f64, |scale, x| scale.max(x.abs()))
+        * 128.0
+        * f64::EPSILON;
     for station in [0.25, 0.5, 0.75] {
         let mut sample = uv;
         sample[axis] += station * period;
@@ -277,13 +283,12 @@ fn cut_to_pole(
             return Err(failure());
         }
     }
-    let mesh = if let Some((index, tolerance)) = vertex_loop {
-        if distance(pole, body.positions[index]) > tolerance.max(rounding) {
-            return Err(failure());
-        }
-        index
-    } else {
-        push(body, pole, options)?
+    let matching = vertex_loop
+        .filter(|&(i, tolerance)| distance(pole, body.positions[i]) <= tolerance.max(rounding));
+    let mesh = match matching {
+        Some((index, _)) => index,
+        None if on_oriented_side => push(body, pole, options)?,
+        None => return Err(failure()),
     };
     let mut far = uv;
     far[axis] = last[axis];

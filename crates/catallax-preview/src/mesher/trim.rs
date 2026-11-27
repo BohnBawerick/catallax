@@ -1,15 +1,12 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 
-use catallax_mesh::float::{DisplayFace, DisplayLoop};
+use catallax_mesh::float::{DisplayEdgeUse, DisplayFace, DisplayFrame, DisplaySurface};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
 
-use super::{FaceRefusal, InputVertex, NO_BOUNDARY};
-
-// In units of a chart span or period, not millimetres.
-const UV_EPSILON: f64 = 1e-10;
+use super::{FaceRefusal, InputVertex, NO_BOUNDARY, position32};
 
 type EdgeRanges = [Result<Range<u32>, FaceRefusal>];
 type Cdt = ConstrainedDelaunayTriangulation<Site>;
@@ -43,12 +40,14 @@ pub(super) struct Triangulated {
     pub vertices: Vec<InputVertex>,
     pub indices: Vec<u32>,
     pub bounds: [[f64; 2]; 2],
+    pub sphere_chart: Option<DisplayFrame>,
 }
 
 pub(super) fn triangulate<F>(
     face: &DisplayFace<F>,
     edges: &EdgeRanges,
-    positions: &[[f32; 4]],
+    positions: &mut Vec<[f32; 4]>,
+    max_positions: usize,
     detail: [u32; 2],
     max_vertices: usize,
     max_indices: usize,
@@ -64,43 +63,132 @@ pub(super) fn triangulate<F>(
     {
         return Err(FaceRefusal::InvalidChart);
     }
-    let tolerance = span.map(|s| s * UV_EPSILON);
     let mut rings = Vec::with_capacity(face.loops.len());
     let mut trim_count = 0;
+    let mut poles = Vec::new();
     for trim in &face.loops {
-        let ring = collect_ring(
-            trim,
-            edges,
-            positions,
-            face.periods,
-            tolerance,
-            max_vertices - trim_count,
-        )?;
-        trim_count += ring.points.len();
-        rings.push(ring);
-    }
-    if rings.is_empty() {
-        return Err(FaceRefusal::UnsupportedTrim);
-    }
-    let mut wrapped = rings
-        .iter()
-        .enumerate()
-        .filter_map(|(i, ring)| (ring.winding != [0, 0]).then_some(i));
-    let mut seam_count = 0;
-    if let Some(a) = wrapped.next() {
-        let b = wrapped.next().ok_or(FaceRefusal::UnsupportedTrim)?;
-        if wrapped.next().is_some() {
+        if let Some((point, uv)) = trim.vertex {
+            if !trim.uses.is_empty() || uv.iter().any(|x| !x.is_finite()) {
+                return Err(FaceRefusal::InvalidTrim);
+            }
+            poles.push((point, uv));
+            continue;
+        }
+        if trim.uses.is_empty() {
             return Err(FaceRefusal::UnsupportedTrim);
         }
-        let b = rings.remove(b);
-        let a = rings.remove(a);
-        seam_count = detail.into_iter().max().unwrap() as usize - 1;
-        if seam_count.saturating_mul(2) > max_vertices - trim_count {
+        let split = trim.uses.len() > 1
+            && trim
+                .uses
+                .iter()
+                .all(|edge| closed_use(edge, edges, positions));
+        let width = if split { 1 } else { trim.uses.len() };
+        for uses in trim.uses.chunks(width) {
+            let ring = collect_ring(
+                uses,
+                edges,
+                positions,
+                face.periods,
+                span,
+                max_vertices - trim_count,
+            )?;
+            trim_count += ring.points.len();
+            rings.push(ring);
+        }
+    }
+    let sphere_chart = match face.surface {
+        DisplaySurface::Sphere { frame, radius }
+            if !rings.is_empty()
+                && face.periods[0].is_some()
+                && rings.iter().filter(|r| r.winding != [0, 0]).count() < 2 =>
+        {
+            spherical_chart(frame, radius, face.reversed, &mut rings, positions)
+        }
+        _ => None,
+    };
+    if sphere_chart.is_some() {
+        poles.clear();
+    }
+    let mut seam_count = 0;
+    let wrapped: Vec<_> = rings
+        .iter()
+        .enumerate()
+        .filter_map(|(i, ring)| (ring.winding != [0, 0]).then_some(i))
+        .collect();
+    if sphere_chart.is_none()
+        && (!poles.is_empty()
+            || matches!(face.surface, DisplaySurface::Sphere { .. }) && wrapped.len() < 2)
+    {
+        let needed = if rings.is_empty() { 2 } else { 1 };
+        if (rings.is_empty() || wrapped.len() == 1)
+            && poles.len() < needed
+            && let DisplaySurface::Sphere { frame, radius } = face.surface
+        {
+            let direction = wrapped.first().map_or(-1, |&i| {
+                rings[i].winding[0] * if face.reversed { -1 } else { 1 }
+            });
+            for sign in [direction, -direction]
+                .into_iter()
+                .take(needed - poles.len())
+            {
+                let sign = f64::from(sign);
+                poles.push((
+                    std::array::from_fn(|i| frame.origin[i] + sign * radius * frame.z[i]),
+                    [face.bounds[0][0], sign * 0.25],
+                ));
+            }
+        }
+    }
+    if !poles.is_empty() {
+        let Some(period) = face.periods[0] else {
+            return Err(FaceRefusal::UnsupportedTrim);
+        };
+        if face.periods[1].is_some()
+            || !matches!((wrapped.as_slice(), poles.len()), ([_], 1) | ([], 2))
+            || wrapped.is_empty() && !rings.is_empty()
+        {
+            return Err(FaceRefusal::UnsupportedTrim);
+        }
+        if poles.len() > max_positions - positions.len() {
             return Err(FaceRefusal::MeshSize);
         }
-        trim_count += seam_count * 2;
-        rings.push(join_band(a, b, face.periods, seam_count)?);
+        seam_count = detail[1] as usize - 1;
+        let mut pole_rings = poles.iter().enumerate().map(|(i, &(p, uv))| {
+            let boundary = positions.len() as u32;
+            positions.push(position32(p)?);
+            Ok((uv, boundary, seam_count + i))
+        });
+        let a = if let Some(&i) = wrapped.first() {
+            rings.remove(i)
+        } else {
+            let (uv, boundary, twin) = pole_rings.next().unwrap()?;
+            let direction = if uv[1] < poles[1].1[1] { 1 } else { -1 };
+            pole_ring(uv, boundary, twin, direction, period)
+        };
+        if a.winding[0].abs() != 1 || a.winding[1] != 0 {
+            return Err(FaceRefusal::UnsupportedTrim);
+        }
+        let (mut uv, boundary, twin) = pole_rings.next().unwrap()?;
+        uv[0] = a.points.last().unwrap().uv[0];
+        let b = pole_ring(uv, boundary, twin, -a.winding[0], period);
+        trim_count = trim_count.saturating_add(poles.len() * 2);
+        let band = join_band(a, b, &mut rings, face.periods, face.reversed, seam_count)?;
+        rings.push(band);
+    } else {
+        match wrapped.as_slice() {
+            [] if rings.is_empty() => return Err(FaceRefusal::UnsupportedTrim),
+            [] => (),
+            &[a, b] => {
+                let b = rings.remove(b);
+                let a = rings.remove(a);
+                seam_count = detail.into_iter().max().unwrap() as usize - 1;
+                let band = join_band(a, b, &mut rings, face.periods, face.reversed, seam_count)?;
+                rings.push(band);
+            }
+            _ => return Err(FaceRefusal::UnsupportedTrim),
+        }
     }
+    trim_count = trim_count.saturating_add(seam_count.saturating_mul(2));
 
     let grid_count = (detail[0] as usize - 1).saturating_mul(detail[1] as usize - 1);
     if trim_count.saturating_add(grid_count) > max_vertices {
@@ -115,20 +203,64 @@ pub(super) fn triangulate<F>(
     }
     let span = bounds.map(|[lower, upper]| upper - lower);
     if span.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+        trim_diagnostic("empty normalized chart", bounds);
         return Err(FaceRefusal::InvalidTrim);
     }
     let normalized =
         |uv: [f64; 2]| std::array::from_fn(|axis| (uv[axis] - bounds[axis][0]) / span[axis]);
+    // The outer coedge loop gives the draw orientation. In charts whose
+    // parameterization flips, a face's geometric sense alone does not.
+    let outer_area = rings
+        .iter()
+        .map(|ring| {
+            let uv = ring.points.iter().map(|p| normalized(p.uv));
+            uv.clone()
+                .zip(uv.cycle().skip(1))
+                .map(|([u0, v0], [u1, v1])| u0 * v1 - u1 * v0)
+                .sum::<f64>()
+        })
+        .max_by(|a, b| a.abs().total_cmp(&b.abs()))
+        .ok_or(FaceRefusal::InvalidTrim)?;
+    let reversed = outer_area < 0.0;
 
     let mut cdt = Cdt::new();
-    let mut inputs = Vec::with_capacity(trim_count + grid_count - seam_count);
-    let mut seams = vec![None; seam_count];
+    let mut inputs: Vec<InputVertex> = Vec::with_capacity(trim_count + grid_count - seam_count);
+    let mut seams = vec![None; seam_count + poles.len()];
     let mut constraints = Vec::with_capacity(trim_count);
     let mut handles = Vec::new();
     for ring in &rings {
         handles.clear();
-        for point in &ring.points {
+        for (i, point) in ring.points.iter().enumerate() {
             let uv = normalized(point.uv);
+            let mut site = spade::mitigate_underflow(Point2::new(uv[0], uv[1]));
+            if let PositionInTriangulation::OnVertex(existing) = cdt.locate(site) {
+                let other = inputs[cdt.vertex(existing).data().input as usize].boundary;
+                if same_boundary(point.boundary, other, positions) {
+                    if handles.last() != Some(&existing) {
+                        handles.push(existing);
+                    }
+                    continue;
+                }
+                // Keep the 3D chord authoritative when two distinct samples
+                // project to the same UV at a nearly collapsed chart end.
+                let next = normalized(ring.points[(i + 1) % ring.points.len()].uv);
+                let previous =
+                    normalized(ring.points[(i + ring.points.len() - 1) % ring.points.len()].uv);
+                let dx = next[0].midpoint(previous[0]) - site.x;
+                let dy = next[1].midpoint(previous[1]) - site.y;
+                let scale = dx.abs().max(dy.abs());
+                if scale <= f64::MIN_POSITIVE {
+                    trim_diagnostic(
+                        "coincident projected trim neighbourhood",
+                        (site, previous, next),
+                    );
+                    return Err(FaceRefusal::InvalidTrim);
+                }
+                site = spade::mitigate_underflow(Point2::new(
+                    site.x + 1e-11 * dx / scale,
+                    site.y + 1e-11 * dy / scale,
+                ));
+            }
             let mut push = || {
                 let index = inputs.len() as u32;
                 inputs.push(InputVertex::new(uv, point.boundary));
@@ -139,16 +271,21 @@ pub(super) fn triangulate<F>(
                 None => push(),
             };
             let before = cdt.num_vertices();
-            let handle = cdt
-                .insert(Site {
-                    point: Point2::new(uv[0], uv[1]),
-                    input,
-                })
-                .map_err(|_| FaceRefusal::InvalidTrim)?;
+            let handle = cdt.insert(Site { point: site, input }).map_err(|error| {
+                trim_diagnostic("invalid triangulation coordinate", (site, error));
+                FaceRefusal::InvalidTrim
+            })?;
             if cdt.num_vertices() == before {
+                trim_diagnostic("duplicate projected vertex", [point.uv, uv]);
                 return Err(FaceRefusal::InvalidTrim);
             }
             handles.push(handle);
+        }
+        if handles.first() == handles.last() {
+            handles.pop();
+        }
+        if handles.len() < 3 {
+            return Err(FaceRefusal::InvalidTrim);
         }
         for i in 0..handles.len() {
             constraints.push((handles[i], handles[(i + 1) % handles.len()]));
@@ -156,6 +293,10 @@ pub(super) fn triangulate<F>(
     }
     for &(a, b) in &constraints {
         if !cdt.can_add_constraint(a, b) || !cdt.add_constraint(a, b) {
+            trim_diagnostic(
+                "crossing constraint",
+                [cdt.vertex(a).position(), cdt.vertex(b).position()],
+            );
             return Err(FaceRefusal::InvalidTrim);
         }
         // A third boundary point on this segment would silently split the
@@ -164,6 +305,10 @@ pub(super) fn triangulate<F>(
             .get_edge_from_neighbors(a, b)
             .is_some_and(|e| e.is_constraint_edge())
         {
+            trim_diagnostic(
+                "split constraint",
+                [cdt.vertex(a).position(), cdt.vertex(b).position()],
+            );
             return Err(FaceRefusal::InvalidTrim);
         }
     }
@@ -190,9 +335,11 @@ pub(super) fn triangulate<F>(
             inputs.push(InputVertex::new(uv, NO_BOUNDARY));
         }
     }
-    let labels = label_triangles(&cdt)?;
+    let labels =
+        label_triangles(&cdt).inspect_err(|_| trim_diagnostic("ambiguous trim parity", bounds))?;
     let count = labels.iter().filter(|&&label| label == Some(true)).count();
     if count == 0 || count > max_indices / 3 {
+        trim_diagnostic("no interior triangles or index limit", (bounds, count));
         return Err(if count == 0 {
             FaceRefusal::InvalidTrim
         } else {
@@ -209,10 +356,14 @@ pub(super) fn triangulate<F>(
         let mut ids = triangle
             .vertices()
             .map(|vertex| vertex.data().input as usize);
-        if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
-            return Err(FaceRefusal::InvalidTrim);
+        if (0..3).any(|i| {
+            let a = ids[i];
+            let b = ids[(i + 1) % 3];
+            a == b || same_boundary(inputs[a].boundary, inputs[b].boundary, positions)
+        }) {
+            continue;
         }
-        if face.reversed {
+        if reversed {
             ids.swap(1, 2);
         }
         indices.extend(ids.map(|id| {
@@ -223,26 +374,54 @@ pub(super) fn triangulate<F>(
             used[id]
         }));
     }
+    if indices.is_empty() {
+        trim_diagnostic("all triangles collapsed", bounds);
+        return Err(FaceRefusal::InvalidTrim);
+    }
     Ok(Triangulated {
         vertices,
         indices,
         bounds,
+        sphere_chart,
     })
 }
 
+fn trim_diagnostic(message: &str, points: impl std::fmt::Debug) {
+    if std::env::var_os("CATALLAX_TRIM_DIAGNOSTICS").is_some() {
+        eprintln!("{message}: {points:?}");
+    }
+}
+
+fn closed_use(edge: &DisplayEdgeUse, edges: &EdgeRanges, positions: &[[f32; 4]]) -> bool {
+    let Some(Ok(range)) = edges.get(edge.edge) else {
+        return false;
+    };
+    let boundary = |i: usize| {
+        u32::try_from(i)
+            .ok()
+            .and_then(|i| range.start.checked_add(i))
+            .filter(|&i| i < range.end)
+    };
+    edge.samples
+        .first()
+        .zip(edge.samples.last())
+        .is_some_and(|(a, b)| {
+            boundary(a.point)
+                .zip(boundary(b.point))
+                .is_some_and(|(a, b)| same_boundary(a, b, positions))
+        })
+}
+
 fn collect_ring(
-    trim: &DisplayLoop,
+    uses: &[DisplayEdgeUse],
     edges: &EdgeRanges,
     positions: &[[f32; 4]],
     periods: [Option<f64>; 2],
-    tolerance: [f64; 2],
+    span: [f64; 2],
     limit: usize,
 ) -> Result<Ring, FaceRefusal> {
-    if trim.vertex.is_some() || trim.uses.is_empty() {
-        return Err(FaceRefusal::UnsupportedTrim);
-    }
     let mut points = Vec::<TrimPoint>::new();
-    for edge in &trim.uses {
+    for edge in uses {
         let range = edges
             .get(edge.edge)
             .ok_or(FaceRefusal::InvalidTrim)?
@@ -269,9 +448,10 @@ fn collect_ring(
         }
         let first = get(0)?;
         let shift = if let Some(last) = points.last() {
+            // The shared point is authoritative even when reprojection chose
+            // different coordinates along a collapsed chart boundary.
             same_position(*last, first, positions)?;
-            let (_, shift) = wraps(first.uv, last.uv, periods, tolerance)?;
-            shift
+            periodic_shift(first.uv, last.uv, periods)?.1
         } else {
             points.push(first);
             [0.0; 2]
@@ -290,9 +470,20 @@ fn collect_ring(
     let first = points[0];
     let last = *points.last().unwrap();
     same_position(first, last, positions)?;
-    let (winding, _) = wraps(first.uv, last.uv, periods, tolerance)?;
-    if winding == [0, 0] {
-        points.pop();
+    let (winding, shift) = periodic_shift(first.uv, last.uv, periods)?;
+    let lifted: [f64; 2] = std::array::from_fn(|i| first.uv[i] + shift[i]);
+    let same_uv = (0..2).all(|i| (last.uv[i] - lifted[i]).abs() <= 1e-9 * span[i]);
+    if same_uv {
+        if winding == [0, 0] {
+            points.pop();
+        } else {
+            points.last_mut().unwrap().uv = lifted;
+        }
+    } else if winding != [0, 0] {
+        points.push(TrimPoint {
+            uv: lifted,
+            ..first
+        });
     }
     if points.len() < 3 {
         return Err(FaceRefusal::InvalidTrim);
@@ -304,20 +495,24 @@ fn collect_ring(
 }
 
 fn same_position(a: TrimPoint, b: TrimPoint, positions: &[[f32; 4]]) -> Result<(), FaceRefusal> {
-    if positions[a.boundary as usize].map(f32::to_bits)
-        == positions[b.boundary as usize].map(f32::to_bits)
-    {
+    if same_boundary(a.boundary, b.boundary, positions) {
         Ok(())
     } else {
+        trim_diagnostic("discontinuous shared trim point", (a.uv, b.uv));
         Err(FaceRefusal::InvalidTrim)
     }
 }
 
-fn wraps(
+fn same_boundary(a: u32, b: u32, positions: &[[f32; 4]]) -> bool {
+    a != NO_BOUNDARY
+        && b != NO_BOUNDARY
+        && positions[a as usize].map(f32::to_bits) == positions[b as usize].map(f32::to_bits)
+}
+
+fn periodic_shift(
     from: [f64; 2],
     to: [f64; 2],
     periods: [Option<f64>; 2],
-    tolerance: [f64; 2],
 ) -> Result<([i32; 2], [f64; 2]), FaceRefusal> {
     let mut turns = [0; 2];
     let mut shift = [0.0; 2];
@@ -334,19 +529,98 @@ fn wraps(
             turns[axis] = n as i32;
             shift[axis] = n * period;
         }
-        if (d - shift[axis]).abs() > tolerance[axis] {
-            return Err(FaceRefusal::InvalidTrim);
-        }
     }
     Ok((turns, shift))
+}
+
+fn pole_ring(uv: [f64; 2], boundary: u32, twin: usize, direction: i32, period: f64) -> Ring {
+    let first = TrimPoint {
+        uv,
+        boundary,
+        seam_twin: Some(twin),
+    };
+    let mut last = first;
+    last.uv[0] += f64::from(direction) * period;
+    Ring {
+        points: vec![first, last],
+        winding: [direction, 0],
+    }
+}
+
+// A geographic pole can be inside a face or on its boundary. Project from
+// the antipode of the oriented patch instead, so the pole has no special status.
+fn spherical_chart(
+    frame: DisplayFrame,
+    radius: f64,
+    reversed: bool,
+    rings: &mut [Ring],
+    positions: &[[f32; 4]],
+) -> Option<DisplayFrame> {
+    let dot = |a: [f64; 3], b: [f64; 3]| a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let cross =
+        |[x, y, z]: [f64; 3], [u, v, w]: [f64; 3]| [y * w - z * v, z * u - x * w, x * v - y * u];
+    let unit = |a: [f64; 3]| {
+        let length = dot(a, a).sqrt();
+        (length.is_finite() && length > 0.0).then(|| a.map(|x| x / length))
+    };
+    let radial = |point: &TrimPoint| {
+        let p = positions[point.boundary as usize];
+        std::array::from_fn(|i| (f64::from(p[i]) - frame.origin[i]) / radius)
+    };
+    let mut area = [0.0; 3];
+    for ring in &*rings {
+        let mut previous = radial(ring.points.last()?);
+        for point in &ring.points {
+            let next = radial(point);
+            let contribution = cross(previous, next);
+            for i in 0..3 {
+                area[i] += contribution[i];
+            }
+            previous = next;
+        }
+    }
+    let z = unit(if reversed { area.map(|x| -x) } else { area })?;
+    let reference = if z[0].abs() < 0.8 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let y = unit(cross(z, reference))?;
+    let x = cross(y, z);
+    if rings.iter().flat_map(|ring| &ring.points).any(|p| {
+        let r = radial(p);
+        let length_sq = dot(r, r);
+        !length_sq.is_finite() || length_sq <= f64::MIN_POSITIVE || dot(r, z) < -0.99
+    }) {
+        return None;
+    }
+    for ring in rings {
+        if ring.winding != [0, 0] {
+            ring.points.pop();
+            ring.winding = [0, 0];
+        }
+        for p in &mut ring.points {
+            let r = unit(radial(p)).unwrap();
+            let scale = 1.0 / (1.0 + dot(r, z));
+            p.uv = [dot(r, x) * scale, dot(r, y) * scale];
+        }
+    }
+    Some(DisplayFrame {
+        origin: frame.origin,
+        x,
+        y,
+        z,
+    })
 }
 
 // A periodic band has two rings of opposite winding. Cut it at paired
 // endpoints and give each artificial seam point one vertex index on both sides.
 fn join_band(
-    a: Ring,
+    mut a: Ring,
     mut b: Ring,
+    holes: &mut [Ring],
     periods: [Option<f64>; 2],
+    reversed: bool,
     seam_count: usize,
 ) -> Result<Ring, FaceRefusal> {
     let axis = usize::from(a.winding[0] == 0);
@@ -358,30 +632,49 @@ fn join_band(
         return Err(FaceRefusal::UnsupportedTrim);
     }
     let period = periods[axis].ok_or(FaceRefusal::InvalidChart)?;
+    let across = 1 - axis;
+    let direction = f64::from(a.winding[axis]);
+    let start = seam_start(&a, holes, axis, period);
+    rotate_ring(&mut a, start, axis, period, 0.0);
     let a_last = *a.points.last().unwrap();
-    b.points.pop();
+    if b.points.len() == 2 && b.points[0].seam_twin.is_some() {
+        b.points[0].uv[axis] = a_last.uv[axis];
+    }
+    // Score B's canonical points: the repeated endpoint is the first point.
     let distance = |p: &TrimPoint| {
         let d = (p.uv[axis] - a_last.uv[axis]) / period;
         (d - d.round()).abs()
     };
-    let start = b
-        .points
+    let start = b.points[..b.points.len() - 1]
         .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))
         .unwrap()
         .0;
-    let shift = ((a_last.uv[axis] - b.points[start].uv[axis]) / period).round() * period;
-    let turn = f64::from(b.winding[axis]) * period;
-    for (i, point) in b.points.iter_mut().enumerate() {
-        point.uv[axis] += shift + if i < start { turn } else { 0.0 };
+    let phase = ((a_last.uv[axis] - b.points[start].uv[axis]) / period).round() * period;
+    rotate_ring(&mut b, start, axis, period, phase);
+    if let Some(across_period) = periods[across] {
+        // The opposite rail has two lifts on a doubly periodic carrier. Pick
+        // the one on the interior side of the oriented first rail.
+        let sign = direction * if (axis == 1) ^ reversed { -1.0 } else { 1.0 };
+        let delta = b.points[0].uv[across] - a_last.uv[across];
+        let offset = sign * (sign * delta).rem_euclid(across_period) - delta;
+        for p in &mut b.points {
+            p.uv[across] += offset;
+        }
     }
-    b.points.rotate_left(start);
-    let mut b_last = b.points[0];
-    b_last.uv[axis] += turn;
+    let b_last = b.points.pop().unwrap();
     let mut points = a.points;
     let a_first = points[0];
     let b_first = b.points[0];
+    let middle = a_first.uv[axis].midpoint(a_last.uv[axis]);
+    for hole in holes {
+        let anchor = hole.points[0].uv[axis];
+        let shift = ((middle - anchor) / period).round() * period;
+        for p in &mut hole.points {
+            p.uv[axis] += shift;
+        }
+    }
     let interpolate = |p: TrimPoint, q: TrimPoint, twin: usize| {
         let t = (twin + 1) as f64 / (seam_count + 1) as f64;
         TrimPoint {
@@ -402,6 +695,45 @@ fn join_band(
         points,
         winding: [0, 0],
     })
+}
+
+fn rotate_ring(ring: &mut Ring, start: usize, axis: usize, period: f64, shift: f64) {
+    ring.points.pop();
+    let turn = f64::from(ring.winding[axis]) * period;
+    for (i, p) in ring.points.iter_mut().enumerate() {
+        p.uv[axis] += shift + if i < start { turn } else { 0.0 };
+    }
+    ring.points.rotate_left(start);
+    let mut last = ring.points[0];
+    last.uv[axis] += turn;
+    ring.points.push(last);
+}
+
+fn seam_start(ring: &Ring, holes: &[Ring], axis: usize, period: f64) -> usize {
+    let intervals: Vec<_> = holes
+        .iter()
+        .map(|hole| {
+            hole.points
+                .iter()
+                .fold([f64::INFINITY, f64::NEG_INFINITY], |[lo, hi], p| {
+                    [lo.min(p.uv[axis]), hi.max(p.uv[axis])]
+                })
+        })
+        .collect();
+    let points = &ring.points[..ring.points.len() - 1];
+    let count = points.len();
+    let midpoint = count / 2;
+    points
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            intervals.iter().all(|&[lo, hi]| {
+                let local = (p.uv[axis] - lo).rem_euclid(period);
+                local > hi - lo + 0.02 * period && local < 0.98 * period
+            })
+        })
+        .min_by_key(|(i, _)| i.abs_diff(midpoint))
+        .map_or(0, |(i, _)| i)
 }
 
 // Crossing a constraint toggles the inside label, including at holes. Visit

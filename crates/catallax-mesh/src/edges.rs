@@ -10,7 +10,7 @@ use catallax_shapes::{
     Curve, DisplayCut, FilletCutTrace, SplineBoundary, SplineSupport, Surface,
     tessellation::RationalSpan,
 };
-use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
 
 use crate::{
     EdgeMesh, Mesh, MeshOptions,
@@ -95,6 +95,21 @@ pub(crate) struct Boundaries {
 }
 
 impl Boundaries {
+    /// Distinct shared edge samples of a face, in body-wide index order.
+    pub(crate) fn face_edge_samples(&self, model: &Model, face: FaceId) -> BTreeSet<usize> {
+        let mut samples = BTreeSet::new();
+        for &boundary in &model.face(face).loops {
+            if let Loop::Coedges(coedges) = model.loop_(boundary) {
+                for &coedge in coedges {
+                    if let Some(&edge) = self.edges.get(&model.coedge(coedge).edge) {
+                        samples.extend(self.mesh.edges[edge].vertices.iter().copied());
+                    }
+                }
+            }
+        }
+        samples
+    }
+
     pub(crate) fn vertex(
         &mut self,
         model: &Model,

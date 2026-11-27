@@ -1,5 +1,7 @@
 //! Unproved binary64 reads of immutable definitions. No proof cache is used.
 
+use std::cmp::Ordering;
+
 use crate::{IsolatedRoot, Rational, Real, algebraic::AlgebraicRepr, real::Expr};
 
 impl Real {
@@ -78,7 +80,7 @@ fn root(coefficients: &[Rational], ends: [&Rational; 2]) -> Option<f64> {
     let [mut lo, mut hi] = ends.map(Rational::to_f64_nearest);
     finite(lo)?;
     finite(hi)?;
-    if lo == hi {
+    if lo.partial_cmp(&hi) == Some(Ordering::Equal) {
         return Some(lo);
     }
     let c = coefficients
@@ -99,7 +101,10 @@ fn root(coefficients: &[Rational], ends: [&Rational; 2]) -> Option<f64> {
     }
     for _ in 0..80 {
         let mid = lo.midpoint(hi);
-        if mid == lo || mid == hi {
+        if [lo, hi]
+            .iter()
+            .any(|end| mid.partial_cmp(end) == Some(Ordering::Equal))
+        {
             return Some(mid);
         }
         let value = finite(at(mid))?;

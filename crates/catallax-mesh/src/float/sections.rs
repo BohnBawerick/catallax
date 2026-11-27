@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use catallax_numbers::Rational;
 use catallax_shapes::PatchSectionBranch;
 
@@ -61,7 +63,7 @@ pub(super) fn fillet_cap(
 ) -> Option<Vec<Xyz>> {
     let mut patch = spline::Patch::new(spline)?;
     let interval = ends.map(|p| patch.project(p, None)[1]);
-    if interval[0] == interval[1] {
+    if interval[0].partial_cmp(&interval[1]) == Some(Ordering::Equal) {
         return None;
     }
     let range = patch.bounds[0];
@@ -101,7 +103,11 @@ fn root_point(
     for _ in 0..52 {
         let mid = lo.midpoint(hi);
         let (p, f) = at(mid)?;
-        if f.abs() <= accuracy || mid == lo || mid == hi {
+        if f.abs() <= accuracy
+            || [lo, hi]
+                .iter()
+                .any(|end| mid.partial_cmp(end) == Some(Ordering::Equal))
+        {
             return Some(p);
         }
         if f.is_sign_negative() == fa.is_sign_negative() {

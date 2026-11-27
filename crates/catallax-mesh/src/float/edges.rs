@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, f64::consts::TAU};
+use std::{cmp::Ordering, collections::BTreeMap, f64::consts::TAU};
 
 use catallax_shapes::{Curve, SplineSupport, Surface, SurfaceId};
 use catallax_topology::{EdgeId, Model, Sense, VertexId};
@@ -163,7 +163,11 @@ pub(super) fn sample_span(
         {
             return out(b, q);
         }
-        if depth >= 32 || mid == a || mid == b {
+        if depth >= 32
+            || [a, b]
+                .iter()
+                .any(|end| mid.partial_cmp(end) == Some(Ordering::Equal))
+        {
             return None;
         }
         visit(at, [a, mid], [p, m], tolerance, out, depth + 1)?;
@@ -225,7 +229,7 @@ impl<'a> Intersection<'a> {
         }
         // A finite arc can end at a tangency where the intersection has no
         // usable first tangent. Start at its regular end in that case.
-        if !matches!(ends, [Some(a), Some(b)] if a != b) {
+        if !matches!(ends, [Some(a), Some(b)] if a.partial_cmp(&b) != Some(Ordering::Equal)) {
             return None;
         }
         self.seeds = [None, None];
@@ -249,7 +253,7 @@ impl<'a> Intersection<'a> {
         tangent = scale(tangent, sense);
         let mut result = vec![start];
         let mut step = (norm(sub(end, start)) * 0.125).max(tolerance);
-        let mut departed = start != end;
+        let mut departed = start.partial_cmp(&end) != Some(Ordering::Equal);
         for _ in 0..max {
             let target = sub(end, p);
             // Join the retained endpoint only on the forward side of the

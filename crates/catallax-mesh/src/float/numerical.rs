@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, f64::consts::TAU};
+use std::{cmp::Ordering, collections::BTreeMap, f64::consts::TAU};
 
 use catallax_numbers::{Rational, Refusal};
 use catallax_shapes::{Curve, Surface};
@@ -178,7 +178,7 @@ fn sample(
     let [start, end] = edge.parameters.each_ref().map(Rational::to_f64_nearest);
     finite(start)?;
     finite(end)?;
-    if start == end {
+    if start.partial_cmp(&end) == Some(Ordering::Equal) {
         return None;
     }
     out(start, ends[0])?;
@@ -216,10 +216,14 @@ fn sample(
                 .map(|i| knots[if start < end { i } else { knots.len() - 1 - i }])
                 .chain([end])
             {
-                if a == b {
+                if a.partial_cmp(&b) == Some(Ordering::Equal) {
                     continue;
                 }
-                let q = if b == end { ends[1] } else { at(b) };
+                let q = if b.partial_cmp(&end) == Some(Ordering::Equal) {
+                    ends[1]
+                } else {
+                    at(b)
+                };
                 sample_span(&mut at, [a, b], [p, q], tolerance, out)?;
                 (a, p) = (b, q);
             }

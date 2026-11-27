@@ -26,11 +26,11 @@ use catallax_topology::{FaceId, Loop, Model};
 use super::callout::{self, presented};
 use super::{
     Anchor, At, Feature, GeometricTolerance, HoleHead, HoleSize, ItemKind, Limits,
-    MaterialCondition, Pmi, Size, SizeKind, SurfaceTexture,
+    MaterialCondition, Pmi, Size, SizeKind, SurfaceTexture, measure,
 };
 use crate::document::PartReferences;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
-use crate::number::decimal;
+use crate::number::{self, decimal};
 
 /// The attribute of a hole feature that says how deep it goes.
 pub const HOLE_DEPTH: &str = "hole depth";
@@ -54,6 +54,27 @@ pub const HEAD_DEPTH: &str = "head depth";
 pub const INCLUDED_ANGLE: &str = "included angle";
 /// The measured property for usable axial thread depth.
 pub const THREAD_DEPTH: &str = "thread depth";
+/// The dimensional size name for an opposed width.
+pub const WIDTH: &str = "width";
+/// The dimensional size name for the Catallax chamfer convention.
+pub const CHAMFER: &str = "chamfer";
+/// The dimensional size name for the Catallax bounded edge break convention.
+pub const EDGE_BREAK: &str = "edge break";
+/// The relationship to the first planar side of a planar size.
+pub const FIRST_SIDE: &str = "first side";
+/// The relationship to the second planar side of a planar size.
+pub const SECOND_SIDE: &str = "second side";
+/// The chamfer's measured angle to the reference side.
+pub const BEVEL_ANGLE: &str = "bevel angle";
+/// The lower setback bound of an edge break.
+pub const MIN_SETBACK: &str = "minimum setback";
+/// The upper setback bound of an edge break.
+pub const MAX_SETBACK: &str = "maximum setback";
+
+enum Nominal<'a> {
+    Length(&'a str),
+    Angle(&'a str),
+}
 
 fn quoted(value: &str) -> Field {
     text(string(value))
@@ -137,7 +158,7 @@ struct Emitter<'a> {
     degree: Option<Id>,
     presentation: Option<Presentation>,
     annotations: usize,
-    dec: &'a Decider,
+    dec: &'a mut Decider,
 }
 
 fn key(feature: &[FaceId]) -> Vec<FaceId> {
@@ -226,41 +247,32 @@ impl Emitter<'_> {
                 "SHAPE_ASPECT_RELATIONSHIP",
                 vec![quoted(kind), text("''"), pilot.into(), head_aspect.into()],
             );
-            self.hole_length(HEAD_DIAMETER, diameter, pilot, item)?;
+            self.attribute_length(HEAD_DIAMETER, diameter, pilot, item)?;
             match head {
                 HoleHead::Counterbore { depth, .. } => {
-                    self.hole_length(HEAD_DEPTH, depth, pilot, item)?;
+                    self.attribute_length(HEAD_DEPTH, depth, pilot, item)?;
                 }
                 HoleHead::Countersink { included_angle, .. } => {
                     let value = real(included_angle, item)?;
-                    let unit = self.degree();
-                    let measure = self.graph.add_complex(vec![
-                        ("MEASURE_REPRESENTATION_ITEM", vec![]),
-                        (
-                            "MEASURE_WITH_UNIT",
-                            vec![text(format!("PLANE_ANGLE_MEASURE({value})")), unit.into()],
-                        ),
-                        ("PLANE_ANGLE_MEASURE_WITH_UNIT", vec![]),
-                        ("REPRESENTATION_ITEM", vec![quoted(INCLUDED_ANGLE)]),
-                    ]);
+                    let measure = self.angle_measure(INCLUDED_ANGLE, &value);
                     self.attribute_item(INCLUDED_ANGLE, measure, pilot.into());
                 }
             }
         }
         if let Some(depth) = &hole.drill_depth {
-            self.hole_length(HOLE_DEPTH, depth, pilot, item)?;
+            self.attribute_length(HOLE_DEPTH, depth, pilot, item)?;
         }
         if let Some(depth) = &hole.thread_depth {
-            self.hole_length(THREAD_DEPTH, depth, pilot, item)?;
+            self.attribute_length(THREAD_DEPTH, depth, pilot, item)?;
         }
         Ok(pilot)
     }
 
-    fn hole_length(
+    fn attribute_length(
         &mut self,
         name: &str,
         value: &Rational,
-        pilot: Id,
+        aspect: Id,
         item: &str,
     ) -> Result<(), Refusal> {
         let value = real(value, item)?;
@@ -276,8 +288,59 @@ impl Emitter<'_> {
             ),
             ("REPRESENTATION_ITEM", vec![quoted(name)]),
         ]);
-        self.attribute_item(name, measure, pilot.into());
+        self.attribute_item(name, measure, aspect.into());
         Ok(())
+    }
+
+    fn angle_measure(&mut self, name: &str, value: &str) -> Id {
+        let unit = self.degree();
+        self.graph.add_complex(vec![
+            ("MEASURE_REPRESENTATION_ITEM", vec![]),
+            (
+                "MEASURE_WITH_UNIT",
+                vec![text(format!("PLANE_ANGLE_MEASURE({value})")), unit.into()],
+            ),
+            ("PLANE_ANGLE_MEASURE_WITH_UNIT", vec![]),
+            ("REPRESENTATION_ITEM", vec![quoted(name)]),
+        ])
+    }
+
+    fn planar_size(
+        &mut self,
+        name: &str,
+        bevel: Option<&Feature<FaceId>>,
+        sides: &[Feature<FaceId>; 2],
+        item: &str,
+    ) -> Result<(Id, Id), Refusal> {
+        // The side roles and properties belong to this dimension, not to
+        // another control (or datum) that names one of the same faces.
+        let aspect = self.graph.add(
+            if bevel.is_some() {
+                "SHAPE_ASPECT"
+            } else {
+                "COMPOSITE_SHAPE_ASPECT"
+            },
+            vec![
+                text("''"),
+                text("''"),
+                self.references.product.shape.into(),
+                boolean(false),
+            ],
+        );
+        if let Some(bevel) = bevel {
+            self.usage(aspect, bevel, item)?;
+        }
+        for (role, side) in [FIRST_SIDE, SECOND_SIDE].into_iter().zip(sides) {
+            let side = self.aspect(side, item)?;
+            self.root(
+                "SHAPE_ASPECT_RELATIONSHIP",
+                vec![quoted(role), text("''"), aspect.into(), side.into()],
+            );
+        }
+        let dimension = self
+            .graph
+            .add("DIMENSIONAL_SIZE", vec![aspect.into(), quoted(name)]);
+        Ok((aspect, dimension))
     }
 
     fn degree(&mut self) -> Id {
@@ -438,22 +501,25 @@ impl Emitter<'_> {
     fn dimension(
         &mut self,
         dimension: Id,
-        nominal: &str,
+        nominal: Nominal<'_>,
         limits: Option<&Limits>,
         item: &str,
     ) -> Result<(), Refusal> {
-        let value = self.graph.add_complex(vec![
-            ("LENGTH_MEASURE_WITH_UNIT", vec![]),
-            ("MEASURE_REPRESENTATION_ITEM", vec![]),
-            (
-                "MEASURE_WITH_UNIT",
-                vec![
-                    text(format!("POSITIVE_LENGTH_MEASURE({nominal})")),
-                    self.references.length_unit.into(),
-                ],
-            ),
-            ("REPRESENTATION_ITEM", vec![text("'nominal value'")]),
-        ]);
+        let value = match nominal {
+            Nominal::Angle(value) => self.angle_measure("nominal value", value),
+            Nominal::Length(value) => self.graph.add_complex(vec![
+                ("LENGTH_MEASURE_WITH_UNIT", vec![]),
+                ("MEASURE_REPRESENTATION_ITEM", vec![]),
+                (
+                    "MEASURE_WITH_UNIT",
+                    vec![
+                        text(format!("POSITIVE_LENGTH_MEASURE({value})")),
+                        self.references.length_unit.into(),
+                    ],
+                ),
+                ("REPRESENTATION_ITEM", vec![text("'nominal value'")]),
+            ]),
+        };
         let mut items = vec![value];
         if limits == Some(&Limits::Basic) {
             items.push(self.graph.add(
@@ -936,11 +1002,19 @@ impl Emitter<'_> {
             ("number of semantic pmi elements", pmi.items.len()),
             (
                 "number of dimensional locations",
-                of(|kind| matches!(kind, ItemKind::Location(_))),
+                of(|kind| matches!(kind, ItemKind::Location(_) | ItemKind::BasicAngle { .. })),
             ),
             (
                 "number of dimensional sizes",
-                of(|kind| matches!(kind, ItemKind::Size(_))),
+                of(|kind| {
+                    matches!(
+                        kind,
+                        ItemKind::Size(_)
+                            | ItemKind::Width { .. }
+                            | ItemKind::Chamfer { .. }
+                            | ItemKind::EdgeBreak { .. }
+                    )
+                }),
             ),
             (
                 "number of geometric tolerances",
@@ -1056,16 +1130,16 @@ pub(crate) const NOTE: &str = "note";
 /// Adds the entities of `pmi` to `graph` and returns the ones nothing else
 /// refers to, for the writer to number after the solids. `faces` maps each
 /// model face to its written `ADVANCED_FACE` entities. The caller validates
-/// the part and measures its dimension nominals before calling this. `dec`
-/// places a callout's leader on a face with no rational vertex.
+/// part before calling this. `dec` measures dimension nominals and places a
+/// callout's leader on a face with no rational vertex.
 pub(crate) fn emit(
     graph: &mut Graph,
     model: &Model,
     faces: &BTreeMap<FaceId, Vec<Id>>,
     references: PartReferences,
     pmi: &Pmi<FaceId>,
-    nominals: &[Option<String>],
-    dec: &Decider,
+    digits: u32,
+    dec: &mut Decider,
 ) -> Result<Vec<Id>, Refusal> {
     let mut emitter = Emitter {
         graph,
@@ -1095,16 +1169,28 @@ pub(crate) fn emit(
         }
     }
     let mut texture_slot = 0;
-    for (item, nominal) in pmi.items.iter().zip(nominals) {
+    for item in &pmi.items {
         let id = item.id.as_str();
-        let measured = || {
-            nominal.as_deref().ok_or_else(|| {
-                Refusal::new(
-                    "step.pmi-not-measurable",
-                    format!("{id}: the dimension has no measured value"),
-                )
+        let measured = measure::dimension(model, item, emitter.dec)?;
+        let nominal = measured
+            .as_ref()
+            .map(|value| {
+                if matches!(&item.kind, ItemKind::BasicAngle { .. }) {
+                    real(
+                        value
+                            .value
+                            .rational_ref()
+                            .expect("measured angle is decimal"),
+                        id,
+                    )
+                } else {
+                    Ok(decimal(
+                        &number::real(&value.value, digits, emitter.dec)?.text,
+                    ))
+                }
             })
-        };
+            .transpose()?;
+        let nominal = || nominal.as_deref().expect("dimension has a measured value");
         match &item.kind {
             ItemKind::Datum(_) => {}
             ItemKind::Size(size) => {
@@ -1116,7 +1202,12 @@ pub(crate) fn emit(
                 let dimension = emitter
                     .graph
                     .add("DIMENSIONAL_SIZE", vec![target.into(), text(name)]);
-                emitter.dimension(dimension, measured()?, size.limits.as_ref(), id)?;
+                emitter.dimension(
+                    dimension,
+                    Nominal::Length(nominal()),
+                    size.limits.as_ref(),
+                    id,
+                )?;
                 if size.through {
                     // AP242 edition 1 has no hole entity, so the hole's depth is an
                     // attribute of the feature the diameter is on.
@@ -1135,9 +1226,72 @@ pub(crate) fn emit(
                     "DIMENSIONAL_LOCATION",
                     vec![quoted(&name), text("''"), from.into(), to.into()],
                 );
-                emitter.dimension(dimension, measured()?, location.limits.as_ref(), id)?;
-                let string = distance_string(measured()?, location.limits.as_ref(), id)?;
+                emitter.dimension(
+                    dimension,
+                    Nominal::Length(nominal()),
+                    location.limits.as_ref(),
+                    id,
+                )?;
+                let string = distance_string(nominal(), location.limits.as_ref(), id)?;
                 emitter.equivalent(dimension, &string);
+            }
+            ItemKind::Width { flats, limits, .. } => {
+                let (_, dimension) = emitter.planar_size(WIDTH, None, flats, id)?;
+                emitter.dimension(dimension, Nominal::Length(nominal()), limits.as_ref(), id)?;
+            }
+            ItemKind::Chamfer { bevel, sides, .. } => {
+                let (aspect, dimension) = emitter.planar_size(CHAMFER, Some(bevel), sides, id)?;
+                emitter.dimension(dimension, Nominal::Length(nominal()), None, id)?;
+                let angle = measured
+                    .as_ref()
+                    .and_then(|m| m.bevel_angle.as_ref())
+                    .expect("chamfer has a measured decimal angle");
+                let angle = emitter.angle_measure(BEVEL_ANGLE, &real(angle, id)?);
+                emitter.attribute_item(BEVEL_ANGLE, angle, aspect.into());
+            }
+            ItemKind::EdgeBreak {
+                bevel,
+                sides,
+                min_mm,
+                max_mm,
+                ..
+            } => {
+                let (aspect, dimension) =
+                    emitter.planar_size(EDGE_BREAK, Some(bevel), sides, id)?;
+                emitter.dimension(dimension, Nominal::Length(nominal()), None, id)?;
+                emitter.attribute_length(MIN_SETBACK, min_mm, aspect, id)?;
+                emitter.attribute_length(MAX_SETBACK, max_mm, aspect, id)?;
+            }
+            ItemKind::BasicAngle { planes: [a, b], .. } => {
+                let a = emitter.aspect(a, id)?;
+                let b = emitter.aspect(b, id)?;
+                let angle = measured
+                    .as_ref()
+                    .and_then(|m| m.value.rational_ref())
+                    .expect("basic angle is measured in decimal degrees");
+                let relator = match angle.cmp(&Rational::from_i64(90)) {
+                    std::cmp::Ordering::Less => ".SMALL.",
+                    std::cmp::Ordering::Equal => ".EQUAL.",
+                    std::cmp::Ordering::Greater => ".LARGE.",
+                };
+                let dimension = emitter.graph.add(
+                    "ANGULAR_LOCATION",
+                    vec![
+                        text("'angular distance'"),
+                        text("''"),
+                        a.into(),
+                        b.into(),
+                        text(relator),
+                    ],
+                );
+                emitter.dimension(
+                    dimension,
+                    Nominal::Angle(nominal()),
+                    Some(&Limits::Basic),
+                    id,
+                )?;
+                let value = nominal().strip_suffix('.').unwrap_or_else(nominal);
+                emitter.equivalent(dimension, &format!("DIM\\w[{value}°]"));
             }
             ItemKind::Tolerance(tolerance) => emitter.tolerance(tolerance, id)?,
             ItemKind::Texture(texture) => {

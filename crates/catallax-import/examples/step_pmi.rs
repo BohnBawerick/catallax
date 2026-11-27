@@ -37,10 +37,17 @@ fn main() {
                 .count()
         };
         println!(
-            "{path}: {} datums, {} sizes, {} distances, {} tolerances, {} textures, {} skipped",
+            "{path}: {} datums, {} sizes, {} distances, {} basic angles, {} tolerances, {} textures, {} skipped",
             count(|kind| matches!(kind, ItemKind::Datum(_))),
-            count(|kind| matches!(kind, ItemKind::Size(_))),
+            count(|kind| matches!(
+                kind,
+                ItemKind::Size(_)
+                    | ItemKind::Width { .. }
+                    | ItemKind::Chamfer { .. }
+                    | ItemKind::EdgeBreak { .. }
+            )),
             count(|kind| matches!(kind, ItemKind::Location(_))),
+            count(|kind| matches!(kind, ItemKind::BasicAngle { .. })),
             count(|kind| matches!(kind, ItemKind::Tolerance(_))),
             count(|kind| matches!(kind, ItemKind::Texture(_))),
             read.skipped.len(),

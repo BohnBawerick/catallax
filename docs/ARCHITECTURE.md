@@ -37,6 +37,10 @@ Complete rolling-envelope and mitre faces use the shared spline triangulator. It
 
 Output accuracy is separate from modelling tolerance. STEP preserves exact forms where supported and labels approximate exports. Printing defaults to 0.01 mm; it uses qualified B-rep tessellation for supported solids and certified field output where supported. Keep the requested accuracy and resource limits visible and report a refusal rather than silently coarsening the mesh.
 
+`catallax_app::preview::display_description` reads a retained B-rep into the versioned binary64 input for GPU preview. It returns body-relative carrier definitions, shared edge samples, oriented UV trims and picking names without constructing triangles or running proof. The CPU preview and checked display remain separate calls.
+
+Fitted B-reps use `catallax_app::preview::numerical_display_description`, which reads admitted carriers and retained trim curves and identifies faces and edges by their stable definition keys.
+
 ## Work and determinism
 
 Parallel work must not change exact answers, output bytes, topology, bound selection or counted work. Assemble results in a fixed order. Retain deterministic work budgets for interfaces that specify them. The [roadmap](../ROADMAP.md) sets the policy for future app limits and speed measurement; the [verification exchange](VERIFY-INTERFACE.md) describes the separate CLI contract.

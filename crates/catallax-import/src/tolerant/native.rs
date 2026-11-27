@@ -5,6 +5,7 @@ mod family_seeds;
 use family_seeds::FamilySeeds;
 
 use catallax_numbers::{Decider, Rational, Refusal};
+use libm::hypot;
 use serde::Serialize;
 
 use crate::geometry_source::{
@@ -87,7 +88,7 @@ pub(super) fn control(error: &Error) -> bool {
 }
 
 fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    (a[0] - b[0]).hypot(a[1] - b[1]).hypot(a[2] - b[2])
+    hypot(hypot(a[0] - b[0], a[1] - b[1]), a[2] - b[2])
 }
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -208,7 +209,7 @@ impl Carrier {
         for axis in 0..self.dimension {
             let parameter = location.parameters[axis];
             if !parameter.is_finite() {
-                return Err(broken("native parameter is not finite"));
+                return Err(broken("periodic parameter is not finite"));
             }
             ranges[axis] = if let Some(period) = periods[axis] {
                 let radius = 16.0 * f64::EPSILON * (parameter.abs() + period);
@@ -352,8 +353,10 @@ impl Carrier {
         let mut uncertainty_mm: f64 = 0.0;
         for (axis, value) in point.iter().enumerate() {
             let width = (&value.hi() - &value.lo()).to_f64_nearest().abs();
-            uncertainty_mm =
-                uncertainty_mm.hypot(width + 8.0 * f64::EPSILON * point_mm[axis].abs());
+            uncertainty_mm = hypot(
+                uncertainty_mm,
+                width + 8.0 * f64::EPSILON * point_mm[axis].abs(),
+            );
         }
         if point_mm.iter().any(|value| !value.is_finite()) || !uncertainty_mm.is_finite() {
             return Err(broken("source carrier sample has non-finite coordinates"));
@@ -1304,6 +1307,26 @@ impl NativeSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn projection_residual_has_platform_independent_bits() {
+        // System hypot on Linux and macOS round these pairs differently.
+        for (x, y, expected) in [
+            (
+                0x3ede_0504_6f1c_e3c4,
+                0x4036_b87a_4d48_a1ba,
+                0x4036_b87a_4d48_a2f8,
+            ),
+            (
+                0x3fe0_9d39_31a5_8d35,
+                0x4027_5b8f_67a1_6f11,
+                0x4027_6177_4dbc_bb3e,
+            ),
+        ] {
+            let a = [f64::from_bits(x), f64::from_bits(y), 0.0];
+            assert_eq!(distance(a, [0.0; 3]).to_bits(), expected);
+        }
+    }
 
     // An open cubic about a metre long on the knot span [0, 1]. Sampled with
     // a period of 1 it is a carrier whose periodic axis has a finite domain,

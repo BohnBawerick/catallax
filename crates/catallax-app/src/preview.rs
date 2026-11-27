@@ -1,11 +1,16 @@
 //! Opt-in unproved display. Certified display and exports remain separate calls.
 
+use std::collections::BTreeMap;
+
 use catallax_features::{Built, evaluate};
+use catallax_mesh::float::{
+    DisplayDescription, DisplayOptions, describe_body, describe_numerical_body,
+};
 use catallax_mesh::{PreviewMesh, PreviewOptions, preview_mesh_body};
 use catallax_numbers::Decider;
-use catallax_recipe::Recipe;
+use catallax_recipe::{Origin, Recipe};
 
-use crate::{Error, Names, bounded_build, result_names};
+use crate::{Error, Names, NumericalApplicationBody, bounded_build, result_names};
 
 pub use catallax_field::display::PreviewOptions as ConstructionOptions;
 
@@ -26,6 +31,47 @@ pub struct PreviewDisplay {
     pub mesh: PreviewMesh,
     /// Face origins and edge/vertex names from the same model revision.
     pub names: Names,
+}
+
+/// Unproved GPU preview input and picking names from the same retained build.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DescribedDisplay {
+    /// Shared edge samples, surface parameters and oriented trims.
+    pub description: DisplayDescription,
+    /// Face origins and edge/vertex names keyed by revision-local handles.
+    pub names: Names,
+}
+
+/// Describe the retained body for GPU preview without rebuilding, meshing or
+/// running proof. The CPU preview and certified paths are separate calls.
+pub fn display_description(
+    built: &Built,
+    options: &DisplayOptions,
+) -> Result<DescribedDisplay, Error> {
+    Ok(DescribedDisplay {
+        description: describe_body(&built.model, built.result, options).map_err(Error::Display)?,
+        names: result_names(&built.model, built.result),
+    })
+}
+
+/// Unproved GPU input for a fitted body and its stable face origins.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DescribedNumericalDisplay {
+    /// Edge and face keys belong to the admitted numerical definition.
+    pub description: DisplayDescription<String, String>,
+    /// Face origins keyed by the same stable face keys.
+    pub face_origins: BTreeMap<String, Vec<Origin>>,
+}
+
+/// Describe a retained fitted B-rep, without repeating its admission checks.
+pub fn numerical_display_description(
+    built: &NumericalApplicationBody,
+    options: &DisplayOptions,
+) -> Result<DescribedNumericalDisplay, Error> {
+    Ok(DescribedNumericalDisplay {
+        description: describe_numerical_body(built.body(), options).map_err(Error::Display)?,
+        face_origins: built.face_origins().clone(),
+    })
 }
 
 /// A retained exact build with an explicitly unproved display.

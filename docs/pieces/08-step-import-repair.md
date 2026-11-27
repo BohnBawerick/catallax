@@ -55,6 +55,8 @@ The separate tolerant native projector retains the source surface and original p
 
 Native projection keeps its existing parameter grid, Newton updates and line-search reductions. Finite chart limits do not require an origin sample or Jacobian to define the search envelope. A line-search location with bit-identical chart and parameters does not re-evaluate the retained best sample; deadline checks remain active. These omissions reduce work without relaxing residual, uncertainty or tolerance admission.
 
+Sampled projection, fit, sewing and STEP trim reconstruction use the same Rust math routines for norms and planar trace trigonometry on Linux and macOS. A one-bit difference in a residual can change which Newton step is retained, affecting work and exported parameters. The platform-independent residual regression pins these bits without changing the exact enclosures or promoting sampled results to certificates.
+
 For an offset of a regular ring-torus basis, the native source equation keeps the signed minor coefficient `r + d` in the original UV. It does not construct an equivalent checked torus, fit a replacement surface, reverse the chart or acquire an embedding certificate. Horn/spindle bases retain their oriented derivative-normal expression. These equations do not change tolerance limits or the existing RationalPatch proof.
 
 Tolerant STEP export keeps `FILE_DESCRIPTION` short and stores the complete evidence in ordered `CATALLAX_REPORT_JSON` comments. Concatenating their payloads reconstructs the JSON report, including per-entity tolerance, repair and check records; JSON slash escaping prevents embedded names from opening or closing STEP comments.

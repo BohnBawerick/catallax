@@ -1,0 +1,50 @@
+{
+  "complete_source_body_bound_established": false,
+  "files": [
+    {
+      "bodies": [
+        0
+      ],
+      "kind": "selected_document",
+      "observation_complete": true,
+      "occurrence_graph_complete": true,
+      "occurrence_outcome": "valid_after_builder",
+      "outcome": "invalid_after_builder",
+      "raw_source_roots": [
+        {
+          "body": 0,
+          "detail": "",
+          "observation_complete": true,
+          "occurrence_reachable": true,
+          "outcome": "invalid_after_builder",
+          "parts_expected": 1,
+          "parts_inspected": 1,
+          "source_root": "#2077",
+          "topology": {
+            "edges": 1858,
+            "euler_with_face_holes": -8,
+            "faces": 684,
+            "solids": 1,
+            "two_loop_faces": 14,
+            "vertices": 1206
+          },
+          "valid_solid_count": 0
+        }
+      ],
+      "sha256": "ae2755022019df701463fa9c4e18da33e0b2d5e37c775609ca7bb00d7d711af9",
+      "topology": {
+        "edges": 1874,
+        "euler_with_face_holes": -8,
+        "faces": 684,
+        "solids": 1,
+        "two_loop_faces": 4,
+        "vertices": 1212
+      },
+      "valid_solid_count": 0,
+      "validation_method": "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+    }
+  ],
+  "ocp_version": "8.0.1.1",
+  "source_sha256": "508bcd4f6bef0f4fd2bd2f1107f498188af89b7b8b5bf29cefe5ad217ed8aeeb",
+  "unhealed_validity_established": false
+}

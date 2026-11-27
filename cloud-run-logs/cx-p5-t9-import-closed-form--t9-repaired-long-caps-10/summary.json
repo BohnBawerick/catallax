@@ -1,0 +1,82 @@
+{
+ "request_id": "cx-p5-t9-import-closed-form--t9-repaired-long-caps-10",
+ "repo": "BohnBawerick/catallax",
+ "sha": "ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+ "script_exit_code": 0,
+ "seconds": 2055,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=$PWD",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools; }",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "command -v bsdtar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "work=$(mktemp -d)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "KIT=$work/kit; OWNER=$work/owner; SCRATCH=/home/user/t9-repaired-long-caps-10",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$KIT\" \"$OWNER\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<embedded base64 kit>' | base64 -d > \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "echo \"923eb17ce922b51578ea8cd9098c68aa646c89529fbc62cf3b90cadb3862b477  $work/kit.tar.gz\" | sha256sum -c",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "tar -xzp -C \"$KIT\" -f \"$work/kit.tar.gz\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "ls -l \"$KIT\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch --no-tags origin 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git cat-file -e 80c987d5867937d96e8ffd5cb68fb3f744db6f7f^{commit}",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git archive 9650f5c63fc842ee4c5a957bd04ce1d7dde8bfb6 tools/p5 tools/research docs/research/step-census/source-hashes.jso",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "bash \"$KIT/cloud-resolved-validity.sh\" ad4da2d1cd9501912ae66ac2b9204e1ec07f72d7 \"$KIT\" \"$OWNER\" \"$SCRATCH\" 00002457",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exit 0. run.log has no 'test result:' lines (script runs a baseline/candidate STEP import pair, not cargo test), so test counts are 0. The script installed libarchive-tools via apt and builds with cargo itself. Output T9 lines: T9BASELINE, T9BASELINECOMPLETE 1 of 1, T9CANDIDATE ad4da2d1..., T9LONGPAIR, T9LONGPAIRCOMPLETE 1 of 1 (full lines in run.log). Copied captures/ and skip.json into out/. Skipped big files: bin/candidate 162659536 bytes, bin/written-check 138582120 bytes (build binaries); target/, venv/, corpus/ skipped. cargo fetch succeeded. The script itself moved the checkout to 80c987d5 and back; HEAD was ad4da2d1 at the end."
+}

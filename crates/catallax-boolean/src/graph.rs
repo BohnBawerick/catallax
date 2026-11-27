@@ -832,18 +832,22 @@ fn section_inputs(
     } = inputs;
     use crate::trim_bounds::TrimBounds;
     let trimmed = TrimBounds::for_faces(model, first.iter().chain(second));
-    let algebraic = first.iter().chain(second).any(|face| {
-        !model
-            .geom()
-            .surface(model.face(*face).surface)
-            .has_rational_definition()
-    });
+    let has_algebraic = |first: &[FaceId], second: &[FaceId]| {
+        first.iter().chain(second).any(|face| {
+            !model
+                .geom()
+                .surface(model.face(*face).surface)
+                .has_rational_definition()
+        })
+    };
+    let algebraic = has_algebraic(first, second);
+    let fitted = trimmed.has_fitted_band();
     let mut outside = BTreeSet::new();
     let mut outside_edges = BTreeSet::new();
     let mut bounds = [None, None];
-    // Optional box refinement must not spend the allowance needed by the
-    // algebraic intersection path. Keep that path's original inputs.
-    if prune && !multiway && !algebraic {
+    // Optional refinement can exhaust the allowance for algebraic analytic
+    // supports. Fitted cuts still need the boxes to exclude remote contacts.
+    if prune && !multiway && (fitted || !algebraic) {
         let mut broad = TrimBounds::default();
         // Even if we cannot bound the target, its individual faces may
         // still be excluded against the tool.
@@ -859,7 +863,7 @@ fn section_inputs(
                 );
             }
         }
-        if trimmed.has_fitted_band()
+        if fitted
             && first
                 .iter()
                 .chain(second)
@@ -904,6 +908,7 @@ fn section_inputs(
         second_candidates = candidates(second);
         (first_candidates.as_slice(), second_candidates.as_slice())
     };
+    let algebraic = algebraic && (outside.is_empty() || has_algebraic(first, second));
     if !multiway && !algebraic && boundaries_apart(model, first, second, dec) {
         return Ok(Answer::exact(IntersectionGraph {
             a,

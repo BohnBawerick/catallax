@@ -176,7 +176,6 @@ fn display_levels(
         let built = evaluate_with_files(recipe, files, &mut Decider::default())?;
         let model = &built.model;
         let body = built.result;
-        let faces = model.faces_of_body(body);
         let start = Instant::now();
         let (direct, direct_work) = with_operation_budget(u64::MAX, || {
             mesh_body(model, body, options, &mut Decider::default())
@@ -186,6 +185,11 @@ fn display_levels(
         let mut direct_obj = Vec::new();
         direct.value.write_obj(&mut direct_obj)?;
         for level in [FaceLevel::Preview, FaceLevel::Bounded, FaceLevel::Proven] {
+            // Direct meshing and preflight must not warm each other's model caches.
+            let built = evaluate_with_files(recipe, files, &mut Decider::default())?;
+            let model = &built.model;
+            let body = built.result;
+            let faces = model.faces_of_body(body);
             let (result, total_work) = with_operation_budget(u64::MAX, || {
                 let start = Instant::now();
                 let (plan, profile) =

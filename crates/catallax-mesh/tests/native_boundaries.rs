@@ -398,11 +398,8 @@ fn a_periodic_conical_face_closes_at_its_declared_vertex() {
     assert!((volume(&view) - std::f64::consts::PI / 3.0).abs() < 0.1);
 }
 
-#[test]
-fn a_native_face_with_no_finite_trim_does_not_hide_its_neighbour() {
-    // A cylinder with only one rim has no finite trimmed lateral face.
-    // Its neighbouring plane uses that same circular EDGE_CURVE as a disk.
-    let source = PERIODIC_CONE
+fn cylinder_with_one_rim() -> String {
+    PERIODIC_CONE
         .replace(
             "CONICAL_SURFACE('',#6,0.,0.7853981633974483)",
             "CYLINDRICAL_SURFACE('',#6,1.)",
@@ -410,7 +407,13 @@ fn a_native_face_with_no_finite_trim_does_not_hide_its_neighbour() {
         .replace(
             "ADVANCED_FACE('',(#20,#21),#8,.T.)",
             "ADVANCED_FACE('',(#20),#8,.T.)",
-        );
+        )
+}
+
+#[test]
+fn a_native_face_with_no_finite_trim_does_not_hide_its_neighbour() {
+    // The valid disk shares its circle with the unbounded cylindrical face.
+    let source = cylinder_with_one_rim();
     let source = source.as_bytes();
     let import = tolerant::admission::import_step(
         source,
@@ -455,4 +458,45 @@ fn a_native_face_with_no_finite_trim_does_not_hide_its_neighbour() {
     });
     assert_eq!(refusal.unwrap_err().code, "numbers.operation-budget");
     assert!(work.exhausted);
+}
+
+#[test]
+fn native_edges_remain_drawable_when_no_face_has_a_finite_trim() {
+    let source = cylinder_with_one_rim().replace(
+        "ADVANCED_FACE('',(#19),#9,.T.)",
+        "ADVANCED_FACE('',(#19),#8,.T.)",
+    );
+    let source = source.as_bytes();
+    let import = tolerant::admission::import_step(
+        source,
+        &sha256_hex(source),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let view = preview_tolerant_body(
+        &import,
+        0,
+        &PreviewOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(view.triangles.is_empty());
+    let [edge] = view.edges.as_slice() else {
+        panic!("the two faces share one drawable edge");
+    };
+    assert_eq!(edge.edge, "#12");
+    assert_eq!(edge.vertices.first(), edge.vertices.last());
+    let length: f64 = edge
+        .vertices
+        .windows(2)
+        .map(|pair| {
+            let [a, b] = [view.positions[pair[0]], view.positions[pair[1]]];
+            ((a[0] - b[0]).hypot(a[1] - b[1])).hypot(a[2] - b[2])
+        })
+        .sum();
+    assert!(
+        (6.2..std::f64::consts::TAU).contains(&length),
+        "rim length {length}"
+    );
 }

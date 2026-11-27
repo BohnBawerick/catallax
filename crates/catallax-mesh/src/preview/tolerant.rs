@@ -454,8 +454,10 @@ fn omit(
 /// Preview one admitted native definition in its source-body coordinates.
 /// Assembly placement remains in the source document, not in this body-local
 /// preview. The returned triangles have no watertightness or deviation claim.
-/// If no complete preview fits the retained trims, draws the usable faces
-/// and logs omitted geometry. A partial preview never certifies a body.
+/// If a retained trim cannot be drawn, returns the usable faces and shared
+/// edges and logs the omissions. Draw the edges even when `triangles` is
+/// empty: some admitted bodies have a visible boundary but no drawable face.
+/// This preview never certifies a body.
 pub fn preview_tolerant_body(
     import: &TolerantImport,
     index: usize,
@@ -489,7 +491,13 @@ pub fn preview_tolerant_body(
             dec,
         )
     })?;
-    if mesh.triangles.is_empty() && mesh.edges.is_empty() {
+    if mesh.triangles.is_empty()
+        && !mesh.edges.iter().any(|edge| {
+            edge.vertices
+                .windows(2)
+                .any(|pair| distance(mesh.positions[pair[0]], mesh.positions[pair[1]]) > 0.0)
+        })
+    {
         return complete;
     }
     let mut log = std::io::stderr().lock();

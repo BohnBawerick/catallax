@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use catallax_features::evaluate;
+use catallax_features::{ImportFiles, evaluate, evaluate_with_files};
 use catallax_mesh::{FaceLevel, MeshOptions, mesh_body, plan_face_levels_profiled};
 use catallax_numbers::{Decider, current_operation_work, with_operation_budget};
 use catallax_recipe::Recipe;
@@ -29,9 +29,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if incremental || application || levels {
         args.remove(0);
     }
+    let step_source = if levels && args.first().is_some_and(|arg| arg == "--step-source") {
+        if args.len() < 3 {
+            return Err("--step-source requires the recipe's SHA-256 key and a file path".into());
+        }
+        args.remove(0);
+        let key = args
+            .remove(0)
+            .into_string()
+            .map_err(|_| "invalid STEP source key")?;
+        Some((key, fs::read(args.remove(0))?))
+    } else {
+        None
+    };
     if !(3..=5).contains(&args.len()) {
         return Err(
-            "usage: display [--incremental|--application|--levels|--edit-from OLD_NATIVE.json] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
+            "usage: display [--incremental|--application|--levels [--step-source SHA256 STEP]|--edit-from OLD_NATIVE.json] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
         );
     }
     let input = fs::read_to_string(&args[0])?;
@@ -76,7 +89,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return application_builds(&recipe, &options, &out, repetitions);
     }
     if levels {
-        return display_levels(&recipe, &options, &out, repetitions);
+        let files = step_source
+            .as_ref()
+            .map(|(key, data)| (key.clone(), data.as_slice()))
+            .into_iter()
+            .collect();
+        return display_levels(&recipe, &files, &options, &out, repetitions);
     }
     for iteration in 0..repetitions {
         let mut dec = Decider::default();
@@ -148,13 +166,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn display_levels(
     recipe: &Recipe,
+    files: &ImportFiles<'_>,
     options: &MeshOptions,
     out: &std::path::Path,
     repetitions: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut rows = Vec::new();
     for iteration in 0..repetitions {
-        let built = evaluate(recipe, &mut Decider::default())?;
+        let built = evaluate_with_files(recipe, files, &mut Decider::default())?;
         let model = &built.model;
         let body = built.result;
         let faces = model.faces_of_body(body);

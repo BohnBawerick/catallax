@@ -10,7 +10,7 @@ use catallax_import::{
     geometry_source::Topology,
     tolerant::{
         admission::{NativeTrim, TolerantImport},
-        native::{DisplayCurve, DisplaySurface, NativeLocation},
+        native::{DisplayCurve, DisplaySurface, NativeLocation, NativeSurface},
     },
 };
 use catallax_numbers::{Decider, Rational, Refusal, refund_on_refusal};
@@ -219,6 +219,47 @@ fn domain_loop(
     Ok(nodes)
 }
 
+fn cut_to_pole(
+    body: &mut PreviewMesh<String, String>,
+    mut rim: Vec<Node>,
+    source: &NativeSurface,
+    carrier: &Carrier,
+    same_sense: bool,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<Vec<Node>, Refusal> {
+    let failure = || failure("single periodic rim has no finite collapsed pole");
+    let [first, last] = [rim[0].uv, rim.last().unwrap().uv];
+    let periods = source.periods();
+    let axis = (0..2)
+        .find(|&i| periods[i].is_some_and(|p| (last[i] - first[i]).abs() > p * 0.5))
+        .ok_or_else(failure)?;
+    let period = periods[axis].unwrap();
+    let normal = 1 - axis;
+    let positive = last[axis] > first[axis];
+    let side = usize::from(positive == (same_sense == (axis == 0)));
+    let bound = (0..source.chart_count()).filter_map(|i| source.domain(i)[normal][side].as_ref());
+    let bound = if side == 0 { bound.min() } else { bound.max() }
+        .ok_or_else(failure)?
+        .to_f64_nearest();
+    let mut uv = first;
+    uv[normal] = bound;
+    let pole = carrier.position(uv, dec)?;
+    let rounding = pole.iter().fold(1.0_f64, |scale, x| scale.max(x.abs())) * 128.0 * f64::EPSILON;
+    for station in [0.25, 0.5, 0.75] {
+        let mut sample = uv;
+        sample[axis] += station * period;
+        if distance(carrier.position(sample, dec)?, pole) > rounding {
+            return Err(failure());
+        }
+    }
+    let mesh = push(body, pole, options)?;
+    let mut far = uv;
+    far[axis] = last[axis];
+    rim.extend([Node { uv: far, mesh }, Node { uv, mesh }]);
+    Ok(rim)
+}
+
 // Cut two noncontractible rims along one common source-parameter seam. The
 // additional cut nodes are display samples, not new pickable B-rep edges.
 fn cut_band(
@@ -230,7 +271,10 @@ fn cut_band(
     grid: bool,
 ) -> Result<Vec<Node>, Refusal> {
     if rims.len() != 2 {
-        return Err(failure("periodic trim needs a paired-rim seam"));
+        return Err(failure(format!(
+            "periodic trim has {} winding rims; two must be paired",
+            rims.len()
+        )));
     }
     let delta = |rim: &[Node]| {
         [
@@ -598,6 +642,13 @@ fn build(
                             })
                         })
                 }
+                Carrier::Inferred(surface) if grid.is_some() => surface
+                    .periodic()
+                    .into_iter()
+                    .enumerate()
+                    .any(|(axis, periodic)| {
+                        periodic && (last.uv[axis] - first.uv[axis]).abs() > 0.5
+                    }),
                 Carrier::Inferred(_) => {
                     (first.uv[0] - last.uv[0]).hypot(first.uv[1] - last.uv[1]) > 1e-8
                 }
@@ -623,7 +674,20 @@ fn build(
                 dec,
             )?);
         }
-        if !winding.is_empty() {
+        if grid.is_some()
+            && winding.len() == 1
+            && let Some(source) = surface
+        {
+            loops.push(cut_to_pole(
+                &mut mesh,
+                winding.pop().unwrap(),
+                source,
+                &carrier,
+                face.same_sense,
+                &face_options,
+                dec,
+            )?);
+        } else if !winding.is_empty() {
             loops.push(cut_band(
                 winding,
                 &carrier,

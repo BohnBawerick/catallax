@@ -175,7 +175,7 @@ impl SourceChart {
         };
         Ok(Self::Analytic(Box::new(chart::Chart::new(&geometry, dec)?)))
     }
-    fn periodic(&self) -> [bool; 2] {
+    pub(super) fn periodic(&self) -> [bool; 2] {
         match self {
             Self::Analytic(c) => c.periodic,
             Self::Spline(_) => [false; 2],

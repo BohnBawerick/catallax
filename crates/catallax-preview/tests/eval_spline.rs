@@ -234,7 +234,7 @@ impl Batch {
         for knots in &carrier.knots {
             for w in knots.windows(2) {
                 assert!(
-                    w[0] == w[1] || (w[0] as f32) < (w[1] as f32),
+                    w[0].total_cmp(&w[1]).is_eq() || (w[0] as f32) < (w[1] as f32),
                     "{name}: binary32 collapsed a knot span: {w:?}"
                 );
             }
@@ -248,7 +248,7 @@ impl Batch {
                     samples.push(w[0] + f * (w[1] - w[0]));
                 }
                 // Test the right-hand convention at exactly representable knots.
-                if f64::from(w[1] as f32) == w[1] {
+                if f64::from(w[1] as f32).total_cmp(&w[1]).is_eq() {
                     samples.push(w[1]);
                 }
             }

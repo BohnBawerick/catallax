@@ -44,6 +44,8 @@ Point classification compares exact expressions in the distance. Box classificat
 
 Interval classification excludes boxes proven wholly inside or outside. Primitive queries use their local frame before evaluating squared radii, avoiding cancellation from expanded world-coordinate polynomials. Beam intervals use cached coefficients and outward-rounded expanded beam bounds. The Boolean traversal skips operands that cannot change a proven result.
 
+Printing classifies primitive and analytic cell leaves only when the ordered traversal visits them. It does not dispatch a field-worker batch for each box.
+
 Planar extrusion coverage reuses the field's exact convex-plane certificate. Every profile vertex must lie in every oriented halfspace before printing treats the extrusion as their intersection. Concave, holed and curved profiles are not accepted by this route.
 
 Corner membership reuses strict leaf states from the interval query at that same exact point. Only unresolved or unvisited leaves need exact classification. Regularised Boolean contacts still use the authoritative evaluator's active-face, planar-sector and transverse-boundary witnesses. Printing does not evaluate discarded distance bounds or analytic normals; its facets retain their existing outward-orientation check. This reuse is local to printing and does not change field mass classification.

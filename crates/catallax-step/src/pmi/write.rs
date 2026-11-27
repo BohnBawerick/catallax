@@ -25,8 +25,8 @@ use catallax_topology::{FaceId, Loop, Model};
 
 use super::callout::{self, presented};
 use super::{
-    Anchor, At, Feature, GeometricTolerance, ItemKind, Limits, MaterialCondition, Pmi, SizeKind,
-    SurfaceTexture,
+    Anchor, At, Feature, GeometricTolerance, HoleHead, HoleSize, ItemKind, Limits,
+    MaterialCondition, Pmi, Size, SizeKind, SurfaceTexture,
 };
 use crate::document::PartReferences;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
@@ -38,6 +38,22 @@ pub const HOLE_DEPTH: &str = "hole depth";
 pub const THROUGH: &str = "through";
 /// The name of the user defined attribute that carries a thread's designation.
 pub const THREAD: &str = "thread";
+/// AP242 edition 1 fallback for a typed Catallax hole: the pilot's aspect
+/// carries its diameter as semantic PMI. The head relationship and measured
+/// properties retain hole intent for readers that know this convention.
+pub const HOLE_PILOT: &str = "catallax hole pilot";
+/// The relationship from a pilot aspect to a cylindrical head.
+pub const COUNTERBORE: &str = "counterbore";
+/// The relationship from a pilot aspect to a conical head.
+pub const COUNTERSINK: &str = "countersink";
+/// The measured property for the head's diameter.
+pub const HEAD_DIAMETER: &str = "head diameter";
+/// The measured property for axial counterbore depth.
+pub const HEAD_DEPTH: &str = "head depth";
+/// The measured property for the full countersink angle.
+pub const INCLUDED_ANGLE: &str = "included angle";
+/// The measured property for usable axial thread depth.
+pub const THREAD_DEPTH: &str = "thread depth";
 
 fn quoted(value: &str) -> Field {
     text(string(value))
@@ -118,6 +134,7 @@ struct Emitter<'a> {
     datums: BTreeMap<String, Id>,
     systems: BTreeMap<Vec<String>, Id>,
     micrometre: Option<Id>,
+    degree: Option<Id>,
     presentation: Option<Presentation>,
     annotations: usize,
     dec: &'a Decider,
@@ -184,6 +201,109 @@ impl Emitter<'_> {
         self.usage(id, feature, item)?;
         self.aspects.insert(key, id);
         Ok(id)
+    }
+
+    fn hole(&mut self, size: &Size<FaceId>, hole: &HoleSize, item: &str) -> Result<Id, Refusal> {
+        // A private aspect keeps per-item intent off any datum or independent
+        // size dimension that happens to name the same face.
+        let pilot = self.graph.add(
+            "SHAPE_ASPECT",
+            vec![
+                quoted(HOLE_PILOT),
+                text("''"),
+                self.references.product.shape.into(),
+                boolean(true),
+            ],
+        );
+        self.usage(pilot, &size.features[0], item)?;
+        if let Some(head) = &hole.head {
+            let (kind, diameter) = match head {
+                HoleHead::Counterbore { diameter, .. } => (COUNTERBORE, diameter),
+                HoleHead::Countersink { diameter, .. } => (COUNTERSINK, diameter),
+            };
+            let head_aspect = self.aspect(&size.features[1], item)?;
+            self.root(
+                "SHAPE_ASPECT_RELATIONSHIP",
+                vec![quoted(kind), text("''"), pilot.into(), head_aspect.into()],
+            );
+            self.hole_length(HEAD_DIAMETER, diameter, pilot, item)?;
+            match head {
+                HoleHead::Counterbore { depth, .. } => {
+                    self.hole_length(HEAD_DEPTH, depth, pilot, item)?;
+                }
+                HoleHead::Countersink { included_angle, .. } => {
+                    let value = real(included_angle, item)?;
+                    let unit = self.degree();
+                    let measure = self.graph.add_complex(vec![
+                        ("MEASURE_REPRESENTATION_ITEM", vec![]),
+                        (
+                            "MEASURE_WITH_UNIT",
+                            vec![text(format!("PLANE_ANGLE_MEASURE({value})")), unit.into()],
+                        ),
+                        ("PLANE_ANGLE_MEASURE_WITH_UNIT", vec![]),
+                        ("REPRESENTATION_ITEM", vec![quoted(INCLUDED_ANGLE)]),
+                    ]);
+                    self.attribute_item(INCLUDED_ANGLE, measure, pilot.into());
+                }
+            }
+        }
+        if let Some(depth) = &hole.drill_depth {
+            self.hole_length(HOLE_DEPTH, depth, pilot, item)?;
+        }
+        if let Some(depth) = &hole.thread_depth {
+            self.hole_length(THREAD_DEPTH, depth, pilot, item)?;
+        }
+        Ok(pilot)
+    }
+
+    fn hole_length(
+        &mut self,
+        name: &str,
+        value: &Rational,
+        pilot: Id,
+        item: &str,
+    ) -> Result<(), Refusal> {
+        let value = real(value, item)?;
+        let measure = self.graph.add_complex(vec![
+            ("LENGTH_MEASURE_WITH_UNIT", vec![]),
+            ("MEASURE_REPRESENTATION_ITEM", vec![]),
+            (
+                "MEASURE_WITH_UNIT",
+                vec![
+                    text(format!("LENGTH_MEASURE({value})")),
+                    self.references.length_unit.into(),
+                ],
+            ),
+            ("REPRESENTATION_ITEM", vec![quoted(name)]),
+        ]);
+        self.attribute_item(name, measure, pilot.into());
+        Ok(())
+    }
+
+    fn degree(&mut self) -> Id {
+        *self.degree.get_or_insert_with(|| {
+            let radians = self.graph.add_complex(vec![
+                ("NAMED_UNIT", vec![text("*")]),
+                ("PLANE_ANGLE_UNIT", vec![]),
+                ("SI_UNIT", vec![text("$"), text(".RADIAN.")]),
+            ]);
+            let conversion = self.graph.add(
+                "PLANE_ANGLE_MEASURE_WITH_UNIT",
+                vec![
+                    text("PLANE_ANGLE_MEASURE(0.017453292519943295)"),
+                    radians.into(),
+                ],
+            );
+            let dimension = self.graph.add("DIMENSIONAL_EXPONENTS", vec![text("0."); 7]);
+            self.graph.add_complex(vec![
+                (
+                    "CONVERSION_BASED_UNIT",
+                    vec![text("'DEGREE'"), conversion.into()],
+                ),
+                ("NAMED_UNIT", vec![dimension.into()]),
+                ("PLANE_ANGLE_UNIT", vec![]),
+            ])
+        })
     }
 
     fn datum(&mut self, letter: &str, feature: &[FaceId], item: &str) -> Result<(), Refusal> {
@@ -854,13 +974,17 @@ impl Emitter<'_> {
 
     /// A user defined attribute of the part or of one of its features.
     fn attribute(&mut self, name: &str, value: &str, of: Field) {
-        let property = self.graph.add(
-            "PROPERTY_DEFINITION",
-            vec![quoted(name), text("'user defined attribute'"), of],
-        );
         let item = self.graph.add(
             "DESCRIPTIVE_REPRESENTATION_ITEM",
             vec![quoted(name), quoted(value)],
+        );
+        self.attribute_item(name, item, of);
+    }
+
+    fn attribute_item(&mut self, name: &str, item: Id, of: Field) {
+        let property = self.graph.add(
+            "PROPERTY_DEFINITION",
+            vec![quoted(name), text("'user defined attribute'"), of],
         );
         let representation = self.graph.add(
             "REPRESENTATION",
@@ -955,6 +1079,7 @@ pub(crate) fn emit(
         datums: BTreeMap::new(),
         systems: BTreeMap::new(),
         micrometre: None,
+        degree: None,
         presentation: None,
         annotations: 0,
         dec,
@@ -983,10 +1108,10 @@ pub(crate) fn emit(
         match &item.kind {
             ItemKind::Datum(_) => {}
             ItemKind::Size(size) => {
-                let target = emitter.target(&size.features, id)?;
-                let name = match size.kind {
-                    SizeKind::Diameter => "'diameter'",
-                    SizeKind::Radius => "'radius'",
+                let (target, name) = match &size.kind {
+                    SizeKind::Diameter => (emitter.target(&size.features, id)?, "'diameter'"),
+                    SizeKind::Radius => (emitter.target(&size.features, id)?, "'radius'"),
+                    SizeKind::Hole(hole) => (emitter.hole(size, hole, id)?, "'diameter'"),
                 };
                 let dimension = emitter
                     .graph

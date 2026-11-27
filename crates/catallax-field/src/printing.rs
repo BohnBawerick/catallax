@@ -663,33 +663,6 @@ fn evaluate(
 ) -> Result<BoxState, Refusal> {
     use BoxState::*;
     charge(dec)?;
-    // Pure interval work needs neither reservations nor request caches. Keep
-    // exact witnesses and short-circuit decisions on the coordinator below.
-    let prepared = crate::workers::map(&plan.instructions, |instruction| {
-        let Instruction::Leaf(i) = *instruction else {
-            return None;
-        };
-        match definitions[i].as_ref()? {
-            Definition::Primitive(primitive) => Some(primitive.classify(xyz)),
-            Definition::Cell(supports) => {
-                let mut inside = true;
-                let mut outside = false;
-                for support in supports {
-                    let bound = range(support, xyz);
-                    outside |= bound.lo() > 0.0;
-                    inside &= bound.hi() < 0.0;
-                }
-                Some(if outside {
-                    Outside
-                } else if inside {
-                    Inside
-                } else {
-                    Unknown
-                })
-            }
-            _ => None,
-        }
-    });
     states.clear();
     states.resize(plan.instructions.len(), None);
     pending.clear();
@@ -702,7 +675,7 @@ fn evaluate(
         let state = match plan.instructions[node] {
             Instruction::Empty => Outside,
             Instruction::Leaf(i) => {
-                if let Some(state) = exact_leaf(i).or(prepared[node]) {
+                if let Some(state) = exact_leaf(i) {
                     state
                 } else {
                     match definitions[i].as_ref().expect("live leaf definition") {

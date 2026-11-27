@@ -9,8 +9,8 @@ use catallax_topology::{
 
 use super::{
     DISPLAY_DESCRIPTION_VERSION, DisplayDescription, DisplayEdge, DisplayEdgeUse, DisplayFace,
-    DisplayLoop, DisplayOptions, DisplayTrimSample, Uv, Xyz, carrier_reversed, edges::sample_span,
-    evaluate::*, failed, spline::SplineEdge,
+    DisplayLoop, DisplayOptions, DisplayTrimSample, Uv, Xyz, edges::sample_span, evaluate::*,
+    failed, spline::SplineEdge,
 };
 
 /// Read an admitted numerical B-rep without rechecking its geometry or fits.
@@ -153,7 +153,7 @@ pub fn describe_numerical_body(
         let periods = chart.periods;
         result.faces.push(DisplayFace {
             face: face.key.clone(),
-            reversed: (face.sense == Sense::Reversed) ^ carrier_reversed(&face.surface),
+            reversed: face.sense == Sense::Reversed,
             surface,
             bounds,
             periods,

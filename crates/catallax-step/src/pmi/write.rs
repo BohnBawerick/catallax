@@ -1328,7 +1328,9 @@ impl Emitter<'_> {
         if let [member] = members.as_slice() {
             return *member;
         }
-        let group = self.graph.add("COMPOSITE_GROUP_SHAPE_ASPECT", aspect_fields());
+        let group = self
+            .graph
+            .add("COMPOSITE_GROUP_SHAPE_ASPECT", aspect_fields());
         for member in members {
             self.root(
                 "SHAPE_ASPECT_RELATIONSHIP",
@@ -1360,14 +1362,7 @@ impl Emitter<'_> {
             geometry: repeated.then(|| self.graphic_attachment(item)),
             semantic_on_occurrence: repeated,
         };
-        self.graphic_callout(
-            id,
-            label.kind,
-            &drawing,
-            &label.equivalent,
-            plane,
-            links,
-        )
+        self.graphic_callout(id, label.kind, &drawing, &label.equivalent, plane, links)
     }
 
     fn callout_plane(
@@ -1472,7 +1467,11 @@ impl Emitter<'_> {
         let geometry = links
             .geometry
             .map(|id| ("PMI presentation to geometry link", id, callout));
-        let semantic = ("PMI representation to presentation link", links.semantic, subject);
+        let semantic = (
+            "PMI representation to presentation link",
+            links.semantic,
+            subject,
+        );
         for (name, definition, subject) in geometry.into_iter().chain([semantic]) {
             self.root(
                 "DRAUGHTING_MODEL_ITEM_ASSOCIATION",

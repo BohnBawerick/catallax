@@ -218,9 +218,15 @@ reported while the other items stay.
 The saved-view test writes the P1 items unchanged with two views, one parallel
 and one in perspective. With `CATALLAX_PMI_OUT` set, the test writes both
 standalone views as `c4c-bore-view.step` and `c4c-top-view.step` and the
-combined `c4c-saved-views.step`. It checks the AP242 Edition 1 camera and map
-links and draughting model rules WR2 and UR1. It reads back each view's camera,
-window and visible items.
+combined `c4c-saved-views.step`. It checks camera and map links, style
+assignments on mapped shapes and unique draughting model names. It reads back
+each view's camera, window and visible items.
+
+With `cadquery-ocp` available, run
+`python3 tools/step-regressions/check_occt_saved_view_finishes.py <fixture-dir>`
+on that directory. The check reads the bore finish in each standalone view
+and the bore position in both views of the combined file. It checks the
+transferred label name, drawing, plane normal and bore face for each case.
 
 Run `python3 tools/step-regressions/check_ap242_saved_views.py` for full
 EXPRESS validation of the saved-view files. Set `JSDAI_AP242_E1_CLASSPATH` to

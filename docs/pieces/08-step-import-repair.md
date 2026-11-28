@@ -329,13 +329,16 @@ The standalone reader refuses only unreadable Part 21 input.
 `Pmi::views` contains one view per supported `CAMERA_MODEL_D3` in a draughting
 model. Each view lists its camera and the resolved items its callouts present.
 Membership lists each item once, even when multiple associations resolve to it.
-A callout can present several items, including a datum through its datum
-feature and a composite through either segment. `StepPmi::graphics` keeps
-callouts with no semantic match or with unread semantic associations. These
-records include polylines and annotation planes in part millimetres, any
-resolved face attachments, recorded equivalent Unicode text and view names.
-The reader diagnoses unsupported strokes, nonidentity or ambiguous geometry
-mappings, clipped cameras, and off-centre or rotated windows.
+Associations can name the callout or one of its occurrences. A callout can
+present several items, including a datum through its datum feature and a
+composite through either segment. `StepPmi::graphics` keeps callouts with no
+semantic match or with unread semantic associations. These records include
+polylines and annotation planes in part millimetres, any resolved face
+attachments, recorded equivalent Unicode text and view names. The reader
+diagnoses unsupported strokes, nonidentity or ambiguous geometry mappings,
+clipped cameras, and off-centre or rotated windows. The first accepted view
+with a given camera name keeps it. Later repeats use the lowest free `name (n)`
+without displacing names from other accepted cameras.
 
 A face usage must name its own aspect, through a representation of the
 aspect's part, and faces that representation holds; members of a pattern
@@ -345,12 +348,11 @@ placed target and its face feature are, and a datum reference compartment
 has an empty name, no description and no identifier and is not.
 
 Assembly import groups semantic items by the one part their links reach and
-checks their attachments on that part. An item that reaches no part, or more
-than one, does not refuse the assembly: each part's `skipped` list reports
-it, since an assembly has no PMI list of its own. It reports omitted saved
-views and graphics in the parts' `skipped` lists. A camera repeated by name
-keeps its name for the first view and takes the lowest free `name (n)` for a
-later one, never a name another camera authored.
+checks their attachments on that part. Assembly geometry discovery skips
+shape definitions for properties such as datum target parameters. Each
+part's `skipped` list reports items with zero or multiple leaf owners, since
+an assembly has no PMI list of its own. The lists also report omitted saved
+views and graphics.
 
 `cargo run -p catallax-import --example step_pmi -- part.step` prints the items,
 views, graphical callouts and diagnostics.
@@ -373,7 +375,8 @@ records.
 The patch refuses with `step.pmi-patch` before returning output if safety
 cannot be proved, including when a callout or other dependent record could
 retain the old value. Read-back must match the requested edit and preserve the
-other PMI on each edited part.
+other PMI on the edited part. The patch also checks that the standalone reader
+returns the same saved views, graphical callouts and diagnostics.
 
 ## Immutable source
 

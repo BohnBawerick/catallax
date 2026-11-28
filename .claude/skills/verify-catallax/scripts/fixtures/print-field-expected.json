@@ -1,0 +1,39 @@
+{
+  "unused-lattice": {
+    "source": "print",
+    "route": "brep",
+    "status": "answered",
+    "refusal": null,
+    "files": ["display.obj", "print.stl"]
+  },
+  "reachable-lattice-brep": {
+    "source": "print",
+    "route": "brep",
+    "status": "refused",
+    "refusal": "print.brep-field-definition",
+    "files": []
+  },
+  "reachable-lattice-auto": {
+    "source": "print",
+    "route": "field",
+    "status": "refused",
+    "refusal": "field.print-budget",
+    "files": []
+  },
+  "field-box": {
+    "source": "field",
+    "route": "field",
+    "status": "answered",
+    "refusal": null,
+    "field": {"faces": 6, "proven_empty": false},
+    "files": ["display.obj", "print.stl"]
+  },
+  "field-display": {
+    "source": "field",
+    "route": "field",
+    "status": "answered",
+    "refusal": null,
+    "field": {"faces": 6, "proven_empty": false},
+    "files": ["display.obj"]
+  }
+}

@@ -1771,23 +1771,18 @@ fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Lab
             format!(r"DTM\w{}", datum.letter),
             datum.feature.as_slice(),
         ),
-        ItemKind::Size(size)
-            if matches!(size.kind, SizeKind::Diameter) && size.thread.is_none() =>
-        {
+        ItemKind::Size(Size {
+            kind: SizeKind::Diameter,
+            limits: Some(Limits::Fit { deviation, grade }),
+            thread: None,
+            through,
+            features,
+            ..
+        }) => {
             let value = nominal.expect("a diameter has a measured value");
             let value = value.strip_suffix('.').unwrap_or(value);
-            let mut main = format!("⌀{value}");
-            match &size.limits {
-                None => {}
-                Some(Limits::Basic) => main = format!("[{main}]"),
-                Some(Limits::Fit { deviation, grade }) => {
-                    main = format!("{main} {deviation}{grade}")
-                }
-                Some(Limits::Deviations { upper, lower }) => {
-                    main = format!("{main} {}/{}", signed(upper, id)?, signed(lower, id)?);
-                }
-            }
-            if size.through {
+            let mut main = format!("⌀{value} {deviation}{grade}");
+            if *through {
                 main.push_str(" THRU");
             }
             let equivalent = format!(r"DIM\w{main}");
@@ -1795,7 +1790,7 @@ fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Lab
                 "diameter dimension",
                 main,
                 equivalent,
-                size.features[0].as_slice(),
+                features[0].as_slice(),
             )
         }
         ItemKind::Tolerance(tolerance)

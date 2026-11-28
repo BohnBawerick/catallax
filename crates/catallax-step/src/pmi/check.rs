@@ -615,12 +615,35 @@ impl ZoneSpan {
         Ok(Some(first.is_none_or(|(_, exiting)| !exiting)))
     }
 
-    /// Whether every edge of a face lies past the same end of the span, so
-    /// the face leaves the zone free.
-    pub fn one_side(sides: &[Option<Side>]) -> bool {
+    /// The side shared by every trim edge.
+    pub fn trim_side(sides: &[Option<Side>]) -> Option<Side> {
+        let first = sides.first().copied().flatten()?;
         sides
-            .first()
-            .is_some_and(|first| first.is_some() && sides.iter().all(|side| side == first))
+            .iter()
+            .all(|side| *side == Some(first))
+            .then_some(first)
+    }
+
+    /// Whether the axial coordinate can have extrema only on a cylinder's trim.
+    pub fn cylinder_extrema_on_trim(
+        &self,
+        cylinder: &catallax_shapes::Cylinder,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        Ok(!is_zero(&cylinder.axis.dot(&self.direction), dec)?)
+    }
+
+    /// The side containing a cone's trim and apex.
+    pub fn cone_trim_side(
+        &self,
+        sides: &[Option<Side>],
+        apex: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<Side>, Refusal> {
+        let Some(side) = Self::trim_side(sides) else {
+            return Ok(None);
+        };
+        Ok((self.point_side(apex, dec)? == Some(side)).then_some(side))
     }
 
     /// The end a point lies past, or `None` when it is within the span.
@@ -788,17 +811,16 @@ pub(super) fn check_written_projection(
             normal.clone(),
             &Real::from_rational(zone.height_mm.clone()),
         );
-        let mut owners = shells.iter().filter(|members| {
+        let owners = shells.iter().filter(|members| {
             members
                 .iter()
                 .any(|f| matches!(f, Field::Ref(face) if face == entry))
         });
-        let shell = owners
-            .next()
-            .filter(|_| owners.next().is_none())
-            .ok_or_else(invalid)?;
+        if owners.count() != 1 {
+            return Err(invalid());
+        }
         let mut crossings = Vec::new();
-        for member in *shell {
+        for member in shells.iter().flat_map(|shell| shell.iter()) {
             let Field::Ref(face) = member else {
                 return Err(invalid());
             };
@@ -855,10 +877,6 @@ pub(super) fn check_written_projection(
                     sides.push(None);
                 }
             }
-            // A face wholly behind the entry is never reached.
-            if !sides.is_empty() && sides.iter().all(|side| *side == Some(Side::Behind)) {
-                continue;
-            }
             let cylinder = match fields(graph, surface, "CYLINDRICAL_SURFACE") {
                 Some([_, frame, Field::Text(radius)]) => {
                     let plane = written_plane(graph, frame).ok_or_else(invalid)?;
@@ -889,7 +907,27 @@ pub(super) fn check_written_projection(
                 )),
                 None => None,
             };
-            let clear = ZoneSpan::one_side(&sides)
+            let trim = if fields(graph, surface, "PLANE").is_some()
+                || cylinder
+                    .as_ref()
+                    .map(|cylinder| span.cylinder_extrema_on_trim(cylinder, dec))
+                    .transpose()?
+                    .unwrap_or(false)
+            {
+                ZoneSpan::trim_side(&sides)
+            } else if let Some([_, frame, Field::Text(radius), _]) =
+                fields(graph, surface, "CONICAL_SURFACE")
+                && is_zero(&written_real(radius), dec)?
+            {
+                let apex = written_plane(graph, frame).ok_or_else(invalid)?.origin;
+                span.cone_trim_side(&sides, &apex, dec)?
+            } else {
+                None
+            };
+            if trim == Some(Side::Behind) {
+                continue;
+            }
+            let clear = trim == Some(Side::Beyond)
                 || match (&cylinder, &ball) {
                     (Some(cylinder), _) => span.misses_cylinder(cylinder, dec)?,
                     (_, Some((center, radius_sq))) => span.misses_ball(center, radius_sq, dec)?,
@@ -956,17 +994,17 @@ fn check_open_entry(
     let shell_faces = model
         .bodies_with_face(entry)
         .into_iter()
+        .filter(|&body| model.body(body).kind == catallax_topology::BodyKind::Solid)
         .flat_map(|body| model.body(body).lumps.iter())
         .flat_map(|&lump| model.lump(lump).shells.iter())
         .map(|&shell| &model.shell(shell).faces)
-        .filter(|faces| faces.contains(&entry))
         .filter(|faces| {
             written.is_none_or(|written| faces.iter().all(|face| written.contains_key(face)))
         })
         .flatten()
         .copied()
         .collect::<BTreeSet<_>>();
-    if shell_faces.is_empty() {
+    if !shell_faces.contains(&entry) {
         return Err(refuse(item, "the projected zone entry has no owning shell"));
     }
     let blocked = || refuse(item, "a projected zone's axis meets a closed end");
@@ -1014,8 +1052,15 @@ fn check_open_entry(
                 _ => sides.push(None),
             }
         }
-        // A face wholly behind the entry is never reached.
-        if !sides.is_empty() && sides.iter().all(|side| *side == Some(Side::Behind)) {
+        let trim = match surface {
+            Surface::Plane(_) => ZoneSpan::trim_side(&sides),
+            Surface::Cylinder(cylinder) if span.cylinder_extrema_on_trim(cylinder, dec)? => {
+                ZoneSpan::trim_side(&sides)
+            }
+            Surface::Cone(cone) => span.cone_trim_side(&sides, &cone.apex, dec)?,
+            _ => None,
+        };
+        if trim == Some(Side::Behind) {
             continue;
         }
         let ball = |center: &Point3, radius: Real| (center.clone(), &radius * &radius);
@@ -1027,7 +1072,7 @@ fn check_open_entry(
             )),
             _ => None,
         };
-        let clear = ZoneSpan::one_side(&sides)
+        let clear = trim == Some(Side::Beyond)
             || match (surface, &bound) {
                 (Surface::Cylinder(cylinder), _) => span.misses_cylinder(cylinder, dec)?,
                 (_, Some((center, radius_sq))) => span.misses_ball(center, radius_sq, dec)?,

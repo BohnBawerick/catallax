@@ -422,6 +422,33 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
                 && line.ends_with(&format!(",{parameters});"))
         })
         .unwrap();
+    let property = link.split_once('(').unwrap().1.split(',').next().unwrap();
+    let missing_property = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{property}=PROPERTY_DEFINITION(")))
+        .unwrap();
+    let broken = file.replacen(&format!("{missing_property}\n"), "", 1);
+    let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
+    let ProductContent::Part(part) = &read
+        .products
+        .iter()
+        .find(|product| product.name == "Base")
+        .unwrap()
+        .content
+    else {
+        panic!("expected the leaf part");
+    };
+    assert!(part.pmi.sources.contains_key("Base flatness"));
+    assert!(!part.pmi.sources.contains_key("Base centre"));
+    assert!(
+        part.pmi
+            .skipped
+            .iter()
+            .any(|skip| skip.kind == "PLACED_DATUM_TARGET_FEATURE"
+                && skip.reason.contains("parameters")),
+        "{:?}",
+        part.pmi.skipped
+    );
     for bad in ["#900000", sid("ADVANCED_BREP_SHAPE_REPRESENTATION(")] {
         let broken = file.replacen(link, &link.replace(parameters, bad), 1);
         let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
@@ -620,13 +647,63 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
             .len(),
         names.len()
     );
-    assert_eq!(
-        output
+    for name in ["Top", "Top (2)"] {
+        let cameras: Vec<_> = output
             .lines()
-            .filter(|line| line.contains("=CAMERA_MODEL_D3('Top',"))
-            .count(),
-        2
+            .filter_map(|line| {
+                let (id, _) = line.split_once(&format!("=CAMERA_MODEL_D3('{name}',"))?;
+                Some(id)
+            })
+            .collect();
+        let [camera] = cameras.as_slice() else {
+            panic!("expected one camera named {name}, got {cameras:?}");
+        };
+        assert!(output.lines().any(|line| {
+            line.contains(&format!("=DRAUGHTING_MODEL('{name}',"))
+                && line.contains(&format!(",{camera}),"))
+        }));
+    }
+
+    let features: Vec<_> = output
+        .lines()
+        .filter_map(|line| line.split_once("=DATUM_FEATURE(").map(|(id, _)| id))
+        .collect();
+    let [first, second] = features.as_slice() else {
+        panic!("expected one datum feature per leaf");
+    };
+    let link = output
+        .lines()
+        .find(|line| {
+            line.contains("=SHAPE_ASPECT_RELATIONSHIP(") && line.contains(&format!(",{first},"))
+        })
+        .unwrap();
+    let broken = output.replacen(link, &link.replace(first, second), 1);
+    let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
+    let leaf_pmi = |name| {
+        read.products
+            .iter()
+            .find_map(|p| match &p.content {
+                ProductContent::Part(part) if p.name == name => Some(&part.pmi),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let first = leaf_pmi("First");
+    assert!(first.sources.contains_key("Base flatness"));
+    assert!(!first.sources.contains_key("Base datum"));
+    assert!(!first.sources.contains_key("Base centre"));
+    assert!(
+        first
+            .skipped
+            .iter()
+            .any(|skip| skip.reason.contains("datum feature")
+                && skip.reason.contains("another part")),
+        "{:?}",
+        first.skipped
     );
+    let second = leaf_pmi("Second");
+    assert!(second.sources.contains_key("Base datum"));
+    assert!(second.sources.contains_key("Base centre"));
 }
 
 #[test]

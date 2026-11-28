@@ -2,15 +2,15 @@
 //! it was written.
 //!
 //! [`Records`] splits the data section of a Part 21 file into its records
-//! by their exact bytes. A [`Patch`] removes or rewrites some of them and adds
-//! new ones under fresh numbers above the file's highest. Everything else,
+//! by their exact bytes. A [`Patch`] replaces owned tolerance magnitudes
+//! under fresh numbers above the file's highest. Everything else,
 //! including the header, comments, spacing and line ends, is copied byte for
 //! byte.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use catallax_numbers::Refusal;
+use catallax_numbers::{Rational, Refusal};
 
 fn refuse(what: impl std::fmt::Display) -> Refusal {
     Refusal::new("step.pmi-patch", what.to_string())
@@ -237,8 +237,7 @@ impl<'a> Records<'a> {
         &self.records
     }
 
-    /// Substitutes a unique reference token in a record's body.
-    pub fn replace_reference(&self, id: u64, old: u64, new: u64) -> Result<String, Refusal> {
+    fn replace_reference(&self, id: u64, old: u64, new: u64) -> Result<String, Refusal> {
         let record = self
             .get(id)
             .ok_or_else(|| refuse(format!("record #{id} is missing")))?;
@@ -259,17 +258,18 @@ impl<'a> Records<'a> {
     }
 }
 
-/// Removals, rewrites and new records for one file.
-pub struct Patch {
+/// Owned magnitude replacements for one file.
+pub struct Patch<'a> {
+    records: &'a Records<'a>,
     removed: BTreeSet<u64>,
     rewritten: BTreeMap<u64, String>,
     added: Vec<(u64, String)>,
     highest: u64,
 }
 
-impl Patch {
+impl<'a> Patch<'a> {
     /// An empty patch of `records`; new records are numbered above its highest.
-    pub fn new(records: &Records<'_>) -> Self {
+    pub fn new(records: &'a Records<'a>) -> Self {
         let highest = records
             .records
             .iter()
@@ -277,6 +277,7 @@ impl Patch {
             .max()
             .unwrap_or(0);
         Self {
+            records,
             removed: BTreeSet::new(),
             rewritten: BTreeMap::new(),
             added: Vec::new(),
@@ -284,25 +285,61 @@ impl Patch {
         }
     }
 
-    /// Removes a record.
-    pub fn remove(&mut self, id: u64) {
-        self.rewritten.remove(&id);
-        self.removed.insert(id);
-    }
-
-    /// Gives a record a new body under its own number.
-    pub fn rewrite(&mut self, id: u64, body: String) {
-        self.rewritten.insert(id, body);
-    }
-
-    /// Adds a record under a fresh number and returns the number.
-    pub fn add(&mut self, body: String) -> Result<u64, Refusal> {
-        self.highest = self
+    /// Replaces a validated tolerance's unshared length measure. The new
+    /// value is in the source measure's unit.
+    pub fn replace_owned_magnitude(
+        &mut self,
+        owner: u64,
+        magnitude: u64,
+        kind: &str,
+        value: &Rational,
+        unit: u64,
+    ) -> Result<(), Refusal> {
+        let record = self
+            .records
+            .get(magnitude)
+            .ok_or_else(|| refuse(format!("magnitude #{magnitude} is missing")))?;
+        let bytes = self.records.text.as_bytes();
+        let start = layout(bytes, record.body.start);
+        let plain_length = bytes[start..record.body.end]
+            .strip_prefix(b"LENGTH_MEASURE_WITH_UNIT")
+            .is_some_and(|tail| {
+                bytes.get(layout(bytes, record.body.end - tail.len())) == Some(&b'(')
+            });
+        if !plain_length
+            || self.records.users(magnitude) != [owner]
+            || self.rewritten.contains_key(&owner)
+        {
+            return Err(refuse(format!(
+                "#{magnitude} is not an unedited length magnitude owned by #{owner}"
+            )));
+        }
+        if !matches!(
+            kind,
+            "LENGTH_MEASURE" | "POSITIVE_LENGTH_MEASURE" | "NON_NEGATIVE_LENGTH_MEASURE"
+        ) || value <= &Rational::zero()
+        {
+            return Err(refuse("the replacement needs a positive length"));
+        }
+        let mut value = value
+            .to_decimal_exact()
+            .ok_or_else(|| refuse("the value is not a decimal in the file's unit"))?;
+        if !value.contains('.') {
+            value.push('.');
+        }
+        let fresh = self
             .highest
             .checked_add(1)
             .ok_or_else(|| refuse("no fresh record number is available"))?;
-        self.added.push((self.highest, body));
-        Ok(self.highest)
+        let rewritten = self.records.replace_reference(owner, magnitude, fresh)?;
+        self.rewritten.insert(owner, rewritten);
+        self.removed.insert(magnitude);
+        self.added.push((
+            fresh,
+            format!("LENGTH_MEASURE_WITH_UNIT({kind}({value}),#{unit})"),
+        ));
+        self.highest = fresh;
+        Ok(())
     }
 
     /// The records this patch removes or rewrites.
@@ -317,7 +354,8 @@ impl Patch {
     /// The file with the patch applied. Every byte outside the removed and
     /// rewritten records is copied; new records go just before the data
     /// section's `ENDSEC;`.
-    pub fn apply(&self, records: &Records<'_>) -> Vec<u8> {
+    pub fn apply(&self) -> Vec<u8> {
+        let records = self.records;
         let text = records.text;
         let mut out = String::with_capacity(text.len());
         let mut at = 0;
@@ -354,23 +392,41 @@ mod tests {
         assert_eq!(records.get(3).unwrap().refs, [1, 2]);
         assert_eq!(records.users(2), [1, 3]);
         assert_eq!(records.text(1), Some("#1=A('a;b',#2);\r\n"));
-        assert_eq!(Patch::new(&records).apply(&records), FILE.as_bytes());
+        assert_eq!(Patch::new(&records).apply(), FILE.as_bytes());
     }
 
     #[test]
     fn a_patch_changes_only_its_records() {
-        let records = Records::parse(FILE.as_bytes()).unwrap();
+        let file = FILE.replace(
+            "#2=(B(#3)C());",
+            "#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.),#1);",
+        );
+        let records = Records::parse(file.as_bytes()).unwrap();
         let mut patch = Patch::new(&records);
-        let fresh = patch.add("E()".into()).unwrap();
-        assert_eq!(fresh, 4);
-        patch.rewrite(3, format!("D('x',#1,#{fresh})"));
-        patch.remove(2);
-        let out = String::from_utf8(patch.apply(&records)).unwrap();
+        assert!(
+            patch
+                .replace_owned_magnitude(1, 2, "LENGTH_MEASURE", &Rational::from_i64(2), 1)
+                .is_err()
+        );
+        assert_eq!(patch.apply(), file.as_bytes());
+        let file = file.replace("#3=D('it''s',#1,#2);", "#3=D('it''s',#1);");
+        let records = Records::parse(file.as_bytes()).unwrap();
+        let mut patch = Patch::new(&records);
+        patch
+            .replace_owned_magnitude(1, 2, "LENGTH_MEASURE", &Rational::from_i64(2), 1)
+            .unwrap();
+        let out = String::from_utf8(patch.apply()).unwrap();
         assert_eq!(
             out,
-            FILE.replace("#2=(B(#3)C());\r\n", "")
-                .replace("#3=D('it''s',#1,#2);", "#3=D('x',#1,#4);")
-                .replace("ENDSEC;\r\nEND", "#4=E();\r\nENDSEC;\r\nEND")
+            file.replace(
+                "#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.),#1);\r\n",
+                ""
+            )
+            .replace("#1=A('a;b',#2);", "#1=A('a;b',#4);")
+            .replace(
+                "ENDSEC;\r\nEND",
+                "#4=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(2.),#1);\r\nENDSEC;\r\nEND"
+            )
         );
         assert!(Records::parse(b"DATA;\n#1=A(;\n").is_err());
     }

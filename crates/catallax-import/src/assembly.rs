@@ -54,6 +54,12 @@ pub fn read_step_assembly(
         match entry.type_name() {
             "SHAPE_DEFINITION_REPRESENTATION" => {
                 let fields = fields(&graph, id, "SHAPE_DEFINITION_REPRESENTATION")?;
+                if matches!(fields.get(1), Some(Param::Ref(representation))
+                    if graph.get(representation).is_some_and(|e|
+                        e.part("SHAPE_REPRESENTATION_WITH_PARAMETERS").is_some()))
+                {
+                    continue;
+                }
                 let shape = reference(fields, 0)?;
                 // A property's shape definition is a PMI carrier, such as a
                 // datum target's parameters, never a product's geometry. The

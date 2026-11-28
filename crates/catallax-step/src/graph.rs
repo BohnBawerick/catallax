@@ -215,20 +215,33 @@ impl Graph {
     }
 
     pub(crate) fn unique_draughting_model_names(&mut self) {
-        let mut names: Vec<&mut Cow<'static, str>> = self
+        let (mut names, cameras): (Vec<_>, Vec<_>) = self
             .entities
             .iter_mut()
             .filter_map(|entity| {
                 if entity.name == "DRAUGHTING_MODEL"
-                    && let Some(Field::Text(name)) = entity.fields.first_mut()
+                    && let [Field::Text(name), Field::List(members), _] = &mut entity.fields[..]
                 {
-                    Some(name)
+                    let camera = match members.last() {
+                        Some(Field::Ref(id)) => Some(*id),
+                        _ => None,
+                    };
+                    Some((name, camera))
                 } else {
                     None
                 }
             })
-            .collect();
+            .unzip();
         unique_quoted_names(&mut names);
+        let names: Vec<_> = names.into_iter().map(|name| (*name).clone()).collect();
+        for (name, camera) in names.into_iter().zip(cameras) {
+            if let Some(camera) = camera {
+                let entity = &mut self.entities[camera.0];
+                if entity.name == "CAMERA_MODEL_D3" {
+                    entity.fields[0] = Field::Text(name);
+                }
+            }
+        }
     }
 
     pub(crate) fn write_layout(&self, layout: &Layout, mut output: String) -> String {

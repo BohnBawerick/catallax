@@ -1299,6 +1299,7 @@ impl<F> ItemKind<F> {
                 | ItemKind::Size(Size {
                     kind: SizeKind::Diameter,
                     thread: None,
+                    limits: Some(Limits::Fit { .. }),
                     ..
                 })
                 | ItemKind::Tolerance(GeometricTolerance {

@@ -1719,6 +1719,7 @@ impl<'a> Exporter<'a> {
     /// Writes the part's manufacturing information after all faces are written.
     fn annotations(
         &mut self,
+        body: BodyId,
         pmi: &crate::pmi::Pmi<FaceId>,
         references: PartReferences,
     ) -> Result<Vec<Id>, Refusal> {
@@ -1726,7 +1727,7 @@ impl<'a> Exporter<'a> {
         let digits = self.digits();
         let annotations = crate::pmi::emit(
             &mut self.graph,
-            self.model,
+            (self.model, body),
             &self.written_faces,
             references,
             pmi,
@@ -2013,7 +2014,12 @@ impl<'a> Exporter<'a> {
             false,
         );
         let annotations = match self.pmi.take() {
-            Some(pmi) => self.annotations(&pmi, preamble.references)?,
+            Some(pmi) => {
+                let [body] = bodies else {
+                    unreachable!("PMI is written for one body")
+                };
+                self.annotations(*body, &pmi, preamble.references)?
+            }
             None => Vec::new(),
         };
         let layout = preamble.layout(&self.graph, &solids, &annotations);

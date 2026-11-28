@@ -49,7 +49,10 @@ pub fn read_step_assembly(
     let mut uses = BTreeMap::new();
     let mut contexts = BTreeMap::new();
     let mut styles = BTreeMap::<u64, Vec<u64>>::new();
-    let mut leaf_relationships = BTreeMap::<u64, Vec<u64>>::new();
+    let (leaf_relationships, relationship_error) = RepresentationLinks::read(&graph);
+    if let Some(error) = relationship_error {
+        return Err(error);
+    }
     for (&id, entry) in &graph {
         match entry.type_name() {
             "SHAPE_DEFINITION_REPRESENTATION" => {
@@ -117,21 +120,7 @@ pub fn read_step_assembly(
                     .or_default()
                     .extend(references(fields, 1)?);
             }
-            _ => {
-                if entry.part("SHAPE_REPRESENTATION_RELATIONSHIP").is_some()
-                    && entry
-                        .part("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
-                        .is_none()
-                {
-                    let relation = entry
-                        .part("REPRESENTATION_RELATIONSHIP")
-                        .unwrap_or(&entry.parts[0].1);
-                    let a = reference(relation, 2)?;
-                    let b = reference(relation, 3)?;
-                    leaf_relationships.entry(a).or_default().push(b);
-                    leaf_relationships.entry(b).or_default().push(a);
-                }
-            }
+            _ => {}
         }
     }
     let mut transforms = BTreeMap::new();
@@ -151,15 +140,7 @@ pub fn read_step_assembly(
         .collect();
     let representation_ids: BTreeSet<_> = representations
         .values()
-        .flat_map(|rep| {
-            std::iter::once(rep.representation).chain(
-                leaf_relationships
-                    .get(&rep.representation)
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            )
-        })
+        .flat_map(|rep| leaf_relationships.related(rep.representation))
         .collect();
     let mut representation_items = BTreeMap::new();
     for id in representation_ids {
@@ -261,14 +242,7 @@ pub fn read_step_assembly(
         let product = reference(args, 2)?;
         let name = string(fields(&graph, product, "PRODUCT")?.get(1))
             .ok_or_else(|| invalid("missing product name"))?;
-        let mut related = vec![rep.representation];
-        related.extend(
-            leaf_relationships
-                .get(&rep.representation)
-                .into_iter()
-                .flatten()
-                .copied(),
-        );
+        let related: Vec<_> = leaf_relationships.related(rep.representation).collect();
         let content = if let Some(children) = children.remove(&id) {
             for representation in related {
                 if !representation_items[&representation].1.is_empty() {
@@ -389,6 +363,41 @@ fn collect_refs(fields: &[Param], out: &mut Vec<u64>) {
             Param::List(list) | Param::Typed(_, list) => collect_refs(list, out),
             _ => {}
         }
+    }
+}
+
+pub(crate) struct RepresentationLinks(BTreeMap<u64, BTreeSet<u64>>);
+
+impl RepresentationLinks {
+    pub(crate) fn read(graph: &Graph) -> (Self, Option<ImportRefusal>) {
+        let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
+        let mut error = None;
+        for entry in graph.values() {
+            if entry.part("SHAPE_REPRESENTATION_RELATIONSHIP").is_none()
+                || entry
+                    .part("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+                    .is_some()
+            {
+                continue;
+            }
+            let relation = entry
+                .part("REPRESENTATION_RELATIONSHIP")
+                .unwrap_or(&entry.parts[0].1);
+            match reference(relation, 2).and_then(|a| Ok((a, reference(relation, 3)?))) {
+                Ok((a, b)) => {
+                    links.entry(a).or_default().insert(b);
+                    links.entry(b).or_default().insert(a);
+                }
+                Err(reason) => {
+                    error.get_or_insert(reason);
+                }
+            }
+        }
+        (Self(links), error)
+    }
+
+    pub(crate) fn related(&self, root: u64) -> impl Iterator<Item = u64> + '_ {
+        std::iter::once(root).chain(self.0.get(&root).into_iter().flatten().copied())
     }
 }
 

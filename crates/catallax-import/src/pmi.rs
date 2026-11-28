@@ -3,6 +3,8 @@
 //! Use [`read_step_pmi`] to get a [`StepPmi`] report and [`patch_step_pmi`]
 //! to apply source-record edits.
 
+mod patch;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Decider, Rational, Real, Refusal};
@@ -13,13 +15,15 @@ use catallax_step::pmi::{
     Camera, ChamferNominal, Characteristic, Crossing, Datum, DatumRef, DatumTarget, EDGE_BREAK,
     FIRST_SIDE, Feature, GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT,
     HoleHead, HoleSize, INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location,
-    MAX_SETBACK, MIN_SETBACK, MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi,
-    PositionControl, PositionFrame, PositionSegment, Process, ProjectedZone, SECOND_SIDE,
-    SEMANTIC_TEXT, SavedView, Side, Size, SizeKind, SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH,
-    TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH, ZoneSpan, off_face,
+    MAX_SETBACK, MIN_SETBACK, MaterialCondition, ORIENTATION, PartNotes, PartValidator,
+    PlaneMeeting, Pmi, PositionControl, PositionFrame, PositionSegment, Process, ProjectedZone,
+    SECOND_SIDE, SEMANTIC_TEXT, SavedView, Side, Size, SizeKind, SurfaceTexture, TARGET_DIAMETER,
+    TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH,
+    ZoneSpan, off_face,
 };
 
 use crate::ImportRefusal;
+use crate::assembly::RepresentationLinks;
 use crate::part21::{Entity, Graph, Param, parse};
 use crate::recognize::{Vec3, length_measure, placement_reference, unit_millimetres};
 
@@ -349,6 +353,8 @@ struct Reader<'a> {
     g: &'a Graph,
     /// Every entity that refers to an entity, by the entity referred to.
     sharing: BTreeMap<u64, Vec<u64>>,
+    representation_links: RepresentationLinks,
+    orphaned_targets: std::cell::OnceCell<BTreeMap<u64, Vec<(u64, bool)>>>,
     draughting_membership: BTreeMap<u64, Vec<u64>>,
     plane_membership: BTreeMap<u64, Vec<(u64, bool)>>,
     /// The faces each shape representation holds, as they are asked for.
@@ -407,6 +413,8 @@ impl<'a> Reader<'a> {
         Self {
             g,
             sharing,
+            representation_links: RepresentationLinks::read(g).0,
+            orphaned_targets: Default::default(),
             draughting_membership,
             plane_membership,
             representation_faces: Default::default(),
@@ -468,35 +476,15 @@ impl<'a> Reader<'a> {
     /// Shape representations named by the part or reached through a plain
     /// representation relationship.
     fn part_representations(&self, owner: u64) -> BTreeSet<u64> {
-        let mut pending: Vec<(u64, u32)> = self
-            .sharing_at(owner, "SHAPE_DEFINITION_REPRESENTATION", 0)
+        self.sharing_at(owner, "SHAPE_DEFINITION_REPRESENTATION", 0)
             .into_iter()
-            .filter_map(|(_, params)| reference(params.get(1)))
-            .map(|id| (id, 0))
-            .collect();
-        let mut seen = BTreeSet::new();
-        while let Some((id, depth)) = pending.pop() {
-            if !seen.insert(id) || depth >= 4 {
-                continue;
-            }
-            for user in self.sharing.get(&id).map_or(&[][..], Vec::as_slice) {
-                let Some(entity) = self.entity(*user) else {
-                    continue;
-                };
-                if entity.parts.len() != 1
-                    || !entity.type_name().ends_with("REPRESENTATION_RELATIONSHIP")
-                {
-                    continue;
-                }
-                let params = entity.parts[0].1.as_slice();
-                if reference(params.get(2)) == Some(id)
-                    && let Some(related) = reference(params.get(3))
-                {
-                    pending.push((related, depth + 1));
-                }
-            }
-        }
-        seen
+            .filter_map(|(_, params)| {
+                (reference(params.first()) == Some(owner))
+                    .then(|| reference(params.get(1)))
+                    .flatten()
+            })
+            .flat_map(|root| self.representation_links.related(root))
+            .collect()
     }
 
     fn entity(&self, id: u64) -> Option<&'a Entity> {
@@ -2180,19 +2168,25 @@ impl<'a> Reader<'a> {
                     normal: vector(axis),
                     ref_dir: direction.clone(),
                 };
-                if let Ok(hit) = span.plane_hit(&plane, &mut dec) {
-                    let boundary = self.face_boundary(&face, &Rational::one()).ok_or(unknown)?;
-                    if let Some(hit) = hit
-                        && boundary.contains(&hit, &mut dec).map_err(detail)?
-                    {
-                        return Err("its projected zone's axis meets a closed end".into());
+                match span.plane_meeting(&plane, &mut dec).map_err(detail)? {
+                    PlaneMeeting::Miss => continue,
+                    PlaneMeeting::Coplanar => {}
+                    PlaneMeeting::Within(hit) => {
+                        let boundary =
+                            self.face_boundary(&face, &Rational::one()).ok_or(unknown)?;
+                        if boundary.contains(&hit, &mut dec).map_err(detail)? {
+                            return Err("its projected zone's axis meets a closed end".into());
+                        }
+                        continue;
                     }
-                    if let Some((t, hit)) = span.plane_beyond(&plane, &mut dec).map_err(detail)?
-                        && boundary.contains(&hit, &mut dec).map_err(detail)?
-                    {
-                        crossings.push(Crossing::At { t, exiting });
+                    PlaneMeeting::Beyond(t, hit) => {
+                        let boundary =
+                            self.face_boundary(&face, &Rational::one()).ok_or(unknown)?;
+                        if boundary.contains(&hit, &mut dec).map_err(detail)? {
+                            crossings.push(Crossing::At { t, exiting });
+                        }
+                        continue;
                     }
-                    continue;
                 }
             }
             let mut sides = Vec::new();
@@ -2473,8 +2467,117 @@ impl<'a> Reader<'a> {
         })
     }
 
+    fn target_face_usage(&self, id: u64, owner: u64) -> Result<FaceUsage, String> {
+        let links = self.sharing_at(id, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP", 3);
+        let [(_, link)] = links.as_slice() else {
+            return Err(if links.is_empty() {
+                "it is tied to no face".into()
+            } else {
+                "it is tied to more than one face feature".into()
+            });
+        };
+        let [Param::Str(_), Param::Str(_) | Param::Unset, aspect, placed] = *link else {
+            return Err("its face relationship has invalid attributes".into());
+        };
+        if reference(Some(placed)) != Some(id) {
+            return Err("its face relationship does not name one target".into());
+        }
+        let aspect = reference(Some(aspect)).ok_or("its face feature is missing")?;
+        if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != Some(owner) {
+            return Err("its face feature belongs to another part".into());
+        }
+        if self.definitional_flag(aspect) != Some("T") {
+            return Err("its face feature needs .T. as its product definitional flag".into());
+        }
+        self.face_usage(aspect)?
+            .ok_or_else(|| "its face feature names no face".into())
+    }
+
+    fn unlinked_datum_targets(&self) -> BTreeMap<u64, Vec<(u64, bool)>> {
+        let mut datums = BTreeMap::<u64, Vec<u64>>::new();
+        for (&id, entity) in self.g {
+            if let Some(fields) = entity.part("DATUM")
+                && let Some(owner) = reference(fields.get(2))
+            {
+                datums.entry(owner).or_default().push(id);
+            }
+        }
+        let mut affected = BTreeMap::<u64, Vec<(u64, bool)>>::new();
+        for (&id, entity) in self.g {
+            let Some(fields) = entity.part("PLACED_DATUM_TARGET_FEATURE") else {
+                continue;
+            };
+            let has_datum = self
+                .sharing
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .filter_map(|link| self.entity(*link)?.part("SHAPE_ASPECT_RELATIONSHIP"))
+                .flat_map(|fields| fields.iter().skip(2))
+                .flat_map(|field| references(Some(field)))
+                .any(|candidate| self.has(candidate, "DATUM"));
+            if has_datum {
+                continue;
+            }
+            let mut owners = self.owner_shapes(id);
+            for (_, relationship) in self.sharing_at(id, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP", 3)
+            {
+                owners.extend(
+                    reference(relationship.get(2))
+                        .and_then(|aspect| self.aspect_params(aspect))
+                        .and_then(|fields| reference(fields.get(2)))
+                        .filter(|owner| self.has(*owner, "PRODUCT_DEFINITION_SHAPE")),
+                );
+            }
+            if let Some(owner) =
+                reference(fields.get(2)).filter(|id| self.has(*id, "PRODUCT_DEFINITION_SHAPE"))
+            {
+                owners.insert(owner);
+            }
+            for owner in owners {
+                let candidates = datums.get(&owner).map_or(&[][..], Vec::as_slice);
+                let faces = self
+                    .target_face_usage(id, owner)
+                    .ok()
+                    .map(|usage| usage.faces);
+                let possible: Vec<_> = candidates
+                    .iter()
+                    .copied()
+                    .filter(|datum| {
+                        let Some(faces) = &faces else { return true };
+                        self.datum_features(*datum)
+                            .into_iter()
+                            .flatten()
+                            .flat_map(|aspect| {
+                                self.features(aspect, 0).into_iter().flatten().flatten()
+                            })
+                            .any(|face| faces.contains(&face))
+                    })
+                    .collect();
+                let ambiguous = possible.len() > 1;
+                for datum in possible {
+                    affected.entry(datum).or_default().push((id, ambiguous));
+                }
+            }
+        }
+        affected
+    }
+
     /// The placed datum targets that set up a datum.
     fn placed_targets(&self, datum: u64) -> Result<Vec<u64>, String> {
+        if let Some(&(target, ambiguous)) = self
+            .orphaned_targets
+            .get_or_init(|| self.unlinked_datum_targets())
+            .get(&datum)
+            .and_then(|targets| targets.first())
+        {
+            let reason = if ambiguous {
+                "its datum ownership is ambiguous"
+            } else {
+                "its datum relationship is missing or unreadable"
+            };
+            return Err(format!("its datum target #{target} was not read: {reason}"));
+        }
         self.sharing
             .get(&datum)
             .into_iter()
@@ -2828,11 +2931,7 @@ impl<'a> Reader<'a> {
         coordinates(Some(point))
     }
 
-    fn graphic_geometry(
-        &self,
-        occurrences: &[u64],
-        scale: &Rational,
-    ) -> Result<(String, Vec<Vec<Vec3>>), String> {
+    fn graphic_geometry(&self, occurrences: &[u64]) -> Result<(String, Vec<Vec<Vec3>>), String> {
         let mut kind = String::new();
         let mut strokes = Vec::new();
         for id in occurrences {
@@ -2884,7 +2983,6 @@ impl<'a> Reader<'a> {
                     .into_iter()
                     .map(|id| {
                         self.point_coordinates(id)
-                            .map(|point| point.map(|value| &value * scale))
                             .ok_or("an annotation polyline has an unreadable point")
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -2900,7 +2998,7 @@ impl<'a> Reader<'a> {
         Ok((kind, strokes))
     }
 
-    fn annotation_plane(&self, id: u64, scale: &Rational) -> Option<GraphicPlane> {
+    fn annotation_plane(&self, id: u64) -> Option<GraphicPlane> {
         let [Param::Str(_), styles, carrier, _] = self.entity(id)?.part("ANNOTATION_PLANE")? else {
             return None;
         };
@@ -2916,7 +3014,7 @@ impl<'a> Reader<'a> {
         };
         let frame = self.placement(placement)?;
         Some(GraphicPlane {
-            origin_mm: frame.origin.map(|value| &value * scale),
+            origin_mm: frame.origin,
             normal: frame.axis,
             reference: frame.reference,
         })
@@ -3184,6 +3282,26 @@ impl<'a> Reader<'a> {
                 by_entity.insert(*lower, name);
             }
         }
+        let contexts: BTreeMap<_, _> = self
+            .g
+            .iter()
+            .filter_map(|(&model, entity)| {
+                let fields = Self::draughting_model(entity)?;
+                let cameras: Vec<_> = references(fields.get(1))
+                    .into_iter()
+                    .filter(|id| {
+                        self.entity(*id)
+                            .is_some_and(|entity| entity.type_name().starts_with("CAMERA_MODEL"))
+                    })
+                    .collect();
+                let scale = self.presentation_scale(model);
+                let usable = cameras.is_empty()
+                    || scale.as_ref().is_ok_and(|scale| {
+                        cameras.iter().any(|id| self.camera(*id, scale).is_ok())
+                    });
+                Some((model, (!cameras.is_empty(), usable, scale)))
+            })
+            .collect();
         let mut presented = BTreeMap::new();
         let mut graphics = BTreeMap::new();
         let mut callout_scales = BTreeMap::new();
@@ -3216,10 +3334,7 @@ impl<'a> Reader<'a> {
             let subjects: Vec<_> = std::iter::once(callout)
                 .chain(occurrences.iter().copied())
                 .collect();
-            let mut linked = Vec::new();
-            let mut presents = BTreeSet::new();
-            let mut legacy_aspects = BTreeSet::new();
-            let mut faces = Vec::new();
+            let mut associations = Vec::new();
             let mut models = BTreeSet::new();
             let mut associated = BTreeSet::new();
             let mut planes = BTreeMap::new();
@@ -3228,6 +3343,155 @@ impl<'a> Reader<'a> {
                     self.sharing_at(subject, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
                 {
                     associated.extend(reference(association.get(3)));
+                    associations.push(association);
+                }
+                models.extend(self.draughting_models_containing(subject));
+                planes.extend(
+                    self.plane_membership
+                        .get(&subject)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+            }
+            let mut equivalent = None;
+            for &id in &subjects {
+                match self.callout_text(id) {
+                    Ok(Some(text)) => {
+                        equivalent.get_or_insert(text);
+                    }
+                    Ok(None) => {}
+                    Err(reason) => skipped.push(SkippedPmi {
+                        entity: format!("#{callout}"),
+                        kind: entity.type_name().into(),
+                        reason,
+                    }),
+                }
+            }
+            let geometry = (|| -> Result<_, String> {
+                let (kind, mut polylines) = self.graphic_geometry(&occurrences)?;
+                let first = &polylines[0][0];
+                let mut read_planes = BTreeMap::new();
+                let mut failures = Vec::new();
+                let mut model_planes = BTreeMap::<u64, Vec<u64>>::new();
+                for (id, valid) in planes {
+                    for model in self.draughting_models_containing(id) {
+                        model_planes.entry(model).or_default().push(id);
+                    }
+                    let plane = valid.then(|| self.annotation_plane(id)).flatten();
+                    if let Some(plane) = plane {
+                        if polylines
+                            .iter()
+                            .flatten()
+                            .any(|point| !dot3(&sub3(point, first), &plane.normal).is_zero())
+                        {
+                            failures.push("the callout's strokes vary in depth relative to its annotation plane");
+                        } else {
+                            read_planes.insert(id, plane);
+                        }
+                    } else {
+                        failures.push("the callout's annotation plane is unreadable");
+                    }
+                }
+                if read_planes.is_empty()
+                    && let Some(reason) = failures.first()
+                {
+                    return Err((*reason).into());
+                }
+                for reason in failures {
+                    skipped.push(SkippedPmi {
+                        entity: format!("#{callout}"),
+                        kind: entity.type_name().into(),
+                        reason: reason.into(),
+                    });
+                }
+                let mut candidates = BTreeSet::new();
+                candidates.extend(
+                    models
+                        .iter()
+                        .chain(&associated)
+                        .chain(model_planes.keys())
+                        .copied(),
+                );
+                let mut ranked = BTreeMap::<_, BTreeSet<&Rational>>::new();
+                let mut unreadable = None;
+                for model in candidates {
+                    let Some((is_view, usable, scale)) = contexts.get(&model) else {
+                        continue;
+                    };
+                    let scale = match scale {
+                        Ok(scale) if *usable => scale,
+                        Ok(_) => continue,
+                        Err(reason) => {
+                            unreadable = Some(reason.clone());
+                            continue;
+                        }
+                    };
+                    if !models.contains(&model)
+                        && model_planes
+                            .get(&model)
+                            .is_some_and(|ids| ids.iter().all(|id| !read_planes.contains_key(id)))
+                    {
+                        continue;
+                    }
+                    ranked
+                        .entry((*is_view, !associated.contains(&model)))
+                        .or_default()
+                        .insert(scale);
+                }
+                let (_, scales) = ranked.first_key_value().ok_or_else(|| {
+                    unreadable.unwrap_or_else(|| "the callout has no known length unit".into())
+                })?;
+                if scales.len() != 1 {
+                    return Err("the callout has conflicting length units".into());
+                }
+                let scale = (*scales.first().unwrap()).clone();
+                let valid_planes = read_planes.keys().copied().collect::<BTreeSet<_>>();
+                let planes = read_planes
+                    .into_iter()
+                    .filter(|(id, _)| {
+                        let mut models = self.draughting_models_containing(*id).peekable();
+                        models.peek().is_none()
+                            || models.any(|model| {
+                                contexts.get(&model).is_some_and(|(_, usable, context)| {
+                                    *usable && context.as_ref().is_ok_and(|unit| unit == &scale)
+                                })
+                            })
+                    })
+                    .map(|(_, mut plane)| {
+                        plane.origin_mm = plane.origin_mm.map(|value| &value * &scale);
+                        plane
+                    })
+                    .collect();
+                for point in polylines.iter_mut().flatten() {
+                    for coordinate in point {
+                        *coordinate = &*coordinate * &scale;
+                    }
+                }
+                Ok((kind, polylines, planes, scale, valid_planes))
+            })();
+            let (kind, polylines_mm, planes, scale, valid_planes) = match geometry {
+                Ok(geometry) => geometry,
+                Err(reason) => {
+                    skipped.push(SkippedPmi {
+                        entity: format!("#{callout}"),
+                        kind: entity.type_name().into(),
+                        reason,
+                    });
+                    continue;
+                }
+            };
+            let mut linked = Vec::new();
+            let mut presents = BTreeSet::new();
+            let mut legacy_aspects = BTreeSet::new();
+            let mut faces = Vec::new();
+            for association in associations {
+                let supported = reference(association.get(3))
+                    .and_then(|model| contexts.get(&model))
+                    .is_some_and(|(_, usable, context)| {
+                        *usable && context.as_ref().is_ok_and(|unit| unit == &scale)
+                    });
+                if supported {
                     let Some(definition) = reference(association.get(2)) else {
                         continue;
                     };
@@ -3256,90 +3520,8 @@ impl<'a> Reader<'a> {
                         legacy_aspects.insert(definition);
                     }
                 }
-                models.extend(self.draughting_models_containing(subject));
-                planes.extend(
-                    self.plane_membership
-                        .get(&subject)
-                        .into_iter()
-                        .flatten()
-                        .copied(),
-                );
             }
-            let mut equivalent = None;
-            for &id in &subjects {
-                match self.callout_text(id) {
-                    Ok(Some(text)) => {
-                        equivalent.get_or_insert(text);
-                    }
-                    Ok(None) => {}
-                    Err(reason) => skipped.push(SkippedPmi {
-                        entity: format!("#{callout}"),
-                        kind: entity.type_name().into(),
-                        reason,
-                    }),
-                }
-            }
-            for &plane in planes.keys() {
-                models.extend(self.draughting_models_containing(plane));
-            }
-            let geometry = (|| -> Result<_, String> {
-                let mut scale = None;
-                let mut unreadable = None;
-                let scale_models = if associated.is_empty() {
-                    models
-                } else {
-                    associated
-                };
-                for model in scale_models {
-                    let unit = match self.representation_scale(model) {
-                        Ok(unit) => unit,
-                        Err(reason) => {
-                            unreadable = Some(reason);
-                            continue;
-                        }
-                    };
-                    if scale.as_ref().is_some_and(|known| known != &unit) {
-                        return Err("the callout has conflicting length units".into());
-                    }
-                    scale = Some(unit);
-                }
-                let scale = scale.ok_or_else(|| {
-                    unreadable.unwrap_or_else(|| "the callout has no known length unit".into())
-                })?;
-                let (kind, polylines) = self.graphic_geometry(&occurrences, &scale)?;
-                let mut read_planes = Vec::new();
-                for (id, valid) in planes {
-                    let plane = valid
-                        .then(|| self.annotation_plane(id, &scale))
-                        .flatten()
-                        .ok_or("the callout's annotation plane is unreadable")?;
-                    let first = &polylines[0][0];
-                    if polylines
-                        .iter()
-                        .flatten()
-                        .any(|point| !dot3(&sub3(point, first), &plane.normal).is_zero())
-                    {
-                        return Err(
-                            "the callout's strokes vary in depth relative to its annotation plane"
-                                .into(),
-                        );
-                    }
-                    read_planes.push(plane);
-                }
-                Ok((kind, polylines, read_planes, scale))
-            })();
-            let (kind, polylines_mm, planes, scale) = match geometry {
-                Ok(geometry) => geometry,
-                Err(reason) => {
-                    skipped.push(SkippedPmi {
-                        entity: format!("#{callout}"),
-                        kind: entity.type_name().into(),
-                        reason,
-                    });
-                    continue;
-                }
-            };
-            callout_scales.insert(callout, scale);
+            callout_scales.insert(callout, (scale, valid_planes));
             for occurrence in occurrences {
                 occurrence_callouts
                     .entry(occurrence)
@@ -3430,26 +3612,31 @@ impl<'a> Reader<'a> {
                     shown.extend_from_slice(callouts);
                 } else if let Some(plane) = entity.part("ANNOTATION_PLANE") {
                     for element in reference_list(plane.get(3)).unwrap_or_default() {
-                        if callout_scales.contains_key(&element) {
+                        let in_plane = |callout: &u64| {
+                            callout_scales
+                                .get(callout)
+                                .is_some_and(|(_, planes)| planes.contains(member))
+                        };
+                        if in_plane(&element) {
                             shown.push(element);
                         } else if let Some(callouts) = occurrence_callouts.get(&element) {
-                            shown.extend_from_slice(callouts);
+                            shown.extend(callouts.iter().copied().filter(in_plane));
                         }
                     }
                 }
             }
-            let scale = match self.presentation_scale(model) {
+            let scale = match &contexts[&model].2 {
                 Ok(scale) => scale,
                 Err(reason) => {
                     skipped.push(SkippedPmi {
                         entity: format!("#{model}"),
                         kind: "DRAUGHTING_MODEL".into(),
-                        reason,
+                        reason: reason.clone(),
                     });
                     continue;
                 }
             };
-            if shown.iter().any(|id| callout_scales[id] != scale) {
+            if shown.iter().any(|id| &callout_scales[id].0 != scale) {
                 skipped.push(SkippedPmi {
                     entity: format!("#{model}"),
                     kind: "DRAUGHTING_MODEL".into(),
@@ -3458,7 +3645,7 @@ impl<'a> Reader<'a> {
                 continue;
             }
             for camera in cameras {
-                let camera_record = match self.camera(camera, &scale) {
+                let camera_record = match self.camera(camera, scale) {
                     Ok(camera) => camera,
                     Err(reason) => {
                         skipped.push(SkippedPmi {
@@ -3480,7 +3667,11 @@ impl<'a> Reader<'a> {
         }
         // Every authored name is reserved before a repeat takes a suffix, so a
         // suffix never displaces a later camera's own name.
-        let names = unique_view_names(accepted.iter().map(|(_, base, _)| base.as_str()));
+        let (names, _) = catallax_step::pmi::unique_view_names(
+            accepted
+                .iter()
+                .map(|(_, base, _)| (base.as_str(), base.as_str())),
+        );
         let mut views: Vec<SavedView> = Vec::new();
         for ((camera_record, _, shown), name) in accepted.into_iter().zip(names) {
             let mut view_items: Vec<String> = Vec::new();
@@ -3622,30 +3813,7 @@ impl<'a> Reader<'a> {
             return Err("its datum belongs to another part".into());
         }
         let letter = self.datum_letter(*datum).ok_or("its datum has no letter")?;
-        let links = self.sharing_at(id, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP", 3);
-        let [(_, link)] = links.as_slice() else {
-            return Err(if links.is_empty() {
-                "it is tied to no face".into()
-            } else {
-                "it is tied to more than one face feature".into()
-            });
-        };
-        let [Param::Str(_), Param::Str(_) | Param::Unset, aspect, placed] = *link else {
-            return Err("its face relationship has invalid attributes".into());
-        };
-        if reference(Some(placed)) != Some(id) {
-            return Err("its face relationship does not name one target".into());
-        }
-        let aspect = reference(Some(aspect)).ok_or("its face feature is missing")?;
-        if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != Some(owner) {
-            return Err("its face feature belongs to another part".into());
-        }
-        if self.definitional_flag(aspect) != Some("T") {
-            return Err("its face feature needs .T. as its product definitional flag".into());
-        }
-        let usage = self
-            .face_usage(aspect)?
-            .ok_or("its face feature names no face")?;
+        let usage = self.target_face_usage(id, owner)?;
         let [face] = usage.faces.as_slice() else {
             return Err("its face feature names more than one face".into());
         };
@@ -4297,32 +4465,6 @@ fn read_items<'a>(
     }
 }
 
-/// Unique view names in order: the first of each authored name keeps it, and
-/// a repeat takes `name (n)` with the lowest free `n` from 2 that no authored
-/// or earlier name holds. Each base keeps its next suffix.
-fn unique_view_names<'n>(bases: impl Iterator<Item = &'n str> + Clone) -> Vec<String> {
-    let mut reserved: BTreeSet<String> = bases.clone().map(str::to_owned).collect();
-    let mut seen = BTreeSet::new();
-    let mut next = BTreeMap::<&str, usize>::new();
-    let mut names = Vec::new();
-    for base in bases {
-        if seen.insert(base) {
-            names.push(base.to_owned());
-            continue;
-        }
-        let suffix = next.entry(base).or_insert(2);
-        let name = loop {
-            let name = format!("{base} ({suffix})");
-            *suffix += 1;
-            if reserved.insert(name.clone()) {
-                break name;
-            }
-        };
-        names.push(name);
-    }
-    names
-}
-
 /// One edit of a source file's PMI.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum PmiEdit {
@@ -4347,7 +4489,7 @@ fn patch_refusal(what: impl std::fmt::Display) -> Refusal {
 /// refuses when a dependent record could retain the old meaning or when the
 /// edited file fails read-back.
 pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusal> {
-    use catallax_step::pmi::patch::{Patch, Records};
+    use patch::{Patch, Records};
     if edits.is_empty() {
         return Ok(bytes.to_vec());
     }
@@ -4458,6 +4600,22 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
         let base = entity
             .part("GEOMETRIC_TOLERANCE")
             .unwrap_or(entity.parts[0].1.as_slice());
+        let controlled: BTreeSet<_> = tolerance.features.iter().flatten().collect();
+        for (&id, association) in &graph {
+            let Some(fields) = association.part("DRAUGHTING_MODEL_ITEM_ASSOCIATION") else {
+                continue;
+            };
+            for definition in references(fields.get(2)) {
+                if reader.aspect_params(definition).is_some()
+                    && reader.owner_shapes(definition).contains(&owner)
+                    && !reader
+                        .graphic_faces(definition)
+                        .is_ok_and(|faces| faces.iter().all(|face| !controlled.contains(face)))
+                {
+                    return Err(refuse_dependency(id));
+                }
+            }
+        }
         let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
         if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {
             return Err(refuse_dependency(user));

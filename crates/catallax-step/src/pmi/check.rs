@@ -8,7 +8,7 @@ use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, Real, Refusal};
 use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
 use catallax_shapes::{Circle, Plane, Point3, Surface, Vector3};
-use catallax_topology::{FaceId, Loop, Model, Sense};
+use catallax_topology::{BodyId, BodyKind, FaceId, Loop, Model, Sense};
 
 use super::measure::{
     Shape, face_edges, feature_shape, is_positive, is_zero, is_zero_vector, oriented_plane,
@@ -401,6 +401,19 @@ pub enum Side {
     Beyond,
 }
 
+/// Where a projected zone's axis meets a plane.
+#[doc(hidden)]
+pub enum PlaneMeeting {
+    /// The forward axis misses the plane.
+    Miss,
+    /// The axis lies in the plane.
+    Coplanar,
+    /// The axis meets the plane within the projected span.
+    Within(Point3),
+    /// The axis meets the plane at or beyond the span's end.
+    Beyond(Real, Point3),
+}
+
 impl ZoneSpan {
     /// The span from `at` along `direction` for `height` in the same
     /// length unit as `at`.
@@ -422,25 +435,27 @@ impl ZoneSpan {
         self.at.plus(&self.direction.scaled(&self.reach))
     }
 
-    /// Where the span meets a plane, from its start up to but not at its end.
-    /// Refuses when the span lies in the plane.
-    pub fn plane_hit(&self, plane: &Plane, dec: &mut Decider) -> Result<Option<Point3>, Refusal> {
+    /// Where the forward axis meets a plane relative to the zone's height.
+    pub fn plane_meeting(&self, plane: &Plane, dec: &mut Decider) -> Result<PlaneMeeting, Refusal> {
         let height = plane.origin.minus(&self.at).dot(&plane.normal);
         let along = self.direction.dot(&plane.normal);
         if is_zero(&along, dec)? {
-            if is_zero(&height, dec)? {
-                return Err(Refusal::new(
-                    "step.pmi-invalid",
-                    "the projection lies in a face plane",
-                ));
-            }
-            return Ok(None);
+            return Ok(if is_zero(&height, dec)? {
+                PlaneMeeting::Coplanar
+            } else {
+                PlaneMeeting::Miss
+            });
         }
         let t = height / along;
-        if is_positive(&(-t.clone()), dec)? || !is_positive(&(&self.reach - &t), dec)? {
-            return Ok(None);
+        if is_positive(&(-t.clone()), dec)? {
+            return Ok(PlaneMeeting::Miss);
         }
-        Ok(Some(self.at.plus(&self.direction.scaled(&t))))
+        let point = self.at.plus(&self.direction.scaled(&t));
+        Ok(if is_positive(&(&self.reach - &t), dec)? {
+            PlaneMeeting::Within(point)
+        } else {
+            PlaneMeeting::Beyond(t, point)
+        })
     }
 
     /// Whether the span, from its start up to but not at its end, stays off
@@ -498,24 +513,6 @@ impl ZoneSpan {
         };
         let gap = centre.minus(&nearest);
         is_positive(&(gap.dot(&gap) - radius_sq.clone()), dec)
-    }
-
-    /// Where the axis meets a plane at or past the span's end, with the
-    /// crossing's place along the axis.
-    pub fn plane_beyond(
-        &self,
-        plane: &Plane,
-        dec: &mut Decider,
-    ) -> Result<Option<(Real, Point3)>, Refusal> {
-        let along = self.direction.dot(&plane.normal);
-        if is_zero(&along, dec)? {
-            return Ok(None);
-        }
-        let t = plane.origin.minus(&self.at).dot(&plane.normal) / along;
-        if is_positive(&(&self.reach - &t), dec)? {
-            return Ok(None);
-        }
-        Ok(Some((t.clone(), self.at.plus(&self.direction.scaled(&t)))))
     }
 
     /// The first place at or past the span's end where the axis may meet a
@@ -827,29 +824,38 @@ pub(super) fn check_written_projection(
             let (bounds, surface, same) = written_face(graph, *face).ok_or_else(invalid)?;
             if let Some(plane) = fields(graph, surface, "PLANE")
                 .and_then(|fields| written_plane(graph, fields.get(1)?))
-                && let Ok(hit) = span.plane_hit(&plane, dec)
             {
-                let boundary = written_boundary(graph, *face).ok_or_else(invalid)?;
-                if let Some(hit) = hit
-                    && boundary.contains(&hit, dec)?
-                {
-                    return Err(invalid());
+                match span.plane_meeting(&plane, dec)? {
+                    PlaneMeeting::Miss => continue,
+                    PlaneMeeting::Coplanar => {}
+                    PlaneMeeting::Within(hit) => {
+                        if written_boundary(graph, *face)
+                            .ok_or_else(invalid)?
+                            .contains(&hit, dec)?
+                        {
+                            return Err(invalid());
+                        }
+                        continue;
+                    }
+                    PlaneMeeting::Beyond(t, hit) => {
+                        if written_boundary(graph, *face)
+                            .ok_or_else(invalid)?
+                            .contains(&hit, dec)?
+                        {
+                            let along = plane.normal.dot(&normal);
+                            let outward = if same != reversed.contains(face) {
+                                along
+                            } else {
+                                -along
+                            };
+                            crossings.push(Crossing::At {
+                                t,
+                                exiting: is_positive(&outward, dec)?,
+                            });
+                        }
+                        continue;
+                    }
                 }
-                if let Some((t, hit)) = span.plane_beyond(&plane, dec)?
-                    && boundary.contains(&hit, dec)?
-                {
-                    let along = plane.normal.dot(&normal);
-                    let outward = if same != reversed.contains(face) {
-                        along
-                    } else {
-                        -along
-                    };
-                    crossings.push(Crossing::At {
-                        t,
-                        exiting: is_positive(&outward, dec)?,
-                    });
-                }
-                continue;
             }
             let edges = written_edges(graph, bounds).ok_or_else(invalid)?;
             let mut sides = Vec::new();
@@ -985,52 +991,46 @@ fn feature_of_size(
 
 fn check_open_entry(
     model: &Model,
-    entry: FaceId,
+    body: BodyId,
     span: &ZoneSpan,
-    written: Option<&BTreeMap<FaceId, Vec<Id>>>,
     item: &str,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let shell_faces = model
-        .bodies_with_face(entry)
-        .into_iter()
-        .filter(|&body| model.body(body).kind == catallax_topology::BodyKind::Solid)
-        .flat_map(|body| model.body(body).lumps.iter())
-        .flat_map(|&lump| model.lump(lump).shells.iter())
-        .map(|&shell| &model.shell(shell).faces)
-        .filter(|faces| {
-            written.is_none_or(|written| faces.iter().all(|face| written.contains_key(face)))
-        })
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>();
-    if !shell_faces.contains(&entry) {
+    if model.body(body).kind != BodyKind::Solid {
         return Err(refuse(item, "the projected zone entry has no owning shell"));
     }
     let blocked = || refuse(item, "a projected zone's axis meets a closed end");
     let unknown = || refuse(item, "the projected zone's exterior start cannot be proved");
     let mut crossings = Vec::new();
-    for face in shell_faces {
+    for face in model.faces_of_body(body) {
         let surface = model.geom().surface(model.face(face).surface);
-        if let Surface::Plane(plane) = surface
-            && let Ok(hit) = span.plane_hit(plane, dec)
-        {
-            let boundary = face_boundary(model, face, dec)?.ok_or_else(unknown)?;
-            if let Some(hit) = hit
-                && boundary.contains(&hit, dec)?
-            {
-                return Err(blocked());
+        if let Surface::Plane(plane) = surface {
+            match span.plane_meeting(plane, dec)? {
+                PlaneMeeting::Miss => continue,
+                PlaneMeeting::Coplanar => {}
+                PlaneMeeting::Within(hit) => {
+                    if face_boundary(model, face, dec)?
+                        .ok_or_else(unknown)?
+                        .contains(&hit, dec)?
+                    {
+                        return Err(blocked());
+                    }
+                    continue;
+                }
+                PlaneMeeting::Beyond(t, hit) => {
+                    if face_boundary(model, face, dec)?
+                        .ok_or_else(unknown)?
+                        .contains(&hit, dec)?
+                    {
+                        let (_, outward) = outward_plane(model, face).ok_or_else(unknown)?;
+                        crossings.push(Crossing::At {
+                            t,
+                            exiting: is_positive(&outward.dot(&span.direction), dec)?,
+                        });
+                    }
+                    continue;
+                }
             }
-            if let Some((t, hit)) = span.plane_beyond(plane, dec)?
-                && boundary.contains(&hit, dec)?
-            {
-                let (_, outward) = outward_plane(model, face).ok_or_else(unknown)?;
-                crossings.push(Crossing::At {
-                    t,
-                    exiting: is_positive(&outward.dot(&span.direction), dec)?,
-                });
-            }
-            continue;
         }
         let mut sides = Vec::new();
         for id in face_edges(model, face) {
@@ -1150,7 +1150,7 @@ fn check_position(
     datums: &BTreeMap<&str, &Feature<FaceId>>,
     targeted: &BTreeSet<&str>,
     item: &str,
-    written: Option<&BTreeMap<FaceId, Vec<Id>>>,
+    body: BodyId,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     let mut axes = Vec::with_capacity(control.features.len());
@@ -1247,28 +1247,25 @@ fn check_position(
                 normal.clone(),
                 &Real::from_rational(zone.height_mm.clone()),
             );
-            check_open_entry(model, *entry, &span, written, item, dec)?;
+            check_open_entry(model, body, &span, item, dec)?;
         }
     }
     Ok(())
 }
 
-/// Checks the datum targets and position controls of `pmi` against `model`:
+/// Checks the datum targets and position controls of `pmi` against `body`:
 /// each target lies on its trimmed planar face, each controlled feature is a
 /// cylinder, a material boundary is only on a datum feature of size that no
 /// target sets up, and a projected zone starts on a face that meets its
 /// feature square to its axis and points out of the part. Refuses
 /// `step.pmi-invalid` with the item's name. Other items are not checked here.
-pub fn check_on_model(model: &Model, pmi: &Pmi<FaceId>, dec: &mut Decider) -> Result<(), Refusal> {
-    check_on_model_for_export(model, pmi, None, dec)
-}
-
-pub(super) fn check_on_model_for_export(
+pub fn check_on_model(
     model: &Model,
+    body: BodyId,
     pmi: &Pmi<FaceId>,
-    written: Option<&BTreeMap<FaceId, Vec<Id>>>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let faces: BTreeSet<_> = model.faces_of_body(body).into_iter().collect();
     let mut datums = BTreeMap::new();
     let mut targeted = BTreeSet::new();
     for item in &pmi.items {
@@ -1276,11 +1273,11 @@ pub(super) fn check_on_model_for_export(
             .kind
             .faces()
             .into_iter()
-            .any(|face| !model.has_face(*face))
+            .any(|face| !faces.contains(face))
         {
             return Err(refuse(
                 &item.id,
-                "a face it is attached to is not in the model",
+                "a face it is attached to is not in the selected body",
             ));
         }
         match &item.kind {
@@ -1297,7 +1294,7 @@ pub(super) fn check_on_model_for_export(
         match &item.kind {
             ItemKind::DatumTarget(target) => check_target(model, target, &item.id, dec)?,
             ItemKind::Position(control) => {
-                check_position(model, control, &datums, &targeted, &item.id, written, dec)?;
+                check_position(model, control, &datums, &targeted, &item.id, body, dec)?;
             }
             _ => {}
         }

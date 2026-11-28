@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::Surface;
-use catallax_topology::{FaceId, Loop, Model};
+use catallax_topology::{BodyId, FaceId, Loop, Model};
 
 use super::callout::{self, presented};
 use super::{
@@ -589,7 +589,7 @@ impl Emitter<'_> {
                 self.root("PLUS_MINUS_TOLERANCE", vec![range.into(), dimension.into()]);
             }
             Some(Limits::Fit { deviation, grade }) => {
-                let zone = if deviation.bytes().all(|b| b.is_ascii_uppercase()) {
+                let zone = if super::is_bore_fit(deviation) {
                     "'hole'"
                 } else {
                     "'shaft'"
@@ -1778,7 +1778,7 @@ fn label<'a>(item: &'a super::Item<FaceId>, nominal: Option<&str>) -> Result<Lab
             through,
             features,
             ..
-        }) => {
+        }) if super::is_bore_fit(deviation) => {
             let value = nominal.expect("a diameter has a measured value");
             let value = value.strip_suffix('.').unwrap_or(value);
             let mut main = format!("⌀{value} {deviation}{grade}");
@@ -1831,7 +1831,7 @@ pub(crate) const NOTE: &str = "note";
 /// callout's leader on a face with no rational vertex.
 pub(crate) fn emit(
     graph: &mut Graph,
-    model: &Model,
+    part: (&Model, BodyId),
     faces: &BTreeMap<FaceId, Vec<Id>>,
     references: PartReferences,
     pmi: &Pmi<FaceId>,
@@ -1851,6 +1851,7 @@ pub(crate) fn emit(
             ));
         }
     }
+    let (model, body) = part;
     let reversed = check::reversed_faces(graph);
     let mut emitter = Emitter {
         graph,
@@ -1872,7 +1873,7 @@ pub(crate) fn emit(
         reversed,
         dec,
     };
-    check::check_on_model_for_export(model, pmi, Some(faces), emitter.dec)?;
+    check::check_on_model(model, body, pmi, emitter.dec)?;
     if !pmi.items.is_empty() || pmi.part.standard.is_some() {
         let composite = pmi.items.iter().any(|item| {
             matches!(

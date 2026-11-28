@@ -200,12 +200,6 @@ fn assembly_source(repeat_items: bool) -> String {
         .filter_map(|line| line.strip_prefix('#')?.split('=').next()?.parse().ok())
         .max()
         .unwrap();
-    let parallelism = file
-        .lines()
-        .find(|line| line.contains("PARALLELISM_TOLERANCE('Base parallelism'"))
-        .and_then(|line| line.split('=').next())
-        .unwrap()
-        .to_owned();
     let product = file
         .lines()
         .find(|line| line.contains("=PRODUCT_DEFINITION('design'"))
@@ -217,7 +211,7 @@ fn assembly_source(repeat_items: bool) -> String {
         "#{a}=DOCUMENT('DRW-7','Inspection drawing','',#{b});\n\
          #{b}=DOCUMENT_TYPE('configuration controlled document version');\n\
          #{c}=APPLIED_DOCUMENT_REFERENCE(#{a},'review',({product}));\n\
-         #{d}=APPLIED_GROUP_ASSIGNMENT(#{}, ({parallelism}));\n\
+         #{d}=APPLIED_GROUP_ASSIGNMENT(#{}, ({product}));\n\
          #{}=GROUP('Supplier review','kept as written');\n",
         highest + 5,
         highest + 5,
@@ -322,6 +316,7 @@ fn a_tolerance_value_changes_its_own_records_only() {
             "DOCUMENT(",
             "DOCUMENT_TYPE(",
             "APPLIED_DOCUMENT_REFERENCE(",
+            "APPLIED_GROUP_ASSIGNMENT(",
             "GROUP(",
             "COLOUR_RGB(",
         ]
@@ -372,15 +367,59 @@ fn an_unsafe_edit_is_refused_before_writing() {
             refusal.detail
         );
     }
+    let parallelism = &read_step_pmi(file.as_bytes()).unwrap().sources["Base parallelism"];
+    let group = file
+        .lines()
+        .find(|line| line.contains("=APPLIED_GROUP_ASSIGNMENT("))
+        .unwrap();
+    let (assignment, _) = group.rsplit_once(", (").unwrap();
+    let unsafe_group = file.replacen(group, &format!("{assignment}, ({parallelism}));"), 1);
     let refusal = patch_step_pmi(
-        file.as_bytes(),
+        unsafe_group.as_bytes(),
         &[PmiEdit::ToleranceValue {
-            source: read_step_pmi(file.as_bytes()).unwrap().sources["Base parallelism"].clone(),
+            source: parallelism.clone(),
             value: q("0.03"),
         }],
     )
     .unwrap_err();
     assert!(refusal.detail.contains("APPLIED_GROUP_ASSIGNMENT"));
+}
+
+#[test]
+fn an_edit_refuses_a_callout_linked_to_the_controlled_feature() {
+    let file = source();
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    let root = &read.sources["Base position"];
+    let tolerance = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{root}=")))
+        .unwrap();
+    let target = tolerance.split(',').nth(3).unwrap().trim_end_matches(");");
+    let association = file
+        .lines()
+        .find(|line| {
+            line.contains("=DRAUGHTING_MODEL_ITEM_ASSOCIATION(")
+                && line.contains(&format!(",{root},"))
+        })
+        .unwrap();
+    let attached = file.replacen(
+        association,
+        &association.replace(&format!(",{root},"), &format!(",{target},")),
+        1,
+    );
+    let Err(refusal) = patch_step_pmi(
+        attached.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: root.clone(),
+            value: q("0.1"),
+        }],
+    ) else {
+        panic!("patched a tolerance that still has a feature-linked callout");
+    };
+    assert!(
+        refusal.detail.contains("DRAUGHTING_MODEL_ITEM_ASSOCIATION"),
+        "{refusal:?}"
+    );
 }
 
 #[test]

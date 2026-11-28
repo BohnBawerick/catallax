@@ -15,7 +15,6 @@
 mod callout;
 mod check;
 mod measure;
-pub mod patch;
 mod position;
 mod target;
 mod view;
@@ -27,11 +26,11 @@ use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
-pub use check::{Crossing, Side, ZoneSpan, check_on_model};
+pub use check::{Crossing, PlaneMeeting, Side, ZoneSpan, check_on_model};
 pub use measure::nominals;
 pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
 pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
-pub use view::{Camera, SavedView};
+pub use view::{Camera, SavedView, unique_view_names};
 pub(crate) use write::emit;
 pub use write::{
     BEVEL_ANGLE, CHAMFER, COMPOSITE, COMPOSITE_STANDARD, COUNTERBORE, COUNTERSINK, DATUM_TARGET,
@@ -1296,19 +1295,25 @@ impl<F> ItemKind<F> {
         matches!(
             self,
             ItemKind::Datum(_)
-                | ItemKind::Size(Size {
-                    kind: SizeKind::Diameter,
-                    thread: None,
-                    limits: Some(Limits::Fit { .. }),
-                    ..
-                })
                 | ItemKind::Tolerance(GeometricTolerance {
                     characteristic: Characteristic::Position,
                     ..
                 })
                 | ItemKind::Texture(_)
+        ) || matches!(
+            self,
+            ItemKind::Size(Size {
+                kind: SizeKind::Diameter,
+                thread: None,
+                limits: Some(Limits::Fit { deviation, .. }),
+                ..
+            }) if is_bore_fit(deviation)
         )
     }
+}
+
+fn is_bore_fit(deviation: &str) -> bool {
+    !deviation.is_empty() && deviation.bytes().all(|byte| byte.is_ascii_uppercase())
 }
 
 fn check_hole<F: Ord>(size: &Size<F>, hole: &HoleSize) -> Result<(), ItemError<'static>> {

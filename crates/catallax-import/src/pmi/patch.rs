@@ -18,7 +18,7 @@ fn refuse(what: impl std::fmt::Display) -> Refusal {
 
 /// One record of the data section.
 #[derive(Clone, Debug)]
-pub struct Record {
+pub(super) struct Record {
     /// The entity number.
     pub id: u64,
     /// The record's bytes from its `#` to its `;` and the line end after it.
@@ -31,7 +31,7 @@ pub struct Record {
 }
 
 /// The records of a Part 21 file.
-pub struct Records<'a> {
+pub(super) struct Records<'a> {
     text: &'a str,
     records: Vec<Record>,
     index: BTreeMap<u64, usize>,
@@ -89,7 +89,7 @@ fn token(bytes: &[u8], at: usize, word: &[u8]) -> Option<usize> {
 impl<'a> Records<'a> {
     /// Splits a file into records. Refuses text that is not UTF-8, a file
     /// with other than one data section, and a record that does not close.
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, Refusal> {
+    pub(super) fn parse(bytes: &'a [u8]) -> Result<Self, Refusal> {
         let text = std::str::from_utf8(bytes).map_err(|_| refuse("the file is not UTF-8 text"))?;
         let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
         let start = token(bytes, layout(bytes, 0), b"ISO-10303-21")
@@ -218,22 +218,22 @@ impl<'a> Records<'a> {
     }
 
     /// The record numbered `id`.
-    pub fn get(&self, id: u64) -> Option<&Record> {
+    pub(super) fn get(&self, id: u64) -> Option<&Record> {
         self.index.get(&id).map(|position| &self.records[*position])
     }
 
     /// A record's full text from `#` to and with its line end.
-    pub fn text(&self, id: u64) -> Option<&'a str> {
+    pub(super) fn text(&self, id: u64) -> Option<&'a str> {
         self.get(id).map(|record| &self.text[record.span.clone()])
     }
 
     /// The records that refer to `id`.
-    pub fn users(&self, id: u64) -> &[u64] {
+    pub(super) fn users(&self, id: u64) -> &[u64] {
         self.users.get(&id).map_or(&[][..], Vec::as_slice)
     }
 
     /// Every record, in file order.
-    pub fn all(&self) -> &[Record] {
+    pub(super) fn all(&self) -> &[Record] {
         &self.records
     }
 
@@ -259,7 +259,7 @@ impl<'a> Records<'a> {
 }
 
 /// Owned magnitude replacements for one file.
-pub struct Patch<'a> {
+pub(super) struct Patch<'a> {
     records: &'a Records<'a>,
     removed: BTreeSet<u64>,
     rewritten: BTreeMap<u64, String>,
@@ -269,7 +269,7 @@ pub struct Patch<'a> {
 
 impl<'a> Patch<'a> {
     /// An empty patch of `records`; new records are numbered above its highest.
-    pub fn new(records: &'a Records<'a>) -> Self {
+    pub(super) fn new(records: &'a Records<'a>) -> Self {
         let highest = records
             .records
             .iter()
@@ -287,7 +287,7 @@ impl<'a> Patch<'a> {
 
     /// Replaces a validated tolerance's unshared length measure. The new
     /// value is in the source measure's unit.
-    pub fn replace_owned_magnitude(
+    pub(super) fn replace_owned_magnitude(
         &mut self,
         owner: u64,
         magnitude: u64,
@@ -343,7 +343,7 @@ impl<'a> Patch<'a> {
     }
 
     /// The records this patch removes or rewrites.
-    pub fn touched(&self) -> BTreeSet<u64> {
+    pub(super) fn touched(&self) -> BTreeSet<u64> {
         self.removed
             .iter()
             .chain(self.rewritten.keys())
@@ -354,7 +354,7 @@ impl<'a> Patch<'a> {
     /// The file with the patch applied. Every byte outside the removed and
     /// rewritten records is copied; new records go just before the data
     /// section's `ENDSEC;`.
-    pub fn apply(&self) -> Vec<u8> {
+    pub(super) fn apply(&self) -> Vec<u8> {
         let records = self.records;
         let text = records.text;
         let mut out = String::with_capacity(text.len());

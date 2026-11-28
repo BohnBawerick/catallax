@@ -2605,6 +2605,22 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
                 && line.contains(&format!(",{a1},"))
         })
         .unwrap();
+    for orphaned in [
+        mutate(&file, &format!("{relationship}\n"), ""),
+        file.lines()
+            .filter(|line| !line.contains("=SHAPE_ASPECT_RELATIONSHIP('','datum target'"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    ] {
+        let (back, skipped) = read_back(&orphaned, &report);
+        assert_eq!(
+            ids(&back),
+            ["Bore", "Bore projection", "Datum B", "Datum C", "Datum D"],
+            "{}",
+            reasons(&skipped)
+        );
+        assert!(reasons(&skipped).contains("does not belong to exactly one datum"));
+    }
     let endpoint = references(relationship.split_once('=').unwrap().1);
     let reversed = mutate(
         &file,
@@ -3153,7 +3169,7 @@ fn face_usages_accept_a_representation_wrapper() {
     let item = &references(&all[&shape])[0];
     let wrapper = format!(
         "#900001=SHAPE_REPRESENTATION('',({item}),{context});\n\
-         #900002=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900001,{shape});\n"
+         #900002=SHAPE_REPRESENTATION_RELATIONSHIP('','',{shape},#900001);\n"
     );
     let wrapped = mutate(
         &file,
@@ -3169,6 +3185,22 @@ fn face_usages_accept_a_representation_wrapper() {
     let (actual, skipped) = read_back(&wrapped, &report);
     assert!(skipped.is_empty(), "{skipped:?}");
     assert_eq!(actual, expected);
+    let two_hops = mutate(
+        &wrapped,
+        &format!("SHAPE_REPRESENTATION_RELATIONSHIP('','',{shape},#900001);"),
+        &format!(
+            "SHAPE_REPRESENTATION_RELATIONSHIP('','',{shape},#900003);\n\
+                  #900003=SHAPE_REPRESENTATION('',({item}),{context});\n\
+                  #900004=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900003,#900001);"
+        ),
+    );
+    let read = read_step_pmi(two_hops.as_bytes()).unwrap();
+    assert!(!read.sources.contains_key("A1"));
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("not of the aspect's part"))
+    );
 }
 
 #[test]
@@ -3210,7 +3242,8 @@ fn unavailable_or_closed_projection_entries_are_refused() {
     };
     zone.entry_faces[0] = top.moved(100_000);
     let err =
-        catallax_step::pmi::check_on_model(&part.model, &pmi, &mut Decider::default()).unwrap_err();
+        catallax_step::pmi::check_on_model(&part.model, part.body, &pmi, &mut Decider::default())
+            .unwrap_err();
     assert!(err.detail.contains("Projection"), "{}", err.detail);
     assert!(
         try_write(&part, &pmi)
@@ -4423,7 +4456,8 @@ fn target_refuses_a_face_moved_by_step_rounding() {
         part: PartNotes::default(),
         views: Vec::new(),
     };
-    catallax_step::pmi::check_on_model(&part.model, &pmi, &mut Decider::default()).unwrap();
+    catallax_step::pmi::check_on_model(&part.model, part.body, &pmi, &mut Decider::default())
+        .unwrap();
     let mut out = Vec::new();
     let refusal = write_step_with_pmi(
         &part.model,
@@ -4504,7 +4538,8 @@ fn rounded_step_geometry_cannot_reverse_a_projection() {
         )],
         ..Pmi::default()
     };
-    catallax_step::pmi::check_on_model(&part.model, &pmi, &mut Decider::default()).unwrap();
+    catallax_step::pmi::check_on_model(&part.model, part.body, &pmi, &mut Decider::default())
+        .unwrap();
     let error = try_write(&part, &pmi).unwrap_err();
     assert!(
         error.contains("projected zone cannot be proved on the written geometry"),
@@ -4834,7 +4869,8 @@ fn a_boss_blocks_projection_across_a_recess() {
                 }),
             },
         }));
-        let error = catallax_step::pmi::check_on_model(&part.model, &pmi, &mut dec).unwrap_err();
+        let error =
+            catallax_step::pmi::check_on_model(&part.model, part.body, &pmi, &mut dec).unwrap_err();
         assert!(
             error.detail.contains("axis meets a closed end"),
             "{error:?}"
@@ -5122,13 +5158,39 @@ fn a_refused_view_keeps_shared_callouts_in_other_views() {
         "{:?}",
         unresolved.skipped
     );
+    let extra = "#79=AXIS2_PLACEMENT_3D('',#70,#14,#13);\n\
+                 #80=PLANE('',#79);\n\
+                 #81=ANNOTATION_PLANE('',(#37),#80,(#36));\n\
+                 #82=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT($,.METRE.));\n\
+                 #83=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#82))REPRESENTATION_CONTEXT('',''));\n\
+                 #84=DRAUGHTING_MODEL_ITEM_ASSOCIATION('Plate mark','',#24,#77,#36);\n";
+    for (members, units) in [("(#81,#75,#76)", "#9"), ("(#38,#76)", "#83")] {
+        let changed = mutate(&changed, "(#38,#75,#76),#9", &format!("{members},{units}"));
+        let changed = mutate(
+            &changed,
+            "ENDSEC;\nEND-ISO",
+            &format!("{extra}ENDSEC;\nEND-ISO"),
+        );
+        let retained = read_step_pmi(changed.as_bytes()).unwrap();
+        assert_eq!(retained.pmi.views, read.pmi.views);
+        assert_eq!(retained.graphics, read.graphics);
+        assert!(retained.skipped.iter().any(|item| item.entity == "#77"));
+    }
 }
 
 #[test]
 fn only_fitted_diameters_get_saved_view_callouts() {
     let part = bracket();
     let (pmi, _) = viewed_pmi(&part);
-    for limits in [None, Some(Limits::Basic), deviations("0.1", "-0.1")] {
+    for limits in [
+        None,
+        Some(Limits::Basic),
+        deviations("0.1", "-0.1"),
+        Some(Limits::Fit {
+            deviation: "g".into(),
+            grade: "6".into(),
+        }),
+    ] {
         let mut pmi = pmi.clone();
         let bore = pmi
             .items
@@ -5138,14 +5200,36 @@ fn only_fitted_diameters_get_saved_view_callouts() {
         let ItemKind::Size(size) = &mut bore.kind else {
             panic!("expected a diameter");
         };
-        size.limits = limits;
-        let reason = try_write(&part, &pmi).unwrap_err();
+        if matches!(&limits, Some(Limits::Fit { .. })) {
+            let (mut shaft, _) = bracket_pmi(&part);
+            let ItemKind::Size(shaft) = shaft
+                .items
+                .remove(
+                    shaft
+                        .items
+                        .iter()
+                        .position(|item| item.id == "Boss diameter")
+                        .unwrap(),
+                )
+                .kind
+            else {
+                panic!("expected boss diameter");
+            };
+            size.features = shaft.features;
+            size.through = false;
+        }
+        size.limits = limits.clone();
+        let Err(reason) = try_write(&part, &pmi) else {
+            panic!("saved view accepted {limits:?}");
+        };
         assert!(reason.contains("Bore diameter has no callout"), "{reason}");
         pmi.views[0].items.retain(|item| item != "Bore diameter");
         let (file, _) = write(&part, &pmi);
         let read = read_step_pmi(file.as_bytes()).unwrap();
         assert!(read.skipped.is_empty(), "{:?}", read.skipped);
-        assert!(read.sources.contains_key("Bore diameter"));
+        assert!(
+            matches!(kind_of(&read.pmi, "Bore diameter"), ItemKind::Size(size) if size.limits == limits)
+        );
     }
 }
 
@@ -5313,7 +5397,7 @@ fn a_projected_zone_is_checked_over_its_own_height() {
     // 2 mm into the gap, and exactly up to the far plate: the zone is free.
     // An endless ray would meet the far plate and refuse both.
     for height in ["2", "10"] {
-        catallax_step::pmi::check_on_model(&part.model, &pmi(height), &mut dec)
+        catallax_step::pmi::check_on_model(&part.model, part.body, &pmi(height), &mut dec)
             .unwrap_or_else(|error| panic!("{height} mm: {error:?}"));
     }
     let (file, report) = write(&part, &pmi("2"));
@@ -5333,7 +5417,8 @@ fn a_projected_zone_is_checked_over_its_own_height() {
 
     // 12 mm reaches into the far plate: refused on the model, on export and
     // on import.
-    let error = catallax_step::pmi::check_on_model(&part.model, &pmi("12"), &mut dec).unwrap_err();
+    let error = catallax_step::pmi::check_on_model(&part.model, part.body, &pmi("12"), &mut dec)
+        .unwrap_err();
     assert!(
         error.detail.contains("axis meets a closed end"),
         "{error:?}"
@@ -5406,7 +5491,8 @@ fn a_projected_zone_is_checked_over_its_own_height() {
         )],
         ..Pmi::default()
     };
-    let error = catallax_step::pmi::check_on_model(&part.model, &short, &mut dec).unwrap_err();
+    let error =
+        catallax_step::pmi::check_on_model(&part.model, part.body, &short, &mut dec).unwrap_err();
     assert!(error.detail.contains("starts inside the part"), "{error:?}");
     assert!(
         try_write(&part, &short)
@@ -5474,13 +5560,40 @@ fn projected_zone_checks_the_other_solids_in_its_part() {
             .iter()
             .any(|skip| skip.reason.contains("axis meets a closed end"))
     );
+    let representation = line_with(&file, &["=ADVANCED_BREP_SHAPE_REPRESENTATION("]);
+    let record = &all[&representation];
+    let [_, _, blocker, context] = <[String; 4]>::try_from(references(record)).unwrap();
+    let separate = mutate(
+        &blocked,
+        &format!("{representation}={record}"),
+        &format!(
+            "{representation}={}",
+            record.replace(&format!(",{blocker})"), ")")
+        ),
+    );
+    let separate = mutate(
+        &separate,
+        "ENDSEC;\nEND-ISO",
+        &format!(
+            "#900001=ADVANCED_BREP_SHAPE_REPRESENTATION('',({blocker}),{context});\n\
+                  #900002=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900001,{representation});\nENDSEC;\nEND-ISO"
+        ),
+    );
+    let read = read_step_pmi(separate.as_bytes()).unwrap();
+    assert!(read.pmi.items.is_empty(), "{:?}", read.pmi.items);
+    assert!(
+        read.skipped
+            .iter()
+            .any(|skip| skip.reason.contains("axis meets a closed end"))
+    );
+    catallax_step::pmi::check_on_model(&part.model, plate, &pmi("2"), &mut dec).unwrap();
     assert!(
         try_write(&part, &pmi("2"))
             .unwrap_err()
             .contains("axis meets a closed end")
     );
     assert!(
-        catallax_step::pmi::check_on_model(&part.model, &pmi("2"), &mut dec)
+        catallax_step::pmi::check_on_model(&part.model, part.body, &pmi("2"), &mut dec)
             .unwrap_err()
             .detail
             .contains("axis meets a closed end")
@@ -5524,11 +5637,74 @@ fn projected_zone_checks_a_spherical_face_above_its_trim() {
         )],
         ..Pmi::default()
     };
-    let error = catallax_step::pmi::check_on_model(&part.model, &pmi, &mut dec).unwrap_err();
+    let error =
+        catallax_step::pmi::check_on_model(&part.model, part.body, &pmi, &mut dec).unwrap_err();
     assert!(error.detail.contains("projected zone"), "{error:?}");
     assert!(
         try_write(&part, &pmi)
             .unwrap_err()
             .contains("projected zone")
     );
+}
+
+#[test]
+fn projected_zone_ignores_elliptic_trim_on_an_unreachable_plane() {
+    use catallax_boolean::{BoolOp, boolean};
+    use catallax_shapes::{RVector3, Rotation};
+    use catallax_topology::block;
+
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let at = |rotation, x, y, z| Pose::from_rational(rotation, RVector3::new(q(x), q(y), q(z)));
+    let stock = block(&mut model, [q("10"), q("10"), q("5")], &Pose::identity()).unwrap();
+    let vertical = cylinder(
+        &mut model,
+        q("1"),
+        q("5"),
+        &at(Rotation::identity(), "5", "5", "0"),
+    )
+    .unwrap();
+    let rotation = Rotation::from_quaternion(q("4"), q("0"), q("3"), q("0")).unwrap();
+    let slanted = cylinder(
+        &mut model,
+        q("0.5"),
+        q("14"),
+        &at(rotation, "-1", "2", "0.7"),
+    )
+    .unwrap();
+    let plate = boolean(&mut model, stock, vertical, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let body = boolean(&mut model, plate, slanted, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let part = Bracket { model, body };
+    let [entry] = part.planes(2, "5").try_into().unwrap();
+    let pmi = Pmi {
+        items: vec![item(
+            "Bore projection",
+            ItemKind::Position(PositionControl {
+                features: vec![part.round(2, "1", ["5", "5"])],
+                frame: PositionFrame::Single {
+                    segment: segment("0.05", None, Vec::new()),
+                    projected_zone: Some(ProjectedZone {
+                        height_mm: q("2"),
+                        direction: v("0", "0", "1"),
+                        entry_faces: vec![entry],
+                    }),
+                },
+            }),
+        )],
+        ..Pmi::default()
+    };
+    catallax_step::pmi::check_on_model(&part.model, part.body, &pmi, &mut dec).unwrap();
+    let (file, report) = write(&part, &pmi);
+    assert!(
+        records(&file)
+            .values()
+            .any(|record| record.starts_with("ELLIPSE("))
+    );
+    let (back, skipped) = read_back(&file, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    assert_eq!(back, pmi);
 }

@@ -308,35 +308,17 @@ impl Field {
     }
 }
 
-/// Renames repeated quoted names in place: the first of each keeps its name
-/// and later ones take `base (n)` with the lowest free `n` from 2, never one
-/// that another name already holds. A blank name's base is `PMI`. Each base
-/// keeps its next suffix, so the work grows with the number of names, not
-/// with its square. Returns how many candidate names were tried.
 fn unique_quoted_names(names: &mut [&mut Cow<'static, str>]) -> usize {
-    let mut reserved = names
-        .iter()
-        .map(|name| name.to_string())
-        .collect::<BTreeSet<_>>();
-    let mut seen = BTreeSet::new();
-    let mut next = BTreeMap::<String, usize>::new();
-    let mut tried = 0;
-    for name in names.iter_mut() {
-        if seen.insert(name.to_string()) {
-            continue;
-        }
-        let base = name.strip_suffix('\'').expect("a quoted model name");
-        let base = if base == "'" { "'PMI" } else { base }.to_owned();
-        let suffix = next.entry(base.clone()).or_insert(2);
-        loop {
-            let unique = format!("{base} ({suffix})'");
-            *suffix += 1;
-            tried += 1;
-            if reserved.insert(unique.clone()) {
-                **name = Cow::Owned(unique);
-                break;
-            }
-        }
+    let bases = names.iter().map(|name| {
+        let name = name
+            .strip_prefix('\'')
+            .and_then(|name| name.strip_suffix('\''))
+            .expect("a quoted model name");
+        (name, if name.is_empty() { "PMI" } else { name })
+    });
+    let (allocated, tried) = crate::pmi::unique_view_names(bases);
+    for (name, allocated) in names.iter_mut().zip(allocated) {
+        **name = Cow::Owned(format!("'{allocated}'"));
     }
     tried
 }

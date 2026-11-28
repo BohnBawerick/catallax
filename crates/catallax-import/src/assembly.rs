@@ -366,11 +366,29 @@ fn collect_refs(fields: &[Param], out: &mut Vec<u64>) {
     }
 }
 
-pub(crate) struct RepresentationLinks(BTreeMap<u64, BTreeSet<u64>>);
+pub(crate) struct RepresentationLinks {
+    links: BTreeMap<u64, BTreeSet<u64>>,
+    owners: BTreeMap<u64, BTreeSet<u64>>,
+}
 
 impl RepresentationLinks {
     pub(crate) fn read(graph: &Graph) -> (Self, Option<ImportRefusal>) {
         let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
+        let mut owners = BTreeMap::<u64, BTreeSet<u64>>::new();
+        for entry in graph.values() {
+            if let Some([Param::Ref(shape), Param::Ref(representation)]) =
+                entry.part("SHAPE_DEFINITION_REPRESENTATION")
+                && let Some(fields) = graph
+                    .get(shape)
+                    .and_then(|e| e.part("PRODUCT_DEFINITION_SHAPE"))
+                && let Ok(product) = reference(fields, 2)
+                && graph
+                    .get(&product)
+                    .is_some_and(|e| e.part("PRODUCT_DEFINITION").is_some())
+            {
+                owners.entry(*representation).or_default().insert(*shape);
+            }
+        }
         let mut error = None;
         for entry in graph.values() {
             if entry.part("SHAPE_REPRESENTATION_RELATIONSHIP").is_none()
@@ -385,6 +403,11 @@ impl RepresentationLinks {
                 .unwrap_or(&entry.parts[0].1);
             match reference(relation, 2).and_then(|a| Ok((a, reference(relation, 3)?))) {
                 Ok((a, b)) => {
+                    if let (Some(a_owners), Some(b_owners)) = (owners.get(&a), owners.get(&b))
+                        && a_owners != b_owners
+                    {
+                        continue;
+                    }
                     links.entry(a).or_default().insert(b);
                     links.entry(b).or_default().insert(a);
                 }
@@ -393,12 +416,12 @@ impl RepresentationLinks {
                 }
             }
         }
-        (Self(links), error)
+        (Self { links, owners }, error)
     }
 
     pub(crate) fn reaches_outside(&self, selected: &BTreeSet<u64>) -> bool {
         selected.iter().any(|id| {
-            self.0
+            self.links
                 .get(id)
                 .into_iter()
                 .flatten()
@@ -407,7 +430,17 @@ impl RepresentationLinks {
     }
 
     pub(crate) fn related(&self, root: u64) -> impl Iterator<Item = u64> + '_ {
-        std::iter::once(root).chain(self.0.get(&root).into_iter().flatten().copied())
+        std::iter::once(root).chain(self.links.get(&root).into_iter().flatten().copied().filter(
+            move |id| {
+                let Some(owner) = self.owners.get(&root) else {
+                    return false;
+                };
+                owner.len() == 1
+                    && self.links.get(id).into_iter().flatten().all(|neighbor| {
+                        self.owners.get(neighbor).is_none_or(|other| other == owner)
+                    })
+            },
+        ))
     }
 }
 

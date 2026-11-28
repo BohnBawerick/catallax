@@ -448,6 +448,55 @@ fn tolerance_patch_preserves_literals() {
 }
 
 #[test]
+fn tolerance_patch_refuses_retained_magnitude_text() {
+    let file = source();
+    let original = read_step_pmi(file.as_bytes()).unwrap();
+    for (name, carrier, magnitude) in [
+        ("Base flatness", "FLATNESS_TOLERANCE", "0.05"),
+        ("Base parallelism", "GEOMETRIC_TOLERANCE", "0.01"),
+    ] {
+        let source = &original.sources[name];
+        let plain = file
+            .lines()
+            .find(|line| line.starts_with(&format!("{source}=")))
+            .unwrap();
+        let line = if carrier == "GEOMETRIC_TOLERANCE" {
+            let (attrs, datums) = plain
+                .strip_prefix(&format!("{source}=PARALLELISM_TOLERANCE("))
+                .and_then(|rest| rest.strip_suffix(");"))
+                .and_then(|rest| rest.rsplit_once(",("))
+                .unwrap();
+            format!(
+                "{source}=(GEOMETRIC_TOLERANCE({attrs})GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE(({datums})PARALLELISM_TOLERANCE());"
+            )
+        } else {
+            plain.to_owned()
+        };
+        let edit = PmiEdit::ToleranceValue {
+            source: source.clone(),
+            value: q("0.02"),
+        };
+        let baseline = file.replacen(plain, &line, 1);
+        patch_step_pmi(baseline.as_bytes(), std::slice::from_ref(&edit)).unwrap();
+        let base = format!("{carrier}('{name}','',");
+        for text in [
+            format!("{carrier}('{name} {magnitude} mm','',"),
+            format!("{carrier}('{name}','{magnitude} mm maximum',"),
+        ] {
+            let changed = line.replace(&base, &text);
+            assert_ne!(changed, line);
+            let changed = baseline.replacen(&line, &changed, 1);
+            let refusal =
+                patch_step_pmi(changed.as_bytes(), std::slice::from_ref(&edit)).unwrap_err();
+            assert!(
+                refusal.detail.contains(&format!("{source} (")),
+                "{refusal:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn tolerance_patch_refuses_zone_properties() {
     let file = source();
     let before = read_step_pmi(file.as_bytes()).unwrap();
@@ -487,12 +536,25 @@ fn tolerance_patch_refuses_zone_properties() {
         panic!("a property using the tolerance zone must prevent the edit");
     };
     assert!(refusal.detail.contains("#900000"), "{}", refusal.detail);
-    let described = with_dependency
-        .replace(
-            "#900000=PROPERTY_DEFINITION('zone validation','',#900001);\n",
-            "",
-        )
-        .replace("TOLERANCE_ZONE('','',", "TOLERANCE_ZONE('','0.05 mm',");
+    let zone_without_property = with_dependency.replace(
+        "#900000=PROPERTY_DEFINITION('zone validation','',#900001);\n",
+        "",
+    );
+    let stale_form = zone_without_property.replace(
+        "TOLERANCE_ZONE_FORM('between two parallel planes')",
+        "TOLERANCE_ZONE_FORM('0.05 mm maximum')",
+    );
+    let refused = patch_step_pmi(
+        stale_form.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: flatness.clone(),
+            value: q("0.02"),
+        }],
+    )
+    .unwrap_err();
+    assert!(refused.detail.contains("#900002"), "{refused:?}");
+    let described =
+        zone_without_property.replace("TOLERANCE_ZONE('','',", "TOLERANCE_ZONE('','0.05 mm',");
     let Err(refusal) = patch_step_pmi(
         described.as_bytes(),
         &[PmiEdit::ToleranceValue {
@@ -906,7 +968,7 @@ fn a_face_usage_names_only_its_own_parts_faces() {
             .unwrap()
     };
     let before = base_items(&original);
-    for (changed, reason) in [
+    for (changed, reason, linked) in [
         // The pin's face through the pin's representation.
         (
             base_usage.replace(
@@ -914,14 +976,29 @@ fn a_face_usage_names_only_its_own_parts_faces() {
                 &format!(",{pin_rep},{pin_face})"),
             ),
             "which is not of the aspect's part",
+            false,
+        ),
+        (
+            base_usage.replace(
+                &format!(",{base_rep},{base_face})"),
+                &format!(",{pin_rep},{pin_face})"),
+            ),
+            "which is not of the aspect's part",
+            true,
         ),
         // The pin's face through the base's own representation.
         (
             base_usage.replace(&format!(",{base_face})"), &format!(",{pin_face})")),
             "does not hold",
+            false,
         ),
     ] {
-        let broken = file.replacen(&base_usage, &changed, 1);
+        let mut broken = file.replacen(&base_usage, &changed, 1);
+        if linked {
+            broken = broken.replacen("ENDSEC;\nEND-ISO", &format!(
+                "#900999=SHAPE_REPRESENTATION_RELATIONSHIP('','',{base_rep},{pin_rep});\nENDSEC;\nEND-ISO"
+            ), 1);
+        }
         let assembly = read_step_assembly(broken.as_bytes(), &mut dec)
             .unwrap_or_else(|error| panic!("the assembly was refused: {error:?}"));
         let after = base_items(&assembly);

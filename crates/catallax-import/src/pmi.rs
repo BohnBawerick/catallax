@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
-use catallax_shapes::{Circle, Plane, Point3, Vector3};
+use catallax_shapes::{Circle, Plane, Point3, RPoint3, RVector3, Vector3};
 use catallax_step::pmi::{
     Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COMPOSITE_STANDARD, COUNTERBORE, COUNTERSINK,
     Camera, ChamferNominal, Characteristic, Crossing, Datum, DatumRef, DatumTarget, EDGE_BREAK,
@@ -2020,14 +2020,7 @@ impl<'a> Reader<'a> {
         let scale = self.usage_scale(&usage)?;
         let height_file = &height_mm / &scale;
         let starts = usage.faces;
-        let mut part_faces = BTreeSet::new();
-        for representation in representations {
-            let faces = self.faces_in(representation);
-            if !faces.is_empty() && self.representation_scale(representation)? != scale {
-                return Err("the projected zone's part uses different length units".into());
-            }
-            part_faces.extend(faces.iter().copied());
-        }
+        let solids = self.projection_solids(&representations, &scale)?;
         let mut planes = Vec::with_capacity(starts.len());
         for face in &starts {
             let (point, normal) = self
@@ -2068,7 +2061,18 @@ impl<'a> Reader<'a> {
             let intersection: [Rational; 3] =
                 std::array::from_fn(|i| &axis.origin[i] + &(&offset * &axis.axis[i]));
             self.check_inward_trim(&edges, point, normal)?;
-            self.check_open_entry(&part_faces, &intersection, normal, &height_file)?;
+            let entry = face.strip_prefix('#').and_then(|id| id.parse().ok());
+            if solids
+                .iter()
+                .filter(|faces| entry.is_some_and(|id| faces.contains(&id)))
+                .count()
+                != 1
+            {
+                return Err("the projected zone entry has no unique owning solid".into());
+            }
+            for faces in &solids {
+                self.check_open_entry(faces, &intersection, normal, &height_file, &scale)?;
+            }
             entry_faces.push((*face).clone());
         }
         if starts.iter().any(|face| !entry_faces.contains(face)) {
@@ -2079,6 +2083,75 @@ impl<'a> Reader<'a> {
             direction: direction.ok_or("the position control names no feature")?,
             entry_faces,
         })
+    }
+
+    fn projection_solids(
+        &self,
+        representations: &BTreeSet<u64>,
+        scale: &Rational,
+    ) -> Result<Vec<BTreeSet<u64>>, String> {
+        let unchecked = "its projected zone's part has unchecked geometry";
+        let mut seen = BTreeSet::new();
+        let mut seen_shells = BTreeSet::new();
+        let mut solids = Vec::new();
+        for &representation in representations {
+            let entity = self.entity(representation).ok_or(unchecked)?;
+            if !matches!(
+                entity.type_name(),
+                "SHAPE_REPRESENTATION" | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+            ) {
+                return Err(unchecked.into());
+            }
+            if &self.representation_scale(representation)? != scale {
+                return Err("the projected zone's part uses different length units".into());
+            }
+            for item in reference_list(entity.parts[0].1.get(1)).ok_or(unchecked)? {
+                if self.has(item, "AXIS2_PLACEMENT_3D") || !seen.insert(item) {
+                    continue;
+                }
+                let entity = self.entity(item).ok_or(unchecked)?;
+                let (outer, voids) = match (entity.type_name(), entity.parts[0].1.as_slice()) {
+                    ("MANIFOLD_SOLID_BREP", [_, Param::Ref(outer)]) => (*outer, Vec::new()),
+                    ("BREP_WITH_VOIDS", [_, Param::Ref(outer), voids]) => {
+                        (*outer, reference_list(Some(voids)).ok_or(unchecked)?)
+                    }
+                    _ => return Err(unchecked.into()),
+                };
+                let mut shells = vec![(outer, None)];
+                for void in voids {
+                    let Some([_, Param::Derived, Param::Ref(shell), sense]) = self
+                        .entity(void)
+                        .and_then(|e| e.part("ORIENTED_CLOSED_SHELL"))
+                    else {
+                        return Err(unchecked.into());
+                    };
+                    if !matches!(sense, Param::Enum(flag) if flag == "T" || flag == "F") {
+                        return Err(unchecked.into());
+                    }
+                    shells.push((*shell, Some(void)));
+                }
+                let mut faces = BTreeSet::new();
+                for (shell, orientation) in shells {
+                    let wrappers = self.sharing_at(shell, "ORIENTED_CLOSED_SHELL", 2);
+                    if !seen_shells.insert(shell)
+                        || wrappers.iter().map(|(id, _)| *id).ne(orientation)
+                    {
+                        return Err(unchecked.into());
+                    }
+                    let Some([_, members]) =
+                        self.entity(shell).and_then(|e| e.part("CLOSED_SHELL"))
+                    else {
+                        return Err(unchecked.into());
+                    };
+                    let members = reference_list(Some(members)).ok_or(unchecked)?;
+                    if members.is_empty() || members.into_iter().any(|face| !faces.insert(face)) {
+                        return Err(unchecked.into());
+                    }
+                }
+                solids.push(faces);
+            }
+        }
+        Ok(solids)
     }
 
     /// The length unit, in millimetres, of the representation that ties an
@@ -2152,6 +2225,7 @@ impl<'a> Reader<'a> {
         intersection: &[Rational; 3],
         normal: &[Rational; 3],
         height: &Rational,
+        scale: &Rational,
     ) -> Result<(), String> {
         let unknown = "the projected zone's exterior start cannot be proved";
         let point = |p: [Rational; 3]| {
@@ -2185,18 +2259,32 @@ impl<'a> Reader<'a> {
                 };
                 match span.plane_meeting(&plane, &mut dec).map_err(detail)? {
                     PlaneMeeting::Miss => continue,
-                    PlaneMeeting::Coplanar => {}
+                    PlaneMeeting::Coplanar => {
+                        if span
+                            .misses_coplanar(
+                                &self
+                                    .face_boundary_in_units(&face, &Rational::one(), scale)
+                                    .ok_or(unknown)?,
+                                &mut dec,
+                            )
+                            .map_err(detail)?
+                        {
+                            continue;
+                        }
+                    }
                     PlaneMeeting::Within(hit) => {
-                        let boundary =
-                            self.face_boundary(&face, &Rational::one()).ok_or(unknown)?;
+                        let boundary = self
+                            .face_boundary_in_units(&face, &Rational::one(), scale)
+                            .ok_or(unknown)?;
                         if boundary.contains(&hit, &mut dec).map_err(detail)? {
                             return Err("its projected zone's axis meets a closed end".into());
                         }
                         continue;
                     }
                     PlaneMeeting::Beyond(t, hit) => {
-                        let boundary =
-                            self.face_boundary(&face, &Rational::one()).ok_or(unknown)?;
+                        let boundary = self
+                            .face_boundary_in_units(&face, &Rational::one(), scale)
+                            .ok_or(unknown)?;
                         if boundary.contains(&hit, &mut dec).map_err(detail)? {
                             crossings.push(Crossing::At { t, exiting });
                         }
@@ -2275,7 +2363,7 @@ impl<'a> Reader<'a> {
                     .map_err(detail)?
                     .unwrap_or(false)
             {
-                ZoneSpan::trim_side(&sides)
+                ZoneSpan::trim_side(&sides, &mut dec).map_err(detail)?
             } else if let Some(cone) = self.read_round(surface, true)
                 && cone.radius.is_zero()
             {
@@ -2285,10 +2373,10 @@ impl<'a> Reader<'a> {
             } else {
                 None
             };
-            if trim == Some(Side::Behind) {
+            if matches!(trim, Some(Side::Behind)) {
                 continue;
             }
-            let clear = trim == Some(Side::Beyond)
+            let clear = matches!(trim, Some(Side::Beyond(_)))
                 || match (&cylinder, &ball) {
                     (Some(cylinder), _) => {
                         span.misses_cylinder(cylinder, &mut dec).map_err(detail)?
@@ -2308,7 +2396,7 @@ impl<'a> Reader<'a> {
                     .map_err(detail)?,
                 _ => Some(span.reach()),
             };
-            crossings.extend(from.map(Crossing::From));
+            crossings.extend(ZoneSpan::crossing_bound(from, trim, &mut dec).map_err(detail)?);
         }
         match ZoneSpan::starts_free(&crossings, &mut dec).map_err(detail)? {
             Some(true) => {}
@@ -2529,7 +2617,6 @@ impl<'a> Reader<'a> {
                     return Some(id);
                 }
                 reference(entity.part("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")?.get(3))
-                    .filter(|target| self.entity(*target).is_none())
             })
             .collect();
         for id in targets {
@@ -2537,14 +2624,13 @@ impl<'a> Reader<'a> {
                 .entity(id)
                 .and_then(|entity| entity.part("PLACED_DATUM_TARGET_FEATURE"));
             let has_datum = self
-                .sharing
-                .get(&id)
+                .sharing_at(id, "SHAPE_ASPECT_RELATIONSHIP", 2)
                 .into_iter()
-                .flatten()
-                .filter_map(|link| self.entity(*link)?.part("SHAPE_ASPECT_RELATIONSHIP"))
-                .flat_map(|fields| fields.iter().skip(2))
-                .flat_map(|field| references(Some(field)))
-                .any(|candidate| self.has(candidate, "DATUM"));
+                .any(|(_, fields)| {
+                    matches!(fields, [_, description, Param::Ref(target), Param::Ref(datum)]
+                        if *target == id && self.has(*datum, "DATUM")
+                            && string(Some(description)).as_deref() == Some(catallax_step::pmi::DATUM_TARGET))
+                });
             if has_datum {
                 continue;
             }
@@ -2595,20 +2681,8 @@ impl<'a> Reader<'a> {
 
     /// The placed datum targets that set up a datum.
     fn placed_targets(&self, datum: u64) -> Result<Vec<u64>, String> {
-        if let Some(&(target, ambiguous)) = self
-            .orphaned_targets
-            .get_or_init(|| self.unlinked_datum_targets())
-            .get(&datum)
-            .and_then(|targets| targets.first())
-        {
-            let reason = if ambiguous {
-                "its datum ownership is ambiguous"
-            } else {
-                "its datum relationship is missing or unreadable"
-            };
-            return Err(format!("its datum target #{target} was not read: {reason}"));
-        }
-        self.sharing
+        let targets = self
+            .sharing
             .get(&datum)
             .into_iter()
             .flatten()
@@ -2630,7 +2704,21 @@ impl<'a> Reader<'a> {
                         .ok_or_else(|| "its datum target relationship has no target".into())
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, String>>()?;
+        if let Some(&(target, ambiguous)) = self
+            .orphaned_targets
+            .get_or_init(|| self.unlinked_datum_targets())
+            .get(&datum)
+            .and_then(|targets| targets.first())
+        {
+            let reason = if ambiguous {
+                "its datum ownership is ambiguous"
+            } else {
+                "its datum relationship is missing or unreadable"
+            };
+            return Err(format!("its datum target #{target} was not read: {reason}"));
+        }
+        Ok(targets)
     }
 
     /// An `AXIS2_PLACEMENT_3D` as the file writes it.
@@ -2845,6 +2933,15 @@ impl<'a> Reader<'a> {
     /// The complete trim of a planar face from the file's own edge records,
     /// in millimetres, or `None` when an edge is not a line or a circle.
     fn face_boundary(&self, face: &str, scale: &Rational) -> Option<PlanarBoundary> {
+        self.face_boundary_in_units(face, scale, scale)
+    }
+
+    fn face_boundary_in_units(
+        &self,
+        face: &str,
+        scale: &Rational,
+        mm_per_unit: &Rational,
+    ) -> Option<PlanarBoundary> {
         let id: u64 = face.strip_prefix('#')?.parse().ok()?;
         let params = self.entity(id)?.part("ADVANCED_FACE")?;
         let plane = self.entity(reference(params.get(2))?)?.part("PLANE")?;
@@ -2951,18 +3048,23 @@ impl<'a> Reader<'a> {
                         return None;
                     };
                     let direction = coordinates(Some(ratios))?;
-                    if is_zero3(&direction)
-                        || number(Some(magnitude))? <= Rational::zero()
-                        || points[0] == points[1]
-                        || points
-                            .iter()
-                            .any(|point| !is_zero3(&cross3(&sub3(point, &origin), &direction)))
+                    let [x, y, z] = direction;
+                    let direction = RVector3::new(x, y, z);
+                    let [x, y, z] = origin;
+                    let origin = RPoint3::new(x, y, z);
+                    let endpoint = |index: usize| {
+                        let [x, y, z] = points[index].clone();
+                        RPoint3::new(x, y, z)
+                    };
+                    let ordered = if same_sense { [0, 1] } else { [1, 0] };
+                    if number(Some(magnitude))? <= Rational::zero()
+                        || !catallax_step::pmi::line_matches_trim(
+                            [&endpoint(ordered[0]), &endpoint(ordered[1])],
+                            &origin,
+                            &direction,
+                            mm_per_unit,
+                        )
                     {
-                        return None;
-                    }
-                    let forward =
-                        dot3(&sub3(&points[1], &points[0]), &direction) > Rational::zero();
-                    if forward != same_sense {
                         return None;
                     }
                     edges.push(PlanarEdge::Segment(ends));
@@ -3012,8 +3114,13 @@ impl<'a> Reader<'a> {
     }
 
     /// The equivalent Unicode string a callout's validation property states.
-    fn callout_text(&self, callout: u64) -> Result<Option<String>, String> {
-        for (within, _) in self.sharing_at(callout, "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION", 2) {
+    fn callout_text(&self, callout: u64, model: u64) -> Result<Option<String>, String> {
+        for (within, fields) in
+            self.sharing_at(callout, "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION", 2)
+        {
+            if reference(fields.get(3)) != Some(model) {
+                continue;
+            }
             for (property, _) in self.sharing_at(within, "PROPERTY_DEFINITION", 2) {
                 for (_, link) in self.sharing_at(property, "PROPERTY_DEFINITION_REPRESENTATION", 0)
                 {
@@ -3416,6 +3523,24 @@ impl<'a> Reader<'a> {
                 Some((model, (!cameras.is_empty(), usable, scale)))
             })
             .collect();
+        let global_models: BTreeMap<_, BTreeSet<_>> = contexts
+            .iter()
+            .filter(|(_, (view, _, _))| *view)
+            .map(|(&model, _)| {
+                let globals = self
+                    .sharing_at(model, "MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP", 2)
+                    .into_iter()
+                    .filter_map(|(_, fields)| match fields {
+                        [_, _, Param::Ref(view), Param::Ref(global)] if *view == model => {
+                            Some(*global)
+                        }
+                        _ => None,
+                    })
+                    .filter(|global| contexts.get(global).is_some_and(|(view, _, _)| !view))
+                    .collect();
+                (model, globals)
+            })
+            .collect();
         let mut presented = BTreeMap::new();
         let mut graphics = BTreeMap::new();
         let mut callout_scales = BTreeMap::new();
@@ -3467,20 +3592,6 @@ impl<'a> Reader<'a> {
                         .flatten()
                         .copied(),
                 );
-            }
-            let mut equivalent = None;
-            for &id in &subjects {
-                match self.callout_text(id) {
-                    Ok(Some(text)) => {
-                        equivalent.get_or_insert(text);
-                    }
-                    Ok(None) => {}
-                    Err(reason) => skipped.push(SkippedPmi {
-                        entity: format!("#{callout}"),
-                        kind: entity.type_name().into(),
-                        reason,
-                    }),
-                }
             }
             let geometry = (|| -> Result<_, String> {
                 let (kind, mut polylines) = self.graphic_geometry(&occurrences)?;
@@ -3572,11 +3683,11 @@ impl<'a> Reader<'a> {
                                 })
                             })
                     })
-                    .map(|(_, mut plane)| {
+                    .map(|(id, mut plane)| {
                         plane.origin_mm = plane.origin_mm.map(|value| &value * &scale);
-                        plane
+                        (id, plane)
                     })
-                    .collect();
+                    .collect::<BTreeMap<_, _>>();
                 for point in polylines.iter_mut().flatten() {
                     for coordinate in point {
                         *coordinate = &*coordinate * &scale;
@@ -3595,21 +3706,64 @@ impl<'a> Reader<'a> {
                     continue;
                 }
             };
-            let mut linked = Vec::new();
-            let mut presents = BTreeSet::new();
-            let mut legacy_aspects = BTreeSet::new();
-            let mut faces = Vec::new();
-            for association in associations {
-                let supported = reference(association.get(3)).is_some_and(|model| {
-                    (models.contains(&model)
-                        || model_planes.get(&model).is_some_and(|planes| {
+            let supported: BTreeSet<_> = models
+                .iter()
+                .chain(model_planes.keys())
+                .copied()
+                .filter(|model| {
+                    (models.contains(model)
+                        || model_planes.get(model).is_some_and(|planes| {
                             planes.iter().any(|plane| valid_planes.contains(plane))
                         }))
-                        && contexts.get(&model).is_some_and(|(_, usable, context)| {
+                        && contexts.get(model).is_some_and(|(_, usable, context)| {
                             *usable && context.as_ref().is_ok_and(|unit| unit == &scale)
                         })
-                });
-                if supported {
+                })
+                .collect();
+            callout_scales.insert(callout, (scale, valid_planes));
+            for &occurrence in &occurrences {
+                occurrence_callouts
+                    .entry(occurrence)
+                    .or_default()
+                    .push(callout);
+            }
+            for &model in &supported {
+                let scope: Vec<_> = std::iter::once(model)
+                    .chain(
+                        global_models
+                            .get(&model)
+                            .into_iter()
+                            .flatten()
+                            .copied()
+                            .filter(|global| supported.contains(global)),
+                    )
+                    .collect();
+                let mut equivalent = None;
+                'text: for &context in &scope {
+                    for &subject in &subjects {
+                        match self.callout_text(subject, context) {
+                            Ok(Some(text)) => {
+                                equivalent = Some(text);
+                                break 'text;
+                            }
+                            Ok(None) => {}
+                            Err(reason) => skipped.push(SkippedPmi {
+                                entity: format!("#{callout}"),
+                                kind: entity.type_name().into(),
+                                reason,
+                            }),
+                        }
+                    }
+                }
+                let key = (callout, model);
+                let mut linked = Vec::new();
+                let mut presents = BTreeSet::new();
+                let mut legacy_aspects = BTreeSet::new();
+                let mut faces = Vec::new();
+                for &association in &associations {
+                    if !reference(association.get(3)).is_some_and(|owner| scope.contains(&owner)) {
+                        continue;
+                    }
                     let Some(definition) = reference(association.get(2)) else {
                         continue;
                     };
@@ -3638,56 +3792,57 @@ impl<'a> Reader<'a> {
                         legacy_aspects.insert(definition);
                     }
                 }
-            }
-            callout_scales.insert(callout, (scale, valid_planes));
-            for occurrence in occurrences {
-                occurrence_callouts
-                    .entry(occurrence)
-                    .or_default()
-                    .push(callout);
-            }
-            if !linked.is_empty() {
-                presented.insert(callout, linked);
-                if presents.is_empty() {
-                    continue;
-                }
-            }
-            if kind == "surface roughness" && presents.is_empty() {
-                for aspect in legacy_aspects {
-                    match self.legacy_texture(&name, equivalent.as_deref(), aspect, items) {
-                        Ok(Some(item)) => {
-                            presented.entry(callout).or_default().push(item.to_owned())
-                        }
-                        Ok(None) => {}
-                        Err(reason) => skipped.push(SkippedPmi {
-                            entity: format!("#{callout}"),
-                            kind: entity.type_name().into(),
-                            reason,
-                        }),
+                if !linked.is_empty() {
+                    presented.insert(key, linked);
+                    if presents.is_empty() {
+                        continue;
                     }
                 }
-                if presented.contains_key(&callout) {
-                    continue;
+                if kind == "surface roughness" && presents.is_empty() {
+                    for aspect in legacy_aspects {
+                        match self.legacy_texture(&name, equivalent.as_deref(), aspect, items) {
+                            Ok(Some(item)) => {
+                                presented.entry(key).or_default().push(item.to_owned())
+                            }
+                            Ok(None) => {}
+                            Err(reason) => skipped.push(SkippedPmi {
+                                entity: format!("#{callout}"),
+                                kind: entity.type_name().into(),
+                                reason,
+                            }),
+                        }
+                    }
+                    if presented.contains_key(&key) {
+                        continue;
+                    }
                 }
+                faces.sort();
+                faces.dedup();
+                graphics.insert(
+                    key,
+                    GraphicCallout {
+                        entity: format!("#{callout}"),
+                        name: name.clone(),
+                        kind: kind.clone(),
+                        text: equivalent,
+                        faces: (!faces.is_empty()).then_some(faces),
+                        presents: presents.into_iter().map(|id| format!("#{id}")).collect(),
+                        polylines_mm: polylines_mm.clone(),
+                        planes: planes
+                            .iter()
+                            .filter(|(id, _)| {
+                                let mut models = self.draughting_models_containing(**id).peekable();
+                                models.peek().is_none()
+                                    || models.any(|model| scope.contains(&model))
+                            })
+                            .map(|(_, plane)| plane.clone())
+                            .collect(),
+                        views: Vec::new(),
+                    },
+                );
             }
-            faces.sort();
-            faces.dedup();
-            graphics.insert(
-                callout,
-                GraphicCallout {
-                    entity: format!("#{callout}"),
-                    name,
-                    kind,
-                    text: equivalent,
-                    faces: (!faces.is_empty()).then_some(faces),
-                    presents: presents.into_iter().map(|id| format!("#{id}")).collect(),
-                    polylines_mm,
-                    planes,
-                    views: Vec::new(),
-                },
-            );
         }
-        let mut accepted: Vec<(Camera, String, Vec<u64>)> = Vec::new();
+        let mut accepted = Vec::new();
         for (&model, entity) in self.g {
             if entity.part("DRAUGHTING_MODEL").is_none() {
                 continue;
@@ -3780,7 +3935,7 @@ impl<'a> Reader<'a> {
                     .filter(|name| !name.trim().is_empty())
                     .or_else(|| string(params.first()).filter(|name| !name.trim().is_empty()))
                     .unwrap_or_else(|| format!("View #{camera}"));
-                accepted.push((camera_record, base, shown.clone()));
+                accepted.push((camera_record, base, model, shown.clone()));
             }
         }
         // Every authored name is reserved before a repeat takes a suffix, so a
@@ -3788,22 +3943,24 @@ impl<'a> Reader<'a> {
         let names = catallax_step::pmi::unique_view_names(
             accepted
                 .iter()
-                .map(|(_, base, _)| (base.as_str(), base.as_str())),
+                .map(|(_, base, _, _)| (base.as_str(), base.as_str())),
         );
         let mut views: Vec<SavedView> = Vec::new();
-        for ((camera_record, _, shown), name) in accepted.into_iter().zip(names) {
+        let mut shown_callouts = BTreeSet::new();
+        for ((camera_record, _, model, shown), name) in accepted.into_iter().zip(names) {
             let mut view_items: Vec<String> = Vec::new();
             let mut seen_items = BTreeSet::new();
             let mut seen_callouts = BTreeSet::new();
             for callout in shown.into_iter().filter(|id| seen_callouts.insert(*id)) {
-                if let Some(items) = presented.get(&callout) {
+                shown_callouts.insert(callout);
+                if let Some(items) = presented.get(&(callout, model)) {
                     for item in items {
                         if seen_items.insert(item) {
                             view_items.push(item.clone());
                         }
                     }
                 }
-                if let Some(graphic) = graphics.get_mut(&callout) {
+                if let Some(graphic) = graphics.get_mut(&(callout, model)) {
                     graphic.views.push(name.clone());
                 }
             }
@@ -3813,14 +3970,42 @@ impl<'a> Reader<'a> {
                 items: view_items,
             });
         }
-        (views, graphics.into_values().collect())
+        let mut scoped_graphics = BTreeMap::<_, Vec<GraphicCallout>>::new();
+        for ((callout, model), mut graphic) in graphics {
+            if graphic.views.is_empty() && (contexts[&model].0 || shown_callouts.contains(&callout))
+            {
+                continue;
+            }
+            let names = std::mem::take(&mut graphic.views);
+            let variants = scoped_graphics.entry(callout).or_default();
+            if let Some(known) = variants.iter_mut().find(|known| {
+                known.text == graphic.text
+                    && known.faces == graphic.faces
+                    && known.presents == graphic.presents
+                    && known.planes == graphic.planes
+            }) {
+                known.views.extend(names);
+            } else {
+                graphic.views = names;
+                variants.push(graphic);
+            }
+        }
+        (views, scoped_graphics.into_values().flatten().collect())
     }
 
     /// Editable text on faces (recommended practices, section 7.4): a face
     /// note whose lines have no variable name, or a knurl designation held
     /// under [`KNURL`].
     fn text(&self, id: u64, params: &[Param]) -> Result<Found, String> {
-        let target = reference(params.get(2)).ok_or("it is attached to nothing")?;
+        let [
+            Param::Str(_),
+            Param::Str(_) | Param::Unset,
+            Param::Ref(target),
+        ] = params
+        else {
+            return Err("its text property has unreadable attributes".into());
+        };
+        let target = *target;
         match self.entity(target).map(Entity::type_name) {
             Some("PRODUCT_DEFINITION" | "PRODUCT_DEFINITION_SHAPE") => {
                 return Err("a text note on the whole part is not read".into());
@@ -3832,10 +4017,20 @@ impl<'a> Reader<'a> {
         }
         let mut items = Vec::new();
         for (_, link) in self.sharing_at(id, "PROPERTY_DEFINITION_REPRESENTATION", 0) {
-            let representation = reference(link.get(1))
-                .and_then(|id| self.entity(id))
-                .ok_or("its text is missing")?;
-            items.extend(references(representation.parts[0].1.get(1)));
+            let [Param::Ref(property), Param::Ref(representation)] = link else {
+                return Err("its text property link is unreadable".into());
+            };
+            let Some([Param::Str(_), members, Param::Ref(context)]) = self
+                .entity(*representation)
+                .filter(|entity| entity.parts.len() == 1)
+                .and_then(|entity| entity.part("REPRESENTATION"))
+            else {
+                return Err("its text does not name a representation".into());
+            };
+            if *property != id || !self.has(*context, "REPRESENTATION_CONTEXT") {
+                return Err("its text representation has unreadable attributes".into());
+            }
+            items.extend(reference_list(Some(members)).ok_or("its text item list is unreadable")?);
         }
         let item = match items.as_slice() {
             [] => return Err("it holds no text".into()),
@@ -3846,9 +4041,11 @@ impl<'a> Reader<'a> {
             .entity(item)
             .and_then(|entity| entity.part("DESCRIPTIVE_REPRESENTATION_ITEM"))
             .ok_or("its text holds an item that is not a string")?;
-        let name = string(fields.first()).ok_or("its text has no variable name")?;
-        let text = string(fields.get(1))
-            .ok_or("its text has an unsupported STEP encoding or is missing")?;
+        let [Param::Str(name), Param::Str(text)] = fields else {
+            return Err("its descriptive item has unreadable attributes".into());
+        };
+        let name = decode(name).ok_or("its text has no readable variable name")?;
+        let text = decode(text).ok_or("its text has an unsupported STEP encoding")?;
         let feature = self.one_feature(target)?;
         let kind = match name.as_str() {
             "" => ItemKind::FaceNote { text, feature },
@@ -4715,6 +4912,15 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
                             _ => false,
                         } =>
                 {
+                    let form = reference(fields.get(5)).ok_or_else(|| refuse_dependency(user))?;
+                    if !matches!(
+                        graph.get(&form).and_then(|e| e.part("TOLERANCE_ZONE_FORM")),
+                        Some([label]) if matches!(string(Some(label)).as_deref(),
+                            Some("cylindrical or circular" | "within a cylinder" | "within a circle"
+                                | "between two parallel planes"))
+                    ) {
+                        return Err(refuse_dependency(form));
+                    }
                     if let Some(&dependent) = records.users(user).first() {
                         return Err(refuse_dependency(dependent));
                     }
@@ -4726,6 +4932,26 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
         let base = entity
             .part("GEOMETRIC_TOLERANCE")
             .unwrap_or(entity.parts[0].1.as_slice());
+        if !base[..2]
+            .iter()
+            .enumerate()
+            .all(|(index, field)| match field {
+                Param::Unset => index == 1,
+                Param::Str(raw) => decode(raw).is_some_and(|text| {
+                    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '#' | '.')))
+                        .all(|word| {
+                            word.strip_prefix('#').is_some_and(|id| {
+                                !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
+                            }) || !word
+                                .trim_start_matches('.')
+                                .starts_with(|c: char| c.is_numeric())
+                        })
+                }),
+                _ => false,
+            })
+        {
+            return Err(refuse_dependency(root));
+        }
         let controlled: BTreeSet<_> = tolerance.features.iter().flatten().collect();
         for (&id, association) in &graph {
             let Some(fields) = association.part("DRAUGHTING_MODEL_ITEM_ASSOCIATION") else {
@@ -4742,12 +4968,6 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
                     return Err(refuse_dependency(id));
                 }
             }
-        }
-        if let Some(size) =
-            reference(base.get(3)).filter(|size| reader.has(*size, "DIMENSIONAL_SIZE"))
-            && let Some((limit, _)) = reader.sharing_at(size, "PLUS_MINUS_TOLERANCE", 1).first()
-        {
-            return Err(refuse_dependency(*limit));
         }
         let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
         if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {

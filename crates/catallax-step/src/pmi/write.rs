@@ -787,7 +787,39 @@ impl Emitter<'_> {
     /// 6.9.9). Both segments of a composite are position tolerances on one
     /// aspect, related upper to lower by a `composite` relationship. A
     /// projected zone starts on an aspect of the entry faces.
-    fn position(&mut self, control: &PositionControl<FaceId>, item: &str) -> Result<(), Refusal> {
+    fn position(
+        &mut self,
+        control: &PositionControl<FaceId>,
+        cylindrical_datums: &BTreeMap<&str, &Vec<FaceId>>,
+        item: &str,
+    ) -> Result<(), Refusal> {
+        let mut axis = |feature: &[FaceId]| {
+            check::written_axis(
+                self.graph,
+                feature
+                    .iter()
+                    .flat_map(|face| self.faces[face].iter().copied()),
+                item,
+                self.dec,
+            )
+        };
+        let axes = control
+            .features
+            .iter()
+            .map(|feature| axis(feature))
+            .collect::<Result<Vec<_>, _>>()?;
+        let segments: &[_] = match &control.frame {
+            PositionFrame::Single { segment, .. } => &[segment],
+            PositionFrame::Composite { upper, lower } => &[upper, lower],
+        };
+        for feature in segments
+            .iter()
+            .flat_map(|segment| &segment.datums)
+            .filter(|datum| datum.material.is_some())
+            .filter_map(|datum| cylindrical_datums.get(datum.letter.as_str()))
+        {
+            axis(feature)?;
+        }
         let target = self.target(&control.features, item)?;
         match &control.frame {
             PositionFrame::Single {
@@ -800,7 +832,7 @@ impl Emitter<'_> {
                         self.graph,
                         self.faces,
                         &self.reversed,
-                        control,
+                        control.features.iter().zip(&axes),
                         projection,
                         item,
                         self.dec,
@@ -1913,9 +1945,18 @@ pub(crate) fn emit(
     }
     // A datum's feature is a DATUM_FEATURE whatever else is attached to it,
     // so datums come first.
+    let mut cylindrical_datums = BTreeMap::new();
     for item in &pmi.items {
         if let ItemKind::Datum(datum) = &item.kind {
             emitter.datum(&datum.letter, &datum.feature, &item.id)?;
+            if datum.feature.iter().all(|face| {
+                matches!(
+                    model.geom().surface(model.face(*face).surface),
+                    catallax_shapes::Surface::Cylinder(_)
+                )
+            }) {
+                cylindrical_datums.insert(datum.letter.as_str(), &datum.feature);
+            }
         }
     }
     let shown: BTreeSet<_> = pmi.views.iter().flat_map(|view| &view.items).collect();
@@ -2054,7 +2095,7 @@ pub(crate) fn emit(
                 designation,
                 feature,
             } => emitter.face_text(KNURL, designation, feature, id)?,
-            ItemKind::Position(control) => emitter.position(control, id)?,
+            ItemKind::Position(control) => emitter.position(control, &cylindrical_datums, id)?,
             ItemKind::Texture(texture) => {
                 emitter.texture(texture, id)?;
                 if !shown.contains(&item.id) {

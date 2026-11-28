@@ -551,6 +551,21 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
             "",
             1,
         ),
+        file.replacen(&format!("{target}\n"), "", 1).replacen(
+            target_datum_link,
+            &target_datum_link.replace("'datum target'", "$"),
+            1,
+        ),
+        file.replacen(
+            target,
+            &format!("{target_id}=DESCRIPTIVE_REPRESENTATION_ITEM('','lost');"),
+            1,
+        )
+        .replacen(
+            target_datum_link,
+            &target_datum_link.replace("'datum target'", "$"),
+            1,
+        ),
         // The target's own part reference is gone; its links name the leaf.
         file.replacen(
             target,

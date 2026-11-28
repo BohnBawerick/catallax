@@ -26,7 +26,7 @@ use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
-pub use check::{Crossing, PlaneMeeting, Side, ZoneSpan, check_on_model};
+pub use check::{Crossing, PlaneMeeting, Side, ZoneSpan, check_on_model, line_matches_trim};
 pub use measure::nominals;
 pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
 pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
@@ -1242,6 +1242,10 @@ impl<F: Ord> Pmi<F> {
 
 impl<F> Pmi<F> {
     fn validate_views(&self) -> Result<(), Refusal> {
+        if self.views.is_empty() {
+            return Ok(());
+        }
+        let items: BTreeMap<_, _> = self.items.iter().map(|item| (&item.id, item)).collect();
         let mut names = BTreeSet::new();
         for view in &self.views {
             let name = view.name.as_str();
@@ -1272,10 +1276,8 @@ impl<F> Pmi<F> {
                 if !shown.insert(id.as_str()) {
                     return Err(refuse(name, format!("item {id} is listed twice")));
                 }
-                let item = self
-                    .items
-                    .iter()
-                    .find(|item| &item.id == id)
+                let item = items
+                    .get(id)
                     .ok_or_else(|| refuse(name, format!("item {id} is not on the part")))?;
                 if !item.kind.has_callout() {
                     return Err(refuse(

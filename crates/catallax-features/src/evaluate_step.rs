@@ -861,7 +861,9 @@ fn build(
                     a.body
                 }
             } else {
-                boolean(model, a.body, b.body, op, dec)
+                // Constructing the part merges a sub-tolerance gap between
+                // the operands once, here, rather than leaving a sliver.
+                catallax_boolean::boolean_merging_gaps(model, a.body, b.body, op, dec)
                     .map_err(|e| e.refusal)?
                     .body
             };

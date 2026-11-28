@@ -35,7 +35,7 @@ The operands never change. The result is a new body in the same model.
 | Points used inside the stages | `PointId` and `Point3` | Exact real numbers |
 | Marks carried by the result | `MarkLog` | The record of every not-exact decision behind the body |
 
-This piece adds no number type and holds no tolerance.
+This piece adds no number type and stores no tolerance. `boolean_merging_gaps` alone reads the 1 nm modelling tolerance, to merge sub-tolerance planes (below).
 
 ## The bodies it works on
 
@@ -204,6 +204,44 @@ Overlapping or touching boxes, unsupported trims and unsettled bounds retain the
 ordinary intersection path and its refusals. No coincidence tolerance or caller
 allowance changes.
 
+### Sub-tolerance planes
+
+`boolean` decides every near miss exactly, however small the gap. Constructing a
+part uses `boolean_merging_gaps` instead: recipe evaluation calls it for every
+boolean step. Before intersecting two different solid operands, it merges
+sub-tolerance gaps between their planes once. A plane of `b` is merged with a
+parallel plane of `a` when every corner of `b`'s faces on it lies strictly
+closer than the 1 nm modelling tolerance (`ModellingTolerance`) to that plane,
+a face of `a` on that plane with straight edges only comes within 1 nm of
+those faces' box, and no other plane of `a` qualifies. A plane of `b` lying
+exactly on a nearby plane of `a` is left as it is. A tilted plane is not
+merged: turning a face would leave a later feature sketched on its old plane a
+new tilted gap, such as a skin over a slot cut through that face.
+
+`b` is then copied with each merged plane replaced by the target plane, keeping
+its own frame. Each corner on a merged plane becomes the exact meeting of its
+planes, and each edge on one the exact meeting of its two faces' planes. The
+copy is used only when every such corner and edge is proved, every face at a
+moved corner is planar and every edge there straight, no edge reverses, and the
+largest corner movement, measured as an L1 length, is strictly under 1 nm and
+under a tenth of the largest coordinate extent of every edge at a moved corner.
+Otherwise `b` is used unchanged and the answer is the one `boolean` gives.
+
+A merged answer carries one `boolean.sub-tolerance-merge` mark of kind
+`Distance` whose bound is that movement, after the marks of `b`. The answer is
+bounded, not exact. No boundary point of `b` moves further, because the moved
+faces are planar and their edges straight. The stages then decide an exact
+coincidence, so the gap leaves no sliver face for later operations or exports.
+The operands are unchanged and the copy keeps face origins and edge names. The
+search charges one work unit per face of `a`, per pair of a plane of `b` and a
+face of `a` plus one per corner tested, per moved corner and per edge at a moved
+corner. Its statistics are added to the intersect stage's record.
+
+The 1e-7 mm a STEP reader resolves is under 1 nm, so a recipe gap between
+parallel operand planes that a reader would lose merges here. A tilted gap, a
+step inside a single operand, one the other conditions above leave, or one
+made by a direct `boolean` call remains an export-only repair (piece 7).
+
 SolidDraft's `build_extrude` extrudes each sketch region separately and unions
 each Boss into the accumulated body. This path therefore supports separated
 Bezier glyphs with counters. A single Catallax extrusion can already carry
@@ -289,7 +327,7 @@ Every performed predicate retains the caller's decider and remaining allowance.
 - **Outcomes.** Stages return `Answered`; `boolean` wraps the first refusal in a `BooleanRefusal` with its stage. `classify_point` returns an `Outcome`.
 - **Budgets.** Every decision runs on the caller's `Decider`. This piece never creates a `Decider` or a policy, and it reads statistics only through `stats()`, never `take_stats()`, so the caller's running totals are kept. The deadline is honoured through the decisions it makes; a decision after the deadline refuses with `numbers.deadline`, and the boolean stops in that stage.
 - **Facts.** Every point and curve made by piece 4 comes with its incidence facts. This piece records the `Incident` facts listed under sew, and may record `Coincident` facts with origin `Proof` for points and curves it proves the same. Piece 2's and piece 4's decisions read them first.
-- **Marks.** This piece builds marks from the `NotExact` outcomes it accepts, keeps their codes, and passes them to the result in the order stated.
+- **Marks.** This piece builds marks from the `NotExact` outcomes it accepts and from a sub-tolerance plane merge, keeps their codes, and passes them to the result in the order stated.
 - **Refusals.** This piece adds the codes below and passes every refusal of pieces 1, 2 and 4 through unchanged inside a `BooleanRefusal`.
 
 ## Refusal codes
@@ -369,6 +407,7 @@ pub struct Selection;
 impl Selection { pub fn faces(&self) -> Vec<(FaceId, Sense)>; }
 
 pub fn boolean(model: &mut Model, a: BodyId, b: BodyId, op: BoolOp, dec: &mut Decider) -> Result<BooleanAnswer, BooleanRefusal>;
+pub fn boolean_merging_gaps(model: &mut Model, a: BodyId, b: BodyId, op: BoolOp, dec: &mut Decider) -> Result<BooleanAnswer, BooleanRefusal>;
 pub fn intersect(model: &mut Model, a: BodyId, b: BodyId, dec: &mut Decider) -> Answered<IntersectionGraph>;
 pub fn imprint(model: &mut Model, graph: &IntersectionGraph, dec: &mut Decider) -> Answered<Imprinted>;
 pub fn classify(model: &mut Model, imprinted: &Imprinted, dec: &mut Decider) -> Answered<Classification>;
@@ -376,6 +415,7 @@ pub fn keep(classification: &Classification, imprinted: &Imprinted, op: BoolOp) 
 pub fn sew(model: &mut Model, imprinted: &Imprinted, selection: &Selection, dec: &mut Decider) -> Answered<BodyId>;
 pub fn classify_point(model: &mut Model, body: BodyId, point: &RPoint3, dec: &mut Decider) -> Outcome<Containment>;
 pub fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<RPoint3>;
+pub const SUB_TOLERANCE_MERGE: &str = "boolean.sub-tolerance-merge";
 ```
 
 ## What defines correct behaviour

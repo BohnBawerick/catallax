@@ -1,5 +1,6 @@
-//! Copies topology and remaps all defining geometry through an exact isometry.
-//! Every copied vertex, edge and face keeps its tolerance.
+//! Copies topology and remaps all defining geometry through an exact isometry,
+//! or keeps it apart from listed replacements. Every copied vertex, edge and
+//! face keeps its tolerance.
 
 use crate::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
@@ -12,7 +13,8 @@ use std::collections::BTreeMap;
 
 struct Copy<'a, F> {
     model: &'a mut Model,
-    map: &'a Isometry,
+    // `None` keeps every defining object not already listed in the maps below.
+    map: Option<&'a Isometry>,
     origin: F,
     surfaces: BTreeMap<SurfaceId, SurfaceId>,
     curves: BTreeMap<CurveId, CurveId>,
@@ -30,8 +32,13 @@ fn reverse(sense: Sense) -> Sense {
 }
 
 impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
+    fn reversing(&self) -> bool {
+        self.map.is_some_and(Isometry::reversing)
+    }
     fn incidence(&mut self, a: GeomKey, b: GeomKey, mapped_a: GeomKey, mapped_b: GeomKey) {
-        if self.model.geom().facts().holds(FactKind::Incident, a, b) {
+        if (mapped_a, mapped_b) != (a, b)
+            && self.model.geom().facts().holds(FactKind::Incident, a, b)
+        {
             self.model.geom_mut().record_fact(Fact {
                 kind: FactKind::Incident,
                 a: mapped_a,
@@ -45,7 +52,10 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         if let Some(mapped) = self.surfaces.get(&id) {
             return *mapped;
         }
-        let surface = self.map.surface(self.model.geom().surface(id));
+        let Some(map) = self.map else {
+            return id;
+        };
+        let surface = map.surface(self.model.geom().surface(id));
         let mapped = self.model.geom_mut().add_surface(surface);
         self.surfaces.insert(id, mapped);
         mapped
@@ -54,8 +64,11 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         if let Some(mapped) = self.points.get(&id) {
             return *mapped;
         }
+        let Some(map) = self.map else {
+            return id;
+        };
         let definition = self.model.geom().point(id).clone();
-        let point = self.map.apply_point(&self.model.geom().position(id));
+        let point = map.apply_point(&self.model.geom().position(id));
         let definition = match definition {
             PointDef::Explicit(_) => PointDef::Explicit(point),
             PointDef::Meet(meet) => {
@@ -82,16 +95,19 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         if let Some(mapped) = self.curves.get(&id) {
             return *mapped;
         }
+        let Some(map) = self.map else {
+            return id;
+        };
         let curve = self.model.geom().curve(id).clone();
         let curve = if let Curve::Intersection(mut c) = curve {
             c.surfaces = c.surfaces.map(|s| self.surface(s));
-            if self.map.reversing() {
+            if map.reversing() {
                 c.surfaces.swap(0, 1);
             }
             c.witness = self.point(c.witness);
             Curve::Intersection(c)
         } else {
-            self.map.curve(&curve).expect("analytic curve")
+            map.curve(&curve).expect("analytic curve")
         };
         let mapped = self.model.geom_mut().add_curve(curve);
         self.curves.insert(id, mapped);
@@ -152,7 +168,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         let lp = match lp {
             Loop::Vertex(v) => Loop::Vertex(self.vertex(v)),
             Loop::Coedges(mut ids) => {
-                if self.map.reversing() {
+                if self.reversing() {
                     ids.reverse();
                 }
                 Loop::Coedges(
@@ -160,7 +176,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
                         .map(|id| {
                             let coedge = self.model.coedge(id).clone();
                             let edge = self.edge(coedge.edge);
-                            let sense = if self.map.reversing() {
+                            let sense = if self.reversing() {
                                 reverse(coedge.sense)
                             } else {
                                 coedge.sense
@@ -214,7 +230,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         }
         // This band's normal follows its tensor chart, which reflection
         // reverses. Reverse the face sense to retain its material-outward side.
-        let sense = if self.map.reversing()
+        let sense = if self.reversing()
             && matches!(
                 self.model.geom().surface(face.surface),
                 Surface::BSpline(
@@ -358,11 +374,38 @@ fn copied(
     model.body(body);
     let mut copy = Copy {
         model,
-        map,
+        map: Some(map),
         origin,
         surfaces: BTreeMap::new(),
         curves: BTreeMap::new(),
         points: BTreeMap::new(),
+        vertices: BTreeMap::new(),
+        edges: BTreeMap::new(),
+        faces: BTreeMap::new(),
+    };
+    copy.body(body)
+}
+
+/// Copies a body with the listed surfaces, curves and points replaced, keeping
+/// every other defining object, each face origin and each edge name. All
+/// topology is new, so the source body is unchanged. The caller proves that
+/// every replacement still meets what its source met: an incidence recorded
+/// on a source pair is recorded again on its replacement.
+pub fn substituted_body(
+    model: &mut Model,
+    body: BodyId,
+    surfaces: BTreeMap<SurfaceId, SurfaceId>,
+    curves: BTreeMap<CurveId, CurveId>,
+    points: BTreeMap<PointId, PointId>,
+) -> BodyId {
+    model.body(body);
+    let mut copy = Copy {
+        model,
+        map: None,
+        origin: Origin::clone,
+        surfaces,
+        curves,
+        points,
         vertices: BTreeMap::new(),
         edges: BTreeMap::new(),
         faces: BTreeMap::new(),

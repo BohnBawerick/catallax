@@ -90,7 +90,7 @@ One model holds exact and tolerant entities ([Checkpoint 2 decisions, section 4.
 - The order is vertex >= edge >= face, with exact counting as zero. A tolerant edge forces its vertices to at least its own tolerance. It never forces a face: an exact face beside a tolerant edge stays exact.
 - The builder that makes an entity measures its tolerance (rules T1 to T4). `check` reads the value and measures nothing.
 
-A copy that keeps an entity's geometry keeps its tolerance: an isometry copy (`transformed_body`), a journal replay and a handover. The builders of this piece, and every exact operation of the later pieces, make exact entities.
+A copy that keeps an entity's geometry keeps its tolerance: an isometry copy (`transformed_body`), a journal replay and a handover. `substituted_body` copies a body with listed points, curves and surfaces replaced and all other geometry shared, keeping face origins, edge names and tolerances; its caller proves that each replacement keeps the source's incidences (piece 5 uses it to merge sub-tolerance planes). The builders of this piece, and every exact operation of the later pieces, make exact entities.
 
 ### Orientation
 

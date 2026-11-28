@@ -42,6 +42,7 @@ mod region;
 mod sewing;
 mod spline_fillet;
 mod stages;
+mod subgap;
 mod torus_region;
 mod trim_bounds;
 mod validation;
@@ -62,6 +63,7 @@ use catallax_shapes::{Point3, RPoint3};
 use catallax_topology::{Body, BodyId, BodyKind, EdgeId, FaceId, Model};
 
 pub use face_queries::PreparedFaceQueries;
+pub use subgap::SUB_TOLERANCE_MERGE;
 pub use validation::check_body;
 
 /// A boolean operation.
@@ -163,7 +165,23 @@ pub fn boolean(
     op: BoolOp,
     dec: &mut Decider,
 ) -> Result<BooleanAnswer, BooleanRefusal> {
-    boolean_impl(model, a, b, op, dec, None)
+    boolean_impl(model, a, b, op, dec, false, None)
+}
+
+/// [`boolean`] for constructing a part, which merges sub-tolerance gaps
+/// between the operands once. A plane of `b` parallel to a nearby
+/// straight-edged face plane of `a`, with its face corners closer than the
+/// 1 nm modelling tolerance to it, is merged with it first, on a copy of `b`; the result then carries a [`SUB_TOLERANCE_MERGE`]
+/// mark bounding how far that copy's boundary moved. Without such a plane the
+/// answer is the one [`boolean`] gives.
+pub fn boolean_merging_gaps(
+    model: &mut Model,
+    a: BodyId,
+    b: BodyId,
+    op: BoolOp,
+    dec: &mut Decider,
+) -> Result<BooleanAnswer, BooleanRefusal> {
+    boolean_impl(model, a, b, op, dec, true, None)
 }
 
 /// Subtract `tool` from `target`, retaining the source IDs of sewn topology.
@@ -180,6 +198,7 @@ pub fn subtract_with_history(
         tool,
         BoolOp::Subtract,
         dec,
+        false,
         Some(&mut history),
     )?;
     Ok((answer, history))
@@ -191,7 +210,8 @@ fn boolean_impl(
     b: BodyId,
     op: BoolOp,
     dec: &mut Decider,
-    mut history: Option<&mut SubtractionHistory>,
+    merge: bool,
+    history: Option<&mut SubtractionHistory>,
 ) -> Result<BooleanAnswer, BooleanRefusal> {
     if [a, b]
         .iter()
@@ -224,6 +244,42 @@ fn boolean_impl(
             ),
         });
     }
+    let before = dec.stats().clone();
+    let merged = if merge
+        && a != b
+        && [a, b]
+            .iter()
+            .all(|body| model.body(*body).kind == BodyKind::Solid)
+    {
+        subgap::merge(model, a, b, dec).map_err(|refusal| BooleanRefusal {
+            stage: Stage::Intersect,
+            refusal,
+        })?
+    } else {
+        None
+    };
+    // The search belongs to finding where the boundaries meet.
+    let searched = statistics_delta(&before, dec.stats());
+    let with_search = |mut answer: BooleanAnswer| {
+        if let Some(first) = answer.report.stages.first_mut() {
+            first.stats = statistics_sum(&searched, &first.stats);
+        }
+        answer
+    };
+    // A history would name the merged copy's faces, so no caller asks for both.
+    debug_assert!(!(merge && history.is_some()));
+    let b = merged.unwrap_or(b);
+    combine(model, a, b, op, dec, history).map(with_search)
+}
+
+fn combine(
+    model: &mut Model,
+    a: BodyId,
+    b: BodyId,
+    op: BoolOp,
+    dec: &mut Decider,
+    mut history: Option<&mut SubtractionHistory>,
+) -> Result<BooleanAnswer, BooleanRefusal> {
     // Appending is all a boolean does, so this snapshot shares the history.
     let snapshot = model.clone();
     let mut apart_proof = None;
@@ -443,6 +499,23 @@ fn fit_marked(model: &mut Model, body: BodyId, marks: MarkLog) -> (BodyId, MarkL
     let mut result = model.body(body).clone();
     result.marks = marks.clone();
     (model.add_body(result), marks)
+}
+
+// Counters of `earlier` then `stage`; the running precision maximum is the stage's.
+fn statistics_sum(earlier: &DecisionStats, stage: &DecisionStats) -> DecisionStats {
+    DecisionStats {
+        decisions: earlier.decisions + stage.decisions,
+        filter: earlier.filter + stage.filter,
+        refined: earlier.refined + stage.refined,
+        exact: earlier.exact + stage.exact,
+        coincident_exact: earlier.coincident_exact + stage.coincident_exact,
+        coincident_separation: earlier.coincident_separation + stage.coincident_separation,
+        coincident_fact: earlier.coincident_fact + stage.coincident_fact,
+        not_exact: earlier.not_exact + stage.not_exact,
+        refused: earlier.refused + stage.refused,
+        max_bits: stage.max_bits,
+        work: earlier.work + stage.work,
+    }
 }
 
 fn statistics_delta(before: &DecisionStats, after: &DecisionStats) -> DecisionStats {

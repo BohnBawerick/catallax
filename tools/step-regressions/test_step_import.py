@@ -50,7 +50,7 @@ class StepImportTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def export(self, question):
+    def export(self, question, merged=False):
         source = self.directory / 'input.json'
         source.write_text(json.dumps(question))
         out = self.directory / 'run'
@@ -60,8 +60,12 @@ class StepImportTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['outcomes'], {'answered': 1})
         case = json.loads((out / 'run.json').read_text())['cases'][0]
         manifest = case['response']['manifest']
-        self.assertTrue(manifest['exact'], manifest)
-        self.assertEqual(manifest['marks'], [])
+        if merged:
+            self.assertFalse(manifest['exact'], manifest)
+            self.assertEqual([m['code'] for m in manifest['marks']], ['boolean.sub-tolerance-merge'])
+        else:
+            self.assertTrue(manifest['exact'], manifest)
+            self.assertEqual(manifest['marks'], [])
         return Path(case['path']), manifest
 
     def assert_import(self, directory, faces):
@@ -72,14 +76,16 @@ class StepImportTests(unittest.TestCase):
     def assert_raw_valid(self, directory):
         self.assertTrue(BRepCheck_Analyzer(raw_solid(directory / 'answer.step')).IsValid())
 
-    def assert_regularization(self, directory, expected_gap):
+    def assert_regularization(self, directory, expected_gap=None):
         # The gap's reconnection leaves a wedge in front of the stand closing to
         # an edge too short to read, and closing it a strip beside the stand.
+        # Without `expected_gap`, the model already merged the gap.
         report = json.loads((directory / 'step-regularizations.json').read_text())
         records = report['regularizations']
-        self.assertEqual([(r['removed_faces'], r['removed_edges']) for r in records],
-                         [(1, 0), (1, 2), (1, 2)])
-        self.assertEqual(Fraction(records[0]['max_deviation_mm']), expected_gap)
+        repairs = [(1, 2), (1, 2)] if expected_gap is None else [(1, 0), (1, 2), (1, 2)]
+        self.assertEqual([(r['removed_faces'], r['removed_edges']) for r in records], repairs)
+        if expected_gap is not None:
+            self.assertEqual(Fraction(records[0]['max_deviation_mm']), expected_gap)
         for record in records:
             bound = Fraction(record['max_deviation_mm'])
             self.assertLessEqual(bound, Fraction(1, 1_000_000))
@@ -89,18 +95,22 @@ class StepImportTests(unittest.TestCase):
     def test_captured_slot_cut_and_earlier_bracket_prefixes(self):
         capture = json.loads(CAPTURE.read_text())
         gap = -Fraction(capture['problem']['steps'][2]['plane']['translation'][0])
-        for result, model_faces in [('op_61', 11), ('op_89', 13), ('op_103', 14), ('op_140', 18)]:
+        # The recipe's union merges the parallel gap in the model, once; the
+        # file still closes the wedge and the strip of the stand's tilted walls.
+        for result, model_faces in [('op_61', 10), ('op_89', 12), ('op_103', 13), ('op_140', 17)]:
             with self.subTest(result=result):
                 question = copy.deepcopy(capture)
                 steps = question['problem']['steps']
                 index = next(i for i, step in enumerate(steps) if step['id'] == result)
                 question['problem']['steps'] = steps[:index + 1]
                 question['problem']['result'] = result
-                directory, manifest = self.export(question)
+                directory, manifest = self.export(question, merged=True)
+                [mark] = manifest['marks']
+                self.assertTrue(gap <= Fraction(mark['bound']) < 2 * gap, mark)
                 self.assertEqual(manifest['result']['faces'], model_faces)
-                self.assert_import(directory, model_faces - 3)
-                report = self.assert_regularization(directory, gap)
-                self.assertEqual(report['faces'], model_faces - 3)
+                self.assert_import(directory, model_faces - 2)
+                report = self.assert_regularization(directory)
+                self.assertEqual(report['faces'], model_faces - 2)
                 self.assert_raw_valid(directory)
                 if result == 'op_140':
                     # With no sliver left, the slot's partial cylinder charts
@@ -108,6 +118,8 @@ class StepImportTests(unittest.TestCase):
                     self.assertEqual(manifest['step']['added_edges'], 2)
 
     def test_parallel_gaps_in_multiple_axes_and_operand_orders(self):
+        # A recipe of primitives alone is read by the legacy question exchange,
+        # whose exact boolean keeps the gap, so the file reconnects it.
         gap = Fraction(1, 10**30)
         for rotation, reverse in [(['1', '0', '0', '0'], False),
                                   (['1', '0', '0', '1'], False),

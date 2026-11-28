@@ -55,9 +55,11 @@ pub use stages::{
     imprint, intersect, keep, make_maximal, sew,
 };
 
+use std::collections::BTreeMap;
+
 use catallax_numbers::{Answer, Answered, Decider, DecisionStats, MarkLog, Outcome, Refusal};
 use catallax_shapes::{Point3, RPoint3};
-use catallax_topology::{Body, BodyId, BodyKind, FaceId, Model};
+use catallax_topology::{Body, BodyId, BodyKind, EdgeId, FaceId, Model};
 
 pub use face_queries::PreparedFaceQueries;
 pub use validation::check_body;
@@ -118,6 +120,17 @@ pub struct BooleanAnswer {
     pub report: StageReport,
 }
 
+/// Immediate operand IDs contributing to the result of a subtraction.
+/// Lists are sorted and deduplicated. Newly created intersection edges have
+/// an empty source list unless they coincide with an operand boundary edge.
+#[derive(Clone, Debug, Default)]
+pub struct SubtractionHistory {
+    /// Result face to the operand faces from which it was built.
+    pub faces: BTreeMap<FaceId, Vec<FaceId>>,
+    /// Result edge to the operand edges from which it was built.
+    pub edges: BTreeMap<EdgeId, Vec<EdgeId>>,
+}
+
 /// A refused boolean, with the stage that broke.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BooleanRefusal {
@@ -149,6 +162,36 @@ pub fn boolean(
     b: BodyId,
     op: BoolOp,
     dec: &mut Decider,
+) -> Result<BooleanAnswer, BooleanRefusal> {
+    boolean_impl(model, a, b, op, dec, None)
+}
+
+/// Subtract `tool` from `target`, retaining the source IDs of sewn topology.
+pub fn subtract_with_history(
+    model: &mut Model,
+    target: BodyId,
+    tool: BodyId,
+    dec: &mut Decider,
+) -> Result<(BooleanAnswer, SubtractionHistory), BooleanRefusal> {
+    let mut history = SubtractionHistory::default();
+    let answer = boolean_impl(
+        model,
+        target,
+        tool,
+        BoolOp::Subtract,
+        dec,
+        Some(&mut history),
+    )?;
+    Ok((answer, history))
+}
+
+fn boolean_impl(
+    model: &mut Model,
+    a: BodyId,
+    b: BodyId,
+    op: BoolOp,
+    dec: &mut Decider,
+    mut history: Option<&mut SubtractionHistory>,
 ) -> Result<BooleanAnswer, BooleanRefusal> {
     if [a, b]
         .iter()
@@ -184,7 +227,15 @@ pub fn boolean(
     // Appending is all a boolean does, so this snapshot shares the history.
     let snapshot = model.clone();
     let mut apart_proof = None;
-    let refused = match staged(model, a, b, op, dec, &mut apart_proof) {
+    let refused = match staged(
+        model,
+        a,
+        b,
+        op,
+        dec,
+        &mut apart_proof,
+        history.as_deref_mut(),
+    ) {
         Ok(answer) => return Ok(answer),
         Err(refused) => refused,
     };
@@ -199,6 +250,21 @@ pub fn boolean(
         return Err(refused);
     }
     *model = snapshot;
+    if let Some(history) = history {
+        // A disjoint subtraction keeps precisely the target's topology.
+        *history = SubtractionHistory {
+            faces: model
+                .faces_of_body(a)
+                .into_iter()
+                .map(|id| (id, vec![id]))
+                .collect(),
+            edges: model
+                .edges_of_body(a)
+                .into_iter()
+                .map(|id| (id, vec![id]))
+                .collect(),
+        };
+    }
     Ok(apart(model, a, b, op))
 }
 
@@ -243,6 +309,7 @@ fn staged(
     op: BoolOp,
     dec: &mut Decider,
     apart_proof: &mut Option<trim_bounds::BodyApartProof>,
+    history: Option<&mut SubtractionHistory>,
 ) -> Result<BooleanAnswer, BooleanRefusal> {
     let mut operand_marks = model.body(a).marks.clone();
     operand_marks.extend(&model.body(b).marks);
@@ -320,9 +387,10 @@ fn staged(
             }
         );
         if let Some(graph) = graph {
+            let mut sources = history.is_some().then(imprinting::ImprintSources::default);
             let imprinted = run!(
                 Stage::Imprint,
-                stages::imprint_for_boolean(model, &graph, dec, apart_proof)
+                stages::imprint_for_boolean(model, &graph, dec, apart_proof, sources.as_mut())
             );
             let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
             let before = dec.stats().clone();
@@ -332,7 +400,16 @@ fn staged(
                 stats: statistics_delta(&before, dec.stats()),
                 marks: 0,
             });
-            run!(Stage::Sew, sew(model, &imprinted, &selection, dec))
+            run!(
+                Stage::Sew,
+                sewing::sew(
+                    model,
+                    &imprinted,
+                    &selection,
+                    dec,
+                    sources.as_ref().zip(history)
+                )
+            )
         } else {
             let mut lumps = model.body(a).lumps.clone();
             lumps.extend_from_slice(&model.body(b).lumps);
@@ -410,13 +487,26 @@ pub fn face_contains<P: Clone + Into<Point3>>(
     point: &P,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    face_contains_with(model, face, point, dec, region::locate)
+    face_contains_with(model, face, point, None, dec, region::locate)
+}
+
+/// Membership of a stored exact point, preserving its support incidence facts.
+/// The point must belong to `model`; the face trim is still checked.
+pub fn face_contains_point(
+    model: &mut Model,
+    face: FaceId,
+    point: catallax_shapes::PointId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let position = model.geom().position(point);
+    face_contains_with(model, face, &position, Some(point), dec, region::locate)
 }
 
 fn face_contains_with<P: Clone + Into<Point3>>(
     model: &mut Model,
     face: FaceId,
     point: &P,
+    stored: Option<catallax_shapes::PointId>,
     dec: &mut Decider,
     locate: impl FnOnce(
         &mut Model,
@@ -466,9 +556,11 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     {
         return Ok(false);
     }
-    let p = model
-        .geom_mut()
-        .add_point(catallax_shapes::PointDef::Explicit(point.clone()));
+    let p = stored.unwrap_or_else(|| {
+        model
+            .geom_mut()
+            .add_point(catallax_shapes::PointDef::Explicit(point.clone()))
+    });
     if matches!(
         model.geom().surface(surface),
         catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(_))
@@ -497,6 +589,15 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     if let Some(inside) = region::prism_face(model, face, p, dec)? {
         return Ok(inside);
     }
+    // The incidence proves the point is on this support. The ray that
+    // found it is not a useful seed for constructing a trim probe.
+    let p = if stored.is_some() {
+        model
+            .geom_mut()
+            .add_point(catallax_shapes::PointDef::Explicit(point))
+    } else {
+        p
+    };
     Ok(!matches!(
         locate(model, face, p, dec)?,
         region::Location::Outside

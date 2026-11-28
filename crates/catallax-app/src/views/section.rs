@@ -16,16 +16,134 @@
 //! that edge. Only the faces themselves are touched, never a Boolean of the
 //! whole body.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_boolean::face_contains;
+use catallax_boolean::{face_contains_point, subtract_with_history};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces};
-use catallax_numbers::{Answer, Answered, Decider, Refusal};
+use catallax_numbers::{Answer, Answered, Decider, Rational, Refusal};
 use catallax_shapes::{Plane, PointId, RPoint3, RVector3, Surface};
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, block_in_frame};
 
 use super::{boundary_cuts, carrier_pieces, on_span, runs, same_point};
-use crate::queries::{SectionArc, SectionCurves, perpendicular, sign};
+use crate::queries::{
+    SectionArc, SectionCurves, SectionPlane, SectionSolid, SectionSource, perpendicular, sign,
+};
+
+pub(crate) fn cut_solid(
+    model: &Model,
+    body: BodyId,
+    plane: &SectionPlane,
+    dec: &mut Decider,
+) -> Answered<SectionSolid> {
+    let bounds = catallax_measure::bounding_box(model, body, &Default::default(), dec)?;
+    let mut scratch = model.clone();
+    let Some(bounds) = bounds.value else {
+        return Ok(Answer::with_marks(
+            SectionSolid {
+                model: scratch,
+                body,
+                face_sources: BTreeMap::new(),
+                edge_sources: BTreeMap::new(),
+            },
+            model.body(body).marks.clone(),
+        ));
+    };
+    let o = &plane.origin;
+    // This L1 radius strictly contains the whole body. Each frame vector
+    // has length at least one, so only the near face of the tool can cut it.
+    let reach = [&o.x, &o.y, &o.z]
+        .iter()
+        .enumerate()
+        .fold(Rational::one(), |sum, (i, &coord)| {
+            sum + (&bounds.min[i] - coord)
+                .abs()
+                .max((&bounds.max[i] - coord).abs())
+        });
+    let rescale = |v: RVector3| {
+        let component = v.x.abs().max(v.y.abs()).max(v.z.abs());
+        v.scaled(&(Rational::one() / component))
+    };
+    let n = rescale(plane.normal.clone());
+    let axis = if n.x.is_zero() && n.y.is_zero() {
+        RVector3::new(1.into(), 0.into(), 0.into())
+    } else {
+        RVector3::new(0.into(), 0.into(), 1.into())
+    };
+    // The plane does not need an orthonormal frame. Keeping the box rational
+    // avoids introducing square roots before any surfaces are intersected.
+    let u = rescale(axis.cross(&n));
+    let v = rescale(n.cross(&u));
+    let a = u.scaled(&reach);
+    let b = v.scaled(&reach);
+    let corner = o.plus(&RVector3::zero().minus(&a).minus(&b));
+    let tool = block_in_frame(
+        &mut scratch,
+        &corner,
+        &[a.plus(&a), b.plus(&b), n.scaled(&reach)],
+    )?;
+    let (cut, history) =
+        subtract_with_history(&mut scratch, body, tool, dec).map_err(|e| e.refusal)?;
+    let tool_faces = scratch.faces_of_body(tool);
+    let tool_edges = scratch.edges_of_body(tool);
+    let mut edge_sources: BTreeMap<_, Vec<_>> = history
+        .edges
+        .into_iter()
+        .map(|(edge, originals)| {
+            (
+                edge,
+                originals
+                    .into_iter()
+                    .filter(|id| !tool_edges.contains(id))
+                    .map(SectionSource::Original)
+                    .collect(),
+            )
+        })
+        .collect();
+    let face_sources = history
+        .faces
+        .into_iter()
+        .map(|(face, originals)| {
+            let mut is_cap = false;
+            let mut sources: Vec<_> = originals
+                .into_iter()
+                .filter_map(|id| {
+                    if tool_faces.contains(&id) {
+                        is_cap = true;
+                        None
+                    } else {
+                        Some(SectionSource::Original(id))
+                    }
+                })
+                .collect();
+            if is_cap {
+                sources.push(SectionSource::Cap(face));
+                for &loop_id in &scratch.face(face).loops {
+                    if let Loop::Coedges(coedges) = scratch.loop_(loop_id) {
+                        for &coedge in coedges {
+                            let edge = scratch.coedge(coedge).edge;
+                            let sources = edge_sources
+                                .get_mut(&edge)
+                                .expect("subtraction records all result edges");
+                            if sources.last() != Some(&SectionSource::Cap(face)) {
+                                sources.push(SectionSource::Cap(face));
+                            }
+                        }
+                    }
+                }
+            }
+            (face, sources)
+        })
+        .collect();
+    Ok(Answer::with_marks(
+        SectionSolid {
+            model: scratch,
+            body: cut.body,
+            face_sources,
+            edge_sources,
+        },
+        cut.marks,
+    ))
+}
 
 /// The section of `body` by the plane through `origin` with `normal`.
 pub(crate) fn plane_section(
@@ -80,8 +198,7 @@ pub(crate) fn plane_section(
         for component in components {
             match component {
                 Component::Point { point } => {
-                    let position = scratch.geom().position(point);
-                    if face_contains(&mut scratch, face, &position, dec)? {
+                    if face_contains_point(&mut scratch, face, point, dec)? {
                         points.push(point);
                     }
                 }

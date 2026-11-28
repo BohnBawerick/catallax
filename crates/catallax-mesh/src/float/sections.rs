@@ -62,7 +62,7 @@ pub(super) fn fillet_cap(
     max: usize,
 ) -> Option<Vec<Xyz>> {
     let mut patch = spline::Patch::new(spline)?;
-    let interval = ends.map(|p| patch.project(p, None)[1]);
+    let interval = ends.map(|p| patch.project(p, None, [None; 2])[1]);
     if interval[0].partial_cmp(&interval[1]) == Some(Ordering::Equal) {
         return None;
     }

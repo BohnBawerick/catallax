@@ -233,9 +233,11 @@ bounded, not exact. No boundary point of `b` moves further, because the moved
 faces are planar and their edges straight. The stages then decide an exact
 coincidence, so the gap leaves no sliver face for later operations or exports.
 The operands are unchanged and the copy keeps face origins and edge names. The
-search charges one work unit per face of `a`, per pair of a plane of `b` and a
-face of `a` plus one per corner tested, per moved corner and per edge at a moved
-corner. Its statistics are added to the intersect stage's record.
+search is exact rational arithmetic over the operands' corners. It is charged
+only when a plane merges: one work unit per face of `a`, per pair of a plane of
+`b` and a face of `a` plus one per corner tested, per moved corner and per edge
+at a moved corner, all added to the intersect stage's record. Operands without
+such a gap keep their answer, statistics and work exactly.
 
 The 1e-7 mm a STEP reader resolves is under 1 nm, so a recipe gap between
 parallel operand planes that a reader would lose merges here. A tilted gap, a

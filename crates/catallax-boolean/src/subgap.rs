@@ -210,17 +210,19 @@ fn vertices_of(model: &Model, face: FaceId) -> BTreeSet<VertexId> {
     vertices
 }
 
-/// For each tool plane within the tolerance of a target plane, that plane.
+/// For each tool plane within the tolerance of a target plane, that plane,
+/// and the work units the search took: one per target face, and per pair of
+/// a tool plane and a target face plus one per corner tested.
 fn targets(
     model: &Model,
     target: BodyId,
     tool: &[FaceId],
     tolerance: &Rational,
-    dec: &mut Decider,
-) -> Result<BTreeMap<SurfaceId, Equation>, Refusal> {
+) -> (BTreeMap<SurfaceId, Equation>, u64) {
+    let mut work = 0;
     let mut planes = Vec::new();
     for face in model.faces_of_body(target) {
-        dec.charge_traversal(1)?;
+        work += 1;
         let Some(equation) = Equation::of(model, model.face(face).surface) else {
             continue;
         };
@@ -252,7 +254,7 @@ fn targets(
         };
         let mut found: Option<&Equation> = None;
         for (plane, near) in &planes {
-            dec.charge_traversal(1 + points.len() as u64)?;
+            work += 1 + points.len() as u64;
             if !near.meets(&bounds, tolerance) {
                 continue;
             }
@@ -275,7 +277,7 @@ fn targets(
             targets.insert(surface, plane.facing(&own.normal));
         }
     }
-    Ok(targets)
+    (targets, work)
 }
 
 /// Copies `tool` with each plane within the modelling tolerance of a target
@@ -292,10 +294,13 @@ pub(crate) fn merge(
     let tolerance = ModellingTolerance::default();
     let reach = tolerance.millimetres().clone();
     let faces = model.faces_of_body(tool);
-    let targets = targets(model, target, &faces, &reach, dec)?;
+    // Exact rational tests over the operands' corners alone. A part with no
+    // such gap is charged nothing, so its answer and work stay as they were.
+    let (targets, searched) = targets(model, target, &faces, &reach);
     if targets.is_empty() {
         return Ok(None);
     }
+    dec.charge_traversal(searched)?;
     let plane = |model: &Model, surface: &SurfaceId| {
         targets
             .get(surface)

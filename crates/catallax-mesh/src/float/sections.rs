@@ -50,7 +50,23 @@ pub(super) fn branch(
         let first = *points.first()?;
         *points.last_mut()? = first;
     }
-    clip(points, ends, branch.is_closed(), tolerance)
+    let mut points = clip(points, ends, branch.is_closed(), tolerance)?;
+    // A section cell join or clip endpoint can be evaluated twice, once
+    // per source chart. Remove roundoff-sized chords from the shared edge,
+    // keeping both authoritative endpoints.
+    let end = points.pop()?;
+    let roundoff_chord = |a: Xyz, b: Xyz| {
+        let scale = a.iter().chain(&b).map(|x| x.abs()).fold(0.0, f64::max);
+        let limit = (4.0 * f64::EPSILON * scale).min(tolerance * 0.125);
+        a.iter().zip(b).all(|(x, y)| (x - y).abs() <= limit)
+    };
+    points.dedup_by(|a, b| roundoff_chord(*a, *b));
+    if points.len() > 1 && roundoff_chord(*points.last()?, end) {
+        *points.last_mut()? = end;
+    } else {
+        points.push(end);
+    }
+    Some(points)
 }
 
 /// A retained fillet cap cut is a single graph over its across-fillet parameter.

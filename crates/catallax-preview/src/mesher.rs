@@ -361,6 +361,10 @@ impl trim::TrimBoundaries for PackedMesh {
             .push(position32(position).map_err(|_| trim::TrimRefusal::InvalidPosition)?);
         Ok(index)
     }
+
+    fn grid_uses_f32(&self) -> bool {
+        true
+    }
 }
 
 impl PackedMesh {

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::ops::Range;
 
 use super::{DisplayEdgeUse, DisplayFace, DisplayFrame, DisplaySurface};
@@ -43,6 +43,10 @@ pub trait TrimBoundaries {
     fn position(&self, sample: u32) -> [f64; 3];
     /// Add a pole used by a singular chart boundary.
     fn add_pole(&mut self, position: [f64; 3]) -> Result<u32, TrimRefusal>;
+    /// Whether grid parameters are sent to the evaluator in binary32.
+    fn grid_uses_f32(&self) -> bool {
+        false
+    }
 }
 type Cdt = ConstrainedDelaunayTriangulation<Site>;
 
@@ -353,12 +357,27 @@ pub fn triangulate<F>(
             ));
         }
     }
+    // A regular station is optional. If its upload rounds to a trim sample's
+    // parameters, keep the shared sample and triangulate without that station.
+    // Removing triangles after rounding could open an incident trim chord.
+    let occupied: HashSet<_> = if boundary.grid_uses_f32() && grid_count != 0 {
+        rings
+            .iter()
+            .flat_map(|ring| &ring.points)
+            .map(|point| grid_key(normalized(point.uv)))
+            .collect()
+    } else {
+        HashSet::new()
+    };
     for v in 1..detail[1] {
         for u in 1..detail[0] {
             let uv = [
                 f64::from(u) / f64::from(detail[0]),
                 f64::from(v) / f64::from(detail[1]),
             ];
+            if !occupied.is_empty() && occupied.contains(&grid_key(uv)) {
+                continue;
+            }
             let point = Point2::new(uv[0], uv[1]);
             match cdt.locate(point) {
                 PositionInTriangulation::OnVertex(_)
@@ -428,6 +447,10 @@ pub fn triangulate<F>(
         bounds,
         sphere_chart,
     })
+}
+
+fn grid_key(uv: [f64; 2]) -> [u32; 2] {
+    uv.map(|u| (u as f32 + 0.0).to_bits())
 }
 
 fn trim_diagnostic(message: &str, points: impl std::fmt::Debug) {

@@ -3688,12 +3688,17 @@ fn callout_associations(file: &BTreeMap<String, String>, item: &str) -> Vec<(Str
     file.iter()
         .filter(|(_, record)| record.starts_with("DRAUGHTING_MODEL_ITEM_ASSOCIATION("))
         .filter(|(_, record)| {
-            let callout = references(record).pop().unwrap();
-            file[&callout].starts_with(&format!("DRAUGHTING_CALLOUT('{item}'"))
+            let subject = references(record).pop().unwrap();
+            ["DRAUGHTING_CALLOUT", "ANNOTATION_CURVE_OCCURRENCE"]
+                .into_iter()
+                .any(|kind| file[&subject].starts_with(&format!("{kind}('{item}'")))
         })
         .map(|(id, record)| (id.clone(), record.clone()))
         .collect()
 }
+
+const SEMANTIC_CALLOUT_LINK: &str =
+    "DRAUGHTING_MODEL_ITEM_ASSOCIATION('PMI representation to presentation link'";
 
 fn check_edition_one_draughting_models(file: &str) {
     let entities = entities(file);
@@ -3763,7 +3768,15 @@ fn p1_position_patch_refuses_a_dimension_linked_callout() {
     }
     let (mut file, _) = write(&part, &pmi);
     let all = records(&file);
-    let associations = callout_associations(&all, "Bore position");
+    let mut associations = Vec::new();
+    for (id, link) in callout_associations(&all, "Bore position") {
+        if link.starts_with(SEMANTIC_CALLOUT_LINK) {
+            associations.push((id, link));
+        } else {
+            // Exercise only the dimension links, without the direct face link.
+            file = mutate(&file, &format!("{id}={link}\n"), "");
+        }
+    }
     assert_eq!(associations.len(), 2);
     let redirect_size = |source: &str, root: &str, size: &str| {
         let all = records(source);
@@ -3994,19 +4007,15 @@ fn saved_views_write_their_callouts_and_read_back() {
         ("Bore position", "POSITION_TOLERANCE(", 2),
         ("Hole position", "POSITION_TOLERANCE(", 1),
     ] {
-        let associations = callout_associations(&all, item);
-        assert_eq!(associations.len(), count, "{item}");
-        for (_, association) in associations {
-            assert!(association.starts_with(
-                "DRAUGHTING_MODEL_ITEM_ASSOCIATION('PMI representation to presentation link'"
-            ));
-            let definition = references(&association)[0].clone();
-            assert!(
-                all[&definition].contains(entity),
-                "{item}: {}",
-                all[&definition]
-            );
-        }
+        let definitions: Vec<_> = callout_associations(&all, item)
+            .into_iter()
+            .filter(|(_, link)| link.starts_with(SEMANTIC_CALLOUT_LINK))
+            .map(|(_, link)| references(&link).remove(0))
+            .collect();
+        assert_eq!(definitions.len(), count, "{item}");
+        let definition = &definitions[0];
+        assert!(definitions.iter().all(|id| id == definition), "{item}");
+        assert!(all[definition].contains(entity), "{item}: {}", all[definition]);
     }
     let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
     let cross = |a: &[f64], b: &[f64]| {
@@ -4203,7 +4212,8 @@ fn saved_views_write_their_callouts_and_read_back() {
                 .into_iter()
                 .filter_map(|(_, link)| {
                     let ids = references(&link);
-                    (ids.last() == Some(callout)).then(|| ids[0].clone())
+                    (ids.last() == Some(callout) || ids.last() == Some(&occurrence))
+                        .then(|| ids[0].clone())
                 })
                 .collect();
             let mut pending = definitions;
@@ -4285,28 +4295,30 @@ fn saved_views_write_their_callouts_and_read_back() {
             }
         }
     }
+    let properties = validation_items(&file);
     for (id, expected) in [
         ("Datum A", r"DTM\wA"),
         ("Bore diameter", r"DIM\w⌀8 H7"),
         ("Bore position", r"FCF\w⌖\w⌀0.05\wA\wB\wC"),
     ] {
-        let association = callout_associations(&all, id).pop().unwrap().1;
-        let callout = references(&association).pop().unwrap();
-        let within = all
-            .iter()
-            .find(|(_, body)| {
-                body.starts_with("CHARACTERIZED_ITEM_WITHIN_REPRESENTATION(")
-                    && references(body)[0] == callout
-            })
-            .unwrap()
-            .0;
-        let properties = validation_items(&file);
-        let actual = &properties[within][0].1;
         let expected = expected.replace('\\', r"\\");
         let expected = expected
             .replace('⌀', r"\X2\2300\X0\")
             .replace('⌖', r"\X2\2316\X0\");
-        assert_eq!(*actual, format!("'equivalent unicode string','{expected}'"));
+        let prefix = format!("DRAUGHTING_CALLOUT('{id}'");
+        for (callout, _) in all.iter().filter(|(_, body)| body.starts_with(&prefix)) {
+            let (within, _) = all
+                .iter()
+                .find(|(_, body)| {
+                    body.starts_with("CHARACTERIZED_ITEM_WITHIN_REPRESENTATION(")
+                        && references(body).first() == Some(callout)
+                })
+                .unwrap();
+            assert_eq!(
+                properties[within][0].1,
+                format!("'equivalent unicode string','{expected}'")
+            );
+        }
     }
     // Two views: a model named for each, its camera and its relation to the
     // global model.

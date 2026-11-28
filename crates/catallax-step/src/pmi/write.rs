@@ -192,6 +192,12 @@ struct Presentation {
     style: Id,
 }
 
+struct CalloutLinks {
+    semantic: Id,
+    geometry: Option<Id>,
+    semantic_on_occurrence: bool,
+}
+
 struct Emitter<'a> {
     graph: &'a mut Graph,
     model: &'a Model,
@@ -240,22 +246,29 @@ impl Emitter<'_> {
             })?;
             written.extend(ids.iter().copied());
         }
+        self.written_usage(aspect, &written);
+        Ok(())
+    }
+
+    fn written_usage(&mut self, aspect: Id, written: &[Id]) {
         let common = vec![
             text("''"),
             text("''"),
             aspect.into(),
             self.references.product.representation.into(),
         ];
-        if let [face] = written.as_slice() {
+        if let [face] = written {
             let mut fields = common;
             fields.push((*face).into());
             self.root("GEOMETRIC_ITEM_SPECIFIC_USAGE", fields);
         } else {
             let mut fields = common;
-            fields.push(Field::Typed("SET_REPRESENTATION_ITEM", vec![refs(written)]));
+            fields.push(Field::Typed(
+                "SET_REPRESENTATION_ITEM",
+                vec![refs(written.iter().copied())],
+            ));
             self.root("ITEM_IDENTIFIED_REPRESENTATION_USAGE", fields);
         }
-        Ok(())
     }
 
     /// The one shape aspect of a feature.
@@ -1286,33 +1299,74 @@ impl Emitter<'_> {
             &drawing,
             &equivalent,
             plane,
-            &[self.semantic[item], aspect],
+            CalloutLinks {
+                semantic: self.semantic[item],
+                geometry: Some(aspect),
+                semantic_on_occurrence: false,
+            },
         )
+    }
+
+    fn graphic_attachment(&mut self, item: &super::Item<FaceId>) -> Id {
+        let written: BTreeSet<_> = item
+            .kind
+            .faces()
+            .into_iter()
+            .flat_map(|face| self.faces[face].iter().copied())
+            .collect();
+        let owner = self.references.product.shape;
+        let aspect_fields = || vec![text("''"), text("''"), owner.into(), boolean(true)];
+        // Each written face gets its own usage because Edition 1 permits one per aspect.
+        let members: Vec<_> = written
+            .into_iter()
+            .map(|face| {
+                let aspect = self.graph.add("SHAPE_ASPECT", aspect_fields());
+                self.written_usage(aspect, &[face]);
+                aspect
+            })
+            .collect();
+        if let [member] = members.as_slice() {
+            return *member;
+        }
+        let group = self.graph.add("COMPOSITE_GROUP_SHAPE_ASPECT", aspect_fields());
+        for member in members {
+            self.root(
+                "SHAPE_ASPECT_RELATIONSHIP",
+                vec![text("''"), text("''"), group.into(), member.into()],
+            );
+        }
+        group
     }
 
     fn label_callout(
         &mut self,
-        item: &str,
+        item: &super::Item<FaceId>,
         label: Label<'_>,
         view: (&Camera, usize, usize),
+        repeated: bool,
     ) -> Result<Id, Refusal> {
+        let id = item.id.as_str();
         if !callout::drawable(&label.line) {
             return Err(Refusal::new(
                 "step.pmi-invalid",
-                format!("{item}: the callout font cannot draw {}", label.line),
+                format!("{id}: the callout font cannot draw {}", label.line),
             ));
         }
-        let definition = self.semantic[item];
         let anchor = self.anchor_point(label.feature)?;
         let mut drawing = callout::label(&label.line);
-        let plane = self.callout_plane(Some(view), anchor.as_ref(), &mut drawing, item)?;
+        let plane = self.callout_plane(Some(view), anchor.as_ref(), &mut drawing, id)?;
+        let links = CalloutLinks {
+            semantic: self.semantic[id],
+            geometry: repeated.then(|| self.graphic_attachment(item)),
+            semantic_on_occurrence: repeated,
+        };
         self.graphic_callout(
-            item,
+            id,
             label.kind,
             &drawing,
             &label.equivalent,
             plane,
-            &[definition],
+            links,
         )
     }
 
@@ -1381,7 +1435,7 @@ impl Emitter<'_> {
         drawing: &callout::Drawing,
         equivalent: &str,
         plane: Id,
-        definitions: &[Id],
+        links: CalloutLinks,
     ) -> Result<Id, Refusal> {
         let (length, centre) = drawing.length_and_centre();
         let length = presented(&length);
@@ -1409,20 +1463,25 @@ impl Emitter<'_> {
             .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
         self.graph.extend_list(plane, 3, [callout]);
         // Open CASCADE uses the first association to find a graphic callout's faces.
-        for (index, &definition) in definitions.iter().enumerate().rev() {
-            let link_name = if index == 0 {
-                "PMI representation to presentation link"
-            } else {
-                "PMI presentation to geometry link"
-            };
+        // Its semantic label can store only the first view's presentation.
+        let subject = if links.semantic_on_occurrence {
+            occurrence
+        } else {
+            callout
+        };
+        let geometry = links
+            .geometry
+            .map(|id| ("PMI presentation to geometry link", id, callout));
+        let semantic = ("PMI representation to presentation link", links.semantic, subject);
+        for (name, definition, subject) in geometry.into_iter().chain([semantic]) {
             self.root(
                 "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
                 vec![
-                    quoted(link_name),
+                    quoted(name),
                     text("''"),
                     definition.into(),
                     presentation.model.into(),
-                    callout.into(),
+                    subject.into(),
                 ],
             );
         }
@@ -2110,6 +2169,7 @@ pub(crate) fn emit(
         }
     }
     let by_name: BTreeMap<_, _> = pmi.items.iter().map(|item| (&item.id, item)).collect();
+    let mut shown_labels = BTreeSet::new();
     for view in &pmi.views {
         let mut callouts = Vec::with_capacity(view.items.len());
         for (slot, id) in view.items.iter().enumerate() {
@@ -2123,7 +2183,12 @@ pub(crate) fn emit(
                 )?
             } else {
                 let label = label(item, sizes.get(id.as_str()).map(String::as_str))?;
-                emitter.label_callout(id, label, (&view.camera, slot, view.items.len()))?
+                emitter.label_callout(
+                    item,
+                    label,
+                    (&view.camera, slot, view.items.len()),
+                    !shown_labels.insert(id),
+                )?
             };
             callouts.push(callout);
         }

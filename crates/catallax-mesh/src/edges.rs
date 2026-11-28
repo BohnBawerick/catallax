@@ -946,7 +946,8 @@ fn sample_edges(
     };
     let mut planar_leaves = BTreeMap::<EdgeId, BTreeMap<[usize; 2], PlanarLeaf>>::new();
     for edge_id in selected {
-        let incident = &adjacent[&edge_id];
+        // Scoped junctions supply certified edge seeds without face charts.
+        let incident = adjacent.get(&edge_id).map_or(&[][..], Vec::as_slice);
         let local_options = edge_options(incident, options);
         let options = local_options.as_ref().unwrap_or(options);
         let spline_cosine = edge_cosine(incident, options, spline_cosine, dec)?;
@@ -961,32 +962,31 @@ fn sample_edges(
             (edge.end, edge.start)
         };
         let traced;
-        let pieces: Vec<_> = if let Some((spans, chart, row)) =
-            checked_rail(model, edge_id, &adjacent[&edge_id], dec)?
-        {
-            dec.charge_traversal(spans.len() as u64)?;
-            spans
-                .iter()
-                .map(|span| EdgePiece::Rail { span, chart, row })
-                .collect()
-        } else {
-            let answer = trace(
-                model.geom(),
-                edge.curve,
-                from.map(|v| model.vertex(v).point),
-                to.map(|v| model.vertex(v).point),
-                dec,
-            )?;
-            result.marks.extend(&answer.marks);
-            traced = answer
-                .value
-                .pieces()
-                .iter()
-                .cloned()
-                .map(Arc::new)
-                .collect::<Vec<_>>();
-            traced.iter().map(EdgePiece::Trace).collect()
-        };
+        let pieces: Vec<_> =
+            if let Some((spans, chart, row)) = checked_rail(model, edge_id, incident, dec)? {
+                dec.charge_traversal(spans.len() as u64)?;
+                spans
+                    .iter()
+                    .map(|span| EdgePiece::Rail { span, chart, row })
+                    .collect()
+            } else {
+                let answer = trace(
+                    model.geom(),
+                    edge.curve,
+                    from.map(|v| model.vertex(v).point),
+                    to.map(|v| model.vertex(v).point),
+                    dec,
+                )?;
+                result.marks.extend(&answer.marks);
+                traced = answer
+                    .value
+                    .pieces()
+                    .iter()
+                    .cloned()
+                    .map(Arc::new)
+                    .collect::<Vec<_>>();
+                traced.iter().map(EdgePiece::Trace).collect()
+            };
         let zero = Rational::zero();
         let one = Rational::one();
         let mut initial = Some(EdgePoint {
@@ -994,7 +994,7 @@ fn sample_edges(
             cap_hint: None,
             edge_end: Some(0),
         });
-        let planar = adjacent[&edge_id]
+        let planar = incident
             .iter()
             .any(|incident| matches!(incident.chart.surface, Surface::Plane(_)));
         let first = if let Some(v) = from {
@@ -1025,7 +1025,7 @@ fn sample_edges(
         let plan_collar = from == to
             && !planar
             && options.angular_deviation.is_some()
-            && adjacent[&edge_id].iter().any(|incident| {
+            && incident.iter().any(|incident| {
                 incident.fixed_v.is_some()
                     && matches!(
                         incident.chart.surface,
@@ -1033,7 +1033,7 @@ fn sample_edges(
                     )
             });
         let mut rail = Vec::new();
-        let needs_spline = adjacent[&edge_id]
+        let needs_spline = incident
             .iter()
             .any(|incident| incident.chart.spline().is_some());
         let mut leaves = (check_crossings
@@ -1098,7 +1098,7 @@ fn sample_edges(
                 piece,
                 cap,
                 spline,
-                charts: &adjacent[&edge_id],
+                charts: incident,
                 spline_cosine,
                 options,
                 dec,
@@ -1122,7 +1122,7 @@ fn sample_edges(
         if plan_collar {
             (indices, error) = plan_collar_rail(
                 rail,
-                &adjacent[&edge_id],
+                incident,
                 spline_cosine,
                 options,
                 &mut result.mesh.positions,
@@ -1135,7 +1135,7 @@ fn sample_edges(
         let mut i = 1;
         while i < indices.len() {
             let (a, b) = (indices[i - 1], indices[i]);
-            let collapses = adjacent[&edge_id].iter().any(|incident| {
+            let collapses = incident.iter().any(|incident| {
                 let chart = incident.chart;
                 chart.spline().is_none()
                     && chart::key(chart.canonical(chart.project(result.mesh.positions[a])))

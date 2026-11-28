@@ -1408,7 +1408,8 @@ impl Emitter<'_> {
             .graph
             .add("DRAUGHTING_CALLOUT", vec![quoted(item), refs([occurrence])]);
         self.graph.extend_list(plane, 3, [callout]);
-        for (index, &definition) in definitions.iter().enumerate() {
+        // Open CASCADE uses the first association to find a graphic callout's faces.
+        for (index, &definition) in definitions.iter().enumerate().rev() {
             let link_name = if index == 0 {
                 "PMI representation to presentation link"
             } else {

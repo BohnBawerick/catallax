@@ -1331,15 +1331,9 @@ impl Emitter<'_> {
                     format!("{item}: the callout has no face anchor"),
                 )
             })?;
-            let [across, normal] =
-                drawing
-                    .in_view(anchor, camera, slot, count)
-                    .ok_or_else(|| {
-                        Refusal::new(
-                            "step.pmi-invalid",
-                            format!("{item}: the callout is behind the camera"),
-                        )
-                    })?;
+            let [across, normal] = drawing
+                .in_view(anchor, camera, slot, count)
+                .map_err(|reason| Refusal::new("step.pmi-invalid", format!("{item}: {reason}")))?;
             (
                 anchor.clone(),
                 normal.map(|value| &Rational::zero() - &value),
@@ -1464,7 +1458,7 @@ impl Emitter<'_> {
         let centre = self.point("polyline centre point", &centre.map(|c| presented(&c)));
         self.validation(within.into(), vec![string, length, centre]);
         self.annotations += 1;
-        Ok(plane)
+        Ok(callout)
     }
 
     /// A saved view (recommended practices, section 9.4): a draughting model
@@ -2116,10 +2110,10 @@ pub(crate) fn emit(
     }
     let by_name: BTreeMap<_, _> = pmi.items.iter().map(|item| (&item.id, item)).collect();
     for view in &pmi.views {
-        let mut planes = Vec::with_capacity(view.items.len());
+        let mut callouts = Vec::with_capacity(view.items.len());
         for (slot, id) in view.items.iter().enumerate() {
             let item = by_name[id];
-            let plane = if let ItemKind::Texture(texture) = &item.kind {
+            let callout = if let ItemKind::Texture(texture) = &item.kind {
                 emitter.texture_callout(
                     texture,
                     id,
@@ -2130,9 +2124,9 @@ pub(crate) fn emit(
                 let label = label(item, sizes.get(id.as_str()).map(String::as_str))?;
                 emitter.label_callout(id, label, (&view.camera, slot, view.items.len()))?
             };
-            planes.push(plane);
+            callouts.push(callout);
         }
-        emitter.view(view, planes)?;
+        emitter.view(view, callouts)?;
     }
     if let Some(value) = &pmi.part.general_tolerance {
         emitter.note(GENERAL_TOLERANCE, value);

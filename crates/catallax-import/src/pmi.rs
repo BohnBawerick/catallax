@@ -7,7 +7,7 @@ mod patch;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_numbers::{Decider, Rational, Real, Refusal};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, StrictSign};
 use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
 use catallax_shapes::{Circle, Plane, Point3, RPoint3, RVector3, Vector3};
 use catallax_step::pmi::{
@@ -823,28 +823,59 @@ impl<'a> Reader<'a> {
     /// A length in millimetres from a measure in any of its written forms,
     /// with the name it carries as a representation item.
     fn length(&self, id: u64) -> Option<(String, Rational)> {
+        let (name, value, unit) = self.length_fields(id)?;
+        let scale = unit_millimetres(self.g, reference(Some(unit))?, 0).ok()?;
+        let (_, value) = length_measure(value)?;
+        Some((name.unwrap_or_default(), &value * &scale))
+    }
+
+    fn length_fields(&self, id: u64) -> Option<(Option<String>, &Param, &Param)> {
         let entity = self.entity(id)?;
-        let (name, value, unit) = if let Some(measure) = entity.part("MEASURE_WITH_UNIT") {
-            let [value, unit] = measure else { return None };
+        if let Some([value, unit]) = entity.part("MEASURE_WITH_UNIT") {
             let name = entity
                 .part("REPRESENTATION_ITEM")
                 .and_then(|params| string(params.first()));
-            (name, Some(value), Some(unit))
-        } else {
-            let params = entity.parts[0].1.as_slice();
-            match (entity.type_name(), params.len()) {
-                ("MEASURE_REPRESENTATION_ITEM", 3) => {
-                    (string(params.first()), params.get(1), params.get(2))
-                }
-                ("LENGTH_MEASURE_WITH_UNIT" | "MEASURE_WITH_UNIT", 2) => {
-                    (None, params.first(), params.get(1))
-                }
-                _ => return None,
+            return Some((name, value, unit));
+        }
+        match (entity.type_name(), entity.parts[0].1.as_slice()) {
+            ("MEASURE_REPRESENTATION_ITEM", [name, value, unit]) => {
+                Some((string(Some(name)), value, unit))
             }
-        };
-        let scale = unit_millimetres(self.g, reference(unit)?, 0).ok()?;
-        let (_, value) = length_measure(value?)?;
-        Some((name.unwrap_or_default(), &value * &scale))
+            (
+                "LENGTH_MEASURE_WITH_UNIT"
+                | "NON_NEGATIVE_LENGTH_MEASURE_WITH_UNIT"
+                | "POSITIVE_LENGTH_MEASURE_WITH_UNIT",
+                [value, unit],
+            ) => Some((None, value, unit)),
+            _ => None,
+        }
+    }
+
+    fn distance_accuracy(&self, owner: u64) -> Rational {
+        self.part_representations(owner)
+            .into_iter()
+            .filter_map(|id| {
+                let representation = self.entity(id)?;
+                let context = self.entity(reference(representation.parts[0].1.get(2))?)?;
+                reference_list(context.part("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")?.last())
+            })
+            .flatten()
+            .filter_map(|id| {
+                let [value, unit, name, _] =
+                    self.entity(id)?.part("UNCERTAINTY_MEASURE_WITH_UNIT")?
+                else {
+                    return None;
+                };
+                if string(Some(name)).as_deref() != Some("distance_accuracy_value") {
+                    return None;
+                }
+                let (_, value) = length_measure(value)?;
+                let scale = unit_millimetres(self.g, reference(Some(unit))?, 0).ok()?;
+                Some(&value * &scale)
+            })
+            .max()
+            .unwrap_or_default()
+            .max(Rational::zero())
     }
 
     fn datum_letter(&self, datum: u64) -> Option<String> {
@@ -2324,12 +2355,10 @@ impl<'a> Reader<'a> {
             let face = format!("#{id}");
             let surface = self.face_surface(&face).ok_or(unknown)?;
             if self.has(surface, "PLANE") {
-                let (origin, axis) = self.outward_plane(&face).ok_or(unknown)?;
-                // The plane's outward normal along the zone: leaving the material.
-                let exiting = dot3(&axis, normal) > Rational::zero();
+                let placement = self.planar_placement(surface).ok_or(unknown)?;
                 let plane = Plane {
-                    origin: point(origin),
-                    normal: vector(axis),
+                    origin: point(placement.origin),
+                    normal: vector(placement.axis),
                     ref_dir: direction.clone(),
                 };
                 match span.plane_meeting(&plane, &mut dec).map_err(detail)? {
@@ -2361,6 +2390,10 @@ impl<'a> Reader<'a> {
                             .face_boundary_in_units(&face, &Rational::one(), scale)
                             .ok_or(unknown)?;
                         if boundary.contains(&hit, &mut dec).map_err(detail)? {
+                            let (_, axis) = self.outward_plane(&face).ok_or(
+                                "the projected crossing's planar trim orientation is unverified",
+                            )?;
+                            let exiting = dot3(&axis, normal) > Rational::zero();
                             crossings.push(Crossing::At { t, exiting });
                         }
                         continue;
@@ -2832,20 +2865,105 @@ impl<'a> Reader<'a> {
         })
     }
 
+    fn planar_placement(&self, surface: u64) -> Option<Placement> {
+        let plane = self.entity(surface)?.part("PLANE")?;
+        self.placement(reference(plane.get(1))?)
+    }
+
+    fn planar_trim_sign(&self, face: u64, frame: &Placement) -> Option<bool> {
+        let mut area = Rational::zero();
+        let bits = 128;
+        let ball = |value: &Rational| Ball::from_rational(value, bits);
+        let mut sectors = None;
+        for edge in self.face_trim(face)? {
+            let [a, b] = edge.vertices;
+            let [start, end] = if edge.forward { [a, b] } else { [b, a] };
+            let start_at = self.vertex_coordinates(start)?;
+            let end_at = self.vertex_coordinates(end)?;
+            let start_offset = sub3(&start_at, &frame.origin);
+            let end_offset = sub3(&end_at, &frame.origin);
+            if !dot3(&start_offset, &frame.axis).is_zero()
+                || !dot3(&end_offset, &frame.axis).is_zero()
+            {
+                return None;
+            }
+            let curve = self.trim_curve(edge.curve)?;
+            if curve.part("LINE").is_some() {
+                area = area + dot3(&cross3(&start_offset, &end_offset), &frame.axis);
+                continue;
+            }
+            let [_, placement, radius] = curve.part("CIRCLE")? else {
+                return None;
+            };
+            let circle = self.placement(reference(Some(placement))?)?;
+            let radius = number(Some(radius)).filter(|radius| *radius > Rational::zero())?;
+            let radius_sq = &radius * &radius;
+            let centre = sub3(&circle.origin, &frame.origin);
+            if !is_zero3(&cross3(&circle.axis, &frame.axis))
+                || !dot3(&centre, &frame.axis).is_zero()
+            {
+                return None;
+            }
+            let along_circle = edge.forward == edge.same_sense;
+            let mut radial = [
+                sub3(&start_at, &circle.origin),
+                sub3(&end_at, &circle.origin),
+            ];
+            if radial.iter().any(|v| dot3(v, v) != radius_sq) {
+                return None;
+            }
+            if !along_circle {
+                radial.swap(0, 1);
+            }
+            let sweep = if start == end {
+                Ball::pi(bits) * ball(&Rational::from_i64(2))
+            } else {
+                let y = dot3(&cross3(&radial[0], &radial[1]), &circle.axis);
+                let x = dot3(&radial[0], &radial[1]);
+                if y.is_zero() {
+                    if x >= Rational::zero() {
+                        return None;
+                    }
+                    Ball::pi(bits)
+                } else {
+                    let axis_length = ball(&dot3(&circle.axis, &circle.axis)).sqrt()?;
+                    let mut angle = Ball::atan2(&ball(&y), &(ball(&x) * axis_length))?;
+                    if y < Rational::zero() {
+                        angle = angle + Ball::pi(bits) * ball(&Rational::from_i64(2));
+                    }
+                    angle
+                }
+            };
+            let sector = ball(&radius_sq) * sweep;
+            let sector = if along_circle == (dot3(&circle.axis, &frame.axis) > Rational::zero()) {
+                sector
+            } else {
+                -sector
+            };
+            sectors = Some(match sectors {
+                Some(sum) => sum + sector,
+                None => sector,
+            });
+            area = area + dot3(&cross3(&centre, &sub3(&end_at, &start_at)), &frame.axis);
+        }
+        if let Some(sectors) = sectors {
+            let axis_length = ball(&dot3(&frame.axis, &frame.axis)).sqrt()?;
+            return (ball(&area) + sectors * axis_length)
+                .sign()
+                .map(|sign| sign == StrictSign::Positive);
+        }
+        (!area.is_zero()).then(|| area > Rational::zero())
+    }
+
     /// The plane of a planar face and its normal pointing out of the material.
     fn outward_plane(&self, face: &str) -> Option<([Rational; 3], [Rational; 3])> {
         let id: u64 = face.strip_prefix('#')?.parse().ok()?;
         let params = self.entity(id)?.part("ADVANCED_FACE")?;
-        let plane = self.entity(reference(params.get(2))?)?.part("PLANE")?;
-        let placement = self.placement(reference(plane.get(1))?)?;
-        let Some(Param::Enum(sense)) = params.get(3) else {
+        let placement = self.planar_placement(reference(params.get(2))?)?;
+        let mut same = boolean(params.get(3)?)?;
+        if self.planar_trim_sign(id, &placement)? != same {
             return None;
-        };
-        let mut same = match sense.as_str() {
-            "T" => true,
-            "F" => false,
-            _ => return None,
-        };
+        }
         let shells = self.sharing_at(id, "CLOSED_SHELL", 1);
         if shells.len() > 1 {
             return None;
@@ -3289,6 +3407,9 @@ impl<'a> Reader<'a> {
                 if points.len() < 2 {
                     return Err("an annotation polyline needs at least two points".into());
                 }
+                if points.windows(2).all(|pair| pair[0] == pair[1]) {
+                    return Err("an annotation polyline has coincident points".into());
+                }
                 strokes.push(points);
             }
         }
@@ -3443,6 +3564,12 @@ impl<'a> Reader<'a> {
             .into_iter()
             .flatten()
             .copied()
+            .inspect(move |_| {
+                #[cfg(test)]
+                if self.has(member, "ANNOTATION_PLANE") {
+                    count_plane_lookup();
+                }
+            })
     }
 
     fn graphic_faces(&self, id: u64) -> Result<Vec<String>, String> {
@@ -3816,6 +3943,11 @@ impl<'a> Reader<'a> {
                     .or_default()
                     .push(callout);
             }
+            let unowned_planes: Vec<_> = planes
+                .keys()
+                .copied()
+                .filter(|id| !self.draughting_membership.contains_key(id))
+                .collect();
             let mut has_graphics = false;
             for &model in &supported {
                 let scope: Vec<_> = std::iter::once(model)
@@ -3915,15 +4047,19 @@ impl<'a> Reader<'a> {
                             text: equivalent,
                             faces: (!faces.is_empty()).then_some(faces),
                             presents: presents.into_iter().map(|id| format!("#{id}")).collect(),
-                            planes: planes
+                            planes: scope
                                 .iter()
-                                .filter(|(id, _)| {
-                                    let mut models =
-                                        self.draughting_models_containing(**id).peekable();
-                                    models.peek().is_none()
-                                        || models.any(|model| scope.contains(&model))
+                                .filter_map(|model| model_planes.get(model))
+                                .flatten()
+                                .copied()
+                                .chain(unowned_planes.iter().copied())
+                                .inspect(|_| {
+                                    #[cfg(test)]
+                                    count_plane_lookup();
                                 })
-                                .map(|(_, plane)| plane.clone())
+                                .collect::<BTreeSet<_>>()
+                                .into_iter()
+                                .filter_map(|id| planes.get(&id).cloned())
                                 .collect(),
                         },
                         Vec::new(),
@@ -4318,7 +4454,7 @@ impl<'a> Reader<'a> {
         };
         let (_, outward) = self
             .outward_plane(face)
-            .ok_or("a datum target is read only on a planar face")?;
+            .ok_or("a datum target needs a planar face with an oriented boundary")?;
         if !is_zero3(&cross3(&orientation.axis, &outward))
             || dot3(&orientation.axis, &outward) <= Rational::zero()
         {
@@ -4915,22 +5051,37 @@ struct EditedTolerance {
     name: String,
     faces: BTreeSet<String>,
     old_mm: Rational,
+    accuracy_mm: Rational,
     mm_per_unit: Rational,
 }
 
 impl EditedTolerance {
+    fn matches_old(&self, millimetres: &Rational) -> bool {
+        (millimetres - &self.old_mm).abs() <= self.accuracy_mm
+    }
+
     fn stale_text(&self, text: &str) -> bool {
         let mut at = 0;
         while at < text.len() {
             let tail = &text[at..];
             let digits = |s: &str| s.bytes().take_while(u8::is_ascii_digit).count();
             let whole = digits(tail);
-            let fraction = tail[whole..].strip_prefix('.').map_or(0, |s| 1 + digits(s));
-            if whole == 0 && fraction <= 1 {
+            let separator = tail[whole..].trim_start();
+            let mut end = whole;
+            let mut fraction = "";
+            if let Some(after) = separator.strip_prefix(['.', ',']) {
+                let after = after.trim_start();
+                let count = digits(after);
+                if count != 0 {
+                    fraction = &after[..count];
+                    end = tail.len() - after.len() + count;
+                }
+            }
+            if whole == 0 && fraction.is_empty() {
                 at += tail.chars().next().expect("nonempty text").len_utf8();
                 continue;
             }
-            let mut end = whole + fraction;
+            let mantissa_end = end;
             if let Some(exponent) = tail[end..].strip_prefix(['e', 'E']) {
                 let unsigned = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
                 let count = digits(unsigned);
@@ -4938,23 +5089,21 @@ impl EditedTolerance {
                     end += 1 + exponent.len() - unsigned.len() + count;
                 }
             }
-            let literal_id = at > 0
-                && text.as_bytes()[at - 1] == b'#'
-                && fraction <= 1
-                && end == whole + fraction;
-            let mut numeric = String::new();
-            if whole == 0 {
-                numeric.push('0');
+            let literal_id = at > 0 && text.as_bytes()[at - 1] == b'#' && end == whole;
+            let mut numeric = if whole == 0 {
+                "0".into()
+            } else {
+                tail[..whole].to_owned()
+            };
+            if !fraction.is_empty() {
+                numeric.push('.');
+                numeric.push_str(fraction);
             }
-            numeric.push_str(&tail[..whole + fraction]);
-            if fraction == 1 {
-                numeric.push('0');
-            }
-            numeric.push_str(&tail[whole + fraction..end]);
+            numeric.push_str(&tail[mantissa_end..end]);
             let unit: String = tail[end..]
                 .trim_start()
                 .chars()
-                .take_while(|c| c.is_alphabetic() || matches!(c, '"' | '\''))
+                .take_while(|c| c.is_alphabetic())
                 .flat_map(char::to_lowercase)
                 .collect();
             let scale = match unit.as_str() {
@@ -4964,15 +5113,17 @@ impl EditedTolerance {
                 "cm" => Some(Rational::from_i64(10)),
                 "m" => Some(Rational::from_i64(1000)),
                 "μm" | "µm" | "um" | "micron" | "microns" => Rational::from_ratio(1, 1000),
-                "in" | "inch" | "inches" | "\"" => Rational::from_ratio(254, 10),
-                "ft" | "foot" | "feet" | "'" => Rational::from_ratio(3048, 10),
+                "in" | "inch" | "inches" => Rational::from_ratio(254, 10),
+                "ft" | "foot" | "feet" => Rational::from_ratio(3048, 10),
                 "mil" | "mils" | "thou" => Rational::from_ratio(254, 10_000),
                 _ => None,
             };
             if !literal_id && let Ok(value) = Rational::parse(&numeric) {
                 let stale = match scale {
-                    Some(scale) => &value * &scale == self.old_mm,
-                    None => value == self.old_mm || &value * &self.mm_per_unit == self.old_mm,
+                    Some(scale) => self.matches_old(&(&value * &scale)),
+                    None => {
+                        self.matches_old(&value) || self.matches_old(&(&value * &self.mm_per_unit))
+                    }
                 };
                 if stale {
                     return true;
@@ -5041,7 +5192,15 @@ impl EditedTolerance {
                 }
                 false
             };
-            if entity.parts.iter().any(|(_, params)| bad_text(params)) {
+            let stale_measure = reader.length_fields(id).is_some_and(|(_, value, unit)| {
+                let length_type = matches!(value, Param::Typed(kind, _)
+                    if matches!(kind.as_str(), "LENGTH_MEASURE" | "NON_NEGATIVE_LENGTH_MEASURE" | "POSITIVE_LENGTH_MEASURE"));
+                let length_unit = reference(Some(unit)).and_then(|unit| reader.entity(unit))
+                    .is_some_and(|entity| entity.part("LENGTH_UNIT").is_some());
+                (length_type || length_unit)
+                    && reader.length(id).is_none_or(|(_, mm)| self.matches_old(&mm))
+            });
+            if stale_measure || entity.parts.iter().any(|(_, params)| bad_text(params)) {
                 return Err(if let Some(association) = association {
                     let error = refuse(association, "DRAUGHTING_MODEL_ITEM_ASSOCIATION");
                     patch_refusal(format!("{} through #{id} ({kind})", error.detail))
@@ -5112,160 +5271,125 @@ impl EditedTolerance {
 /// A tolerance value is a new length measure under a fresh number. The patch
 /// refuses when a dependent record could retain the old meaning or when the
 /// edited file fails read-back.
-pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusal> {
+pub fn patch_step_pmi(bytes: &[u8], edit: Option<&PmiEdit>) -> Result<Vec<u8>, Refusal> {
     use patch::{Patch, Records};
-    if edits.is_empty() {
+    let Some(PmiEdit::ToleranceValue { source, value }) = edit else {
         return Ok(bytes.to_vec());
-    }
+    };
     let records = Records::parse(bytes)?;
     let graph = parse(bytes).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
     let reader = Reader::new(&graph);
-    let mut selected = BTreeMap::new();
-    let mut edits_by_id = Vec::with_capacity(edits.len());
-    let mut edited = BTreeSet::new();
-    for PmiEdit::ToleranceValue { source, value } in edits {
-        let root: u64 = source
-            .strip_prefix('#')
-            .and_then(|id| id.parse().ok())
-            .ok_or_else(|| patch_refusal(format!("{source}: expected a source entity number")))?;
-        if !edited.insert(root) {
-            return Err(patch_refusal(format!("{source}: it is edited twice")));
-        }
-        let owners = reader.owner_shapes(root);
-        let owner = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
-        let product = reader
-            .entity(owner)
-            .and_then(|shape| shape.part("PRODUCT_DEFINITION_SHAPE"))
-            .and_then(|shape| reference(shape.get(2)))
-            .filter(|id| reader.has(*id, "PRODUCT_DEFINITION"))
-            .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
-        selected.insert(owner, product);
-        edits_by_id.push((root, owner, source, value));
-    }
+    let root: u64 = source
+        .strip_prefix('#')
+        .and_then(|id| id.parse().ok())
+        .ok_or_else(|| patch_refusal(format!("{source}: expected a source entity number")))?;
+    let owners = reader.owner_shapes(root);
+    let owner = owners
+        .first()
+        .copied()
+        .filter(|_| owners.len() == 1)
+        .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
+    let product = reader
+        .entity(owner)
+        .and_then(|shape| shape.part("PRODUCT_DEFINITION_SHAPE"))
+        .and_then(|shape| reference(shape.get(2)))
+        .filter(|id| reader.has(*id, "PRODUCT_DEFINITION"))
+        .ok_or_else(|| patch_refusal(format!("{source}: no item on one part was read")))?;
     let scoped = |reader: &Reader<'_>| {
-        let mut candidates = BTreeMap::<_, Vec<_>>::new();
-        for item in reader
-            .g
-            .iter()
-            .filter_map(|(&id, entity)| candidate(id, entity))
-        {
-            let owners = reader.owner_shapes(item.id);
-            if let Some(owner) = owners
-                .first()
-                .copied()
-                .filter(|owner| owners.len() == 1 && selected.contains_key(owner))
-            {
-                candidates.entry(owner).or_default().push(item);
-            }
-        }
-        selected
-            .iter()
-            .map(|(&owner, &product)| {
-                (
-                    owner,
-                    read_items(
-                        reader,
-                        candidates.remove(&owner).unwrap_or_default(),
-                        Some((product, owner)),
-                    ),
-                )
-            })
-            .collect::<BTreeMap<_, _>>()
+        read_items(
+            reader,
+            reader
+                .g
+                .iter()
+                .filter_map(|(&id, entity)| candidate(id, entity))
+                .filter(|item| {
+                    let owners = reader.owner_shapes(item.id);
+                    owners.len() == 1 && owners.contains(&owner)
+                }),
+            Some((product, owner)),
+        )
     };
     let mut patch = Patch::new(&records);
-    let mut dependencies = Vec::new();
     let mut expected = scoped(&reader);
-    for (root, owner, source, value) in edits_by_id {
-        let part = expected.get_mut(&owner).expect("selected part was read");
-        let (item, _) = part
-            .sources
-            .iter()
-            .find(|(_, id)| *id == source)
-            .ok_or_else(|| patch_refusal(format!("{source}: no such item was read")))?;
-        let changed = part
-            .pmi
-            .items
-            .iter_mut()
-            .find(|found| &found.id == item)
-            .expect("read parts have an item for each source");
-        let ItemKind::Tolerance(tolerance) = &mut changed.kind else {
-            return Err(patch_refusal(format!(
-                "{item}: only a geometric tolerance's value is patched"
-            )));
-        };
-        if *value <= Rational::zero() {
-            return Err(patch_refusal(format!(
-                "{item}: the value must be more than zero"
-            )));
-        }
-        let refuse_dependency = |id: u64| {
-            let kind = graph.get(&id).map_or("unknown", Entity::type_name);
-            patch_refusal(format!(
-                "{item}: #{id} ({kind}) may still depend on the old value"
-            ))
-        };
-        for &user in records.users(root) {
-            let entity = graph.get(&user).ok_or_else(|| refuse_dependency(user))?;
-            let fields = entity.parts[0].1.as_slice();
-            match (entity.parts.len(), entity.type_name()) {
-                (1, "ID_ATTRIBUTE") if reference(fields.get(1)) == Some(root) => {}
-                (1, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")
-                    if reference(fields.get(2)) == Some(root) => {}
-                (1, "TOLERANCE_ZONE")
-                    if reference_list(fields.get(4)).as_deref() == Some(&[root]) =>
-                {
-                    if let Some(&dependent) = records.users(user).first() {
-                        return Err(refuse_dependency(dependent));
-                    }
-                }
-                _ => return Err(refuse_dependency(user)),
-            }
-        }
-        let entity = &graph[&root];
-        let base = entity
-            .part("GEOMETRIC_TOLERANCE")
-            .unwrap_or(entity.parts[0].1.as_slice());
-        let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
-        if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {
-            return Err(refuse_dependency(user));
-        }
-        let measure = &graph[&magnitude];
-        let (true, [select, Param::Ref(unit)]) = (
-            measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
-            measure.parts[0].1.as_slice(),
-        ) else {
-            return Err(patch_refusal(format!(
-                "{item}: its value #{magnitude} is not a plain length measure"
-            )));
-        };
-        let (kind, _) = length_measure(select).ok_or_else(|| {
-            patch_refusal(format!("{item}: its value #{magnitude} is not a length"))
-        })?;
-        let scale = unit_millimetres(&graph, *unit, 0)
-            .map_err(|_| patch_refusal(format!("{item}: its value's unit is not known")))?;
-        patch
-            .replace_owned_magnitude(root, magnitude, kind, &(value / &scale), *unit)
-            .map_err(|error| patch_refusal(format!("{item}: {}", error.detail)))?;
-        dependencies.push(EditedTolerance {
-            root,
-            owner,
-            name: item.clone(),
-            faces: tolerance.features.iter().flatten().cloned().collect(),
-            old_mm: tolerance.value.clone(),
-            mm_per_unit: scale,
-        });
-        tolerance.value = value.clone();
+    let (item, _) = expected
+        .sources
+        .iter()
+        .find(|(_, id)| *id == source)
+        .ok_or_else(|| patch_refusal(format!("{source}: no such item was read")))?;
+    let changed = expected
+        .pmi
+        .items
+        .iter_mut()
+        .find(|found| &found.id == item)
+        .expect("read parts have an item for each source");
+    let ItemKind::Tolerance(tolerance) = &mut changed.kind else {
+        return Err(patch_refusal(format!(
+            "{item}: only a geometric tolerance's value is patched"
+        )));
+    };
+    if *value <= Rational::zero() {
+        return Err(patch_refusal(format!(
+            "{item}: the value must be more than zero"
+        )));
     }
+    let refuse_dependency = |id: u64| {
+        let kind = graph.get(&id).map_or("unknown", Entity::type_name);
+        patch_refusal(format!(
+            "{item}: #{id} ({kind}) may still depend on the old value"
+        ))
+    };
+    for &user in records.users(root) {
+        let entity = graph.get(&user).ok_or_else(|| refuse_dependency(user))?;
+        let fields = entity.parts[0].1.as_slice();
+        match (entity.parts.len(), entity.type_name()) {
+            (1, "ID_ATTRIBUTE") if reference(fields.get(1)) == Some(root) => {}
+            (1, "DRAUGHTING_MODEL_ITEM_ASSOCIATION") if reference(fields.get(2)) == Some(root) => {}
+            (1, "TOLERANCE_ZONE") if reference_list(fields.get(4)).as_deref() == Some(&[root]) => {
+                if let Some(&dependent) = records.users(user).first() {
+                    return Err(refuse_dependency(dependent));
+                }
+            }
+            _ => return Err(refuse_dependency(user)),
+        }
+    }
+    let entity = &graph[&root];
+    let base = entity
+        .part("GEOMETRIC_TOLERANCE")
+        .unwrap_or(entity.parts[0].1.as_slice());
+    let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
+    if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {
+        return Err(refuse_dependency(user));
+    }
+    let measure = &graph[&magnitude];
+    let (true, [select, Param::Ref(unit)]) = (
+        measure.parts.len() == 1 && measure.type_name() == "LENGTH_MEASURE_WITH_UNIT",
+        measure.parts[0].1.as_slice(),
+    ) else {
+        return Err(patch_refusal(format!(
+            "{item}: its value #{magnitude} is not a plain length measure"
+        )));
+    };
+    let (kind, _) = length_measure(select)
+        .ok_or_else(|| patch_refusal(format!("{item}: its value #{magnitude} is not a length")))?;
+    let scale = unit_millimetres(&graph, *unit, 0)
+        .map_err(|_| patch_refusal(format!("{item}: its value's unit is not known")))?;
+    patch
+        .replace_owned_magnitude(root, magnitude, kind, &(value / &scale), *unit)
+        .map_err(|error| patch_refusal(format!("{item}: {}", error.detail)))?;
+    let dependencies = EditedTolerance {
+        root,
+        owner,
+        name: item.clone(),
+        faces: tolerance.features.iter().flatten().cloned().collect(),
+        old_mm: tolerance.value.clone(),
+        accuracy_mm: reader.distance_accuracy(owner),
+        mm_per_unit: scale,
+    };
+    tolerance.value = value.clone();
     let out = patch.apply();
     let changed_graph = parse(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
     let changed_reader = Reader::new(&changed_graph);
-    for tolerance in dependencies {
-        tolerance.check_dependencies(&changed_reader)?;
-    }
+    dependencies.check_dependencies(&changed_reader)?;
     let before = read_pmi(&reader);
     let after = read_pmi(&changed_reader);
     if scoped(&changed_reader) != expected
@@ -5291,8 +5415,50 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
 }
 
 #[cfg(test)]
+thread_local! {
+    static PLANE_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn count_plane_lookup() {
+    PLANE_LOOKUPS.with(|visits| visits.set(visits.get() + 1));
+}
+
+#[cfg(test)]
 mod tests {
     use super::decode;
+
+    #[test]
+    fn shared_view_import_bounds_plane_lookup_work() {
+        use super::{PLANE_LOOKUPS, read_step_pmi};
+        use std::fmt::Write;
+
+        let source = include_str!("../../catallax-step/tests/fixtures/graphical-only-pmi.step")
+            .replace("#39", "#9000");
+        let count = 128;
+        let mut models = String::new();
+        for i in 0..count {
+            let model = 100 + 2 * i;
+            writeln!(models, "#{model}=DRAUGHTING_MODEL('Top',(#38,#49),#9);").unwrap();
+            writeln!(
+                models,
+                "#{}=MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP('','',#{model},#9000);",
+                model + 1
+            )
+            .unwrap();
+        }
+        let input = source.replacen("ENDSEC;\nEND-ISO", &format!("{models}ENDSEC;\nEND-ISO"), 1);
+        PLANE_LOOKUPS.with(|visits| visits.set(0));
+        let imported = read_step_pmi(input.as_bytes()).unwrap();
+        let visits = PLANE_LOOKUPS.with(std::cell::Cell::get);
+        assert_eq!(imported.graphics.len(), 1);
+        assert_eq!(imported.graphics[0].views.len(), count + 1);
+        assert!(
+            visits <= 4 * (count + 1),
+            "{visits} plane lookups for {} views",
+            count + 1
+        );
+    }
 
     #[test]
     fn strings_decode_their_control_directives() {

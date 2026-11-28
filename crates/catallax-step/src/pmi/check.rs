@@ -243,6 +243,13 @@ pub fn line_matches_trim(
 fn written_boundary(graph: &Graph, face: Id) -> Option<PlanarBoundary> {
     let (bounds, surface, _) = written_face(graph, face)?;
     let plane = written_plane(graph, fields(graph, surface, "PLANE")?.get(1)?)?;
+    let on_plane = |point: &Point3| {
+        point
+            .minus(&plane.origin)
+            .dot(&plane.normal)
+            .rational_ref()
+            .is_some_and(Rational::is_zero)
+    };
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     for id in written_edges(graph, bounds)? {
@@ -265,7 +272,11 @@ fn written_boundary(graph: &Graph, face: Id) -> Option<PlanarBoundary> {
             let mut ends = [0, 0];
             for (slot, vertex) in ends.iter_mut().zip([*start, *end]) {
                 *slot = vertices.len();
-                vertices.push(written_point(graph, &Field::Ref(vertex))?);
+                let point = written_point(graph, &Field::Ref(vertex))?;
+                if !on_plane(&point) {
+                    return None;
+                }
+                vertices.push(point);
             }
             if same.as_ref() == ".F." {
                 ends.swap(0, 1);
@@ -311,13 +322,6 @@ fn written_boundary(graph: &Graph, face: Id) -> Option<PlanarBoundary> {
             let circle = written_plane(graph, placement)?;
             let radius = written_real(radius);
             let radius_sq = radius.square();
-            let on_plane = |point: &Point3| {
-                point
-                    .minus(&plane.origin)
-                    .dot(&plane.normal)
-                    .rational_ref()
-                    .is_some_and(Rational::is_zero)
-            };
             if radius.rational_ref()? <= &Rational::zero()
                 || circle.ref_dir.norm_squared().rational_ref()?.is_zero()
                 || !circle
@@ -406,14 +410,6 @@ pub(super) fn check_written_target(
             item,
             "the datum target's direction differs from the written face",
         ));
-    }
-    for vertex in &boundary.vertices {
-        if !is_zero(&vertex.minus(&plane.origin).dot(&plane.normal), dec)? {
-            return Err(refuse(
-                item,
-                "rounding changed the datum target's written trim plane",
-            ));
-        }
     }
     if let Some(reason) = target::off_face(&boundary, target, dec)? {
         return Err(refuse(item, format!("on the written face, {reason}")));

@@ -369,14 +369,14 @@ impl Drawing {
         camera: &Camera,
         slot: usize,
         count: usize,
-    ) -> Option<[Point; 2]> {
+    ) -> Result<[Point; 2], &'static str> {
         let across = cross(&camera.direction, &camera.up);
         let right = unit_axis(&across);
         let up = unit_axis(&camera.up);
         let offset = std::array::from_fn(|i| &anchor[i] - &camera.eye[i]);
         let depth = dot(&offset, &unit_axis(&camera.direction));
         if depth <= Rational::zero() {
-            return None;
+            return Err("the callout is behind the camera");
         }
         let scale = if camera.perspective {
             &depth / &camera.distance
@@ -408,11 +408,18 @@ impl Drawing {
         for point in self.polylines.iter_mut().flatten() {
             *point = at(&point[0], &point[2]);
         }
+        if self
+            .polylines
+            .iter()
+            .any(|line| line.windows(2).all(|pair| pair[0] == pair[1]))
+        {
+            return Err("a callout stroke collapses in the saved view");
+        }
         let end = at(&self.junction[0], &self.junction[2]);
         if *anchor != end {
             self.polylines.insert(0, vec![anchor.clone(), end]);
         }
-        Some([across, camera.direction.clone()])
+        Ok([across, camera.direction.clone()])
     }
 
     /// The total length of the polylines and their centroid weighted by

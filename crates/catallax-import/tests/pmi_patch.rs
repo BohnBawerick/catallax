@@ -227,7 +227,7 @@ fn lines(file: &str) -> BTreeSet<&str> {
 fn no_edit_gives_the_same_bytes() {
     let file = source();
     assert_eq!(
-        patch_step_pmi(file.as_bytes(), &[]).unwrap(),
+        patch_step_pmi(file.as_bytes(), None).unwrap(),
         file.as_bytes()
     );
 }
@@ -239,10 +239,10 @@ fn a_tolerance_value_changes_its_own_records_only() {
     assert_eq!(before.skipped, Vec::new());
     let out = patch_step_pmi(
         file.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
             value: q("0.02"),
-        }],
+        }),
     )
     .unwrap();
     let out = String::from_utf8(out).unwrap();
@@ -360,7 +360,7 @@ fn an_unsafe_edit_is_refused_before_writing() {
             "no item on one part was read",
         ),
     ] {
-        let refusal = patch_step_pmi(file.as_bytes(), &[edit]).unwrap_err();
+        let refusal = patch_step_pmi(file.as_bytes(), Some(&edit)).unwrap_err();
         assert!(
             refusal.detail.contains(reason),
             "{} lacks {reason}",
@@ -376,10 +376,10 @@ fn an_unsafe_edit_is_refused_before_writing() {
     let unsafe_group = file.replacen(group, &format!("{assignment}, ({parallelism}));"), 1);
     let refusal = patch_step_pmi(
         unsafe_group.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: parallelism.clone(),
             value: q("0.03"),
-        }],
+        }),
     )
     .unwrap_err();
     assert!(refusal.detail.contains("APPLIED_GROUP_ASSIGNMENT"));
@@ -409,10 +409,10 @@ fn an_edit_refuses_a_callout_linked_to_the_controlled_feature() {
     );
     let Err(refusal) = patch_step_pmi(
         attached.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: root.clone(),
             value: q("0.1"),
-        }],
+        }),
     ) else {
         panic!("patched a tolerance that still has a feature-linked callout");
     };
@@ -442,7 +442,7 @@ fn tolerance_patch_preserves_literals() {
         value: q("0.02"),
     };
     let patched =
-        String::from_utf8(patch_step_pmi(annotated_file.as_bytes(), &[edit]).unwrap()).unwrap();
+        String::from_utf8(patch_step_pmi(annotated_file.as_bytes(), Some(&edit)).unwrap()).unwrap();
     assert!(patched.contains(&description));
     assert!(patched.contains(&format!("/* {value} */#")));
 }
@@ -477,9 +477,19 @@ fn tolerance_patch_refuses_retained_magnitude_text() {
             value: q("0.02"),
         };
         let baseline = file.replacen(plain, &line, 1);
-        patch_step_pmi(baseline.as_bytes(), std::slice::from_ref(&edit)).unwrap();
+        patch_step_pmi(baseline.as_bytes(), Some(&edit)).unwrap();
         let base = format!("{carrier}('{name}','',");
         for text in [
+            format!(
+                "{carrier}('{name}','MAX {} mm',",
+                magnitude.replace('.', ",")
+            ),
+            format!(
+                "{carrier}('{name}','MAX {} mm',",
+                magnitude.replace('.', " , ")
+            ),
+            format!("{carrier}('{name}','MAX \"{magnitude}\"',"),
+            format!("{carrier}('{name}','MAX ''{magnitude}''',"),
             format!("{carrier}('{name} {magnitude} mm','',"),
             format!("{carrier}('{name}','{magnitude} mm maximum',"),
             format!("{carrier}('{name}','MAX{magnitude}mm',"),
@@ -495,8 +505,7 @@ fn tolerance_patch_refuses_retained_magnitude_text() {
             let changed = line.replace(&base, &text);
             assert_ne!(changed, line);
             let changed = baseline.replacen(&line, &changed, 1);
-            let refusal =
-                patch_step_pmi(changed.as_bytes(), std::slice::from_ref(&edit)).unwrap_err();
+            let refusal = patch_step_pmi(changed.as_bytes(), Some(&edit)).unwrap_err();
             assert!(
                 refusal.detail.contains(&format!("{source} (")),
                 "{refusal:?}"
@@ -518,13 +527,77 @@ fn tolerance_patch_refuses_retained_magnitude_text() {
     assert_eq!(&read.sources["MAX0.05mm"], source);
     let error = patch_step_pmi(
         named.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: source.clone(),
             value: q("0.02"),
-        }],
+        }),
     )
     .unwrap_err();
     assert!(error.detail.contains("#900000 (ID_ATTRIBUTE)"), "{error:?}");
+}
+
+#[test]
+fn tolerance_patch_checks_attached_length_measures_in_their_units() {
+    let file = source();
+    let original = read_step_pmi(file.as_bytes()).unwrap();
+    let source = &original.sources["Base flatness"];
+    let record = |id: &str| {
+        file.lines()
+            .find(|line| line.starts_with(&format!("{id}=")))
+            .unwrap()
+    };
+    let tolerance = record(source);
+    let aspect = tolerance.rsplit(',').next().unwrap().trim_end_matches(");");
+    let old_measure = tolerance.split(',').nth(2).unwrap();
+    let unit = record(old_measure)
+        .rsplit(',')
+        .next()
+        .unwrap()
+        .trim_end_matches(");");
+    let representation = file
+        .lines()
+        .find(|line| line.contains("=ADVANCED_BREP_SHAPE_REPRESENTATION("))
+        .unwrap();
+    let context = representation
+        .rsplit(',')
+        .next()
+        .unwrap()
+        .trim_end_matches(");");
+    let edit = PmiEdit::ToleranceValue {
+        source: source.clone(),
+        value: q("0.02"),
+    };
+    let context_record = record(context);
+    let mut precise_context = context_record.to_owned();
+    if let Some(start) = precise_context.find("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(") {
+        let end = start + precise_context[start..].find("))").unwrap() + 2;
+        precise_context.replace_range(start..end, "");
+    }
+    precise_context = precise_context.replacen(
+        "GLOBAL_UNIT_ASSIGNED_CONTEXT",
+        "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#900005))GLOBAL_UNIT_ASSIGNED_CONTEXT",
+        1,
+    );
+    let file = file.replacen(context_record, &precise_context, 1);
+    for (value, measure_unit) in [("0.05", unit), ("0.00005", "#900004"), ("0.050001", unit)] {
+        let changes = format!(
+            "#900000=PROPERTY_DEFINITION('pmi validation property','',{aspect});\n             #900001=REPRESENTATION('',(#900002),{context});\n             #900002=MEASURE_REPRESENTATION_ITEM('limit',POSITIVE_LENGTH_MEASURE({value}),{measure_unit});\n             #900003=PROPERTY_DEFINITION_REPRESENTATION(#900000,#900001);\n             #900004=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT($,.METRE.));\n\
+             #900005=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.00001),{unit},'distance_accuracy_value','');\n"
+        );
+        let changed = file.replacen("ENDSEC;\nEND-ISO", &format!("{changes}ENDSEC;\nEND-ISO"), 1);
+        let refusal = patch_step_pmi(changed.as_bytes(), Some(&edit)).unwrap_err();
+        assert!(
+            refusal
+                .detail
+                .contains("#900002 (MEASURE_REPRESENTATION_ITEM)"),
+            "{refusal:?}"
+        );
+        let independent = changed.replace(
+            &format!("POSITIVE_LENGTH_MEASURE({value}),{measure_unit}"),
+            &format!("POSITIVE_LENGTH_MEASURE(0.02),{measure_unit}"),
+        );
+        patch_step_pmi(independent.as_bytes(), Some(&edit)).unwrap();
+    }
 }
 
 #[test]
@@ -559,10 +632,10 @@ fn tolerance_patch_refuses_zone_properties() {
     );
     let Err(refusal) = patch_step_pmi(
         with_dependency.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
             value: q("0.02"),
-        }],
+        }),
     ) else {
         panic!("a property using the tolerance zone must prevent the edit");
     };
@@ -577,10 +650,10 @@ fn tolerance_patch_refuses_zone_properties() {
     );
     let refused = patch_step_pmi(
         stale_form.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: flatness.clone(),
             value: q("0.02"),
-        }],
+        }),
     )
     .unwrap_err();
     assert!(refused.detail.contains("#900002"), "{refused:?}");
@@ -588,10 +661,10 @@ fn tolerance_patch_refuses_zone_properties() {
         zone_without_property.replace("TOLERANCE_ZONE('','',", "TOLERANCE_ZONE('','0.05 mm',");
     let Err(refusal) = patch_step_pmi(
         described.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: flatness.clone(),
             value: q("0.02"),
-        }],
+        }),
     ) else {
         panic!("the patch retained the old value in a zone description");
     };
@@ -621,11 +694,11 @@ fn nonempty_patches_refuse_unindexed_exchange_sections() {
     ] {
         let outstanding = file.replacen(marker, section, 1);
         assert_eq!(
-            patch_step_pmi(outstanding.as_bytes(), &[]).unwrap(),
+            patch_step_pmi(outstanding.as_bytes(), None).unwrap(),
             outstanding.as_bytes()
         );
         assert!(
-            patch_step_pmi(outstanding.as_bytes(), std::slice::from_ref(&edit)).is_err(),
+            patch_step_pmi(outstanding.as_bytes(), Some(&edit)).is_err(),
             "{section}"
         );
     }
@@ -664,10 +737,10 @@ fn a_source_id_selects_the_second_parts_same_named_tolerance() {
     assert!(pin.skipped.is_empty(), "{:?}", pin.skipped);
     let changed = patch_step_pmi(
         file.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: pin.sources[name].clone(),
             value: q("0.06"),
-        }],
+        }),
     )
     .unwrap();
     let after = read(&changed, &mut dec);
@@ -704,10 +777,10 @@ fn a_qualified_magnitude_cannot_be_replaced() {
     ), 1);
     let result = patch_step_pmi(
         qualified.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: id.clone(),
             value: q("0.02"),
-        }],
+        }),
     );
     assert!(result.is_err(), "a replacement detached the qualification");
     assert!(result.unwrap_err().detail.contains("MEASURE_QUALIFICATION"));
@@ -777,10 +850,10 @@ fn an_unrelated_assembly_dimension_and_id_comments_survive_a_leaf_edit() {
     let extended = extended.replacen(colour, &commented, 1);
     let out = patch_step_pmi(
         extended.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source,
             value: q("0.02"),
-        }],
+        }),
     )
     .unwrap();
     let out = String::from_utf8(out).unwrap();
@@ -803,10 +876,10 @@ fn new_patch_ids_leave_existing_dangling_references_unbound() {
     );
     let out = patch_step_pmi(
         extended.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: id,
             value: q("0.02"),
-        }],
+        }),
     )
     .unwrap();
     let out = String::from_utf8(out).unwrap();
@@ -829,10 +902,10 @@ fn a_patch_refuses_a_length_with_a_derived_si_prefix() {
     assert!(
         patch_step_pmi(
             malformed.as_bytes(),
-            &[PmiEdit::ToleranceValue {
+            Some(&PmiEdit::ToleranceValue {
                 source: id,
                 value: q("0.02"),
-            }]
+            })
         )
         .is_err()
     );
@@ -928,7 +1001,7 @@ fn the_flatness_edit_is_exactly_its_byte_splice() {
             source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
             value: q("0.02"),
         };
-        let out = String::from_utf8(patch_step_pmi(file.as_bytes(), &[edit]).unwrap()).unwrap();
+        let out = String::from_utf8(patch_step_pmi(file.as_bytes(), Some(&edit)).unwrap()).unwrap();
         let expected = flatness_splice(&file, newline);
         assert!(
             out == expected,

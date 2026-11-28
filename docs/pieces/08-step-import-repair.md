@@ -357,8 +357,8 @@ views, graphical callouts and diagnostics.
 
 ## Editing manufacturing information in place
 
-`patch_step_pmi(bytes, &[PmiEdit])` copies the input byte for byte when the edit
-list is empty. The supported edit, `PmiEdit::ToleranceValue`, changes the
+`patch_step_pmi(bytes, Option<&PmiEdit>)` copies the input byte for byte when the
+edit is `None`. The supported edit, `PmiEdit::ToleranceValue`, changes the
 magnitude of an `ItemKind::Tolerance` to a positive value in millimetres. Look
 up the item name in the owning part's `StepPmi::sources` and pass that source
 entity as the edit's selector.

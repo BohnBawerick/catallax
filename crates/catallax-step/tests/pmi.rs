@@ -3801,7 +3801,7 @@ fn p1_position_patch_refuses_a_dimension_linked_callout() {
         source: root.clone(),
         value: q("0.1"),
     };
-    let error = patch_step_pmi(file.as_bytes(), std::slice::from_ref(&edit)).unwrap_err();
+    let error = patch_step_pmi(file.as_bytes(), Some(&edit)).unwrap_err();
     assert!(
         associations.iter().any(|(id, _)| {
             error
@@ -3827,7 +3827,7 @@ fn p1_position_patch_refuses_a_dimension_linked_callout() {
         let to = association.replace(&format!(",{root},"), ",#900050,");
         location = mutate(&location, &format!("{id}={from}"), &format!("{id}={to}"));
     }
-    let error = patch_step_pmi(location.as_bytes(), std::slice::from_ref(&edit)).unwrap_err();
+    let error = patch_step_pmi(location.as_bytes(), Some(&edit)).unwrap_err();
     assert!(
         associations.iter().any(|(id, _)| error
             .detail
@@ -3841,10 +3841,10 @@ fn p1_position_patch_refuses_a_dimension_linked_callout() {
     let unpresented = redirect_size(&unpresented, source, &plain.sources["Bore diameter"]);
     let patched = patch_step_pmi(
         unpresented.as_bytes(),
-        &[PmiEdit::ToleranceValue {
+        Some(&PmiEdit::ToleranceValue {
             source: source.clone(),
             value: q("0.1"),
-        }],
+        }),
     )
     .unwrap();
     let read = read_step_pmi(&patched).unwrap();
@@ -3870,14 +3870,15 @@ fn a_wrong_plane_cannot_pair_a_shared_callout() {
         .find(|id| all[*id].starts_with("CAMERA_MODEL_D3("))
         .unwrap();
     let context = members.last().unwrap();
-    let (plane, callout) = members
+    let callout = members
         .iter()
-        .filter(|id| all[*id].starts_with("ANNOTATION_PLANE("))
-        .find_map(|id| {
-            let callout = references(&all[id]).pop()?;
-            all[&callout]
-                .starts_with("DRAUGHTING_CALLOUT('Bore position',")
-                .then_some((id, callout))
+        .find(|id| all[*id].starts_with("DRAUGHTING_CALLOUT('Bore position',"))
+        .unwrap();
+    let plane = all
+        .iter()
+        .find_map(|(id, record)| {
+            (record.starts_with("ANNOTATION_PLANE(") && references(record).last() == Some(callout))
+                .then_some(id)
         })
         .unwrap();
     let style = &references(&all[plane])[0];
@@ -3903,7 +3904,7 @@ fn a_wrong_plane_cannot_pair_a_shared_callout() {
     assert!(
         read.skipped
             .iter()
-            .any(|item| item.entity == callout && item.reason.contains("vary in depth"))
+            .any(|item| &item.entity == callout && item.reason.contains("vary in depth"))
     );
     let valid_side = mutate(
         &changed,
@@ -4084,23 +4085,46 @@ fn saved_views_write_their_callouts_and_read_back() {
         let colour = &references(&all[curve])[0];
         assert_eq!(all[curve], format!("CURVE_STYLE('',$,$,{colour});"));
         assert_eq!(all[colour], "COLOUR();");
-        let planes: Vec<_> = members
+        let callouts: Vec<_> = members
             .into_iter()
-            .filter(|id| all[id].starts_with("ANNOTATION_PLANE("))
+            .filter(|id| all[id].starts_with("DRAUGHTING_CALLOUT("))
             .collect();
+        let expected = &pmi
+            .views
+            .iter()
+            .find(|entry| entry.name == view)
+            .unwrap()
+            .items;
         assert_eq!(
-            planes.len(),
-            pmi.views
+            callouts
                 .iter()
-                .find(|entry| entry.name == view)
-                .unwrap()
-                .items
-                .len()
+                .map(|id| all[id].split('\'').nth(1).unwrap())
+                .collect::<Vec<_>>(),
+            expected.iter().map(String::as_str).collect::<Vec<_>>()
         );
+        let global = all
+            .iter()
+            .find(|(_, record)| record.starts_with("DRAUGHTING_MODEL('',"))
+            .unwrap();
+        let global_members = references(global.1);
         let mut preceding_bottom = half[1];
-        for id in planes {
-            style(&all[&id], "FILL_AREA_STYLE(");
-            let keys = references(&all[&id]);
+        for callout in &callouts {
+            assert!(
+                all.values().any(|record| {
+                    record.starts_with("DRAUGHTING_MODEL_ITEM_ASSOCIATION(")
+                        && references(record).get(1..) == Some(&[global.0.clone(), callout.clone()])
+                }),
+                "{view} callout {callout} has no global association"
+            );
+            let id = global_members
+                .iter()
+                .find(|id| {
+                    all[*id].starts_with("ANNOTATION_PLANE(")
+                        && references(&all[*id]).last() == Some(callout)
+                })
+                .unwrap();
+            style(&all[id], "FILL_AREA_STYLE(");
+            let keys = references(&all[id]);
             let surface = &all[&keys[1]];
             let frame = references(&all[&references(surface)[0]]);
             let origin = numbers(&all[&frame[0]]);
@@ -4109,7 +4133,6 @@ fn saved_views_write_their_callouts_and_read_back() {
             let plane_right = unit(numbers(&all[&frame[2]]));
             assert!(dot(&plane_right, &across) > 1.0 - 1e-9);
             assert!(dot(&cross(&normal, &plane_right), &up) > 1.0 - 1e-9);
-            let callout = &keys[2];
             let name = all[callout].split('\'').nth(1).unwrap();
             let occurrence = references(&all[callout]).pop().unwrap();
             let set = references(&all[&occurrence]).pop().unwrap();
@@ -4502,6 +4525,15 @@ fn graphical_only_fixture_preserves_strokes_plane_face_and_view() {
     assert!(read.skipped.is_empty(), "{:?}", read.skipped);
     assert!(read.pmi.items.is_empty());
     assert_eq!(read.pmi.views[0].name, "Top");
+    let coincident = mutate(source, "(#30,#31,#32)", "(#30,#30,#30)");
+    let refused = read_step_pmi(coincident.as_bytes()).unwrap();
+    assert!(refused.graphics.is_empty());
+    assert!(
+        refused
+            .skipped
+            .iter()
+            .any(|item| item.reason.contains("coincident points"))
+    );
     let [callout] = read.graphics.as_slice() else {
         panic!("expected one callout, got {:?}", read.graphics);
     };
@@ -5531,6 +5563,24 @@ fn a_boss_blocks_projection_across_a_recess() {
                 .filter(|id| id != &cap)
                 .collect::<Vec<_>>()
                 .join(",");
+            let cap_record = &all[&cap];
+            let (fields, sense) = cap_record.rsplit_once(',').unwrap();
+            let flipped = if sense == ".T.);" { ".F.);" } else { ".T.);" };
+            let misoriented = mutate(
+                &file,
+                &format!("{cap}={cap_record}"),
+                &format!("{cap}={fields},{flipped}"),
+            );
+            let read = read_step_pmi(misoriented.as_bytes()).unwrap();
+            assert!(!read.sources.contains_key("Recess wall"));
+            assert!(read.sources.contains_key("Rim"));
+            assert!(
+                read.skipped
+                    .iter()
+                    .any(|skip| skip.reason.contains("trim orientation")),
+                "{:?}",
+                read.skipped
+            );
             let deliberately_open = mutate(
                 &file,
                 &format!("{shell}={body}"),
@@ -5750,6 +5800,13 @@ fn tiny_saved_view_refuses_zero_length_callouts() {
         };
         let error = try_write(&part, &pmi).unwrap_err();
         assert!(error.contains("callout length rounds to zero"), "{error}");
+        let mut off_centre = pmi;
+        let camera = &mut off_centre.views[0].camera;
+        camera.eye[0] = &camera.eye[0] + &q("10");
+        camera.eye[1] = &camera.eye[1] + &q("10");
+        camera.window = [q("1e-18"), q("1e-18")];
+        let error = try_write(&part, &off_centre).unwrap_err();
+        assert!(error.contains("stroke collapses"), "{error}");
     }
 }
 
@@ -6114,6 +6171,18 @@ fn a_projected_zone_is_checked_over_its_own_height() {
     separated.lumps.extend(&model.body(off_axis).lumps);
     separated.lumps.extend(&model.body(sphere).lumps);
     let body = model.add_body(separated);
+    let tilted = block(
+        &mut model,
+        [q("4"), q("8"), q("2")],
+        &Pose::from_rational(
+            Rotation::from_quaternion(q("3"), q("1"), q("0"), q("0")).unwrap(),
+            RVector3::new(q("8"), q("19/3"), q("30")),
+        ),
+    )
+    .unwrap();
+    let mut with_tilted = model.body(body).clone();
+    with_tilted.lumps.extend(&model.body(tilted).lumps);
+    let with_tilted = model.add_body(with_tilted);
     let part = Bracket { model, body };
     let floor = part
         .planes(2, "5")
@@ -6145,6 +6214,24 @@ fn a_projected_zone_is_checked_over_its_own_height() {
         catallax_step::pmi::check_on_model(&part.model, part.body, &pmi(height), &mut dec)
             .unwrap_or_else(|error| panic!("{height} mm: {error:?}"));
     }
+    catallax_step::pmi::check_on_model(&part.model, with_tilted, &pmi("2"), &mut dec).unwrap();
+    let mut output = Vec::new();
+    let error = write_step_with_pmi(
+        &part.model,
+        with_tilted,
+        &StepOptions::default(),
+        &pmi("2"),
+        &mut dec,
+        &mut output,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .detail
+            .contains("cannot be proved on the written geometry"),
+        "{error:?}"
+    );
+    assert!(output.is_empty());
     let (file, report) = write(&part, &pmi("2"));
     let (back, skipped) = read_back(&file, &report);
     assert!(skipped.is_empty(), "{skipped:?}");

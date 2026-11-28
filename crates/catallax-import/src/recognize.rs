@@ -532,23 +532,14 @@ impl<'a> Reader<'a> {
             Some(ax) => self.direction(ax)?,
             None => [Rational::zero(), Rational::zero(), Rational::one()],
         };
-        let ref_dir = match optional_ref(a, 3)? {
-            Some(rf) => self.direction(rf)?,
-            None if axis[1].is_zero() && axis[2].is_zero() => {
-                [Rational::zero(), Rational::one(), Rational::zero()]
-            }
-            None => [Rational::one(), Rational::zero(), Rational::zero()],
-        };
-        // ISO 10303-42 first_proj_axis; Placement carries ratios, not unit vectors.
-        let dot: Rational = (0..3).fold(Rational::zero(), |s, i| s + &axis[i] * &ref_dir[i]);
-        let norm_sq: Rational = (0..3).fold(Rational::zero(), |s, i| s + &axis[i] * &axis[i]);
-        let along = &dot / &norm_sq;
-        let ref_dir: Vec3 = std::array::from_fn(|i| &ref_dir[i] - &(&along * &axis[i]));
-        if ref_dir.iter().all(Rational::is_zero) {
-            return Err(malformed(format!(
+        let reference = optional_ref(a, 3)?
+            .map(|rf| self.direction(rf))
+            .transpose()?;
+        let ref_dir = placement_reference(&axis, reference).ok_or_else(|| {
+            malformed(format!(
                 "placement #{id} axis and reference direction are parallel"
-            )));
-        }
+            ))
+        })?;
         Ok(Placement {
             origin,
             axis,
@@ -694,6 +685,41 @@ fn boolean(a: &[Param], i: usize) -> Result<bool, ImportRefusal> {
     }
 }
 
+pub(crate) fn placement_reference(axis: &Vec3, reference: Option<Vec3>) -> Option<Vec3> {
+    let ref_dir = reference.unwrap_or_else(|| {
+        if axis[1].is_zero() && axis[2].is_zero() {
+            [Rational::zero(), Rational::one(), Rational::zero()]
+        } else {
+            [Rational::one(), Rational::zero(), Rational::zero()]
+        }
+    });
+    let dot = (0..3).fold(Rational::zero(), |sum, i| sum + &axis[i] * &ref_dir[i]);
+    let norm_sq = (0..3).fold(Rational::zero(), |sum, i| sum + &axis[i] * &axis[i]);
+    if norm_sq.is_zero() {
+        return None;
+    }
+    let along = &dot / &norm_sq;
+    let reference: Vec3 = std::array::from_fn(|i| &ref_dir[i] - &(&along * &axis[i]));
+    (!reference.iter().all(Rational::is_zero)).then_some(reference)
+}
+
+pub(crate) fn length_measure(value: &Param) -> Option<(&str, Rational)> {
+    let Param::Typed(kind, fields) = value else {
+        return None;
+    };
+    let [scalar] = fields.as_slice() else {
+        return None;
+    };
+    let value = number(scalar).ok()?;
+    let valid = match kind.as_str() {
+        "LENGTH_MEASURE" => true,
+        "POSITIVE_LENGTH_MEASURE" => value > Rational::zero(),
+        "NON_NEGATIVE_LENGTH_MEASURE" => value >= Rational::zero(),
+        _ => false,
+    };
+    valid.then_some((kind.as_str(), value))
+}
+
 /// An exact decimal. `1.` and `.5`-free STEP reals are normalised first.
 pub(crate) fn number(p: &Param) -> Result<Rational, ImportRefusal> {
     let Param::Number(text) = p else {
@@ -768,14 +794,15 @@ pub(crate) fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rationa
     };
     if let Some(si) = e.part("SI_UNIT") {
         let prefix = match si.first() {
-            Some(Param::Enum(p)) => p.as_str(),
-            _ => "",
+            Some(Param::Enum(p)) if !p.is_empty() => p.as_str(),
+            Some(Param::Unset) => "",
+            _ => return Err(unknown_unit("invalid SI prefix")),
         };
         let unit = match si.get(1) {
             Some(Param::Enum(u)) => u.as_str(),
             _ => "",
         };
-        if unit != "METRE" {
+        if unit != "METRE" || e.part("LENGTH_UNIT").is_none() {
             return Err(unknown_unit(unit));
         }
         // Powers of ten in metres, so a bare metre is 10^3 millimetres.
@@ -810,25 +837,24 @@ pub(crate) fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rationa
         Some(Param::Str(s)) => s.to_ascii_uppercase(),
         _ => String::new(),
     };
-    if depth >= MAX_CONVERSION_DEPTH {
+    if depth >= MAX_CONVERSION_DEPTH || e.part("LENGTH_UNIT").is_none() {
         return Err(unknown_unit(&name));
     }
     let measure = match c.get(1) {
-        Some(Param::Ref(r)) => g.get(r).and_then(|e| e.part("LENGTH_MEASURE_WITH_UNIT")),
+        Some(Param::Ref(r)) => g.get(r).and_then(|e| {
+            e.part("MEASURE_WITH_UNIT")
+                .or_else(|| e.part("LENGTH_MEASURE_WITH_UNIT"))
+        }),
         _ => None,
     }
     .ok_or_else(|| unknown_unit(&name))?;
-    let value = match measure.first() {
-        Some(Param::Typed(_, v)) => v.first().map(number).transpose()?,
-        _ => None,
-    }
-    .filter(|v| *v > Rational::zero())
-    .ok_or_else(|| unknown_unit(&name))?;
-    let base = match measure.get(1) {
-        Some(Param::Ref(r)) => *r,
-        _ => return Err(unknown_unit(&name)),
+    let [select, Param::Ref(base)] = measure else {
+        return Err(unknown_unit(&name));
     };
-    Ok(&value * &unit_millimetres(g, base, depth + 1)?)
+    let (_, value) = length_measure(select)
+        .filter(|(_, value)| *value > Rational::zero())
+        .ok_or_else(|| unknown_unit(&name))?;
+    Ok(&value * &unit_millimetres(g, *base, depth + 1)?)
 }
 
 /// True when a semi-angle parameter is exactly 45 in a degree context, or pi/4 is

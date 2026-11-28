@@ -1,10 +1,7 @@
-//! Manufacturing information on a part, written to STEP as AP242 semantic PMI.
+//! Manufacturing information on a part, written to STEP as AP242 PMI.
 //!
-//! A [`Pmi`] is a list of [`Item`]s: datums, dimensions with their limits,
-//! geometric tolerances and surface textures, each attached to the faces it
-//! applies to, plus the notes that belong to the whole part. The type is
-//! generic over the face key: a writer takes model faces, a reader returns
-//! the entity names of the file's faces.
+//! [`Pmi`] is generic over the face key. The writer takes model face handles
+//! and the reader returns STEP entity names.
 //!
 //! A dimension carries no nominal value on the way out. The writer measures
 //! it from the exact geometry ([`nominals`]), so a file never states a size
@@ -16,22 +13,45 @@
 //! side roles. Chamfer angle and edge break bounds use named properties.
 
 mod callout;
+mod check;
 mod measure;
+mod position;
+mod target;
+mod view;
 mod write;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
+pub use check::{Crossing, PlaneMeeting, Side, ZoneSpan, check_on_model, line_matches_trim};
 pub use measure::nominals;
+pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
+pub use target::{DatumTarget, TargetArea, TargetKind, off_face};
+pub use view::{Camera, SavedView, unique_view_names};
 pub(crate) use write::emit;
 pub use write::{
-    BEVEL_ANGLE, CHAMFER, COUNTERBORE, COUNTERSINK, EDGE_BREAK, FIRST_SIDE, HEAD_DEPTH,
-    HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE, MAX_SETBACK, MIN_SETBACK, SECOND_SIDE,
-    THREAD, THREAD_DEPTH, THROUGH, WIDTH,
+    BEVEL_ANGLE, CHAMFER, COMPOSITE, COMPOSITE_STANDARD, COUNTERBORE, COUNTERSINK, DATUM_TARGET,
+    EDGE_BREAK, FIRST_SIDE, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, INCLUDED_ANGLE,
+    KNURL, MAX_SETBACK, MIN_SETBACK, ORIENTATION, SECOND_SIDE, SEMANTIC_TEXT, TARGET_DIAMETER,
+    TARGET_LENGTH, TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, WIDTH,
 };
+
+fn decimal_direction(at: &[Rational; 3]) -> [Rational; 3] {
+    if at.iter().all(|value| value.to_decimal_exact().is_some()) {
+        return at.clone();
+    }
+    let denominator = at
+        .iter()
+        .fold(catallax_numbers::Integer::from_i64(1), |a, v| {
+            let b = v.denominator();
+            &a.div_rem_floor(&a.gcd(b)).expect("positive denominator").0 * b
+        });
+    let scale = Rational::from_integer(denominator);
+    at.each_ref().map(|value| value * &scale)
+}
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
 pub type Feature<F> = Vec<F>;
@@ -43,6 +63,8 @@ pub struct Pmi<F> {
     pub items: Vec<Item<F>>,
     /// What applies to the whole part.
     pub part: PartNotes,
+    /// The saved views, in the order the part lists them.
+    pub views: Vec<SavedView>,
 }
 
 impl<F> Default for Pmi<F> {
@@ -50,6 +72,7 @@ impl<F> Default for Pmi<F> {
         Self {
             items: Vec::new(),
             part: PartNotes::default(),
+            views: Vec::new(),
         }
     }
 }
@@ -57,7 +80,7 @@ impl<F> Default for Pmi<F> {
 impl<F> Pmi<F> {
     /// True when there is nothing to write.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty() && self.part.is_empty()
+        self.items.is_empty() && self.part.is_empty() && self.views.is_empty()
     }
 
     /// The same information with every face key replaced. The first face
@@ -158,6 +181,58 @@ impl<F> Pmi<F> {
                     process: texture.process,
                     feature: feature(&texture.feature)?,
                 }),
+                ItemKind::FaceNote {
+                    text,
+                    feature: faces,
+                } => ItemKind::FaceNote {
+                    text: text.clone(),
+                    feature: feature(faces)?,
+                },
+                ItemKind::Knurl {
+                    designation,
+                    feature: faces,
+                } => ItemKind::Knurl {
+                    designation: designation.clone(),
+                    feature: feature(faces)?,
+                },
+                ItemKind::DatumTarget(target) => ItemKind::DatumTarget(DatumTarget {
+                    datum: target.datum.clone(),
+                    number: target.number,
+                    face: map(item, &target.face)?,
+                    point_mm: target.point_mm.clone(),
+                    kind: target.kind.clone(),
+                }),
+                ItemKind::Position(control) => ItemKind::Position(PositionControl {
+                    features: control
+                        .features
+                        .iter()
+                        .map(&mut feature)
+                        .collect::<Result<_, _>>()?,
+                    frame: match &control.frame {
+                        PositionFrame::Single {
+                            segment,
+                            projected_zone,
+                        } => PositionFrame::Single {
+                            segment: segment.clone(),
+                            projected_zone: match projected_zone {
+                                Some(zone) => Some(ProjectedZone {
+                                    height_mm: zone.height_mm.clone(),
+                                    direction: zone.direction.clone(),
+                                    entry_faces: zone
+                                        .entry_faces
+                                        .iter()
+                                        .map(|face| map(item, face))
+                                        .collect::<Result<_, _>>()?,
+                                }),
+                                None => None,
+                            },
+                        },
+                        PositionFrame::Composite { upper, lower } => PositionFrame::Composite {
+                            upper: upper.clone(),
+                            lower: lower.clone(),
+                        },
+                    },
+                }),
             };
             items.push(Item {
                 id: item.id.clone(),
@@ -167,6 +242,7 @@ impl<F> Pmi<F> {
         Ok(Pmi {
             items,
             part: self.part.clone(),
+            views: self.views.clone(),
         })
     }
 }
@@ -232,6 +308,29 @@ pub enum ItemKind<F> {
     Tolerance(GeometricTolerance<F>),
     /// A surface texture requirement.
     Texture(SurfaceTexture<F>),
+    /// A datum target on one face of a declared datum.
+    DatumTarget(DatumTarget<F>),
+    /// Free text a person reads, attached to its faces. Written as CAx-IF
+    /// semantic text: an editable string, not a computable requirement.
+    FaceNote {
+        /// The note, one or more lines.
+        text: String,
+        /// The faces it is attached to.
+        feature: Feature<F>,
+    },
+    /// A knurl designation on its faces, such as `RGE 0.8 DIN 82`. Written
+    /// as CAx-IF semantic text under the variable name [`KNURL`]: AP242 has
+    /// no knurl entity, so no reader learns a pitch or pattern from it.
+    Knurl {
+        /// The designation as a drawing writes it.
+        designation: String,
+        /// The knurled faces.
+        feature: Feature<F>,
+    },
+    /// A position control with a composite frame, a projected zone or a
+    /// datum reference at a material boundary. A plain single position is a
+    /// [`GeometricTolerance`], and this variant refuses one.
+    Position(PositionControl<F>),
 }
 
 impl<F> ItemKind<F> {
@@ -256,7 +355,35 @@ impl<F> ItemKind<F> {
             } => vec![bevel, a, b],
             ItemKind::Tolerance(tolerance) => tolerance.features.iter().collect(),
             ItemKind::Texture(texture) => vec![&texture.feature],
+            ItemKind::Position(control) => control.features.iter().collect(),
+            ItemKind::FaceNote { feature, .. } | ItemKind::Knurl { feature, .. } => vec![feature],
+            ItemKind::DatumTarget(_) => Vec::new(),
         }
+    }
+
+    /// Whether the item is text a person reads rather than semantic PMI. Such
+    /// items are counted apart (recommended practices, section 7.4.3).
+    pub fn is_text(&self) -> bool {
+        matches!(self, ItemKind::FaceNote { .. } | ItemKind::Knurl { .. })
+    }
+
+    /// Every face the item names: its features' faces, a datum target's face
+    /// and a projected zone's entry faces.
+    pub fn faces(&self) -> Vec<&F> {
+        let mut faces: Vec<&F> = self.features().into_iter().flatten().collect();
+        match self {
+            ItemKind::DatumTarget(target) => faces.push(&target.face),
+            ItemKind::Position(PositionControl {
+                frame:
+                    PositionFrame::Single {
+                        projected_zone: Some(zone),
+                        ..
+                    },
+                ..
+            }) => faces.extend(&zone.entry_faces),
+            _ => {}
+        }
+        faces
     }
 }
 
@@ -513,6 +640,14 @@ impl Characteristic {
             .find(|characteristic| characteristic.entity() == name)
     }
 
+    /// Whether this characteristic is supported under ASME Y14.5-2018.
+    pub fn supports_asme_2018(self) -> bool {
+        !matches!(
+            self,
+            Self::Concentricity | Self::Coaxiality | Self::Symmetry
+        )
+    }
+
     /// Whether the characteristic refers to datums.
     pub fn datum_use(self) -> DatumUse {
         match self {
@@ -587,9 +722,18 @@ impl Process {
     }
 }
 
+/// The explicitly selected dimensioning standard for a part.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DimensioningStandard {
+    /// ASME Y14.5-2018.
+    AsmeY14_5_2018,
+}
+
 /// What applies to the whole part.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct PartNotes {
+    /// The dimensioning standard. Omission uses ISO 1101:2017.
+    pub standard: Option<DimensioningStandard>,
     /// The general tolerance, such as `ISO 2768-m`.
     pub general_tolerance: Option<String>,
     /// The material, such as `6061-T6`.
@@ -599,9 +743,12 @@ pub struct PartNotes {
 }
 
 impl PartNotes {
-    /// True when the part has no note at all.
+    /// True when the part has no notes or explicit standard.
     pub fn is_empty(&self) -> bool {
-        self.general_tolerance.is_none() && self.material.is_none() && self.notes.is_empty()
+        self.standard.is_none()
+            && self.general_tolerance.is_none()
+            && self.material.is_none()
+            && self.notes.is_empty()
     }
 }
 
@@ -625,6 +772,8 @@ pub enum ItemError<'a> {
     DuplicateDatumFeature,
     /// The tolerance references a letter that no accepted datum defines.
     UndefinedDatum(&'a str),
+    /// An accepted datum target already has this datum letter and number.
+    DuplicateTarget(&'a str, u32),
     /// Another item rule did not pass.
     Rule(&'static str),
 }
@@ -636,6 +785,9 @@ impl fmt::Display for ItemError<'_> {
             Self::DuplicateDatum(letter) => write!(f, "datum {letter} is defined twice"),
             Self::DuplicateDatumFeature => f.write_str("the feature already carries a datum"),
             Self::UndefinedDatum(letter) => write!(f, "datum {letter} is not defined"),
+            Self::DuplicateTarget(letter, number) => {
+                write!(f, "datum target {letter}{number} is defined twice")
+            }
             Self::Rule(reason) => f.write_str(reason),
         }
     }
@@ -659,16 +811,18 @@ impl<F> Datum<F> {
 /// Item validation against the names and datums accepted for one part.
 pub struct PartValidator<'a, F> {
     names: BTreeSet<Cow<'a, str>>,
-    letters: BTreeSet<&'a str>,
     datum_features: BTreeSet<Vec<&'a F>>,
+    datum_faces: BTreeMap<&'a str, Vec<&'a F>>,
+    targets: BTreeSet<(String, u32)>,
 }
 
 impl<F> Default for PartValidator<'_, F> {
     fn default() -> Self {
         Self {
             names: BTreeSet::new(),
-            letters: BTreeSet::new(),
             datum_features: BTreeSet::new(),
+            datum_faces: BTreeMap::new(),
+            targets: BTreeSet::new(),
         }
     }
 }
@@ -699,13 +853,36 @@ impl<'a, F: Ord> PartValidator<'a, F> {
         if !self.datum_features.insert(feature_key(&datum.feature)) {
             return Err(ItemError::DuplicateDatumFeature);
         }
-        self.letters.insert(letter);
+        self.datum_faces
+            .insert(letter, datum.feature.iter().collect());
+        Ok(())
+    }
+
+    /// Checks a datum target against the accepted datums and targets, and
+    /// accepts it. Its datum must be accepted first, its face must be one of
+    /// that datum's faces, and its letter and number must be new.
+    pub fn accept_target<'t>(&mut self, target: &'t DatumTarget<F>) -> Result<(), ItemError<'t>> {
+        let letter = target.datum.as_str();
+        if target.number == 0 {
+            return Err(ItemError::Rule("a datum target's number is positive"));
+        }
+        let Some(faces) = self.datum_faces.get(letter) else {
+            return Err(ItemError::UndefinedDatum(letter));
+        };
+        if !faces.contains(&&target.face) {
+            return Err(ItemError::Rule(
+                "the target's face is not on its datum's feature",
+            ));
+        }
+        if !self.targets.insert((letter.to_owned(), target.number)) {
+            return Err(ItemError::DuplicateTarget(letter, target.number));
+        }
         Ok(())
     }
 
     /// Whether the part has accepted a datum with this letter.
     pub fn contains_datum(&self, letter: &str) -> bool {
-        self.letters.contains(letter)
+        self.datum_faces.contains_key(letter)
     }
 
     /// Checks an item's features and values against the accepted datums.
@@ -840,9 +1017,121 @@ impl<'a, F: Ord> PartValidator<'a, F> {
                     return Err(Rule("the roughness value must be more than zero"));
                 }
             }
+            ItemKind::DatumTarget(target) => {
+                if !target.kind.sizes().into_iter().all(positive) {
+                    return Err(Rule("a datum target's sizes must be more than zero"));
+                }
+                if target.kind.direction().is_some_and(is_zero_vector) {
+                    return Err(Rule("a datum target's direction must not be zero"));
+                }
+            }
+            ItemKind::Position(control) => self.check_position(control)?,
+            ItemKind::FaceNote { text, .. } => {
+                if text.trim().is_empty() {
+                    return Err(Rule("a face note needs text"));
+                }
+            }
+            ItemKind::Knurl { designation, .. } => {
+                if designation.trim().is_empty() {
+                    return Err(Rule("a knurl designation needs text"));
+                }
+            }
         }
         Ok(())
     }
+
+    fn check_position<'item>(
+        &self,
+        control: &'item PositionControl<F>,
+    ) -> Result<(), ItemError<'item>> {
+        use ItemError::Rule;
+        if control.features.is_empty() {
+            return Err(Rule("the position control names no feature"));
+        }
+        for segment in control.frame.segments() {
+            if !positive(&segment.value_mm) {
+                return Err(Rule("a position zone must be more than zero"));
+            }
+            if !segment.diameter_zone {
+                return Err(Rule("a position control's zone is cylindrical"));
+            }
+            if segment.datums.len() > 3 {
+                return Err(Rule("a segment refers to at most three datums"));
+            }
+            for (index, datum) in segment.datums.iter().enumerate() {
+                if segment.datums[..index]
+                    .iter()
+                    .any(|other| other.letter == datum.letter)
+                {
+                    return Err(Rule("a datum is referred to twice"));
+                }
+                if !self.contains_datum(&datum.letter) {
+                    return Err(ItemError::UndefinedDatum(&datum.letter));
+                }
+            }
+        }
+        match &control.frame {
+            PositionFrame::Composite { upper, lower } => {
+                if upper.datums.is_empty() {
+                    return Err(Rule("the upper segment of a composite needs datums"));
+                }
+                if lower.datums.len() > upper.datums.len()
+                    || lower
+                        .datums
+                        .iter()
+                        .zip(&upper.datums)
+                        .any(|(low, up)| low.letter != up.letter)
+                {
+                    return Err(Rule(
+                        "the lower segment's datums must repeat the upper segment's first datums in order",
+                    ));
+                }
+                if lower.value_mm > upper.value_mm {
+                    return Err(Rule(
+                        "the lower segment's zone cannot be larger than the upper one",
+                    ));
+                }
+            }
+            PositionFrame::Single {
+                projected_zone: Some(zone),
+                ..
+            } => {
+                if !positive(&zone.height_mm) {
+                    return Err(Rule("a projected zone needs a positive height"));
+                }
+                if is_zero_vector(&zone.direction) {
+                    return Err(Rule("a projected zone needs a direction"));
+                }
+                if zone.entry_faces.len() != control.features.len() {
+                    return Err(Rule(
+                        "a projected zone needs one entry face per controlled feature",
+                    ));
+                }
+                if zone
+                    .entry_faces
+                    .iter()
+                    .any(|face| control.features.iter().flatten().any(|f| f == face))
+                {
+                    return Err(Rule("an entry face is one of the controlled faces"));
+                }
+            }
+            PositionFrame::Single {
+                projected_zone: None,
+                ..
+            } => {
+                if !control.has_datum_boundary() {
+                    return Err(Rule(
+                        "a single position with no projected zone and no datum boundary is a geometric tolerance",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn is_zero_vector(vector: &[Rational; 3]) -> bool {
+    vector.iter().all(Rational::is_zero)
 }
 
 fn feature_key<F: Ord>(faces: &[F]) -> Vec<&F> {
@@ -888,6 +1177,9 @@ fn check_features<F: Ord>(kind: &ItemKind<F>) -> Result<(), ItemError<'static>> 
         }
         ItemKind::Tolerance(tolerance) => tolerance.features.iter().try_for_each(check),
         ItemKind::Texture(texture) => check(&texture.feature),
+        ItemKind::Position(control) => control.features.iter().try_for_each(check),
+        ItemKind::FaceNote { feature, .. } | ItemKind::Knurl { feature, .. } => check(feature),
+        ItemKind::DatumTarget(_) => Ok(()),
     }
 }
 
@@ -918,11 +1210,20 @@ impl<F: Ord> Pmi<F> {
                     .map_err(|reason| refuse(id, reason))?;
             }
         }
+        // A target needs its datum, which can come later in the list.
+        for item in &self.items {
+            if let ItemKind::DatumTarget(target) = &item.kind {
+                validator
+                    .accept_target(target)
+                    .map_err(|reason| refuse(&item.id, reason))?;
+            }
+        }
         for item in &self.items {
             validator
                 .check_values(&item.kind)
                 .map_err(|reason| refuse(&item.id, reason))?;
         }
+        self.validate_views()?;
         for (what, text) in self
             .part
             .general_tolerance
@@ -937,6 +1238,84 @@ impl<F: Ord> Pmi<F> {
         }
         Ok(())
     }
+}
+
+impl<F> Pmi<F> {
+    fn validate_views(&self) -> Result<(), Refusal> {
+        if self.views.is_empty() {
+            return Ok(());
+        }
+        let items: BTreeMap<_, _> = self.items.iter().map(|item| (&item.id, item)).collect();
+        let mut names = BTreeSet::new();
+        for view in &self.views {
+            let name = view.name.as_str();
+            if name.trim().is_empty() {
+                return Err(refuse("a saved view", "has no name"));
+            }
+            if !names.insert(name) {
+                return Err(refuse(name, "the view name is used twice"));
+            }
+            let camera = &view.camera;
+            let dot = (0..3).fold(Rational::zero(), |sum, i| {
+                &sum + &(&camera.up[i] * &camera.direction[i])
+            });
+            if is_zero_vector(&camera.direction) || is_zero_vector(&camera.up) || !dot.is_zero() {
+                return Err(refuse(
+                    name,
+                    "the camera needs a direction and an up direction square to it",
+                ));
+            }
+            if !positive(&camera.distance) || !camera.window.iter().all(positive) {
+                return Err(refuse(
+                    name,
+                    "the camera needs a positive distance and window",
+                ));
+            }
+            let mut shown = BTreeSet::new();
+            for id in &view.items {
+                if !shown.insert(id.as_str()) {
+                    return Err(refuse(name, format!("item {id} is listed twice")));
+                }
+                let item = items
+                    .get(id)
+                    .ok_or_else(|| refuse(name, format!("item {id} is not on the part")))?;
+                if !item.kind.has_callout() {
+                    return Err(refuse(
+                        name,
+                        format!("item {id} has no callout this writer draws"),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<F> ItemKind<F> {
+    /// Whether this item has a supported saved-view drawing.
+    pub fn has_callout(&self) -> bool {
+        matches!(
+            self,
+            ItemKind::Datum(_)
+                | ItemKind::Tolerance(GeometricTolerance {
+                    characteristic: Characteristic::Position,
+                    ..
+                })
+                | ItemKind::Texture(_)
+        ) || matches!(
+            self,
+            ItemKind::Size(Size {
+                kind: SizeKind::Diameter,
+                thread: None,
+                limits: Some(Limits::Fit { deviation, .. }),
+                ..
+            }) if is_bore_fit(deviation)
+        )
+    }
+}
+
+fn is_bore_fit(deviation: &str) -> bool {
+    !deviation.is_empty() && deviation.bytes().all(|byte| byte.is_ascii_uppercase())
 }
 
 fn check_hole<F: Ord>(size: &Size<F>, hole: &HoleSize) -> Result<(), ItemError<'static>> {

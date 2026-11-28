@@ -43,7 +43,7 @@ mod part21;
 mod planar_arithmetic;
 mod planar_deviation;
 mod planar_incidence;
-/// Manufacturing information read from a file's AP242 semantic PMI.
+/// Read and edit AP242 manufacturing information.
 pub mod pmi;
 mod recognize;
 /// The tolerance a Catallax numerical export records in its file.
@@ -62,7 +62,9 @@ pub use gap::{ImportOptions, propose, propose_source};
 pub use iges::{SourceFormat, read_iges, read_iges_with_decider};
 pub use incidence::measure_incidence;
 pub use intersect::check_self_intersection;
-pub use pmi::{SkippedPmi, StepPmi, read_step_pmi};
+pub use pmi::{
+    GraphicCallout, GraphicPlane, PmiEdit, SkippedPmi, StepPmi, patch_step_pmi, read_step_pmi,
+};
 pub use recognize::*;
 pub use repair::{Imported, apply, apply_source, canonical_bytes, rebuild, rebuild_source};
 

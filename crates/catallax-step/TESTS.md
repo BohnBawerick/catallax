@@ -193,6 +193,59 @@ reads that file's datums, dimensions, tolerances and notes on the same faces as
 before, plus the finish as a presentation on the bore. That check runs in
 SolidDraft's CI, not here.
 
+A second fixture on the same bracket model writes datum A on the underside
+with a point, a line, a circular and a rectangular target, a composite
+position on the bolt holes, and two projected zones: one up out of the boss
+top on the bore, one down out of the underside on the bolt holes. The read-back
+names each target's face, number, point and sizes. Each segment of the
+composite keeps its order, its own material condition and its own datum
+boundaries. Each zone keeps its entry faces, height and outward sense. The
+file must count four tolerances, one composite and four targets, and a second
+write of what was read must read back the same. A separate test refuses each
+malformed frame, zone and target before writing, including targets that cross
+a hole or the face edge. Another changes the written file and checks that a bad
+target drops its datum and the controls that need that datum, while the
+independent items stay.
+
+The text test adds a knurl designation and a note to the boss, and a two-line
+note to the flange top. The knurl and the boss note must read back as two items
+of their own kinds on the same faces. The file must count three text notes,
+all on geometry, apart from the twelve semantic items, and draw no callout for
+them. The P1 file, which has no text, must write no text counts. Bad text is
+refused before writing, and a text variable the reader does not know is
+reported while the other items stay.
+
+The saved-view test writes the P1 items unchanged with two views, one parallel
+and one in perspective. With `CATALLAX_PMI_OUT` set, the test writes both
+standalone views as `c4c-bore-view.step` and `c4c-top-view.step` and the
+combined `c4c-saved-views.step`. It checks camera and map links, style
+assignments on mapped shapes and unique draughting model names. It reads back
+each view's camera, window and visible items.
+
+With `cadquery-ocp` available, run
+`python3 tools/step-regressions/check_occt_saved_view_finishes.py <fixture-dir>`
+on that directory. The check reads the bore finish in each standalone view
+and the bore position in both views of the combined file. It checks the
+transferred label name, drawing, plane normal and bore face for each case.
+
+Run `python3 tools/step-regressions/check_ap242_saved_views.py` for full
+EXPRESS validation of the saved-view files. Set `JSDAI_AP242_E1_CLASSPATH` to
+the JSDAI Validate runtime and the compiled AP242 Edition 1 long-form schema
+from the [MBx-IF EXPRESS schema list](https://www.mbx-if.org/home/mbx/resources/express-schemas/).
+The check generates the P1, assembly and source-patch artifacts, then checks
+entity constraints, global rules and uniqueness rules. The unlinked-camera
+negative control must fail before the fixture results are accepted.
+
+An independent walk of the emitted records checks the datum feature and
+tolerance associations, each plane and the extent of the labels and finish
+symbols along both screen dimensions. A handwritten fixture with no equivalent
+Unicode property checks graphical-only strokes, plane, attachment and view
+membership. Mutations check callouts linked to multiple semantic items and
+diagnostics for malformed cameras.
+
+SolidDraft's saved-view workflow and hosted NIST verification of the new PMI
+and source-patch fixtures remain integration acceptance under S-2I and S-4I.
+
 ## Exact oracles
 
 `verify_exact.py` uses Python's standard-library `fractions.Fraction` only. It independently checks the 170-entity count, the squared rounding-distance bound `1/30000000000`, the large-coordinate error `10^13/3`, a rational alternating-series enclosure of `atan(3/4)`, the two adjacent decimals around `sqrt(2)`, the named quaternion matrix and the intersection equations.
@@ -267,3 +320,18 @@ degree-seven conversion now reuses exact degree-only weights and scales each
 coefficient enclosure once per span. Interval accumulation, rounding and error checks are
 unchanged. This fixture uses exact public primitives, not a captured SolidDraft
 document, and does not establish a bracket-edit speedup.
+
+Review follow-ups each have a test that fails on the code before the fix:
+- `a_projected_zone_is_checked_over_its_own_height`: a 2 mm and a 10 mm zone
+  into a 10 mm gap are free, a 12 mm one is refused on the model, on export and
+  on import, and a 1 mm zone above a raised boss is refused because it starts
+  inside the part.
+- `datum_carriers_follow_the_ap242_rules`: each wrong flag or name on a datum,
+  datum feature, placed target or datum reference compartment refuses that
+  datum or frame alone.
+- `authored_view_names_are_reserved_before_suffixes` and
+  `a_refused_view_keeps_shared_callouts_in_other_views`: view names and shared
+  callouts.
+- In `catallax-import`: `a_face_usage_names_only_its_own_parts_faces`, the
+  byte splice of a tolerance edit with both line ends, and broken targets or a
+  root note in `a_leaf_datum_target_round_trips_through_assembly_discovery`.

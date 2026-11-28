@@ -70,13 +70,11 @@ pub fn string(s: &str) -> String {
             '\'' => out.push_str("''"),
             '\\' => out.push_str("\\\\"),
             ' '..='~' => out.push(c),
-            _ => {
-                out.push_str("\\X2\\");
-                for u in c.encode_utf16(&mut [0; 2]) {
-                    out.push_str(&format!("{u:04X}"));
-                }
-                out.push_str("\\X0\\");
-            }
+            _ => out.push_str(&match c as u32 {
+                code if c.is_ascii() => format!("\\X\\{code:02X}"),
+                code if code <= 0xFFFF => format!("\\X2\\{code:04X}\\X0\\"),
+                code => format!("\\X4\\{code:08X}\\X0\\"),
+            }),
         }
     }
     out.push('\'');

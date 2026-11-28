@@ -10,7 +10,8 @@ use catallax_step::{
     StepOptions,
     assembly::{Assembly, Occurrence, Part, Product, ProductContent, write_step_assembly},
     pmi::{
-        Characteristic, Datum, GeometricTolerance, Item, ItemKind, PartNotes, Pmi, Size, SizeKind,
+        Camera, Characteristic, Datum, DatumTarget, GeometricTolerance, Item, ItemKind, PartNotes,
+        Pmi, SavedView, Size, SizeKind, TargetKind,
     },
 };
 use catallax_topology::{BodyId, FaceId, Model, block, cylinder};
@@ -46,6 +47,7 @@ fn annotation(model: &Model, body: BodyId, note: &str) -> Pmi<FaceId> {
             notes: vec![note.into()],
             ..PartNotes::default()
         },
+        views: Vec::new(),
     }
 }
 
@@ -294,6 +296,457 @@ fn export_and_read(threads: usize) -> (Vec<u8>, Vec<u8>, u64) {
 }
 
 #[test]
+fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
+    let mut model = Model::new();
+    let body = block(&mut model, [q("6"), q("8"), q("3")], &Pose::identity()).unwrap();
+    let bottom = model
+        .faces_of_body(body)
+        .into_iter()
+        .find(|face| {
+            let Surface::Plane(plane) = model.geom().surface(model.face(*face).surface) else {
+                return false;
+            };
+            let [x, y, _] = plane.normal.rational_components().unwrap();
+            x.is_zero() && y.is_zero() && plane.origin.z.rational_ref() == Some(&q("0"))
+        })
+        .unwrap();
+    let pmi = Pmi {
+        items: vec![
+            Item {
+                id: "Base datum".into(),
+                kind: ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![bottom],
+                }),
+            },
+            Item {
+                id: "Base centre".into(),
+                kind: ItemKind::DatumTarget(DatumTarget {
+                    datum: "A".into(),
+                    number: 1,
+                    face: bottom,
+                    point_mm: [q("3"), q("4"), q("0")],
+                    kind: TargetKind::Point,
+                }),
+            },
+            Item {
+                id: "Base flatness".into(),
+                kind: ItemKind::Tolerance(GeometricTolerance {
+                    characteristic: Characteristic::Flatness,
+                    value: q("0.1"),
+                    material: None,
+                    diameter_zone: false,
+                    datums: Vec::new(),
+                    features: vec![vec![bottom]],
+                }),
+            },
+        ],
+        ..Pmi::default()
+    };
+    let assembly = Assembly {
+        root: 0,
+        products: vec![
+            Product {
+                name: "Fixture".into(),
+                content: ProductContent::Assembly(vec![instance(
+                    "Base occurrence",
+                    1,
+                    ["0", "0", "0"],
+                    Rotation::identity(),
+                )]),
+            },
+            Product {
+                name: "Base".into(),
+                content: ProductContent::Part(Part {
+                    model: &model,
+                    body,
+                    colour: None,
+                    pmi: Some(&pmi),
+                }),
+            },
+        ],
+    };
+    let mut bytes = Vec::new();
+    write_step_assembly(
+        &assembly,
+        &StepOptions::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    let read = read_step_assembly(&bytes, &mut Decider::default()).unwrap();
+    let leaf = read
+        .products
+        .iter()
+        .find(|product| product.name == "Base")
+        .unwrap();
+    let ProductContent::Part(part) = &leaf.content else {
+        panic!("expected the leaf part")
+    };
+    assert!(part.pmi.skipped.is_empty(), "{:?}", part.pmi.skipped);
+    let [datum, target, _] = part.pmi.pmi.items.as_slice() else {
+        panic!("expected datum and target")
+    };
+    let ItemKind::DatumTarget(target) = &target.kind else {
+        panic!("expected the datum target")
+    };
+    assert_eq!(target.point_mm, [q("3"), q("4"), q("0")]);
+    assert_eq!(target.number, 1);
+    assert_eq!(target.datum, "A");
+    assert_eq!(target.kind, TargetKind::Point);
+    let (_, underside) = part
+        .geometry
+        .named_faces()
+        .find(|(_, face)| {
+            matches!(&face.surface, catallax_import::Surface::Plane(plane)
+            if plane.origin[2].is_zero() && plane.axis[0].is_zero() && plane.axis[1].is_zero())
+        })
+        .unwrap();
+    assert_eq!(target.face, underside.name);
+    assert_eq!(datum.kind.faces(), [&underside.name]);
+
+    let file = std::str::from_utf8(&bytes).unwrap();
+    let sid = |kind: &str| {
+        file.lines()
+            .find_map(|line| {
+                let (id, record) = line.split_once('=')?;
+                record.starts_with(kind).then_some(id)
+            })
+            .unwrap()
+    };
+    let parameters = sid("SHAPE_REPRESENTATION_WITH_PARAMETERS(");
+    let link = file
+        .lines()
+        .find(|line| {
+            line.contains("=SHAPE_DEFINITION_REPRESENTATION(")
+                && line.ends_with(&format!(",{parameters});"))
+        })
+        .unwrap();
+    let property = link.split_once('(').unwrap().1.split(',').next().unwrap();
+    let missing_property = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{property}=PROPERTY_DEFINITION(")))
+        .unwrap();
+    let broken = file.replacen(&format!("{missing_property}\n"), "", 1);
+    let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
+    let ProductContent::Part(part) = &read
+        .products
+        .iter()
+        .find(|product| product.name == "Base")
+        .unwrap()
+        .content
+    else {
+        panic!("expected the leaf part");
+    };
+    assert!(part.pmi.sources.contains_key("Base flatness"));
+    assert!(!part.pmi.sources.contains_key("Base centre"));
+    assert!(
+        part.pmi
+            .skipped
+            .iter()
+            .any(|skip| skip.kind == "PLACED_DATUM_TARGET_FEATURE"
+                && skip.reason.contains("parameters")),
+        "{:?}",
+        part.pmi.skipped
+    );
+    for bad in ["#900000", sid("ADVANCED_BREP_SHAPE_REPRESENTATION(")] {
+        let broken = file.replacen(link, &link.replace(parameters, bad), 1);
+        let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
+        let ProductContent::Part(part) = &read
+            .products
+            .iter()
+            .find(|p| p.name == "Base")
+            .unwrap()
+            .content
+        else {
+            panic!("expected the leaf part");
+        };
+        assert_eq!(part.geometry.solids.len(), 1);
+        assert_eq!(
+            part.pmi
+                .sources
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["Base flatness"]
+        );
+        assert!(
+            part.pmi
+                .skipped
+                .iter()
+                .any(|skip| skip.kind == "PLACED_DATUM_TARGET_FEATURE"
+                    && skip.reason.contains("shape representation with parameters"))
+        );
+    }
+
+    let datum = file.lines().find(|line| line.contains("=DATUM(")).unwrap();
+    let owner = datum.split(',').nth(2).unwrap();
+    let owner = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{owner}=")))
+        .unwrap();
+    let leaf_definition = owner.rsplit_once(',').unwrap().1.trim_end_matches(");");
+    let shape = sid("ADVANCED_BREP_SHAPE_REPRESENTATION(");
+    let geometry = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{shape}=")))
+        .unwrap();
+    let context = geometry.rsplit_once(',').unwrap().1.trim_end_matches(");");
+    let note = format!(
+        "#900000=PROPERTY_DEFINITION('semantic text','',{leaf_definition});\n#900001=DESCRIPTIVE_REPRESENTATION_ITEM('','Protect all finished faces');\n#900002=REPRESENTATION('',(#900001),{context});\n#900003=PROPERTY_DEFINITION_REPRESENTATION(#900000,#900002);\nENDSEC;\nEND-ISO"
+    );
+    let with_note = file.replacen("ENDSEC;\nEND-ISO", &note, 1);
+    let read = read_step_assembly(with_note.as_bytes(), &mut Decider::default()).unwrap();
+    let ProductContent::Part(part) = &read
+        .products
+        .iter()
+        .find(|p| p.name == "Base")
+        .unwrap()
+        .content
+    else {
+        panic!("expected the leaf part");
+    };
+    assert_eq!(part.pmi.sources.len(), 3);
+    assert!(
+        part.pmi
+            .skipped
+            .iter()
+            .any(|skip| skip.entity == "#900000" && skip.reason.contains("whole part"))
+    );
+
+    // One bad target or note never refuses the assembly: it is refused as an
+    // item and the rest of the leaf's PMI is read.
+    let base_part = |source: &str| {
+        let read = read_step_assembly(source.as_bytes(), &mut Decider::default())
+            .unwrap_or_else(|error| panic!("the assembly was refused: {error:?}"));
+        let ProductContent::Part(part) = read
+            .products
+            .into_iter()
+            .find(|p| p.name == "Base")
+            .unwrap()
+            .content
+        else {
+            panic!("expected the leaf part");
+        };
+        part
+    };
+    let target = file
+        .lines()
+        .find(|line| line.contains("=PLACED_DATUM_TARGET_FEATURE("))
+        .unwrap();
+    let target_id = target.split('=').next().unwrap();
+    let target_owner = target.split(',').nth(2).unwrap();
+    let target_datum_link = file
+        .lines()
+        .find(|line| {
+            line.contains("=SHAPE_ASPECT_RELATIONSHIP(")
+                && line.contains(&format!(",'datum target',{target_id},"))
+        })
+        .unwrap();
+    for broken in [
+        // The target is gone; its property, parameters and datum link stay.
+        file.replacen(&format!("{target}\n"), "", 1),
+        file.replacen(&format!("{target}\n"), "", 1).replacen(
+            &format!("{target_datum_link}\n"),
+            "",
+            1,
+        ),
+        file.replacen(&format!("{target}\n"), "", 1).replacen(
+            target_datum_link,
+            &target_datum_link.replace("'datum target'", "$"),
+            1,
+        ),
+        file.replacen(
+            target,
+            &format!("{target_id}=DESCRIPTIVE_REPRESENTATION_ITEM('','lost');"),
+            1,
+        )
+        .replacen(
+            target_datum_link,
+            &target_datum_link.replace("'datum target'", "$"),
+            1,
+        ),
+        // The target's own part reference is gone; its links name the leaf.
+        file.replacen(
+            target,
+            &target.replacen(&format!(",{target_owner},"), ",#900009,", 1),
+            1,
+        ),
+    ] {
+        let part = base_part(&broken);
+        assert!(part.pmi.sources.contains_key("Base flatness"));
+        assert!(!part.pmi.sources.contains_key("Base centre"));
+        assert!(!part.pmi.sources.contains_key("Base datum"));
+        assert!(
+            part.pmi
+                .skipped
+                .iter()
+                .any(|skip| skip.entity == target_id || skip.reason.contains(target_id)),
+            "{:?}",
+            part.pmi.skipped
+        );
+    }
+    let root_definition = file
+        .lines()
+        .filter_map(|line| {
+            let (id, record) = line.split_once('=')?;
+            record.starts_with("PRODUCT_DEFINITION('").then_some(id)
+        })
+        .find(|id| *id != leaf_definition)
+        .unwrap();
+    let root_note = format!(
+        "#900000=PROPERTY_DEFINITION('semantic text','',{root_definition});\n#900001=DESCRIPTIVE_REPRESENTATION_ITEM('','Assembly note');\n#900002=REPRESENTATION('',(#900001),{context});\n#900003=PROPERTY_DEFINITION_REPRESENTATION(#900000,#900002);\nENDSEC;\nEND-ISO"
+    );
+    let part = base_part(&file.replacen("ENDSEC;\nEND-ISO", &root_note, 1));
+    assert_eq!(part.pmi.sources.len(), 3);
+    assert!(
+        part.pmi
+            .skipped
+            .iter()
+            .any(|skip| skip.entity == "#900000" && skip.reason.contains("no part")),
+        "{:?}",
+        part.pmi.skipped
+    );
+
+    let mut with_views = pmi.clone();
+    with_views.views.push(SavedView {
+        name: "Top".into(),
+        camera: Camera {
+            eye: [q("3"), q("4"), q("20")],
+            direction: [q("0"), q("0"), q("-1")],
+            up: [q("0"), q("1"), q("0")],
+            window: [q("20"), q("20")],
+            distance: q("20"),
+            perspective: false,
+        },
+        items: vec!["Base datum".into()],
+    });
+    let leaf = |name: &str| Product {
+        name: name.into(),
+        content: ProductContent::Part(Part {
+            model: &model,
+            body,
+            colour: None,
+            pmi: Some(&with_views),
+        }),
+    };
+    let assembly = Assembly {
+        root: 0,
+        products: vec![
+            Product {
+                name: "Two leaves".into(),
+                content: ProductContent::Assembly(vec![
+                    instance("First occurrence", 1, ["0", "0", "0"], Rotation::identity()),
+                    instance(
+                        "Second occurrence",
+                        2,
+                        ["10", "0", "0"],
+                        Rotation::identity(),
+                    ),
+                ]),
+            },
+            leaf("First"),
+            leaf("Second"),
+        ],
+    };
+    let mut bytes = Vec::new();
+    write_step_assembly(
+        &assembly,
+        &StepOptions::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    let output = std::str::from_utf8(&bytes).unwrap();
+    if let Some(directory) = std::env::var_os("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            PathBuf::from(directory).join("c4c-assembly-views.step"),
+            output,
+        )
+        .unwrap();
+    }
+    let names: Vec<_> = output
+        .lines()
+        .filter_map(|line| {
+            line.split_once("=DRAUGHTING_MODEL(")?
+                .1
+                .split_once(",(")
+                .map(|(name, _)| name)
+        })
+        .collect();
+    assert_eq!(names.len(), 4);
+    assert_eq!(
+        names
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        names.len()
+    );
+    for name in ["Top", "Top (2)"] {
+        let cameras: Vec<_> = output
+            .lines()
+            .filter_map(|line| {
+                let (id, _) = line.split_once(&format!("=CAMERA_MODEL_D3('{name}',"))?;
+                Some(id)
+            })
+            .collect();
+        let [camera] = cameras.as_slice() else {
+            panic!("expected one camera named {name}, got {cameras:?}");
+        };
+        assert!(
+            output
+                .lines()
+                .any(|line| line.contains(&format!("=ITEM_DEFINED_TRANSFORMATION('',$,{camera},")))
+        );
+        assert!(output.lines().any(|line| {
+            line.contains(&format!("=DRAUGHTING_MODEL('{name}',"))
+                && line.contains(&format!(",{camera}),"))
+        }));
+    }
+
+    let features: Vec<_> = output
+        .lines()
+        .filter_map(|line| line.split_once("=DATUM_FEATURE(").map(|(id, _)| id))
+        .collect();
+    let [first, second] = features.as_slice() else {
+        panic!("expected one datum feature per leaf");
+    };
+    let link = output
+        .lines()
+        .find(|line| {
+            line.contains("=SHAPE_ASPECT_RELATIONSHIP(") && line.contains(&format!(",{first},"))
+        })
+        .unwrap();
+    let broken = output.replacen(link, &link.replace(first, second), 1);
+    let read = read_step_assembly(broken.as_bytes(), &mut Decider::default()).unwrap();
+    let leaf_pmi = |name| {
+        read.products
+            .iter()
+            .find_map(|p| match &p.content {
+                ProductContent::Part(part) if p.name == name => Some(&part.pmi),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let first = leaf_pmi("First");
+    assert!(first.sources.contains_key("Base flatness"));
+    assert!(!first.sources.contains_key("Base datum"));
+    assert!(!first.sources.contains_key("Base centre"));
+    assert!(
+        first
+            .skipped
+            .iter()
+            .any(|skip| skip.reason.contains("datum feature")
+                && skip.reason.contains("another part")),
+        "{:?}",
+        first.skipped
+    );
+    let second = leaf_pmi("Second");
+    assert!(second.sources.contains_key("Base datum"));
+    assert!(second.sources.contains_key("Base centre"));
+}
+
+#[test]
 fn nested_step_assembly_round_trips_part_placement_and_pmi() {
     let first = export_and_read(1);
     for threads in [2, 4] {
@@ -306,6 +759,51 @@ fn nested_step_assembly_round_trips_part_placement_and_pmi() {
         std::fs::write(directory.join("first.step"), first.0).unwrap();
         std::fs::write(directory.join("roundtrip.step"), first.1).unwrap();
     }
+}
+
+#[test]
+fn legacy_page_directives_do_not_make_assembly_names_missing() {
+    let (file, _, _) = export_and_read(1);
+    let source = String::from_utf8(file).unwrap();
+    let mut lines = Vec::new();
+    let mut product = false;
+    let mut occurrence = false;
+    let legacy = r"'\PE\\S\*\S\U\S\b'";
+    for line in source.lines() {
+        let mut line = line.to_owned();
+        if line.contains("=PRODUCT(") && line.contains(BASE_STEP_NAME) {
+            let (_, rest) = line.split_once("=PRODUCT(").unwrap();
+            let start = line.len() - rest.len();
+            let name = rest.find(BASE_STEP_NAME).unwrap() + start;
+            let name = line[name + BASE_STEP_NAME.len()..]
+                .find(BASE_STEP_NAME)
+                .map(|next| name + BASE_STEP_NAME.len() + next)
+                .unwrap_or(name);
+            line.replace_range(name..name + BASE_STEP_NAME.len(), legacy);
+            product = true;
+        }
+        if !occurrence && line.contains("=NEXT_ASSEMBLY_USAGE_OCCURRENCE(") {
+            let mut fields = line.splitn(3, ',');
+            line = format!("{},{legacy},{}", fields.next().unwrap(), {
+                fields.next();
+                fields.next().unwrap()
+            });
+            occurrence = true;
+        }
+        lines.push(line);
+    }
+    assert!(product && occurrence);
+    let assembly =
+        read_step_assembly(lines.join("\n").as_bytes(), &mut Decider::default()).unwrap();
+    let spelling = legacy.trim_matches('\'');
+    assert!(
+        assembly
+            .products
+            .iter()
+            .any(|product| product.name == spelling)
+    );
+    assert!(assembly.products.iter().any(|product| matches!(&product.content,
+        ProductContent::Assembly(members) if members.iter().any(|occurrence| occurrence.name == spelling))));
 }
 
 fn next_entity(source: &str) -> u64 {

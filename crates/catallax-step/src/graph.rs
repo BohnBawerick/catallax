@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Id(usize);
 
 #[derive(Clone)]
@@ -121,6 +121,17 @@ impl Graph {
         )
     }
 
+    pub(crate) fn record(&self, id: Id) -> (&'static str, &[Field]) {
+        let entity = &self.entities[id.0];
+        (entity.name, &entity.fields)
+    }
+
+    pub(crate) fn records(&self) -> impl Iterator<Item = (&'static str, &[Field])> {
+        self.entities
+            .iter()
+            .map(|entity| (entity.name, entity.fields.as_slice()))
+    }
+
     pub(crate) fn duplicate(&mut self, id: Id) -> Id {
         let entity = &self.entities[id.0];
         self.add(entity.name, entity.fields.clone())
@@ -202,6 +213,36 @@ impl Graph {
         numbers
     }
 
+    pub(crate) fn unique_draughting_model_names(&mut self) {
+        let (mut names, cameras): (Vec<_>, Vec<_>) = self
+            .entities
+            .iter_mut()
+            .filter_map(|entity| {
+                if entity.name == "DRAUGHTING_MODEL"
+                    && let [Field::Text(name), Field::List(members), _] = &mut entity.fields[..]
+                {
+                    let camera = match members.last() {
+                        Some(Field::Ref(id)) => Some(*id),
+                        _ => None,
+                    };
+                    Some((name, camera))
+                } else {
+                    None
+                }
+            })
+            .unzip();
+        unique_quoted_names(&mut names);
+        let names: Vec<_> = names.into_iter().map(|name| (*name).clone()).collect();
+        for (name, camera) in names.into_iter().zip(cameras) {
+            if let Some(camera) = camera {
+                let entity = &mut self.entities[camera.0];
+                if entity.name == "CAMERA_MODEL_D3" {
+                    entity.fields[0] = Field::Text(name);
+                }
+            }
+        }
+    }
+
     pub(crate) fn write_layout(&self, layout: &Layout, mut output: String) -> String {
         self.write_data(layout, &self.number(layout), &mut output);
         output
@@ -266,6 +307,20 @@ impl Field {
     }
 }
 
+fn unique_quoted_names(names: &mut [&mut Cow<'static, str>]) {
+    let bases = names.iter().map(|name| {
+        let name = name
+            .strip_prefix('\'')
+            .and_then(|name| name.strip_suffix('\''))
+            .expect("a quoted model name");
+        (name, if name.is_empty() { "PMI" } else { name })
+    });
+    let allocated = crate::pmi::unique_view_names(bases);
+    for (name, allocated) in names.iter_mut().zip(allocated) {
+        **name = Cow::Owned(format!("'{allocated}'"));
+    }
+}
+
 fn write_fields(fields: &[Field], numbers: &[usize], out: &mut String) {
     for (i, field) in fields.iter().enumerate() {
         if i != 0 && !matches!(field, Field::Part(..)) {
@@ -286,15 +341,43 @@ pub(crate) fn string(value: &str) -> String {
             '\'' => out.push_str("''"),
             '\\' => out.push_str("\\\\"),
             ' '..='~' => out.push(c),
-            _ => {
-                out.push_str("\\X2\\");
-                for unit in c.encode_utf16(&mut [0; 2]) {
-                    write!(out, "{unit:04X}").unwrap();
-                }
-                out.push_str("\\X0\\");
-            }
+            '\u{0}'..='\u{1F}' | '\u{7F}' => write!(out, "\\X\\{:02X}", u32::from(c)).unwrap(),
+            '\u{80}'..='\u{FFFF}' => write!(out, "\\X2\\{:04X}\\X0\\", u32::from(c)).unwrap(),
+            _ => write!(out, "\\X4\\{:08X}\\X0\\", u32::from(c)).unwrap(),
         }
     }
     out.push('\'');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quoted(names: &[&str]) -> Vec<Cow<'static, str>> {
+        names
+            .iter()
+            .map(|name| Cow::Owned(format!("'{name}'")))
+            .collect()
+    }
+
+    #[test]
+    fn repeated_model_names_take_free_suffixes() {
+        let mut names = quoted(&["", "Top", "", "Top", "Top (2)", "", "PMI (3)"]);
+        let mut refs: Vec<_> = names.iter_mut().collect();
+        unique_quoted_names(&mut refs);
+        let got: Vec<&str> = names.iter().map(|name| name.as_ref()).collect();
+        assert_eq!(
+            got,
+            [
+                "''",
+                "'Top'",
+                "'PMI (2)'",
+                "'Top (3)'",
+                "'Top (2)'",
+                "'PMI (4)'",
+                "'PMI (3)'"
+            ]
+        );
+    }
 }

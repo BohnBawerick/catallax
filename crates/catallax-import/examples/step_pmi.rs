@@ -67,6 +67,35 @@ fn main() {
         for item in &read.pmi.items {
             println!("  {}: {:?}", item.id, item.kind);
         }
+        for view in &read.pmi.views {
+            println!(
+                "  view {}: {} items, eye {:?}, looking {:?}",
+                view.name,
+                view.items.len(),
+                view.camera
+                    .eye
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>(),
+                view.camera
+                    .direction
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+            );
+        }
+        println!("  {} graphical-only callouts", read.graphics.len());
+        for graphic in &read.graphics {
+            println!(
+                "  graphic {} {:?} ({}): {:?}, presents {:?}, in {:?}",
+                graphic.entity,
+                graphic.name,
+                graphic.kind,
+                graphic.text,
+                graphic.presents,
+                graphic.views
+            );
+        }
         for skipped in &read.skipped {
             println!(
                 "  skipped {} {}: {}",

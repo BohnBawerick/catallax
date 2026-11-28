@@ -13,7 +13,7 @@
 
 use catallax_numbers::{Integer, Rational};
 
-use super::{Process, SurfaceTexture};
+use super::{Camera, Process, SurfaceTexture};
 use crate::number::integer_sqrt;
 
 /// A point of the drawing in file units, millimetres.
@@ -25,6 +25,7 @@ pub(crate) struct Drawing {
     pub(crate) polylines: Vec<Vec<Point>>,
     /// The requirement as the callout writes it, such as `Ra 1.6`.
     pub(crate) text: String,
+    junction: Point,
 }
 
 fn q(numerator: i64, denominator: i64) -> Rational {
@@ -109,6 +110,12 @@ fn glyph(c: char) -> Option<&'static str> {
         '8' => "1,3 0,4 0,5 1,6 3,6 4,5 4,4 3,3 1,3 0,2 0,1 1,0 3,0 4,1 4,2 3,3",
         '9' => "0,1 1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,4 1,3 4,3",
         '.' => "1,0 1,1",
+        '\u{2300}' => "1,1 0,2 0,4 1,5 3,5 4,4 4,2 3,1 1,1;0,0 4,6",
+        '(' => "2,-1 1,1 1,4 2,6",
+        ')' => "2,-1 3,1 3,4 2,6",
+        '|' => "2,-1 2,6",
+        '+' => "0,3 4,3;2,1 2,5",
+        '-' => "0,3 4,3",
         ' ' => "",
         _ => return None,
     })
@@ -185,31 +192,7 @@ pub(crate) fn draw<F>(
     // Plane coordinates (u along x, v along z) of the drawing, from the
     // symbol's point.
     let mut flat: Vec<Vec<[Rational; 2]>> = Vec::new();
-    let offset = Rational::from_i64(i64::try_from(slot).expect("callout slot fits i64") * 14);
-    let origin = match anchor {
-        Some(anchor) => {
-            // A leader up and to the right, with an open arrow on the face.
-            let reach = Rational::from_i64(7);
-            let symbol = [
-                &anchor[0] + &reach,
-                anchor[1].clone(),
-                &(&anchor[2] + &reach) + &offset,
-            ];
-            let back = |u: Rational, v: Rational| {
-                [&zero - &reach + u, &zero - &reach - offset.clone() + v]
-            };
-            let tip = back(zero.clone(), zero.clone());
-            // Arrow wings 2.5 mm long at 15 degrees either side of the leader.
-            let wings = [
-                back(q(216_506, 100_000), q(5, 4)),
-                back(q(5, 4), q(216_506, 100_000)),
-            ];
-            flat.push(vec![tip.clone(), [zero.clone(), zero.clone()]]);
-            flat.push(vec![wings[0].clone(), tip, wings[1].clone()]);
-            symbol
-        }
-        None => [zero.clone(), zero.clone(), offset],
-    };
+    let origin = leader(anchor, slot, &mut flat);
     // ISO 1302 for a 3 mm text height: legs H1 = 4.2 and H2 = 9 high.
     let short = q(21, 5);
     let long = Rational::from_i64(9);
@@ -262,15 +245,78 @@ pub(crate) fn draw<F>(
         }
     }
     flat.extend(letters);
-    let polylines = flat
-        .into_iter()
+    Drawing {
+        polylines: place(&origin, flat),
+        text,
+        junction: origin,
+    }
+}
+
+/// The leader of a callout in slot `slot`, up and to the right of `anchor`
+/// with an open arrow on the face, added to `flat` in plane coordinates from
+/// the returned start of the callout's symbol or text.
+fn leader(anchor: Option<&Point>, slot: usize, flat: &mut Vec<Vec<[Rational; 2]>>) -> Point {
+    let zero = Rational::zero();
+    let offset = Rational::from_i64(i64::try_from(slot).expect("callout slot fits i64") * 14);
+    match anchor {
+        Some(anchor) => {
+            let reach = Rational::from_i64(7);
+            let symbol = [
+                &anchor[0] + &reach,
+                anchor[1].clone(),
+                &(&anchor[2] + &reach) + &offset,
+            ];
+            let back = |u: Rational, v: Rational| {
+                [&zero - &reach + u, &zero - &reach - offset.clone() + v]
+            };
+            let tip = back(zero.clone(), zero.clone());
+            // Arrow wings 2.5 mm long at 15 degrees either side of the leader.
+            let wings = [
+                back(q(216_506, 100_000), q(5, 4)),
+                back(q(5, 4), q(216_506, 100_000)),
+            ];
+            flat.push(vec![tip.clone(), [zero.clone(), zero.clone()]]);
+            flat.push(vec![wings[0].clone(), tip, wings[1].clone()]);
+            symbol
+        }
+        None => [zero.clone(), zero, offset],
+    }
+}
+
+fn place(origin: &Point, flat: Vec<Vec<[Rational; 2]>>) -> Vec<Vec<Point>> {
+    flat.into_iter()
         .map(|line| {
             line.into_iter()
                 .map(|[u, v]| [&origin[0] + &u, origin[1].clone(), &origin[2] + &v])
                 .collect()
         })
-        .collect();
-    Drawing { polylines, text }
+        .collect()
+}
+
+/// Whether the stroke font draws every character of `text`.
+pub(crate) fn drawable(text: &str) -> bool {
+    text.chars().all(|c| glyph(c).is_some())
+}
+
+pub(crate) fn label(line: &str) -> Drawing {
+    let zero = Rational::zero();
+    let gap = Rational::one();
+    let height = Rational::from_i64(5);
+    let (letters, end) = stroke(line, &gap, &gap);
+    let right = &end + &gap;
+    let mut flat = vec![vec![
+        [zero.clone(), zero.clone()],
+        [right.clone(), zero.clone()],
+        [right, height.clone()],
+        [zero.clone(), height],
+        [zero.clone(), zero.clone()],
+    ]];
+    flat.extend(letters);
+    Drawing {
+        polylines: place(&[zero.clone(), zero.clone(), zero], flat),
+        text: String::new(),
+        junction: std::array::from_fn(|_| Rational::zero()),
+    }
 }
 
 /// A coordinate or measure of the drawing to six decimal places, a
@@ -289,7 +335,93 @@ fn root(value: &Rational) -> Rational {
     Rational::new(integer_sqrt(&whole), scale).expect("a nonzero denominator")
 }
 
+fn unit_axis(axis: &Point) -> Point {
+    let axis = super::decimal_direction(axis);
+    let largest = axis
+        .iter()
+        .map(Rational::abs)
+        .max()
+        .expect("three coordinates");
+    let scaled = axis.each_ref().map(|value| value / &largest);
+    let squared = dot(&scaled, &scaled);
+    let scale = crate::number::rational(&(&Rational::one() / &(&largest * &root(&squared))), 17);
+    axis.each_ref().map(|value| value * &scale.value)
+}
+
+fn dot(a: &Point, b: &Point) -> Rational {
+    a.iter()
+        .zip(b)
+        .fold(Rational::zero(), |sum, (a, b)| &sum + &(a * b))
+}
+
+pub(crate) fn cross(a: &Point, b: &Point) -> Point {
+    std::array::from_fn(|i| {
+        let j = (i + 1) % 3;
+        let k = (i + 2) % 3;
+        &(&a[j] * &b[k]) - &(&a[k] * &b[j])
+    })
+}
+
 impl Drawing {
+    pub(crate) fn in_view(
+        &mut self,
+        anchor: &Point,
+        camera: &Camera,
+        slot: usize,
+        count: usize,
+    ) -> Result<[Point; 2], &'static str> {
+        let across = cross(&camera.direction, &camera.up);
+        let right = unit_axis(&across);
+        let up = unit_axis(&camera.up);
+        let offset = std::array::from_fn(|i| &anchor[i] - &camera.eye[i]);
+        let depth = dot(&offset, &unit_axis(&camera.direction));
+        if depth <= Rational::zero() {
+            return Err("the callout is behind the camera");
+        }
+        let scale = if camera.perspective {
+            &depth / &camera.distance
+        } else {
+            Rational::one()
+        };
+        let [width, height] = &camera.window;
+        let rows = Rational::from_i64(i64::try_from(count).expect("view items fit i64"));
+        let cell = &(height * &q(9, 10)) / &rows;
+        let row = Rational::from_i64(i64::try_from(slot + 1).expect("view slot fits i64"));
+        let left = width * &q(-9, 20);
+        let bottom = &(height * &q(9, 20)) - &(&row * &cell);
+        let bounds: [(Rational, Rational); 2] = [0, 2].map(|axis| {
+            let mut values = self.polylines.iter().flatten().map(|point| &point[axis]);
+            let first = values.next().expect("a drawing has strokes");
+            let (lo, hi) = values.fold((first, first), |(lo, hi), v| (lo.min(v), hi.max(v)));
+            (lo.clone(), hi - lo)
+        });
+        let fit = Rational::one()
+            .min(&(width * &q(9, 10)) / &bounds[0].1)
+            .min(&(&cell * &q(4, 5)) / &bounds[1].1);
+        let at = |x: &Rational, y: &Rational| {
+            let x = &(&(&left + &(&(x - &bounds[0].0) * &fit)) * &scale) - &dot(&offset, &right);
+            let y = &(&(&bottom + &(&(y - &bounds[1].0) * &fit)) * &scale) - &dot(&offset, &up);
+            let x = crate::number::rational(&x, 17).value;
+            let y = crate::number::rational(&y, 17).value;
+            std::array::from_fn(|i| &anchor[i] + &(&(&x * &right[i]) + &(&y * &up[i])))
+        };
+        for point in self.polylines.iter_mut().flatten() {
+            *point = at(&point[0], &point[2]);
+        }
+        if self
+            .polylines
+            .iter()
+            .any(|line| line.windows(2).all(|pair| pair[0] == pair[1]))
+        {
+            return Err("a callout stroke collapses in the saved view");
+        }
+        let end = at(&self.junction[0], &self.junction[2]);
+        if *anchor != end {
+            self.polylines.insert(0, vec![anchor.clone(), end]);
+        }
+        Ok([across, camera.direction.clone()])
+    }
+
     /// The total length of the polylines and their centroid weighted by
     /// length, the `polyline curve length` and `polyline centre point`
     /// validation properties (recommended practices, section 10.2.3.1).

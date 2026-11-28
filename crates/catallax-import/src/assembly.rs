@@ -10,7 +10,7 @@ use catallax_step::assembly::{Assembly, Colour, Occurrence, Product, ProductCont
 use crate::{
     ImportRefusal, StepFile, StepPmi,
     part21::{Graph, Param, parse},
-    pmi::{read_assembly_pmi, string},
+    pmi::{assembly_name as string, read_assembly_pmi},
     recognize::{number, read_graph, source_length_scale, source_placement},
 };
 
@@ -49,12 +49,30 @@ pub fn read_step_assembly(
     let mut uses = BTreeMap::new();
     let mut contexts = BTreeMap::new();
     let mut styles = BTreeMap::<u64, Vec<u64>>::new();
-    let mut leaf_relationships = BTreeMap::<u64, Vec<u64>>::new();
+    let (leaf_relationships, relationship_error) = RepresentationLinks::read(&graph);
+    if let Some(error) = relationship_error {
+        return Err(error);
+    }
     for (&id, entry) in &graph {
         match entry.type_name() {
             "SHAPE_DEFINITION_REPRESENTATION" => {
                 let fields = fields(&graph, id, "SHAPE_DEFINITION_REPRESENTATION")?;
+                if matches!(fields.get(1), Some(Param::Ref(representation))
+                    if graph.get(representation).is_some_and(|e|
+                        e.part("SHAPE_REPRESENTATION_WITH_PARAMETERS").is_some()))
+                {
+                    continue;
+                }
                 let shape = reference(fields, 0)?;
+                // A property's shape definition is a PMI carrier, such as a
+                // datum target's parameters, never a product's geometry. The
+                // PMI reader reports a broken one with its item.
+                if graph.get(&shape).is_some_and(|e| {
+                    e.part("PROPERTY_DEFINITION").is_some()
+                        && e.part("PRODUCT_DEFINITION_SHAPE").is_none()
+                }) {
+                    continue;
+                }
                 let shape_fields = self::fields(&graph, shape, "PRODUCT_DEFINITION_SHAPE")?;
                 let definition = reference(shape_fields, 2)?;
                 if !graph
@@ -102,21 +120,7 @@ pub fn read_step_assembly(
                     .or_default()
                     .extend(references(fields, 1)?);
             }
-            _ => {
-                if entry.part("SHAPE_REPRESENTATION_RELATIONSHIP").is_some()
-                    && entry
-                        .part("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
-                        .is_none()
-                {
-                    let relation = entry
-                        .part("REPRESENTATION_RELATIONSHIP")
-                        .unwrap_or(&entry.parts[0].1);
-                    let a = reference(relation, 2)?;
-                    let b = reference(relation, 3)?;
-                    leaf_relationships.entry(a).or_default().push(b);
-                    leaf_relationships.entry(b).or_default().push(a);
-                }
-            }
+            _ => {}
         }
     }
     let mut transforms = BTreeMap::new();
@@ -136,15 +140,7 @@ pub fn read_step_assembly(
         .collect();
     let representation_ids: BTreeSet<_> = representations
         .values()
-        .flat_map(|rep| {
-            std::iter::once(rep.representation).chain(
-                leaf_relationships
-                    .get(&rep.representation)
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            )
-        })
+        .flat_map(|rep| leaf_relationships.related(rep.representation))
         .collect();
     let mut representation_items = BTreeMap::new();
     for id in representation_ids {
@@ -246,14 +242,7 @@ pub fn read_step_assembly(
         let product = reference(args, 2)?;
         let name = string(fields(&graph, product, "PRODUCT")?.get(1))
             .ok_or_else(|| invalid("missing product name"))?;
-        let mut related = vec![rep.representation];
-        related.extend(
-            leaf_relationships
-                .get(&rep.representation)
-                .into_iter()
-                .flatten()
-                .copied(),
-        );
+        let related: Vec<_> = leaf_relationships.related(rep.representation).collect();
         let content = if let Some(children) = children.remove(&id) {
             for representation in related {
                 if !representation_items[&representation].1.is_empty() {
@@ -311,9 +300,8 @@ pub fn read_step_assembly(
             for item in &pmi.pmi.items {
                 if item
                     .kind
-                    .features()
+                    .faces()
                     .into_iter()
-                    .flatten()
                     .any(|face| !faces.contains(face.as_str()))
                 {
                     return Err(invalid(format!(
@@ -375,6 +363,84 @@ fn collect_refs(fields: &[Param], out: &mut Vec<u64>) {
             Param::List(list) | Param::Typed(_, list) => collect_refs(list, out),
             _ => {}
         }
+    }
+}
+
+pub(crate) struct RepresentationLinks {
+    links: BTreeMap<u64, BTreeSet<u64>>,
+    owners: BTreeMap<u64, BTreeSet<u64>>,
+}
+
+impl RepresentationLinks {
+    pub(crate) fn read(graph: &Graph) -> (Self, Option<ImportRefusal>) {
+        let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
+        let mut owners = BTreeMap::<u64, BTreeSet<u64>>::new();
+        for entry in graph.values() {
+            if let Some([Param::Ref(shape), Param::Ref(representation)]) =
+                entry.part("SHAPE_DEFINITION_REPRESENTATION")
+                && let Some(fields) = graph
+                    .get(shape)
+                    .and_then(|e| e.part("PRODUCT_DEFINITION_SHAPE"))
+                && let Ok(product) = reference(fields, 2)
+                && graph
+                    .get(&product)
+                    .is_some_and(|e| e.part("PRODUCT_DEFINITION").is_some())
+            {
+                owners.entry(*representation).or_default().insert(*shape);
+            }
+        }
+        let mut error = None;
+        for entry in graph.values() {
+            if entry.part("SHAPE_REPRESENTATION_RELATIONSHIP").is_none()
+                || entry
+                    .part("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+                    .is_some()
+            {
+                continue;
+            }
+            let relation = entry
+                .part("REPRESENTATION_RELATIONSHIP")
+                .unwrap_or(&entry.parts[0].1);
+            match reference(relation, 2).and_then(|a| Ok((a, reference(relation, 3)?))) {
+                Ok((a, b)) => {
+                    if let (Some(a_owners), Some(b_owners)) = (owners.get(&a), owners.get(&b))
+                        && a_owners != b_owners
+                    {
+                        continue;
+                    }
+                    links.entry(a).or_default().insert(b);
+                    links.entry(b).or_default().insert(a);
+                }
+                Err(reason) => {
+                    error.get_or_insert(reason);
+                }
+            }
+        }
+        (Self { links, owners }, error)
+    }
+
+    pub(crate) fn reaches_outside(&self, selected: &BTreeSet<u64>) -> bool {
+        selected.iter().any(|id| {
+            self.links
+                .get(id)
+                .into_iter()
+                .flatten()
+                .any(|related| !selected.contains(related))
+        })
+    }
+
+    pub(crate) fn related(&self, root: u64) -> impl Iterator<Item = u64> + '_ {
+        std::iter::once(root).chain(self.links.get(&root).into_iter().flatten().copied().filter(
+            move |id| {
+                let Some(owner) = self.owners.get(&root) else {
+                    return false;
+                };
+                owner.len() == 1
+                    && self.links.get(id).into_iter().flatten().all(|neighbor| {
+                        self.owners.get(neighbor).is_none_or(|other| other == owner)
+                    })
+            },
+        ))
     }
 }
 

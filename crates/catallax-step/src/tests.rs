@@ -225,7 +225,7 @@ fn strings_empty_files_and_output_errors() {
         }
     );
     assert_eq!(entities(&file).len(), 20);
-    assert!(file.contains("'a''b\\\\c \\X2\\00E9\\X0\\ \\X2\\D83DDE00\\X0\\\\X2\\000A\\X0\\'"));
+    assert!(file.contains("'a''b\\\\c \\X2\\00E9\\X0\\ \\X4\\0001F600\\X0\\\\X\\0A'"));
     assert!(file.contains(",(#17),#14)"));
     assert_eq!(export(&model, &[], &options).0, file);
     struct Broken;

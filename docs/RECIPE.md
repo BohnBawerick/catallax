@@ -1663,6 +1663,18 @@ calling the mesher. Both incremental entries accept the same checkpoints.
 cache the mesh; the caller owns display retention. A display refusal leaves the
 checkpoint and names usable and retains the mesher's refusal code.
 
+For an unproved picture, pass the retained `Built` to `catallax_app::preview_body`.
+It does not start an application work allowance. If the requested preview cannot
+be produced, it tries coarser sampled grids within any caller limit. Invalid
+options, cancellation, or a limit too small for the coarsest picture can still
+refuse. The revision controller keeps the current preview visible when certified
+display refuses and exposes the typed refusal through `Snapshot::status()`.
+
+For an admitted native STEP body, `catallax_mesh::preview_tolerant_body` can
+return the drawable faces when another face has no usable trim. Draw its shared
+edge polylines even when no face triangles are available. Omitted geometry is
+logged; neither partial faces nor wire-only previews certify or export the body.
+
 The no-display build and each later display request spend the current caller
 allowance without resetting or enlarging it. Without an active caller allowance,
 each call has its own `DEFAULT_BUILD_WORK` guard and reports

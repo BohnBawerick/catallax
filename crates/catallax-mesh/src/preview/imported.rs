@@ -175,7 +175,7 @@ impl SourceChart {
         };
         Ok(Self::Analytic(Box::new(chart::Chart::new(&geometry, dec)?)))
     }
-    fn periodic(&self) -> [bool; 2] {
+    pub(super) fn periodic(&self) -> [bool; 2] {
         match self {
             Self::Analytic(c) => c.periodic,
             Self::Spline(_) => [false; 2],
@@ -401,7 +401,10 @@ pub(super) fn push(
     options: &PreviewOptions,
 ) -> Result<usize, Refusal> {
     if mesh.positions.len() >= options.max_vertices {
-        return Err(failure("import preview reached max_vertices"));
+        return Err(Refusal::new(
+            "mesh.preview-resource-limit",
+            "import preview reached max_vertices",
+        ));
     }
     if !p.iter().all(|x| x.is_finite()) {
         return Err(failure("nonfinite preview sample"));
@@ -545,6 +548,142 @@ fn seed(
     cdt.insert(Node { uv, mesh: index })
         .map(|_| ())
         .map_err(|e| failure(format!("source chart triangulation: {e}")))
+}
+
+const GRID_TRIM_REFUSAL: &str = "mesh.tolerant-grid-trim";
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn grid_face(
+    name: &str,
+    same_sense: bool,
+    chart: &impl SurfaceSamples,
+    bounds: [Uv; 2],
+    loops: &mut [Vec<Node>],
+    mesh: &mut PreviewMesh<String, String>,
+    divisions: u32,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let [lo, hi] = bounds;
+    let span: Uv = std::array::from_fn(|i| hi[i] - lo[i]);
+    if span.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+        return Err(failure("sampled source chart has no parameter area"));
+    }
+    let position = |uv: Uv, dec: &mut Decider| {
+        chart.position(std::array::from_fn(|i| lo[i] + span[i] * uv[i]), dec)
+    };
+    let mut cdt = Cdt::new();
+    // Use a unit chart before predicate evaluation. Insert all the shared
+    // points first so a trim point on a chord can participate in its constraint.
+    for node in loops.iter_mut().flatten() {
+        dec.charge_work(1)?;
+        let [u, v] = std::array::from_fn(|i| (node.uv[i] - lo[i]) / span[i]);
+        let safe = spade::mitigate_underflow(Point2::new(u, v));
+        node.uv = [safe.x, safe.y];
+        insert(&mut cdt, *node)?;
+    }
+    for ring in loops.iter() {
+        for i in 0..ring.len() {
+            dec.charge_work(1)?;
+            let point = |n: Node, cdt: &Cdt| match cdt.locate(n.position()) {
+                PositionInTriangulation::OnVertex(v) => v,
+                _ => unreachable!("trim node was inserted above"),
+            };
+            let a = point(ring[i], &cdt);
+            let b = point(ring[(i + 1) % ring.len()], &cdt);
+            if a == b {
+                continue;
+            }
+            if !cdt.can_add_constraint(a, b) {
+                return Err(Refusal::new(
+                    GRID_TRIM_REFUSAL,
+                    format!(
+                        "face {name}: sampled source trim constraints cross in {} rings",
+                        loops.len()
+                    ),
+                ));
+            }
+            cdt.add_constraint(a, b);
+        }
+    }
+    dec.charge_traversal(u64::from(divisions - 1).pow(2))?;
+    for v in 1..divisions {
+        for u in 1..divisions {
+            let uv = [u, v].map(|x| f64::from(x) / f64::from(divisions));
+            if inside(uv, loops) {
+                seed(&mut cdt, uv, position(uv, dec)?, mesh, options)?;
+            }
+        }
+    }
+    // A narrow region can miss every regular station. A triangle whose two
+    // corners denote one physical pole needs a carrier sample in its interior.
+    let mut extra = Vec::new();
+    let classify = crate::float::trim::label_triangles;
+    let center =
+        |nodes: [Node; 3]| std::array::from_fn(|i| nodes.iter().map(|n| n.uv[i] / 3.0).sum());
+    // A closed constraint cycle labels the interior without subtracting
+    // nearly equal UVs at a thin boundary. Overlapping constraints can
+    // contribute even multiplicity; test the original rings in that case.
+    let interior = |labels: &Result<Vec<Option<bool>>, _>, i, nodes| {
+        labels.as_ref().map_or_else(
+            |_| inside(center(nodes), loops),
+            |labels| labels[i] == Some(true),
+        )
+    };
+    dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+    let mut labels = classify(&cdt);
+    for triangle in cdt.inner_faces() {
+        let nodes @ [a, b, c] = triangle.vertices().map(|v| *v.data());
+        if (a.mesh == b.mesh || b.mesh == c.mesh || c.mesh == a.mesh)
+            && interior(&labels, triangle.index(), nodes)
+        {
+            extra.push(center(nodes));
+        }
+    }
+    if !extra.is_empty() {
+        for uv in extra {
+            seed(&mut cdt, uv, position(uv, dec)?, mesh, options)?;
+        }
+        dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+        labels = classify(&cdt);
+    }
+    let start = mesh.triangles.len();
+    dec.charge_traversal(cdt.num_inner_faces() as u64)?;
+    for triangle in cdt.inner_faces() {
+        let nodes = triangle.vertices().map(|v| *v.data());
+        if !interior(&labels, triangle.index(), nodes) {
+            continue;
+        }
+        let mut vertices = nodes.map(|n| n.mesh);
+        if vertices[0] == vertices[1] || vertices[1] == vertices[2] || vertices[2] == vertices[0] {
+            continue;
+        }
+        if !same_sense {
+            vertices.swap(1, 2);
+        }
+        let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+        vertices.rotate_left(first);
+        mesh.triangles.push(Triangle {
+            vertices,
+            face: name.into(),
+        });
+    }
+    if mesh.triangles.len() == start {
+        return Err(Refusal::new(
+            GRID_TRIM_REFUSAL,
+            format!(
+                "face {name}: sampled source face has no previewable interior ({} rings, {} chart triangles)",
+                loops.len(),
+                cdt.num_inner_faces(),
+            ),
+        ));
+    }
+    mesh.triangles[start..].sort_unstable_by_key(|triangle| triangle.vertices);
+    mesh.faces.push(PreviewFace {
+        face: name.into(),
+        triangles: start..mesh.triangles.len(),
+    });
+    Ok(())
 }
 
 pub(super) trait SurfaceSamples {

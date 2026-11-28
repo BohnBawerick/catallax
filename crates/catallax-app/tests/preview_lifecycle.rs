@@ -231,7 +231,7 @@ fn caller_reserves_once_and_deferred_proof_cannot_take_a_fresh_allowance() {
 }
 
 #[test]
-fn exact_phase_caps_pass_and_one_unit_short_fails_without_borrowing() {
+fn short_preview_coarsens_but_short_proof_fails_without_borrowing() {
     let controller = Controller::default();
     let job = start(&controller, 4, allocation(), &MeshOptions::default());
     assert!(job.prove(&mut Decider::default()).publish());
@@ -273,8 +273,11 @@ fn exact_phase_caps_pass_and_one_unit_short_fails_without_borrowing() {
         },
         &mut Decider::default(),
     );
-    assert!(answer.is_err());
-    assert!(preview_short.latest().is_none());
+    assert!(answer.unwrap().is_some());
+    let preview = preview_short.latest().unwrap();
+    assert!(matches!(preview.status(), Status::Unproved));
+    assert!(!preview.preview().brep().unwrap().mesh.triangles.is_empty());
+    assert!(preview.work().preview.used < caps.preview);
 }
 
 #[test]
@@ -303,7 +306,7 @@ fn zero_caller_allowance_and_overflow_never_publish() {
 }
 
 #[test]
-fn failed_edit_restores_last_proved_display_but_cannot_export_it_as_current() {
+fn proof_refusal_keeps_the_current_preview_but_cannot_export_it() {
     let controller = Controller::default();
     let first = start(&controller, 4, allocation(), &MeshOptions::default());
     assert!(first.prove(&mut Decider::default()).publish());
@@ -322,18 +325,19 @@ fn failed_edit_restores_last_proved_display_but_cannot_export_it_as_current() {
         },
         &MeshOptions::default(),
     );
-    let requested = controller.latest().unwrap().revision();
-    assert_eq!(controller.displayed().unwrap().revision(), requested);
+    let before = controller.displayed().unwrap();
+    let requested = before.revision();
     assert!(controller.confirmed().is_none());
     assert!(failing.prove(&mut Decider::default()).publish());
+    let displayed = controller.displayed().unwrap();
     assert!(matches!(
-        controller.latest().unwrap().status(),
-        Status::Failed(_)
+        displayed.status(),
+        Status::Failed(Error::Display(_))
     ));
-    assert_eq!(controller.latest().unwrap().revision(), requested);
+    assert_eq!(displayed.revision(), requested);
     assert_eq!(
-        controller.displayed().unwrap().revision(),
-        proved.revision()
+        displayed.preview().brep().unwrap().mesh,
+        before.preview().brep().unwrap().mesh
     );
     assert!(controller.confirmed().is_none());
 

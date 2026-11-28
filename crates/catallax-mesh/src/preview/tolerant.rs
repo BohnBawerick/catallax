@@ -3,21 +3,22 @@
 //! The carriers are sampled in binary64 through their display variants: the
 //! preview takes thousands of samples per face and claims no bound on any of
 //! them, and an enclosing evaluation of each costs a body's whole allowance.
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Write};
 
 use catallax_import::{
     Curve,
     geometry_source::Topology,
     tolerant::{
         admission::{NativeTrim, TolerantImport},
-        native::{DisplayCurve, DisplaySurface, NativeLocation},
+        native::{DisplayCurve, DisplaySurface, NativeLocation, NativeSurface},
     },
 };
-use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_numbers::{Decider, Rational, Refusal, refund_on_refusal};
 use spade::Triangulation;
 
 use super::imported::{
-    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, insert, push, seed_rectangles,
+    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, grid_face, insert, push,
+    seed_rectangles,
 };
 use crate::{PreviewEdge, PreviewMesh, PreviewOptions};
 
@@ -127,6 +128,31 @@ fn edge_samples(
     Ok(output)
 }
 
+fn grid_edge(
+    carrier: &EdgeCarrier,
+    ends: [usize; 2],
+    divisions: u32,
+    mesh: &mut PreviewMesh<String, String>,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<Vec<(f64, usize)>, Refusal> {
+    let divisions = match carrier {
+        EdgeCarrier::Line(_) => 1,
+        EdgeCarrier::Native(..) if ends[0] == ends[1] => divisions.max(4),
+        EdgeCarrier::Native(..) => divisions.max(2),
+    };
+    dec.charge_traversal(u64::from(divisions))?;
+    let mut output = Vec::with_capacity(divisions as usize + 1);
+    output.push((0.0, ends[0]));
+    for i in 1..divisions {
+        let fraction = f64::from(i) / f64::from(divisions);
+        let index = push(mesh, carrier.sample(fraction, dec)?, options)?;
+        output.push((fraction, index));
+    }
+    output.push((1.0, ends[1]));
+    Ok(output)
+}
+
 fn trim_seed(trim: &NativeTrim, fraction: f64) -> NativeLocation {
     let next = trim
         .samples
@@ -193,6 +219,85 @@ fn domain_loop(
     Ok(nodes)
 }
 
+fn cut_to_pole(
+    body: &mut PreviewMesh<String, String>,
+    mut rim: Vec<Node>,
+    source: &NativeSurface,
+    carrier: &Carrier,
+    closure: (bool, Option<(usize, f64)>),
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<Vec<Node>, Refusal> {
+    let failure = || failure("single periodic rim has no finite collapsed pole");
+    let (same_sense, vertex_loop) = closure;
+    let [first, last] = [rim[0].uv, rim.last().unwrap().uv];
+    let periods = source.periods();
+    let axis = (0..2)
+        .find(|&i| periods[i].is_some_and(|p| (last[i] - first[i]).abs() > p * 0.5))
+        .ok_or_else(failure)?;
+    let period = periods[axis].unwrap();
+    let normal = 1 - axis;
+    let positive = last[axis] > first[axis];
+    let side = usize::from(positive == (same_sense == (axis == 0)));
+    let bound = (0..source.chart_count()).filter_map(|i| source.domain(i)[normal][side].as_ref());
+    let bound = if side == 0 { bound.min() } else { bound.max() };
+    let mut uv = first;
+    let (pole_v, on_oriented_side) = if let Some(bound) = bound {
+        (bound.to_f64_nearest(), true)
+    } else {
+        // STEP cones have an unbounded axial chart. Intersect two sampled
+        // meridians, then check that the other meridians meet there too.
+        let radial = |h, dec: &mut Decider| -> Result<P, Refusal> {
+            let mut a = first;
+            a[normal] = h;
+            let mut b = a;
+            b[axis] += period * 0.5;
+            let (a, b) = (carrier.position(a, dec)?, carrier.position(b, dec)?);
+            Ok(std::array::from_fn(|i| b[i] - a[i]))
+        };
+        let h = first[normal];
+        let step = h.abs().max(1.0) * if side == 0 { -1.0 } else { 1.0 };
+        let a = radial(h, dec)?;
+        let b = radial(h + step, dec)?;
+        let i = (0..3)
+            .max_by(|&i, &j| (b[i] - a[i]).abs().total_cmp(&(b[j] - a[j]).abs()))
+            .unwrap();
+        let t = a[i] / (a[i] - b[i]);
+        if !t.is_finite() || t == 0.0 || (t < 0.0 && vertex_loop.is_none()) {
+            return Err(failure());
+        }
+        (h + t * step, t > 0.0)
+    };
+    uv[normal] = pole_v;
+    let pole = carrier.position(uv, dec)?;
+    let rounding = body.positions[rim[0].mesh]
+        .iter()
+        .chain(&pole)
+        .fold(1.0_f64, |scale, x| scale.max(x.abs()))
+        * 128.0
+        * f64::EPSILON;
+    for station in [0.25, 0.5, 0.75] {
+        let mut sample = uv;
+        sample[axis] += station * period;
+        if distance(carrier.position(sample, dec)?, pole) > rounding {
+            return Err(failure());
+        }
+    }
+    let chord = options.chord_tolerance.to_f64_nearest();
+    let matching = vertex_loop.filter(|&(i, tolerance)| {
+        distance(pole, body.positions[i]) <= tolerance.max(rounding).max(chord)
+    });
+    let mesh = match matching {
+        Some((index, _)) => index,
+        None if on_oriented_side => push(body, pole, options)?,
+        None => return Err(failure()),
+    };
+    let mut far = uv;
+    far[axis] = last[axis];
+    rim.extend([Node { uv: far, mesh }, Node { uv, mesh }]);
+    Ok(rim)
+}
+
 // Cut two noncontractible rims along one common source-parameter seam. The
 // additional cut nodes are display samples, not new pickable B-rep edges.
 fn cut_band(
@@ -201,9 +306,13 @@ fn cut_band(
     mesh: &mut PreviewMesh<String, String>,
     options: &PreviewOptions,
     dec: &mut Decider,
+    grid: bool,
 ) -> Result<Vec<Node>, Refusal> {
     if rims.len() != 2 {
-        return Err(failure("periodic trim needs a paired-rim seam"));
+        return Err(failure(format!(
+            "periodic trim has {} winding rims; two must be paired",
+            rims.len()
+        )));
     }
     let delta = |rim: &[Node]| {
         [
@@ -227,6 +336,28 @@ fn cut_band(
         }
         if winding[axis] < 0.0 {
             rim.reverse();
+        }
+        if grid {
+            rim.pop();
+            let distance = |node: &Node| {
+                let delta = (node.uv[axis] - cut) / period;
+                (delta - delta.round()).abs()
+            };
+            let split = rim
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))
+                .unwrap()
+                .0;
+            let shift = ((cut - rim[split].uv[axis]) / period).round() * period;
+            for (i, node) in rim.iter_mut().enumerate() {
+                node.uv[axis] += shift + if i < split { period } else { 0.0 };
+            }
+            rim.rotate_left(split);
+            let mut last = rim[0];
+            last.uv[axis] += period;
+            rim.push(last);
+            continue;
         }
         let shift = ((cut - rim[0].uv[axis]) / period).floor() * period;
         for node in rim.iter_mut() {
@@ -287,9 +418,46 @@ fn cut_band(
     Ok(first)
 }
 
+struct Omission {
+    kind: &'static str,
+    name: String,
+    reason: Refusal,
+}
+
+fn omit(
+    omissions: &mut Option<&mut Vec<Omission>>,
+    kind: &'static str,
+    name: &str,
+    reason: Refusal,
+) -> Result<(), Refusal> {
+    let Some(omissions) = omissions.as_mut() else {
+        return Err(reason);
+    };
+    if matches!(
+        reason.code,
+        "numbers.deadline"
+            | "numbers.operation-budget"
+            | "numbers.budget-exhausted"
+            | "mesh.preview-resource-limit"
+    ) || catallax_numbers::current_operation_work().exhausted
+    {
+        return Err(reason);
+    }
+    omissions.push(Omission {
+        kind,
+        name: name.into(),
+        reason,
+    });
+    Ok(())
+}
+
 /// Preview one admitted native definition in its source-body coordinates.
 /// Assembly placement remains in the source document, not in this body-local
 /// preview. The returned triangles have no watertightness or deviation claim.
+/// If a retained trim cannot be drawn, returns the usable faces and shared
+/// edges and logs the omissions. Draw the edges even when `triangles` is
+/// empty: some admitted bodies have a visible boundary but no drawable face.
+/// This preview never certifies a body.
 pub fn preview_tolerant_body(
     import: &TolerantImport,
     index: usize,
@@ -297,11 +465,61 @@ pub fn preview_tolerant_body(
     dec: &mut Decider,
 ) -> Result<PreviewMesh<String, String>, Refusal> {
     super::validate(options)?;
-    let body = import
-        .bodies()
-        .get(index)
-        .ok_or_else(|| failure("body index is out of range"))?
-        .definition();
+    if index >= import.bodies().len() {
+        return Err(failure("body index is out of range"));
+    }
+    if let Ok(mesh) = refund_on_refusal(|| build(import, index, options, None, None, dec)) {
+        return Ok(mesh);
+    }
+    let complete = refund_on_refusal(|| {
+        super::coarsen(options, dec, |divisions, _, dec| {
+            build(import, index, options, Some(divisions), None, dec)
+        })
+    });
+    if complete.is_ok() {
+        return complete;
+    }
+    let mut omissions = Vec::new();
+    let mesh = super::coarsen(options, dec, |divisions, _, dec| {
+        omissions.clear();
+        build(
+            import,
+            index,
+            options,
+            Some(divisions),
+            Some(&mut omissions),
+            dec,
+        )
+    })?;
+    if mesh.triangles.is_empty()
+        && !mesh.edges.iter().any(|edge| {
+            edge.vertices
+                .windows(2)
+                .any(|pair| distance(mesh.positions[pair[0]], mesh.positions[pair[1]]) > 0.0)
+        })
+    {
+        return complete;
+    }
+    let mut log = std::io::stderr().lock();
+    for omitted in omissions {
+        let _ = writeln!(
+            log,
+            "native preview omitted {} {}: {}: {}",
+            omitted.kind, omitted.name, omitted.reason.code, omitted.reason.detail,
+        );
+    }
+    Ok(mesh)
+}
+
+fn build(
+    import: &TolerantImport,
+    index: usize,
+    options: &PreviewOptions,
+    grid: Option<u32>,
+    mut omissions: Option<&mut Vec<Omission>>,
+    dec: &mut Decider,
+) -> Result<PreviewMesh<String, String>, Refusal> {
+    let body = import.bodies()[index].definition();
     let trims: Vec<_> = import
         .evidence()
         .native_trims
@@ -331,50 +549,65 @@ pub fn preview_tolerant_body(
         let Some(trim) = first_trim.get(edge.name.as_str()) else {
             continue;
         };
-        let ends = edge.vertices.map(|vertex| vertices[vertex]);
-        let carrier = if edge.degenerate || matches!(edge.curve, Curve::Line(..)) {
-            EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
-        } else {
-            let source_id = edge
-                .name
-                .strip_prefix('#')
-                .and_then(|name| name.parse().ok());
-            let curve = match source_id
-                .map(|entity| import.parsed_source().topology(entity, dec))
-                .transpose()
-                .map_err(|error| failure(format!("{error:?}")))?
-            {
-                Some(Topology::Edge {
-                    curve: Some(curve), ..
-                }) => import.native_curve(curve),
-                _ => None,
+        let position_start = mesh.positions.len();
+        let sample = |mesh: &mut PreviewMesh<String, String>, dec: &mut Decider| {
+            let ends = edge.vertices.map(|vertex| vertices[vertex]);
+            let carrier = if edge.degenerate || matches!(edge.curve, Curve::Line(..)) {
+                EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
+            } else {
+                let source_id = edge
+                    .name
+                    .strip_prefix('#')
+                    .and_then(|name| name.parse().ok());
+                let curve = match source_id
+                    .map(|entity| import.parsed_source().topology(entity, dec))
+                    .transpose()
+                    .map_err(|error| failure(format!("{error:?}")))?
+                {
+                    Some(Topology::Edge {
+                        curve: Some(curve), ..
+                    }) => import.native_curve(curve),
+                    _ => None,
+                }
+                .ok_or_else(|| failure("active edge has no retained native carrier"))?
+                .for_display(dec)
+                .map(Box::new)
+                .map_err(source_error)?;
+                let first = trim.samples.first().unwrap().curve.parameters[0];
+                let last = trim.samples.last().unwrap().curve.parameters[0];
+                EdgeCarrier::Native(
+                    curve,
+                    if trim.forward {
+                        [first, last]
+                    } else {
+                        [last, first]
+                    },
+                )
+            };
+            if let Some(divisions) = grid {
+                grid_edge(&carrier, ends, divisions, mesh, options, dec)
+            } else {
+                edge_samples(
+                    &carrier,
+                    ends,
+                    options
+                        .chord_tolerance
+                        .to_f64_nearest()
+                        .max(edge.tolerance_mm().to_f64_nearest()),
+                    mesh,
+                    options,
+                    dec,
+                )
             }
-            .ok_or_else(|| failure("active edge has no retained native carrier"))?
-            .for_display(dec)
-            .map(Box::new)
-            .map_err(source_error)?;
-            let first = trim.samples.first().unwrap().curve.parameters[0];
-            let last = trim.samples.last().unwrap().curve.parameters[0];
-            EdgeCarrier::Native(
-                curve,
-                if trim.forward {
-                    [first, last]
-                } else {
-                    [last, first]
-                },
-            )
         };
-        let samples = edge_samples(
-            &carrier,
-            ends,
-            options
-                .chord_tolerance
-                .to_f64_nearest()
-                .max(edge.tolerance_mm().to_f64_nearest()),
-            &mut mesh,
-            options,
-            dec,
-        )?;
+        let samples = match sample(&mut mesh, dec) {
+            Ok(samples) => samples,
+            Err(reason) => {
+                omit(&mut omissions, "edge", &edge.name, reason)?;
+                mesh.positions.truncate(position_start);
+                continue;
+            }
+        };
         mesh.edges.push(PreviewEdge {
             edge: edge.name.clone(),
             vertices: samples.iter().map(|(_, index)| *index).collect(),
@@ -382,248 +615,291 @@ pub fn preview_tolerant_body(
         edges.insert(edge.name.as_str(), samples);
     }
     for face in body.shells().iter().flat_map(|shell| &shell.faces) {
-        let collapsed_vertices = face
-            .loops
-            .iter()
-            .flat_map(|boundary| &boundary.edges)
-            .map(|usage| &body.edges()[usage.edge])
-            .filter(|edge| edge.degenerate)
-            .flat_map(|edge| edge.vertices.map(|vertex| vertices[vertex]))
-            .collect::<std::collections::BTreeSet<_>>();
-        let source_id = face
-            .name
-            .strip_prefix('#')
-            .and_then(|name| name.parse().ok());
-        let surface = match source_id
-            .map(|entity| import.parsed_source().topology(entity, dec))
-            .transpose()
-            .map_err(|error| failure(format!("{error:?}")))?
-        {
-            Some(Topology::Face {
-                surface: Some(surface),
-                ..
-            }) => import.native_surface(surface),
-            _ => None,
-        };
-        let carrier = match surface {
-            Some(surface) => {
-                Carrier::Native(Box::new(surface.for_display(dec).map_err(source_error)?))
+        let start = (mesh.positions.len(), mesh.triangles.len(), mesh.faces.len());
+        let draw = |mesh: &mut PreviewMesh<String, String>, dec: &mut Decider| {
+            let collapsed_vertices = face
+                .loops
+                .iter()
+                .flat_map(|boundary| &boundary.edges)
+                .map(|usage| &body.edges()[usage.edge])
+                .filter(|edge| edge.degenerate)
+                .flat_map(|edge| edge.vertices.map(|vertex| vertices[vertex]))
+                .collect::<std::collections::BTreeSet<_>>();
+            let source_id = face
+                .name
+                .strip_prefix('#')
+                .and_then(|name| name.parse().ok());
+            let surface = match source_id
+                .map(|entity| import.parsed_source().topology(entity, dec))
+                .transpose()
+                .map_err(|error| failure(format!("{error:?}")))?
+            {
+                Some(Topology::Face {
+                    surface: Some(surface),
+                    ..
+                }) => import.native_surface(surface),
+                _ => None,
+            };
+            let carrier = match surface {
+                Some(surface) => {
+                    Carrier::Native(Box::new(surface.for_display(dec).map_err(source_error)?))
+                }
+                None => Carrier::Inferred(SourceChart::new(&face.surface, dec)?),
+            };
+            let mut face_options = options.clone();
+            if let Some(tolerance) = import.evidence().tolerances.iter().find(|entry| {
+                entry.body == body.name() && entry.kind == "face" && entry.entity == face.name
+            }) {
+                face_options.chord_tolerance = face_options.chord_tolerance.max(
+                    Rational::from_f64_exact(tolerance.tolerance_mm)
+                        .ok_or_else(|| failure("nonfinite face tolerance"))?,
+                );
             }
-            None => Carrier::Inferred(SourceChart::new(&face.surface, dec)?),
-        };
-        let mut face_options = options.clone();
-        if let Some(tolerance) = import.evidence().tolerances.iter().find(|entry| {
-            entry.body == body.name() && entry.kind == "face" && entry.entity == face.name
-        }) {
-            face_options.chord_tolerance = face_options.chord_tolerance.max(
-                Rational::from_f64_exact(tolerance.tolerance_mm)
-                    .ok_or_else(|| failure("nonfinite face tolerance"))?,
-            );
-        }
-        let mut loops = Vec::new();
-        let mut winding = Vec::new();
-        for (boundary_index, boundary) in face.loops.iter().enumerate() {
-            if boundary.edges.is_empty() {
-                continue;
-            }
-            let trim_rows = face_trims
-                .get(&(face.name.as_str(), boundary_index))
-                .ok_or_else(|| failure("native trim evidence is missing"))?;
-            let mut nodes: Vec<Node> = Vec::new();
-            for offset in 0..boundary.edges.len() {
-                let usage_index = if boundary.orientation {
-                    offset
-                } else {
-                    boundary.edges.len() - 1 - offset
-                };
-                let usage = &boundary.edges[usage_index];
-                let trim = trim_rows[usage_index];
-                let edge = &body.edges()[usage.edge];
-                let row = &edges[edge.name.as_str()];
-                // What the body records for this edge and the vertices it
-                // was made to end at, on top of the face's own chord target.
-                let recorded = edge
-                    .vertices
-                    .iter()
-                    .map(|vertex| body.vertices()[*vertex].tolerance_mm())
-                    .fold(edge.tolerance_mm(), |most, each| most.max(each))
-                    .to_f64_nearest();
-                let reach = face_options.chord_tolerance.to_f64_nearest() + recorded;
-                for offset in 0..row.len() {
-                    let (fraction, index) = row[if usage.forward == boundary.orientation {
+            let mut loops = Vec::new();
+            let mut winding = Vec::new();
+            for (boundary_index, boundary) in face.loops.iter().enumerate() {
+                if boundary.edges.is_empty() {
+                    continue;
+                }
+                let trim_rows = face_trims
+                    .get(&(face.name.as_str(), boundary_index))
+                    .ok_or_else(|| failure("native trim evidence is missing"))?;
+                let mut nodes: Vec<Node> = Vec::new();
+                for offset in 0..boundary.edges.len() {
+                    let usage_index = if boundary.orientation {
                         offset
                     } else {
-                        row.len() - 1 - offset
-                    }];
-                    let collapsed = collapsed_vertices.contains(&index);
-                    if !collapsed && nodes.last().is_some_and(|node| node.mesh == index) {
-                        continue;
-                    }
-                    let seed = trim_seed(
-                        trim,
-                        if usage.forward {
-                            fraction
-                        } else {
-                            1.0 - fraction
-                        },
-                    );
-                    let uv = match &carrier {
-                        Carrier::Native(surface) => {
-                            let projection = surface
-                                .project(mesh.positions[index], Some(seed), dec)
-                                .map_err(source_error)?;
-                            // The face's triangles are measured on its carrier,
-                            // so a boundary sample's own miss is checked here,
-                            // once, against what the body admits for it.
-                            if projection.residual_mm > reach {
-                                return Err(failure(format!(
-                                    "a sample of edge {} is {:e} mm from face {}, past the {recorded:e} mm recorded for the edge",
-                                    edge.name, projection.residual_mm, face.name
-                                )));
-                            }
-                            projection.location.parameters
-                        }
-                        Carrier::Inferred(_) => {
-                            trim_seed(
-                                trim,
-                                if usage.forward {
-                                    fraction
-                                } else {
-                                    1.0 - fraction
-                                },
-                            )
-                            .parameters
-                        }
+                        boundary.edges.len() - 1 - offset
                     };
-                    if nodes.last().is_some_and(|node| {
-                        node.mesh == index && (node.uv[0] - uv[0]).hypot(node.uv[1] - uv[1]) <= 1e-8
-                    }) {
-                        continue;
+                    let usage = &boundary.edges[usage_index];
+                    let trim = trim_rows[usage_index];
+                    let edge = &body.edges()[usage.edge];
+                    let row = edges.get(edge.name.as_str()).ok_or_else(|| {
+                        failure(format!("shared edge {} has no preview samples", edge.name))
+                    })?;
+                    // What the body records for this edge and the vertices it
+                    // was made to end at, on top of the face's own chord target.
+                    let recorded = edge
+                        .vertices
+                        .iter()
+                        .map(|vertex| body.vertices()[*vertex].tolerance_mm())
+                        .fold(edge.tolerance_mm(), |most, each| most.max(each))
+                        .to_f64_nearest();
+                    let reach = face_options.chord_tolerance.to_f64_nearest() + recorded;
+                    for offset in 0..row.len() {
+                        let (fraction, index) = row[if usage.forward == boundary.orientation {
+                            offset
+                        } else {
+                            row.len() - 1 - offset
+                        }];
+                        let collapsed = collapsed_vertices.contains(&index);
+                        if !collapsed && nodes.last().is_some_and(|node| node.mesh == index) {
+                            continue;
+                        }
+                        let seed = trim_seed(
+                            trim,
+                            if usage.forward {
+                                fraction
+                            } else {
+                                1.0 - fraction
+                            },
+                        );
+                        let uv = match &carrier {
+                            Carrier::Native(surface) if grid.is_none() => {
+                                let projection = surface
+                                    .project(mesh.positions[index], Some(seed), dec)
+                                    .map_err(source_error)?;
+                                // The face's triangles are measured on its carrier,
+                                // so a boundary sample's own miss is checked here,
+                                // once, against what the body admits for it.
+                                if projection.residual_mm > reach {
+                                    return Err(failure(format!(
+                                        "a sample of edge {} is {:e} mm from face {}, past the {recorded:e} mm recorded for the edge",
+                                        edge.name, projection.residual_mm, face.name
+                                    )));
+                                }
+                                projection.location.parameters
+                            }
+                            _ => seed.parameters,
+                        };
+                        if nodes.last().is_some_and(|node| {
+                            node.mesh == index
+                                && (node.uv[0] - uv[0]).hypot(node.uv[1] - uv[1]) <= 1e-8
+                        }) {
+                            continue;
+                        }
+                        nodes.push(Node { uv, mesh: index });
                     }
-                    nodes.push(Node { uv, mesh: index });
                 }
-            }
-            if nodes.len() < 4 || nodes[0].mesh != nodes.last().unwrap().mesh {
-                return Err(failure("native trim loop is not closed"));
-            }
-            let first = nodes[0];
-            let last = *nodes.last().unwrap();
-            let first_usage = &boundary.edges[if boundary.orientation {
-                0
-            } else {
-                boundary.edges.len() - 1
-            }];
-            let vertex = body.edges()[first_usage.edge].vertices
-                [usize::from(first_usage.forward != boundary.orientation)];
-            let tolerance = body.vertices()[vertex].tolerance_mm().to_f64_nearest();
-            for endpoint in [first, last] {
-                if distance(
-                    carrier.position(endpoint.uv, dec)?,
-                    mesh.positions[first.mesh],
-                ) > tolerance
-                {
-                    return Err(failure(
-                        "native UV closure exceeds its measured vertex tolerance",
-                    ));
+                if nodes.len() < 4 || nodes[0].mesh != nodes.last().unwrap().mesh {
+                    return Err(failure("native trim loop is not closed"));
                 }
-            }
-            let periodic = match &carrier {
-                Carrier::Native(surface) => {
-                    surface
-                        .periods()
+                let first = nodes[0];
+                let last = *nodes.last().unwrap();
+                let first_usage = &boundary.edges[if boundary.orientation {
+                    0
+                } else {
+                    boundary.edges.len() - 1
+                }];
+                let vertex = body.edges()[first_usage.edge].vertices
+                    [usize::from(first_usage.forward != boundary.orientation)];
+                let tolerance = body.vertices()[vertex].tolerance_mm().to_f64_nearest();
+                for endpoint in [first, last].into_iter().filter(|_| grid.is_none()) {
+                    if distance(
+                        carrier.position(endpoint.uv, dec)?,
+                        mesh.positions[first.mesh],
+                    ) > tolerance
+                    {
+                        return Err(failure(
+                            "native UV closure exceeds its measured vertex tolerance",
+                        ));
+                    }
+                }
+                let periodic = match &carrier {
+                    Carrier::Native(surface) => {
+                        surface
+                            .periods()
+                            .into_iter()
+                            .enumerate()
+                            .any(|(axis, period)| {
+                                period.is_some_and(|period| {
+                                    let delta = last.uv[axis] - first.uv[axis];
+                                    let turns = (delta / period).round();
+                                    turns.abs() >= 1.0
+                                        && (delta - turns * period).abs() <= period * 1e-6
+                                })
+                            })
+                    }
+                    Carrier::Inferred(surface) if grid.is_some() => surface
+                        .periodic()
                         .into_iter()
                         .enumerate()
-                        .any(|(axis, period)| {
-                            period.is_some_and(|period| {
-                                let delta = last.uv[axis] - first.uv[axis];
-                                let turns = (delta / period).round();
-                                turns.abs() >= 1.0
-                                    && (delta - turns * period).abs() <= period * 1e-6
-                            })
-                        })
+                        .any(|(axis, periodic)| {
+                            periodic && (last.uv[axis] - first.uv[axis]).abs() > 0.5
+                        }),
+                    Carrier::Inferred(_) => {
+                        (first.uv[0] - last.uv[0]).hypot(first.uv[1] - last.uv[1]) > 1e-8
+                    }
+                };
+                if periodic {
+                    winding.push(nodes);
+                } else {
+                    nodes.pop();
+                    loops.push(nodes);
                 }
-                Carrier::Inferred(_) => {
-                    (first.uv[0] - last.uv[0]).hypot(first.uv[1] - last.uv[1]) > 1e-8
-                }
-            };
-            if periodic {
-                winding.push(nodes);
-            } else {
-                nodes.pop();
-                loops.push(nodes);
             }
-        }
-        let natural = import
-            .evidence()
-            .native_domains
-            .iter()
-            .find(|domain| domain.body == body.name() && domain.face == face.name);
-        if let Some(domain) = natural {
-            loops.push(domain_loop(
+            let natural = import
+                .evidence()
+                .native_domains
+                .iter()
+                .find(|domain| domain.body == body.name() && domain.face == face.name);
+            if let Some(domain) = natural {
+                loops.push(domain_loop(
+                    &carrier,
+                    domain.bounds,
+                    mesh,
+                    &face_options,
+                    dec,
+                )?);
+            }
+            if grid.is_some()
+                && winding.len() == 1
+                && let Some(source) = surface
+            {
+                let mut poles = face.loops.iter().filter_map(|boundary| boundary.vertex);
+                let explicit = poles.next().filter(|_| poles.next().is_none()).map(|i| {
+                    (
+                        vertices[i],
+                        body.vertices()[i].tolerance_mm().to_f64_nearest(),
+                    )
+                });
+                loops.push(cut_to_pole(
+                    mesh,
+                    winding.pop().unwrap(),
+                    source,
+                    &carrier,
+                    (face.same_sense, explicit),
+                    &face_options,
+                    dec,
+                )?);
+            } else if !winding.is_empty() {
+                loops.push(cut_band(
+                    winding,
+                    &carrier,
+                    mesh,
+                    &face_options,
+                    dec,
+                    grid.is_some(),
+                )?);
+            }
+            let first = loops
+                .first()
+                .and_then(|nodes| nodes.first())
+                .ok_or_else(|| failure("face has no sampled parameter region"))?;
+            let mut bounds = [first.uv; 2];
+            for node in loops.iter().flatten() {
+                for axis in 0..2 {
+                    bounds[0][axis] = bounds[0][axis].min(node.uv[axis]);
+                    bounds[1][axis] = bounds[1][axis].max(node.uv[axis]);
+                }
+            }
+            if let Some(divisions) = grid {
+                return grid_face(
+                    &face.name,
+                    face.same_sense,
+                    &carrier,
+                    bounds,
+                    &mut loops,
+                    mesh,
+                    divisions,
+                    &face_options,
+                    dec,
+                );
+            }
+            let mut cdt = Cdt::new();
+            for boundary in &loops {
+                for i in 0..boundary.len() {
+                    dec.charge_work(1)?;
+                    let a = insert(&mut cdt, boundary[i])?;
+                    let b = insert(&mut cdt, boundary[(i + 1) % boundary.len()])?;
+                    if a == b || !cdt.can_add_constraint(a, b) {
+                        return Err(failure("native preview trim constraints cross or collapse"));
+                    }
+                    cdt.add_constraint(a, b);
+                }
+            }
+            seed_rectangles(&carrier, bounds, &loops, &mut cdt, mesh, &face_options, dec)?;
+            finish_face(
+                FaceOutput {
+                    name: &face.name,
+                    same_sense: face.same_sense,
+                    skip_collapsed: natural.is_some()
+                        || face
+                            .loops
+                            .iter()
+                            .flat_map(|boundary| &boundary.edges)
+                            .any(|usage| body.edges()[usage.edge].degenerate),
+                    // A vertex of a tolerant body is where its edges were made to
+                    // meet, up to its tolerance away from each face's carrier.
+                    // The projection above has bounded that miss. An inferred
+                    // carrier takes its parameters from the trim evidence without
+                    // a projection, and is measured as it was.
+                    off_carrier_nodes: matches!(carrier, Carrier::Native(_)),
+                },
                 &carrier,
-                domain.bounds,
-                &mut mesh,
+                cdt,
+                &loops,
+                mesh,
                 &face_options,
                 dec,
-            )?);
+            )
+        };
+        if let Err(reason) = draw(&mut mesh, dec) {
+            omit(&mut omissions, "face", &face.name, reason)?;
+            mesh.positions.truncate(start.0);
+            mesh.triangles.truncate(start.1);
+            mesh.faces.truncate(start.2);
         }
-        if !winding.is_empty() {
-            loops.push(cut_band(winding, &carrier, &mut mesh, &face_options, dec)?);
-        }
-        let first = loops
-            .first()
-            .and_then(|nodes| nodes.first())
-            .ok_or_else(|| failure("face has no sampled parameter region"))?;
-        let mut bounds = [first.uv; 2];
-        let mut cdt = Cdt::new();
-        for boundary in &loops {
-            for i in 0..boundary.len() {
-                dec.charge_work(1)?;
-                for axis in 0..2 {
-                    bounds[0][axis] = bounds[0][axis].min(boundary[i].uv[axis]);
-                    bounds[1][axis] = bounds[1][axis].max(boundary[i].uv[axis]);
-                }
-                let a = insert(&mut cdt, boundary[i])?;
-                let b = insert(&mut cdt, boundary[(i + 1) % boundary.len()])?;
-                if a == b || !cdt.can_add_constraint(a, b) {
-                    return Err(failure("native preview trim constraints cross or collapse"));
-                }
-                cdt.add_constraint(a, b);
-            }
-        }
-        seed_rectangles(
-            &carrier,
-            bounds,
-            &loops,
-            &mut cdt,
-            &mut mesh,
-            &face_options,
-            dec,
-        )?;
-        finish_face(
-            FaceOutput {
-                name: &face.name,
-                same_sense: face.same_sense,
-                skip_collapsed: natural.is_some()
-                    || face
-                        .loops
-                        .iter()
-                        .flat_map(|boundary| &boundary.edges)
-                        .any(|usage| body.edges()[usage.edge].degenerate),
-                // A vertex of a tolerant body is where its edges were made to
-                // meet, up to its tolerance away from each face's carrier.
-                // The projection above has bounded that miss. An inferred
-                // carrier takes its parameters from the trim evidence without
-                // a projection, and is measured as it was.
-                off_carrier_nodes: matches!(carrier, Carrier::Native(_)),
-            },
-            &carrier,
-            cdt,
-            &loops,
-            &mut mesh,
-            &face_options,
-            dec,
-        )?;
     }
     dec.check_deadline()?;
     Ok(mesh)

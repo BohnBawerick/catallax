@@ -207,6 +207,7 @@ async fn check_p5(adapter: wgpu::Adapter) {
     check_rational_patch(&gpu, &device, &queue).await;
     check_ellipse_patch(&gpu, &device, &queue).await;
     check_analytic_patches(&gpu, &device, &queue).await;
+    check_trim_at_grid_station(&gpu, &device, &queue).await;
     let recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
     let mut dec = Decider::new(BudgetPolicy {
         max_work: 20_000_000,
@@ -430,6 +431,61 @@ async fn check_patch(
             .zip(n)
             .all(|(&a, b)| (a - b).abs() < 1e-5)
     );
+}
+
+async fn check_trim_at_grid_station(gpu: &Mesher, device: &wgpu::Device, queue: &wgpu::Queue) {
+    use catallax_mesh::float::{DisplayFrame, DisplaySurface, DisplayTrimSample};
+
+    let corners = [[0., 0., 0.], [1., 0., 0.], [1., 1., 0.], [0., 1., 0.]];
+    let mut description = rectangular_patch(
+        DisplaySurface::Plane(DisplayFrame {
+            origin: [0., 0., 0.],
+            x: [1., 0., 0.],
+            y: [0., 1., 0.],
+            z: [0., 0., 1.],
+        }),
+        [[0., 1.]; 2],
+        corners,
+    );
+    // The regular interior station is distinct in the CDT, but aliases this
+    // notch's tip in the GPU's upload coordinates.
+    let tip = [0.5, 0.5 + 1e-10, 0.];
+    description.edges[0].points.insert(3, tip);
+    description.faces[0].loops[0].uses[0].samples = description.edges[0]
+        .points
+        .iter()
+        .enumerate()
+        .map(|(point, &[u, v, _])| DisplayTrimSample { point, uv: [u, v] })
+        .collect();
+    let mesh = gpu
+        .mesh(&description, |_| FaceDetail([2, 2]))
+        .await
+        .unwrap();
+    let (vertices, indices) = readback(device, queue, &mesh.buffers.unwrap()).await;
+    let position = |i| vertices[i as usize].position;
+    let mut twice_area = 0.0;
+    let mut chords = BTreeSet::new();
+    for &triangle in indices.as_chunks::<3>().0 {
+        let [a, b, c] = triangle.map(position);
+        let area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        assert!(
+            area > 0.0,
+            "collapsed or inverted triangle: {a:?} {b:?} {c:?}"
+        );
+        twice_area += area;
+        for i in 0..3 {
+            let key = |i| position(i).map(f32::to_bits);
+            chords.insert((key(triangle[i]), key(triangle[(i + 1) % 3])));
+        }
+    }
+    assert!((twice_area - 1.5).abs() < 1e-6);
+    for pair in description.edges[0].points.windows(2) {
+        let key = |[x, y, z]: [f64; 3]| [x as f32, y as f32, z as f32, 1.0].map(f32::to_bits);
+        assert!(
+            chords.contains(&(key(pair[0]), key(pair[1]))),
+            "lost trim chord"
+        );
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::BTreeMap};
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::{
-    BSplineCurve, BSplineSurface, RollingPipe,
+    BSplineCurve, BSplineSurface, RationalAtlas, RollingPipe,
     tessellation::{
         RationalSpan, chord_bound_interval, rational_spans, triangle_chord_bound_interval,
     },
@@ -769,6 +769,77 @@ impl SplineChart {
         } else {
             rational_spans(surface, dec)?
         };
+        Self::with_pieces(
+            pieces,
+            rail_spans,
+            source_domain,
+            periodic,
+            join_scale,
+            normal_station,
+            normals,
+            pipe_normal,
+            dec,
+        )
+    }
+
+    pub(super) fn atlas(
+        atlas: &RationalAtlas,
+        periodic: [bool; 2],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let source = atlas.source();
+        let domain = source.domain();
+        let area = |[u, v]: [[&Rational; 2]; 2]| &(u[1] - u[0]) * &(v[1] - v[0]);
+        let mut covered = Rational::zero();
+        let mut bounds = atlas.charts()[0]
+            .patch()
+            .domain()
+            .each_ref()
+            .map(|axis| axis.each_ref());
+        let mut pieces = Vec::with_capacity(atlas.charts().len());
+        for chart in atlas.charts() {
+            let patch = chart.patch();
+            let cell = patch.domain().each_ref().map(|axis| axis.each_ref());
+            covered = covered + area(cell);
+            for axis in 0..2 {
+                bounds[axis][0] = bounds[axis][0].min(cell[axis][0]);
+                bounds[axis][1] = bounds[axis][1].max(cell[axis][1]);
+            }
+            pieces.extend(rational_spans(patch.carrier(), dec)?);
+        }
+        // A logical face may retain only part of its source carrier. Keep
+        // source coordinates for boundary hints, but check that the actual
+        // cells cover their own rectangle, without gaps in the face proof.
+        if covered != area(bounds) {
+            return Err(failure(
+                "a trimmed spline atlas has gaps in its chart rectangle",
+            ));
+        }
+        Self::with_pieces(
+            pieces,
+            Vec::new(),
+            domain,
+            periodic,
+            [None; 2],
+            None,
+            SplineNormals::Patch,
+            None,
+            dec,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn with_pieces(
+        pieces: Vec<RationalSpan>,
+        rail_spans: Vec<RailSpan>,
+        source_domain: [[&Rational; 2]; 2],
+        periodic: [bool; 2],
+        join_scale: [Option<Interval>; 2],
+        normal_station: Option<f64>,
+        normals: SplineNormals<'_>,
+        pipe_normal: Option<PipeNormal>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         let spans: Vec<_> = pieces
             .into_iter()
             .map(|span| {
@@ -829,7 +900,7 @@ impl SplineChart {
             periodic,
             source_domain: source_domain.map(|bounds| bounds.map(Rational::to_f64_nearest)),
             normal_station,
-            subdivide_normals: saddle,
+            subdivide_normals: matches!(normals, SplineNormals::Saddle),
             patch_sampling: matches!(normals, SplineNormals::Patch),
             stretch: if stretch.is_finite() && stretch > 0.0 {
                 stretch

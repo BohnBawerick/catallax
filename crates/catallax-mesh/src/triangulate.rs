@@ -2966,6 +2966,7 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
             | SplineSupport::LinearFillet(_)
             | SplineSupport::ObliqueDraft(_)
             | SplineSupport::RationalPatch(_)
+            | SplineSupport::RationalAtlas(_)
             | SplineSupport::RollingPipe(_)
             | SplineSupport::RollingSphere(_)
             | SplineSupport::SplineFillet(_)),
@@ -2978,11 +2979,6 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
                 saddle.definition().law().ring,
                 catallax_shapes::SaddleRing::Crossing { .. }
             ) =>
-        {
-            Some(support)
-        }
-        Surface::BSpline(support @ SplineSupport::RationalAtlas(atlas))
-            if atlas.charts().len() == 1 =>
         {
             Some(support)
         }

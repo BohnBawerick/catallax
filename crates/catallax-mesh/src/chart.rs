@@ -250,24 +250,33 @@ impl Chart {
         } else {
             [None; 2]
         };
-        let spline = SplineChart::new(
-            Self::carrier(support),
-            periodic,
-            join_scale,
-            split_spans,
-            normal_station,
-            match support {
-                SplineSupport::BezierExtrusion(_)
-                | SplineSupport::RationalAtlas(_)
-                | SplineSupport::RationalPatch(_)
-                | SplineSupport::SplineFillet(_) => SplineNormals::Patch,
-                SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
-                SplineSupport::RollingMitre(_) => SplineNormals::Mitre,
-                SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
-                _ => SplineNormals::Carrier,
-            },
-            dec,
-        )?;
+        // A cut can keep the logical trim without the producer's cell body.
+        // Mesh that trim once in source UV, using every atlas cell for error
+        // bounds. A join has one UV and one mesh index, not two sampled sides.
+        let spline = if let SplineSupport::RationalAtlas(atlas) = support
+            && atlas.charts().len() > 1
+        {
+            SplineChart::atlas(atlas, periodic, dec)?
+        } else {
+            SplineChart::new(
+                Self::carrier(support),
+                periodic,
+                join_scale,
+                split_spans,
+                normal_station,
+                match support {
+                    SplineSupport::BezierExtrusion(_)
+                    | SplineSupport::RationalAtlas(_)
+                    | SplineSupport::RationalPatch(_)
+                    | SplineSupport::SplineFillet(_) => SplineNormals::Patch,
+                    SplineSupport::RollingSaddle(_) => SplineNormals::Saddle,
+                    SplineSupport::RollingMitre(_) => SplineNormals::Mitre,
+                    SplineSupport::RollingPipe(pipe) => SplineNormals::Pipe(pipe),
+                    _ => SplineNormals::Carrier,
+                },
+                dec,
+            )?
+        };
         let fixed = FixedTrim::new(model, face, support, &spline, options, dec)?;
         Ok(Self {
             surface: Surface::BSpline(support.clone()),
@@ -304,7 +313,9 @@ impl Chart {
 
     pub(crate) fn carrier(support: &SplineSupport) -> &catallax_shapes::BSplineSurface {
         match support {
-            SplineSupport::RationalAtlas(atlas) => atlas.charts()[0].patch().carrier(),
+            SplineSupport::RationalAtlas(atlas) if atlas.charts().len() == 1 => {
+                atlas.charts()[0].patch().carrier()
+            }
             _ => support.carrier(),
         }
     }

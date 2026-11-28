@@ -109,8 +109,10 @@ fn crossing(
     Err(failure("the root has no certified finite contact order"))
 }
 
+const SECTION_REFUSAL: &str = "intersect.rational-patch-section";
+
 fn failure(detail: &str) -> Refusal {
-    Refusal::new("intersect.rational-patch-section", detail)
+    Refusal::new(SECTION_REFUSAL, detail)
 }
 
 fn axis_polynomial(poly: &RealPoly, axis: usize, dec: &mut Decider) -> Result<RealPoly, Refusal> {

@@ -707,6 +707,33 @@ fn planar_holes_and_a_reversed_cylinder_share_every_boundary_segment() {
 }
 
 #[test]
+fn a_bore_near_a_round_rim_refines_shared_chords() {
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let stock = topology::cylinder(&mut model, 10.into(), 2.into(), &Pose::identity()).unwrap();
+    let radius = Rational::from_ratio(1, 20).unwrap();
+    let station = Rational::from_ratio(994_999, 100_000).unwrap();
+    let rotation = Pose::new(
+        Rotation::identity(),
+        RVector3::new(
+            &station * &Rational::from_ratio(9_999, 10_001).unwrap(),
+            &station * &Rational::from_ratio(200, 10_001).unwrap(),
+            (-1).into(),
+        )
+        .into(),
+        &mut dec,
+    )
+    .unwrap();
+    let drill = topology::cylinder(&mut model, radius, 4.into(), &rotation).unwrap();
+    let body = boolean(&mut model, stock, drill, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let result = mesh(&model, body);
+    assert_closed(&result);
+    assert_accuracy(&model, &result);
+}
+
+#[test]
 fn traced_sphere_cylinder_intersection_is_shared_and_within_tolerance() {
     let mut model = Model::new();
     let a = topology::cylinder(&mut model, 1.into(), 6.into(), &pose(0, 0, -3)).unwrap();

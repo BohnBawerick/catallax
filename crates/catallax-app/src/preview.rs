@@ -85,26 +85,22 @@ pub struct PreviewApplicationBody {
 
 /// Requests a preview from an existing build without rebuilding or certifying it.
 ///
-/// Charge this call to the caller's preview/display allowance, separately from
-/// any later proof request. An active allowance always takes precedence; this
-/// call never resets, duplicates, or enlarges it. Without one, the usual
-/// 100M [`crate::DEFAULT_BUILD_WORK`] application limit applies.
+/// Uses an active caller allowance, if any. A preview that cannot reach the
+/// requested detail tries a coarser sampled grid within that allowance.
 pub fn preview_body(
     built: &Built,
     options: &PreviewOptions,
     decider: &mut Decider,
 ) -> Result<PreviewDisplay, Error> {
-    bounded_build(|| {
-        let faults = built.model.check(built.result);
-        if !faults.is_empty() {
-            return Err(Error::InvalidBody(faults));
-        }
-        let mesh = preview_mesh_body(&built.model, built.result, options, decider)
-            .map_err(Error::Display)?;
-        Ok(PreviewDisplay {
-            mesh,
-            names: result_names(&built.model, built.result),
-        })
+    let faults = built.model.check(built.result);
+    if !faults.is_empty() {
+        return Err(Error::InvalidBody(faults));
+    }
+    let mesh =
+        preview_mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)?;
+    Ok(PreviewDisplay {
+        mesh,
+        names: result_names(&built.model, built.result),
     })
 }
 
@@ -116,11 +112,9 @@ pub fn build_preview(
     options: &PreviewOptions,
     decider: &mut Decider,
 ) -> Result<PreviewApplicationBody, Error> {
-    bounded_build(|| {
-        let built = evaluate(recipe, decider).map_err(Error::Build)?;
-        let preview = preview_body(&built, options, decider)?;
-        Ok(PreviewApplicationBody { built, preview })
-    })
+    let built = evaluate(recipe, decider).map_err(Error::Build)?;
+    let preview = preview_body(&built, options, decider)?;
+    Ok(PreviewApplicationBody { built, preview })
 }
 
 /// Construction display from immutable definitions, before B-rep evaluation.

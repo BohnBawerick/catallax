@@ -31,14 +31,20 @@ use std::{
 
 const USAGE: &str = "usage:
   predictor_corpus run --corpus FILE --out FILE [--root DIR] [--sources DIR --selection FILE]
-                       [--threads 1,2,4,24] [--repeat N] [--rows ID,ID] [--label TEXT] [--describe]
+                       [--threads 1,2,4,24] [--repeat N] [--rows ID,ID] [--label TEXT]
+                       [--describe | --display | --require-preview] [--max-work N]
   predictor_corpus check --corpus FILE FILE... [--base FILE]
+  predictor_corpus census-preview --sources DIR --selection FILE [--max-work N]
 
 run   builds and exports every row at every thread count, N times each, and
       appends one JSON line for each to --out. Rows that import a private
       source need --sources and --selection, as tools/checkpoint/checkpoint.py
       takes them; without them those rows are skipped and named.
       --describe records unproved display descriptions in place of STEP export.
+      --display records the preview and certified mesh in place of STEP export.
+      --require-preview checks that every built row has an unproved preview.
+      census-preview applies the same preview check to a private STEP selection,
+      reporting aggregate counts only.
 check tests the predictor's done-when lines on the lines of the runs. It
       needs every row of --corpus at 1, 2, 4 and 24 threads on two machines,
       a machine being a --label, and fails on any that is missing. --base is
@@ -67,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args.first().map(String::as_str) {
         Some("run") => run(&args[1..]),
         Some("check") => check(&args[1..]),
+        Some("census-preview") => census_preview(&args[1..]),
         _ => {
             eprintln!("{USAGE}");
             std::process::exit(64);
@@ -129,11 +136,7 @@ fn recipe_of(
             return Err(format!("{model}: source bytes differ from the corpus").into());
         }
         source = Some((hash.clone(), bytes));
-        json!({"format": "catallax-recipe/3", "name": format!("ABC {model}"),
-            "steps": [{"id": "imported", "op": "import_step",
-                "file": {"name": "part.step", "sha256": hash},
-                "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}}],
-            "result": "imported"})
+        import_recipe(&hash, &format!("ABC {model}"))
     } else {
         return Err("a row has a recipe, an inline recipe, a case or an import".into());
     };
@@ -150,26 +153,141 @@ fn recipe_of(
     Ok(Some((recipe, source)))
 }
 
+fn import_recipe(hash: &str, name: &str) -> Value {
+    json!({"format": "catallax-recipe/3", "name": name,
+        "steps": [{"id": "imported", "op": "import_step",
+            "file": {"name": "part.step", "sha256": hash},
+            "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}}],
+        "result": "imported"})
+}
+
+#[derive(Clone, Copy)]
+enum Report {
+    Step,
+    Description,
+    Preview,
+    Display,
+}
+
+fn record_mesh<T: std::fmt::Debug>(mesh: impl FnOnce() -> Result<T, String>) -> Value {
+    let started = Instant::now();
+    let (answer, work) = with_operation_budget(u64::MAX, mesh);
+    let mut record = work_json(work);
+    record["ms"] = json!(started.elapsed().as_secs_f64() * 1000.0);
+    match answer {
+        Ok(mesh) if !work.exhausted => {
+            record["sha256"] = json!(sha256(format!("{mesh:?}").as_bytes()));
+        }
+        Ok(_) => record["refusal"] = json!("numbers.operation-budget"),
+        Err(error) => record["refusal"] = json!(error),
+    }
+    record
+}
+
+fn record_display(outcome: &EvaluatedApplicationOutcome, certified: bool) -> Value {
+    let options = catallax_mesh::PreviewOptions::default();
+    match outcome {
+        EvaluatedApplicationOutcome::Exact(body) => {
+            let built = body.checkpoint.built();
+            let preview = record_mesh(|| {
+                catallax_app::preview_body(built, &options, &mut Decider::default())
+                    .map(|display| display.mesh)
+                    .map_err(|error| error.to_string())
+            });
+            let mesh = certified.then(|| {
+                let options = catallax_mesh::MeshOptions::default();
+                let mut bounds = Value::Null;
+                let mut record = record_mesh(|| {
+                    let mesh = catallax_mesh::mesh_body(
+                        &built.model, built.result, &options, &mut Decider::default(),
+                    ).map_err(|error| error.to_string())?.value;
+                    bounds = json!({
+                        "vertices": mesh.positions.len(),
+                        "triangles": mesh.triangles.len(),
+                        "face_chord": mesh.faces.iter().map(|face| &face.max_chord_error).max().map(ToString::to_string),
+                        "edge_chord": mesh.edges.iter().map(|edge| &edge.max_chord_error).max().map(ToString::to_string),
+                    });
+                    Ok(mesh)
+                });
+                record["bounds"] = bounds;
+                record
+            });
+            json!({"preview": preview, "certified": mesh})
+        }
+        EvaluatedApplicationOutcome::Numerical(body) => {
+            let preview = record_mesh(|| {
+                catallax_mesh::preview_numerical_body(
+                    body.body(),
+                    &options,
+                    &mut Decider::default(),
+                )
+                .map_err(|error| error.to_string())
+            });
+            json!({"preview": preview})
+        }
+    }
+}
+
+fn missing_preview(line: &Value) -> bool {
+    matches!(line["build"]["status"].as_str(), Some("exact" | "fitted"))
+        && !line["display"]["preview"]["sha256"].is_string()
+}
+
+fn census_preview(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let sources = Path::new(flag(args, "--sources").ok_or("census-preview needs --sources")?);
+    let selection = flag(args, "--selection").ok_or("census-preview needs --selection")?;
+    let members: Vec<(String, String)> = serde_json::from_slice(&fs::read(selection)?)?;
+    let max_work = flag(args, "--max-work").map_or(Ok(DEFAULT_BUILD_WORK), str::parse)?;
+    let mut built = 0;
+    let mut missing = 0;
+    let mut unreadable = 0;
+    for (_, member) in &members {
+        let Ok(bytes) = fs::read(sources.join(member)) else {
+            unreadable += 1;
+            continue;
+        };
+        let hash = sha256(&bytes);
+        let line = measure(
+            &import_recipe(&hash, "STEP import"),
+            Some(&(hash, bytes)),
+            max_work,
+            Report::Preview,
+        );
+        if matches!(line["build"]["status"].as_str(), Some("exact" | "fitted")) {
+            built += 1;
+            missing += usize::from(missing_preview(&line));
+        }
+    }
+    println!(
+        "{}",
+        json!({"files": members.len(), "built": built, "missing_preview": missing, "unreadable": unreadable})
+    );
+    if missing != 0 || unreadable != 0 {
+        return Err("census did not preview every built file".into());
+    }
+    Ok(())
+}
+
 fn work_json(work: OperationWork) -> Value {
     json!({"used": work.used, "refunded": work.refunded, "uncharged": work.uncharged,
         "exhausted": work.exhausted})
 }
 
 /// Builds and exports one row on a thread of its own, as a request runs.
-fn measure(recipe: &Value, source: Option<&Source>, max_work: u64, describe: bool) -> Value {
+fn measure(recipe: &Value, source: Option<&Source>, max_work: u64, report: Report) -> Value {
     let text = recipe.to_string();
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .name("catallax-request".into())
             .stack_size(8 * 1024 * 1024)
-            .spawn_scoped(scope, || measure_here(&text, source, max_work, describe))
+            .spawn_scoped(scope, || measure_here(&text, source, max_work, report))
             .expect("a request thread")
             .join()
             .unwrap_or_else(|_| json!({"build": {"status": "panicked"}}))
     })
 }
 
-fn measure_here(text: &str, source: Option<&Source>, max_work: u64, describe: bool) -> Value {
+fn measure_here(text: &str, source: Option<&Source>, max_work: u64, report: Report) -> Value {
     let recipe = match Recipe::parse(text) {
         Ok(recipe) => recipe,
         Err(error) => {
@@ -227,9 +345,15 @@ fn measure_here(text: &str, source: Option<&Source>, max_work: u64, describe: bo
     build["status"] = json!(status);
     build["refusal"] = json!(refusal);
     build["ms"] = json!(build_ms);
-    if describe {
+    if !matches!(report, Report::Step) {
         let display = match outcome {
-            Ok(body) if !work.exhausted => describe_outcome(&body),
+            Ok(body) if !work.exhausted => match report {
+                Report::Description => describe_outcome(&body),
+                Report::Preview | Report::Display => {
+                    record_display(&body, matches!(report, Report::Display))
+                }
+                Report::Step => unreachable!(),
+            },
             _ => Value::Null,
         };
         return json!({"build": build, "display": display, "operations": operations, "choices": choices});
@@ -352,7 +476,19 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let repeat: usize = flag(args, "--repeat").map_or(Ok(1), str::parse)?;
     let only: Option<Vec<&str>> = flag(args, "--rows").map(|rows| rows.split(',').collect());
     let label = flag(args, "--label").unwrap_or("");
-    let describe = args.iter().any(|arg| arg == "--describe");
+    let require_preview = args.iter().any(|arg| arg == "--require-preview");
+    let report = if require_preview {
+        Report::Preview
+    } else if args.iter().any(|arg| arg == "--display") {
+        Report::Display
+    } else if args.iter().any(|arg| arg == "--describe") {
+        Report::Description
+    } else {
+        Report::Step
+    };
+    let max_work = flag(args, "--max-work")
+        .map(str::parse::<u64>)
+        .transpose()?;
     let sources = match (flag(args, "--sources"), flag(args, "--selection")) {
         (Some(sources), Some(selection)) => {
             let members: Vec<(String, String)> = serde_json::from_slice(&fs::read(selection)?)?;
@@ -366,6 +502,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         _ => None,
     };
     let mut file = fs::OpenOptions::new().create(true).append(true).open(out)?;
+    let mut missing = 0;
     for row in corpus["rows"].as_array().ok_or("a corpus has rows")? {
         let id = row["id"].as_str().ok_or("a row has an id")?;
         if only.as_ref().is_some_and(|only| !only.contains(&id)) {
@@ -375,11 +512,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("{id}: skipped, its private source was not given");
             continue;
         };
-        let max_work = row["max_work"].as_u64().unwrap_or(DEFAULT_BUILD_WORK);
+        let max_work = max_work
+            .or_else(|| row["max_work"].as_u64())
+            .unwrap_or(DEFAULT_BUILD_WORK);
         for &count in &threads {
             catallax_numbers::set_threads(NonZeroUsize::new(count));
             for pass in 0..repeat {
-                let mut line = measure(&recipe, source.as_ref(), max_work, describe);
+                let mut line = measure(&recipe, source.as_ref(), max_work, report);
+                if require_preview && missing_preview(&line) {
+                    missing += 1;
+                    eprintln!(
+                        "{id}: missing preview: {}",
+                        line["display"]["preview"]["refusal"]
+                    );
+                }
                 line["id"] = json!(id);
                 line["group"] = row["group"].clone();
                 line["threads"] = json!(count);
@@ -398,6 +544,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     catallax_numbers::set_threads(None);
+    if missing != 0 {
+        return Err(format!("{missing} built corpus rows have no preview").into());
+    }
     Ok(())
 }
 

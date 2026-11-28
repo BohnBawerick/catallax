@@ -1,6 +1,9 @@
 //! A planar wedge closing to an edge too short to read leaves the file, not the model.
+//! The wedges come from the plain exact boolean: a recipe merges those under
+//! 1 nm when it builds the part (`merged_at_construction`).
 mod common;
-use catallax_recipe::Recipe;
+use catallax_boolean::{BoolOp, SUB_TOLERANCE_MERGE, boolean};
+use catallax_recipe::{Recipe, StepId};
 use common::*;
 
 fn sketch(id: &str, points: &[[&str; 2]]) -> serde_json::Value {
@@ -20,8 +23,12 @@ fn sketch(id: &str, points: &[[&str; 2]]) -> serde_json::Value {
 // plate's left wall. SolidDraft's GUI frames gave such a bracket a 2e-17 lean
 // and a 2e-28 inset.
 fn bracket(tilt: &str, inset: &str) -> (Model, BodyId) {
+    built(bracket_recipe(tilt, inset))
+}
+
+fn bracket_recipe(tilt: &str, inset: &str) -> serde_json::Value {
     let lean = format!("-{tilt}");
-    let recipe = serde_json::json!({
+    serde_json::json!({
         "format": "catallax-recipe/4", "name": "leaning bracket", "result": "body",
         "steps": [
             sketch("plate-profile", &[["12", &lean], ["12", "9"], ["0", "9"], ["0", "0"]]),
@@ -32,8 +39,7 @@ fn bracket(tilt: &str, inset: &str) -> (Model, BodyId) {
              "direction": ["0", "0", "1"], "distance": "6"},
             {"id": "body", "op": "boolean", "kind": "union", "target": "plate", "tool": "flange"},
         ],
-    });
-    built(recipe)
+    })
 }
 
 // A plate whose left wall leans `lean` out at its back, under a flange along
@@ -59,10 +65,25 @@ fn wedge_face(lean: &str, scale: &str) -> (Model, BodyId) {
     built(recipe)
 }
 
-fn built(recipe: serde_json::Value) -> (Model, BodyId) {
+fn evaluated(recipe: serde_json::Value) -> catallax_features::Built {
     let recipe = Recipe::parse(&recipe.to_string()).unwrap();
-    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
-    (built.model, built.result)
+    catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap()
+}
+
+// The plate and the flange united by the plain exact boolean.
+fn built(recipe: serde_json::Value) -> (Model, BodyId) {
+    let mut built = evaluated(recipe);
+    let [plate, flange] = ["plate", "flange"].map(|id| built.bodies[&StepId::new(id).unwrap()]);
+    let body = boolean(
+        &mut built.model,
+        plate,
+        flange,
+        BoolOp::Unite,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    (built.model, body)
 }
 
 fn written(model: &Model, body: BodyId) -> (Step, StepReport) {
@@ -111,6 +132,44 @@ fn a_leaning_front_and_an_inset_flange_are_written_as_flush_walls() {
         // The exact model is untouched.
         assert_eq!(model.counts(body), exact);
         assert!(model.check(body).is_empty());
+    }
+}
+
+#[test]
+fn merged_at_construction() {
+    // The recipe merges the parallel inset with the plate's wall when it
+    // builds the part. The tilted front stays in the model, where the flange
+    // cuts the plate's top in two, and the file closes the front's three-sided
+    // wedge with its wall when it is too narrow to read.
+    for (tilt, inset, wedge) in [
+        ("2e-17", "2e-28", true),
+        ("1e-7", "1e-30", true),
+        ("2e-6", "1e-30", false),
+    ] {
+        let built = evaluated(bracket_recipe(tilt, inset));
+        let (model, body) = (&built.model, built.result);
+        assert_eq!(model.counts(body).faces, 10, "{tilt} {inset}");
+        assert!(model.check(body).is_empty());
+        let marks: Vec<_> = model.body(body).marks.iter().collect();
+        let [mark] = marks.as_slice() else {
+            panic!("{tilt} {inset}: {marks:?}");
+        };
+        assert_eq!((mark.code, &mark.bound), (SUB_TOLERANCE_MERGE, &r(inset)));
+        let (file, report) = written(model, body);
+        if wedge {
+            let [front] = report.regularizations.as_slice() else {
+                panic!("{tilt} {inset}: {:?}", report.regularizations);
+            };
+            assert_eq!((front.removed_faces, front.removed_edges), (2, 3));
+            assert_eq!(front.max_deviation, r(tilt));
+            // The L-shaped prism the flush bracket would be.
+            assert_eq!(report.faces, 8);
+        } else {
+            assert!(report.regularizations.is_empty());
+            assert_eq!(report.faces, 10);
+        }
+        assert_eq!(file.count("ADVANCED_FACE"), report.faces);
+        assert_reconciled(model, body, &report);
     }
 }
 

@@ -323,6 +323,10 @@ requested `curve_tolerance` or the unchanged 1 nm modelling tolerance. The two
 wires become one and the parallel neighbouring faces become one. Split edges and
 merged-face rounding errors include the displacement bound. No geometry checker,
 sampling, increased tolerance or model-side merge participates in export.
+A recipe boolean already merges a gap under 1 nm between its operands' planes
+in the model (piece 5, sub-tolerance planes), so for recipe parts this repair
+handles the gaps that reach export: those inside one operand and those that
+merge's conditions leave. Direct `boolean` calls keep their exact gaps.
 
 `StepReport.regularizations` records each reconnection's face, edge pair,
 neighbouring face pair and proven `max_deviation`. The report's topology counts

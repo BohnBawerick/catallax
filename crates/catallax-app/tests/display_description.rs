@@ -1,4 +1,5 @@
 //! The GPU input retains shared geometry and names without doing proof work.
+#![allow(clippy::float_cmp)] // Bit-identical binary64 conversions of the same exact values.
 
 use std::collections::BTreeMap;
 

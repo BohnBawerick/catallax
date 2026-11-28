@@ -64,7 +64,8 @@ fn slot_cut(source: &str, faces: usize, expected_volume: &str) {
 fn on_face_slot_through_the_flange_fits_the_application_allowance() {
     slot_cut(
         include_str!("fixtures/on-face-slot-minimal.json"),
-        17,
+        // The bracket union merges its parallel sub-nanometre sliver when built.
+        16,
         "174366.367281174",
     );
 }
@@ -73,7 +74,7 @@ fn on_face_slot_through_the_flange_fits_the_application_allowance() {
 fn on_face_slot_through_the_bored_bracket_fits_the_application_allowance() {
     slot_cut(
         include_str!("fixtures/on-face-slot-bracket.json"),
-        18,
+        17,
         "170521.057873181",
     );
 }

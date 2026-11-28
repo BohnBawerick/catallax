@@ -43,7 +43,7 @@ def intersection(primitives, kind='intersect'):
 
 
 class PartialPeriodicTrimImports(unittest.TestCase):
-    def answer(self, recipe, root, max_work=100_000_000):
+    def answer(self, recipe, root, max_work=100_000_000, merged=False):
         source = root / 'recipe.json'
         source.write_text(json.dumps(recipe))
         out = root / 'run'
@@ -55,8 +55,13 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
         case = json.loads((out / 'run.json').read_text())['cases'][0]
         manifest = case['response']['manifest']
-        self.assertTrue(manifest['exact'], manifest)
-        self.assertEqual(manifest['marks'], [])
+        if merged:
+            # A recipe boolean merged a parallel sub-nanometre gap once.
+            self.assertFalse(manifest['exact'], manifest)
+            self.assertEqual([m['code'] for m in manifest['marks']], ['boolean.sub-tolerance-merge'])
+        else:
+            self.assertTrue(manifest['exact'], manifest)
+            self.assertEqual(manifest['marks'], [])
         return Path(case['path']), manifest
 
     def check_intersection(self, primitives, topology, expected_volume, kind='intersect'):

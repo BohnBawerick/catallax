@@ -1,5 +1,6 @@
 """A planar wedge too narrow to read leaves the STEP file, and only then."""
 import copy
+from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
@@ -24,9 +25,11 @@ STEP_DIGESTS = {
     'soliddraft-narrow-just-under':
         'e2597e2cc18ec5c3a63ec8af0f9139b62a3c59a8f0df3346e39b13acc4ce428e',
 }
-# The plate's wall reconnection, then the wedge in front of the flange, then
-# the 2e-28 mm strip beside it that closing the wedge leaves at its far end.
-REPAIRS = [(1, 0), (1, 2), (1, 2)]
+# The recipe's union merges the plate's parallel wall gap of 3.5e-36 mm in the
+# model. The file closes the wedge in front of the flange, then the 2e-28 mm
+# strip beside it that closing the wedge leaves at its far end.
+REPAIRS = [(1, 2), (1, 2)]
+GAP = Fraction('3.5164312091753774e-36')
 
 
 class WedgeSteps(unittest.TestCase):
@@ -35,9 +38,9 @@ class WedgeSteps(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def answer(self, recipe):
+    def answer(self, recipe, merged=False):
         root = Path(tempfile.mkdtemp(dir=self.root))
-        return periodic.PartialPeriodicTrimImports().answer(recipe, root)
+        return periodic.PartialPeriodicTrimImports().answer(recipe, root, merged=merged)
 
     def recipe(self, name):
         return json.loads((FIXTURES / f'{name}.json').read_text())['problem']
@@ -57,7 +60,10 @@ class WedgeSteps(unittest.TestCase):
                 self.assertLessEqual(abs(found - volume), 5e-7 + spread)
 
     def assert_collapse(self, recipe, model_faces, faces, volume):
-        directory, manifest = self.answer(recipe)
+        directory, manifest = self.answer(recipe, merged=True)
+        [mark] = manifest['marks']
+        # The stand's corners slide along nearly level edges: the gap and a sliver more.
+        self.assertTrue(GAP <= Fraction(mark['bound']) < 2 * GAP, mark)
         self.assertEqual(manifest['result']['faces'], model_faces)
         self.assertLessEqual(float(manifest['step']['max_deviation']), 1e-7)
         self.assert_reads(directory, faces, volume)
@@ -71,17 +77,17 @@ class WedgeSteps(unittest.TestCase):
                          manifest['result']['edges'] + manifest['step']['added_edges'])
 
     def test_the_gui_bracket_reads_as_the_flush_bracket(self):
-        self.assert_collapse(self.recipe('soliddraft-gui-bracket'), 18, 15, 170521.057873)
+        self.assert_collapse(self.recipe('soliddraft-gui-bracket'), 17, 15, 170521.057873)
 
     def test_the_gui_bracket_without_its_bore_reads_as_the_flush_one(self):
-        self.assert_collapse(self.recipe('soliddraft-gui-minimal'), 17, 14, 174366.367281)
+        self.assert_collapse(self.recipe('soliddraft-gui-minimal'), 16, 14, 174366.367281)
 
     def test_the_first_union_alone_is_the_cause(self):
         recipe = copy.deepcopy(self.recipe('soliddraft-gui-minimal'))
         index = next(i for i, step in enumerate(recipe['steps']) if step['id'] == 'op_61')
         recipe['steps'] = recipe['steps'][:index + 1]
         recipe['result'] = 'op_61'
-        self.assert_collapse(recipe, 11, 8, 168000.0)
+        self.assert_collapse(recipe, 10, 8, 168000.0)
 
     def test_raw_valid_files_match_the_checked_export(self):
         for name, digest in STEP_DIGESTS.items():

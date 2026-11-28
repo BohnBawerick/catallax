@@ -47,5 +47,5 @@ pub use rolling_junction::{
 };
 pub use rolling_mitre::RollingMitreBand;
 pub use spline_prism::SplinePrism;
-pub use transform::transformed_body;
+pub use transform::{substituted_body, transformed_body};
 pub use wire::spline_wire;

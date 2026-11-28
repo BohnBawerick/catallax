@@ -337,9 +337,20 @@ resolved face attachments, recorded equivalent Unicode text and view names.
 The reader diagnoses unsupported strokes, nonidentity or ambiguous geometry
 mappings, clipped cameras, and off-centre or rotated windows.
 
-Assembly import groups semantic items by part and requires a unique leaf owner
-and attachments on that part. It reports omitted saved views and graphics in
-the parts' `skipped` lists.
+A face usage must name its own aspect, through a representation of the
+aspect's part, and faces that representation holds; members of a pattern
+belong to the same part. Datum carriers follow the AP242 rules: a `DATUM`
+has an empty name and is not product definitional, a `DATUM_FEATURE`, a
+placed target and its face feature are, and a datum reference compartment
+has an empty name, no description and no identifier and is not.
+
+Assembly import groups semantic items by the one part their links reach and
+checks their attachments on that part. An item that reaches no part, or more
+than one, does not refuse the assembly: each part's `skipped` list reports
+it, since an assembly has no PMI list of its own. It reports omitted saved
+views and graphics in the parts' `skipped` lists. A camera repeated by name
+keeps its name for the first view and takes the lowest free `name (n)` for a
+later one, never a name another camera authored.
 
 `cargo run -p catallax-import --example step_pmi -- part.step` prints the items,
 views, graphical callouts and diagnostics.

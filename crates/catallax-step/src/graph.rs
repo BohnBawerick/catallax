@@ -1,7 +1,7 @@
 //! Entity references stay symbolic until the required depth-first numbering pass.
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -215,7 +215,7 @@ impl Graph {
     }
 
     pub(crate) fn unique_draughting_model_names(&mut self) {
-        let names = self
+        let mut names: Vec<&mut Cow<'static, str>> = self
             .entities
             .iter_mut()
             .filter_map(|entity| {
@@ -227,26 +227,8 @@ impl Graph {
                     None
                 }
             })
-            .collect::<Vec<_>>();
-        let mut reserved = names
-            .iter()
-            .map(|name| name.to_string())
-            .collect::<BTreeSet<_>>();
-        let mut seen = BTreeSet::new();
-        for name in names {
-            if seen.insert(name.to_string()) {
-                continue;
-            }
-            let base = name.strip_suffix('\'').expect("a quoted model name");
-            let base = if base == "'" { "'PMI" } else { base };
-            for suffix in 2.. {
-                let unique = format!("{base} ({suffix})'");
-                if reserved.insert(unique.clone()) {
-                    *name = Cow::Owned(unique);
-                    break;
-                }
-            }
-        }
+            .collect();
+        unique_quoted_names(&mut names);
     }
 
     pub(crate) fn write_layout(&self, layout: &Layout, mut output: String) -> String {
@@ -313,6 +295,39 @@ impl Field {
     }
 }
 
+/// Renames repeated quoted names in place: the first of each keeps its name
+/// and later ones take `base (n)` with the lowest free `n` from 2, never one
+/// that another name already holds. A blank name's base is `PMI`. Each base
+/// keeps its next suffix, so the work grows with the number of names, not
+/// with its square. Returns how many candidate names were tried.
+fn unique_quoted_names(names: &mut [&mut Cow<'static, str>]) -> usize {
+    let mut reserved = names
+        .iter()
+        .map(|name| name.to_string())
+        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    let mut next = BTreeMap::<String, usize>::new();
+    let mut tried = 0;
+    for name in names.iter_mut() {
+        if seen.insert(name.to_string()) {
+            continue;
+        }
+        let base = name.strip_suffix('\'').expect("a quoted model name");
+        let base = if base == "'" { "'PMI" } else { base }.to_owned();
+        let suffix = next.entry(base.clone()).or_insert(2);
+        loop {
+            let unique = format!("{base} ({suffix})'");
+            *suffix += 1;
+            tried += 1;
+            if reserved.insert(unique.clone()) {
+                **name = Cow::Owned(unique);
+                break;
+            }
+        }
+    }
+    tried
+}
+
 fn write_fields(fields: &[Field], numbers: &[usize], out: &mut String) {
     for (i, field) in fields.iter().enumerate() {
         if i != 0 && !matches!(field, Field::Part(..)) {
@@ -340,4 +355,51 @@ pub(crate) fn string(value: &str) -> String {
     }
     out.push('\'');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quoted(names: &[&str]) -> Vec<Cow<'static, str>> {
+        names
+            .iter()
+            .map(|name| Cow::Owned(format!("'{name}'")))
+            .collect()
+    }
+
+    #[test]
+    fn repeated_model_names_take_free_suffixes() {
+        let mut names = quoted(&["", "Top", "", "Top", "Top (2)", "", "PMI (3)"]);
+        let mut refs: Vec<_> = names.iter_mut().collect();
+        unique_quoted_names(&mut refs);
+        let got: Vec<&str> = names.iter().map(|name| name.as_ref()).collect();
+        assert_eq!(
+            got,
+            [
+                "''",
+                "'Top'",
+                "'PMI (2)'",
+                "'Top (3)'",
+                "'Top (2)'",
+                "'PMI (4)'",
+                "'PMI (3)'"
+            ]
+        );
+    }
+
+    #[test]
+    fn many_blank_models_are_named_in_linear_work() {
+        // Every finished assembly leaf may write a blank global model.
+        let count = 4000;
+        let mut names = quoted(&vec![""; count]);
+        let mut refs: Vec<_> = names.iter_mut().collect();
+        let tried = unique_quoted_names(&mut refs);
+        // One candidate per repeat; restarting at 2 each time tried about
+        // count * count / 2.
+        assert_eq!(tried, count - 1);
+        let distinct: BTreeSet<_> = names.iter().collect();
+        assert_eq!(distinct.len(), count);
+        assert_eq!(names[count - 1], format!("'PMI ({count})'"));
+    }
 }

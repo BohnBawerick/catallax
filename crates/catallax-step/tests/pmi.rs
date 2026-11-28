@@ -4032,10 +4032,18 @@ fn graphical_only_callouts_are_read_apart_from_semantic_items() {
             .iter()
             .any(|item| item.entity == view_model && item.reason.contains("nonidentity"))
     );
+    // The refused view's mapping is checked at that view alone: its callout
+    // is not refused with it, and no other view shows the size.
     assert!(
+        !read.skipped.iter().any(|item| item.entity == size_callout),
+        "{:?}",
         read.skipped
+    );
+    assert!(
+        read.pmi
+            .views
             .iter()
-            .any(|item| item.entity == size_callout && item.reason.contains("nonidentity"))
+            .all(|view| !view.items.iter().any(|id| id == "Bore diameter"))
     );
 
     let datum_callout = references(&datum_link).pop().unwrap();
@@ -4786,10 +4794,16 @@ fn a_boss_blocks_projection_across_a_recess() {
         );
         let read = read_step_pmi(file.as_bytes()).unwrap();
         assert_eq!(read.sources.keys().collect::<Vec<_>>(), [&"Rim".to_owned()]);
+        // The written height is the tolerance's own 0.05 mm: too short to
+        // reach the raised boss's cap, so that zone is refused for starting in
+        // the boss, and the flush one for the cap at its start.
+        let reason = if raised {
+            "axis starts inside the part"
+        } else {
+            "axis meets a closed end"
+        };
         assert!(
-            read.skipped
-                .iter()
-                .any(|item| item.reason.contains("axis meets a closed end")),
+            read.skipped.iter().any(|item| item.reason.contains(reason)),
             "{:?}",
             read.skipped
         );
@@ -4947,4 +4961,343 @@ fn an_oblique_camera_and_target_write_exact_direction_ratios() {
     assert!(direction[0] > q("0"));
     assert_eq!(direction[1], &direction[0] * &q("2"));
     assert!(direction[2].is_zero());
+}
+
+#[test]
+fn authored_view_names_are_reserved_before_suffixes() {
+    let source = include_str!("fixtures/graphical-only-pmi.step");
+    // Two more views of the same plane, named Top and Top (2). The repeat
+    // must not take Top (2), which a later camera authored.
+    let more = "#60=CAMERA_MODEL_D3('Top',#43,#48);\n\
+                #61=DRAUGHTING_MODEL('Top',(#38,#60),#9);\n\
+                #62=MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP('','',#61,#39);\n\
+                #63=CAMERA_MODEL_D3('Top (2)',#43,#48);\n\
+                #64=DRAUGHTING_MODEL('Top (2)',(#38,#63),#9);\n\
+                #65=MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP('','',#64,#39);\n";
+    let named = mutate(
+        source,
+        "ENDSEC;\nEND-ISO",
+        &format!("{more}ENDSEC;\nEND-ISO"),
+    );
+    let read = read_step_pmi(named.as_bytes()).unwrap();
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+    let names: Vec<&str> = read
+        .pmi
+        .views
+        .iter()
+        .map(|view| view.name.as_str())
+        .collect();
+    assert_eq!(names, ["Top", "Top (3)", "Top (2)"]);
+    let [callout] = read.graphics.as_slice() else {
+        panic!("expected one callout, got {:?}", read.graphics);
+    };
+    assert_eq!(callout.views, ["Top", "Top (3)", "Top (2)"]);
+}
+
+#[test]
+fn a_refused_view_keeps_shared_callouts_in_other_views() {
+    let source = include_str!("fixtures/graphical-only-pmi.step");
+    // A second view of the same annotation plane maps the part geometry
+    // through a 5 mm translation, which the reader refuses for that view.
+    let side = "#70=CARTESIAN_POINT('',(0.,0.,0.));\n\
+                #71=AXIS2_PLACEMENT_3D('',#70,#13,#14);\n\
+                #72=CARTESIAN_POINT('',(5.,0.,0.));\n\
+                #73=AXIS2_PLACEMENT_3D('',#72,#13,#14);\n\
+                #74=REPRESENTATION_MAP(#71,#22);\n\
+                #75=MAPPED_ITEM('',#74,#73);\n\
+                #76=CAMERA_MODEL_D3('Side',#43,#48);\n\
+                #77=DRAUGHTING_MODEL('Side',(#38,#75,#76),#9);\n\
+                #78=MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP('','',#77,#39);\n";
+    let changed = mutate(
+        source,
+        "ENDSEC;\nEND-ISO",
+        &format!("{side}ENDSEC;\nEND-ISO"),
+    );
+    let read = read_step_pmi(changed.as_bytes()).unwrap();
+    let names: Vec<&str> = read
+        .pmi
+        .views
+        .iter()
+        .map(|view| view.name.as_str())
+        .collect();
+    assert_eq!(names, ["Top"]);
+    assert!(
+        read.skipped.iter().any(
+            |item| item.entity == "#77" && item.reason.contains("nonidentity geometry mapping")
+        ),
+        "{:?}",
+        read.skipped
+    );
+    let [callout] = read.graphics.as_slice() else {
+        panic!("the shared callout was lost: {:?}", read.skipped);
+    };
+    assert_eq!(callout.name, "Plate mark");
+    assert_eq!(callout.views, ["Top"]);
+    assert_eq!(callout.faces, Some(vec!["#19".to_owned()]));
+}
+
+#[test]
+fn datum_carriers_follow_the_ap242_rules() {
+    let part = bracket();
+    let f = gdt_faces(&part);
+    let (file, report) = write(&part, &gdt_pmi(&f));
+    let ids = |pmi: &Pmi<FaceId>| {
+        let mut ids: Vec<String> = pmi.items.iter().map(|item| item.id.clone()).collect();
+        ids.sort();
+        ids
+    };
+    let reasons = |skipped: &[catallax_import::SkippedPmi]| {
+        skipped
+            .iter()
+            .map(|skip| skip.reason.clone())
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    let (all_items, skipped) = read_back(&file, &report);
+    assert!(skipped.is_empty(), "{}", reasons(&skipped));
+    let record = |patterns: &[&str]| {
+        file.lines()
+            .find(|line| patterns.iter().all(|pattern| line.contains(pattern)))
+            .unwrap_or_else(|| panic!("no record with {patterns:?}"))
+            .to_owned()
+    };
+    // Without datum A: the same items the A1 target case keeps.
+    let without_a = ["Bore", "Bore projection", "Datum B", "Datum C", "Datum D"];
+
+    let a1 = record(&["=PLACED_DATUM_TARGET_FEATURE(", "'A1'"]);
+    let datum_a = record(&["=DATUM('", "'A');"]);
+    let modified = record(&[
+        "=DATUM_REFERENCE_COMPARTMENT(",
+        "SIMPLE_DATUM_REFERENCE_MODIFIER",
+    ]);
+    let modified_id = modified.split('=').next().unwrap().to_owned();
+    let cases: Vec<(String, &str)> = vec![
+        // A placed target is product definitional.
+        (
+            mutate(&file, &a1, &a1.replace(",.T.,", ",.F.,")),
+            "its placed target needs .T.",
+        ),
+        // A datum has an empty name and is not product definitional.
+        (
+            mutate(&file, &datum_a, &datum_a.replace(",.F.,", ",.T.,")),
+            "needs an empty name and .F.",
+        ),
+        (
+            mutate(
+                &file,
+                &datum_a,
+                &datum_a.replacen("DATUM(''", "DATUM('A'", 1),
+            ),
+            "needs an empty name and .F.",
+        ),
+    ];
+    for (broken, reason) in &cases {
+        let (back, skipped) = read_back(broken, &report);
+        assert_eq!(ids(&back), without_a, "{}", reasons(&skipped));
+        assert!(
+            reasons(&skipped).contains(reason),
+            "{} lacks {reason}",
+            reasons(&skipped)
+        );
+    }
+
+    // A datum feature is product definitional: datum B goes, with what needs it.
+    let feature_b = {
+        let b = record(&["=DATUM('", "'B');"]);
+        let b = b.split('=').next().unwrap().to_owned();
+        let link = record(&["SHAPE_ASPECT_RELATIONSHIP(", &format!(",{b});")]);
+        references(link.split_once('=').unwrap().1)[0].clone()
+    };
+    let feature_record = record(&[&format!("{feature_b}=DATUM_FEATURE(")]);
+    let broken = mutate(
+        &file,
+        &feature_record,
+        &feature_record.replace(",.T.)", ",.F.)"),
+    );
+    let (back, skipped) = read_back(&broken, &report);
+    assert!(!ids(&back).contains(&"Datum B".to_owned()));
+    assert!(ids(&back).contains(&"Datum C".to_owned()));
+    assert!(reasons(&skipped).contains(&format!("its datum feature {feature_b} needs .T.")));
+
+    // A datum reference compartment has an empty name, no description, no
+    // identifier and is not product definitional. Only the composite whose
+    // upper segment holds it goes.
+    let id_attribute = format!("#999999=ID_ATTRIBUTE('D',{modified_id});\n");
+    for broken in [
+        mutate(&file, &modified, &modified.replacen(",.F.,", ",.T.,", 1)),
+        mutate(
+            &file,
+            &modified,
+            &modified.replacen("COMPARTMENT('',$,", "COMPARTMENT('D',$,", 1),
+        ),
+        mutate(
+            &file,
+            &modified,
+            &modified.replacen("COMPARTMENT('',$,", "COMPARTMENT('','D',", 1),
+        ),
+        mutate(
+            &file,
+            "ENDSEC;\nEND-ISO",
+            &format!("{id_attribute}ENDSEC;\nEND-ISO"),
+        ),
+    ] {
+        let (back, skipped) = read_back(&broken, &report);
+        let mut expected = ids(&all_items);
+        expected.retain(|id| id != "Bolt pattern");
+        assert_eq!(ids(&back), expected, "{}", reasons(&skipped));
+        assert!(
+            reasons(&skipped).contains(&format!("compartment {modified_id} needs an empty name")),
+            "{}",
+            reasons(&skipped)
+        );
+    }
+}
+
+#[test]
+fn a_projected_zone_is_checked_over_its_own_height() {
+    use catallax_boolean::{BoolOp, boolean};
+    use catallax_shapes::{RVector3, Rotation};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let at = |x, y, z| Pose::from_rational(Rotation::identity(), RVector3::new(q(x), q(y), q(z)));
+    // A C-shaped block: a 10 mm gap between two plates joined at the back, and
+    // a bore through the lower plate into the gap.
+    use catallax_topology::block;
+    let stock = block(&mut model, [q("20"), q("20"), q("20")], &Pose::identity()).unwrap();
+    let gap = block(&mut model, [q("20"), q("15"), q("10")], &at("0", "0", "5")).unwrap();
+    let bore = cylinder(&mut model, q("2"), q("5"), &at("10", "7", "0")).unwrap();
+    let body = boolean(&mut model, stock, gap, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let body = boolean(&mut model, body, bore, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let part = Bracket { model, body };
+    let floor = part
+        .planes(2, "5")
+        .into_iter()
+        .find(|face| part.model.face(*face).loops.len() == 2)
+        .unwrap();
+    let wall = part.round(2, "2", ["10", "7"]);
+    let pmi = |height: &str| Pmi {
+        items: vec![item(
+            "Bore projection",
+            ItemKind::Position(PositionControl {
+                features: vec![wall.clone()],
+                frame: PositionFrame::Single {
+                    segment: segment("0.05", None, Vec::new()),
+                    projected_zone: Some(ProjectedZone {
+                        height_mm: q(height),
+                        direction: v("0", "0", "1"),
+                        entry_faces: vec![floor],
+                    }),
+                },
+            }),
+        )],
+        ..Pmi::default()
+    };
+
+    // 2 mm into the gap, and exactly up to the far plate: the zone is free.
+    // An endless ray would meet the far plate and refuse both.
+    for height in ["2", "10"] {
+        catallax_step::pmi::check_on_model(&part.model, &pmi(height), &mut dec)
+            .unwrap_or_else(|error| panic!("{height} mm: {error:?}"));
+    }
+    let (file, report) = write(&part, &pmi("2"));
+    let (back, skipped) = read_back(&file, &report);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    let ItemKind::Position(control) = kind_of(&back, "Bore projection") else {
+        panic!("expected the position control");
+    };
+    let PositionFrame::Single {
+        projected_zone: Some(zone),
+        ..
+    } = &control.frame
+    else {
+        panic!("expected a projected zone");
+    };
+    assert_eq!(zone.height_mm, q("2"));
+
+    // 12 mm reaches into the far plate: refused on the model, on export and
+    // on import.
+    let error = catallax_step::pmi::check_on_model(&part.model, &pmi("12"), &mut dec).unwrap_err();
+    assert!(
+        error.detail.contains("axis meets a closed end"),
+        "{error:?}"
+    );
+    assert!(
+        try_write(&part, &pmi("12"))
+            .unwrap_err()
+            .contains("axis meets a closed end")
+    );
+    let all = records(&file);
+    let definition = line_with(&file, &["=PROJECTED_ZONE_DEFINITION("]);
+    let height = references(&all[&definition]).pop().unwrap();
+    let measure = &all[&height];
+    let long = mutate(
+        &file,
+        &format!("{height}={measure}"),
+        &format!(
+            "{height}={}",
+            measure.replace("LENGTH_MEASURE(2.)", "LENGTH_MEASURE(12.)")
+        ),
+    );
+    let read = read_step_pmi(long.as_bytes()).unwrap();
+    assert!(read.pmi.items.is_empty());
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("axis meets a closed end")),
+        "{:?}",
+        read.skipped
+    );
+
+    // A boss standing up through the entry plane puts the zone's start in
+    // material: refused however short the zone, though nothing lies within
+    // its height.
+    let mut model = Model::new();
+    let at_z = |z| Pose::from_rational(Rotation::identity(), RVector3::new(q("0"), q("0"), q(z)));
+    let stock = cylinder(&mut model, q("5"), q("6"), &Pose::identity()).unwrap();
+    let outer_cut = cylinder(&mut model, q("4"), q("5"), &at_z("2")).unwrap();
+    let boss = cylinder(&mut model, q("1"), q("7"), &at_z("1")).unwrap();
+    let stock = boolean(&mut model, stock, boss, BoolOp::Unite, &mut dec)
+        .unwrap()
+        .body;
+    let annular_cut = boolean(&mut model, outer_cut, boss, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let body = boolean(&mut model, stock, annular_cut, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let part = Bracket { model, body };
+    let rim = part
+        .planes(2, "6")
+        .into_iter()
+        .find(|face| part.model.face(*face).loops.len() == 2)
+        .unwrap();
+    let recess = part.round(2, "4", ["0", "0"]);
+    let short = Pmi {
+        items: vec![item(
+            "Recess wall",
+            ItemKind::Position(PositionControl {
+                features: vec![recess],
+                frame: PositionFrame::Single {
+                    segment: segment("0.05", None, Vec::new()),
+                    projected_zone: Some(ProjectedZone {
+                        height_mm: q("1"),
+                        direction: v("0", "0", "1"),
+                        entry_faces: vec![rim],
+                    }),
+                },
+            }),
+        )],
+        ..Pmi::default()
+    };
+    let error = catallax_step::pmi::check_on_model(&part.model, &short, &mut dec).unwrap_err();
+    assert!(error.detail.contains("starts inside the part"), "{error:?}");
+    assert!(
+        try_write(&part, &short)
+            .unwrap_err()
+            .contains("starts inside the part")
+    );
 }

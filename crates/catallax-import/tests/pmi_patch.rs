@@ -689,3 +689,204 @@ fn a_patch_refuses_a_length_with_a_derived_si_prefix() {
         .is_err()
     );
 }
+
+/// The flatness edit spelled out on the source bytes alone: the tolerance's
+/// value reference moves to a fresh record numbered one above the file's
+/// highest, the old measure goes when nothing else names it, and the new
+/// measure goes in just before the data section ends. Every other byte,
+/// including record order and line ends, stays.
+fn flatness_splice(file: &str, newline: &str) -> String {
+    let record_start = |id: &str| {
+        file.find(&format!("{newline}{id}="))
+            .map(|at| at + newline.len())
+            .unwrap()
+    };
+    let line_end = |start: usize| start + file[start..].find(newline).unwrap() + newline.len();
+    let tolerance_at = file.find("FLATNESS_TOLERANCE('Base flatness'").unwrap();
+    let tolerance_start = file[..tolerance_at].rfind(newline).unwrap() + newline.len();
+    let tolerance_end = line_end(tolerance_start);
+    let tolerance = &file[tolerance_start..tolerance_end];
+    // FLATNESS_TOLERANCE(name, description, magnitude, toleranced shape)
+    let magnitude = tolerance
+        .split("FLATNESS_TOLERANCE(")
+        .nth(1)
+        .unwrap()
+        .split(',')
+        .nth(2)
+        .unwrap()
+        .to_owned();
+    let measure_start = record_start(&magnitude);
+    let measure_end = line_end(measure_start);
+    let measure = &file[measure_start..measure_end];
+    let unit = measure
+        .rsplit_once(',')
+        .unwrap()
+        .1
+        .trim_end_matches(&[')', ';', '\r', '\n'][..]);
+    let highest: u64 = file
+        .split(newline)
+        .filter_map(|line| line.strip_prefix('#')?.split('=').next()?.parse().ok())
+        .max()
+        .unwrap();
+    let fresh = format!("#{}", highest + 1);
+    let named_elsewhere = file
+        .split(newline)
+        .filter(|line| !line.starts_with(&format!("{magnitude}=")))
+        .filter(|line| {
+            line.match_indices(magnitude.as_str()).any(|(at, _)| {
+                !line[at + magnitude.len()..].starts_with(|c: char| c.is_ascii_digit())
+            })
+        })
+        .count();
+    assert_eq!(named_elsewhere, 1, "only the tolerance names {magnitude}");
+    let rewritten = tolerance.replacen(&format!(",{magnitude},"), &format!(",{fresh},"), 1);
+    let end = file.rfind(&format!("ENDSEC;{newline}END-ISO")).unwrap();
+    let mut out = String::new();
+    let (first, second) = if tolerance_start < measure_start {
+        (
+            (tolerance_start, tolerance_end),
+            (measure_start, measure_end),
+        )
+    } else {
+        (
+            (measure_start, measure_end),
+            (tolerance_start, tolerance_end),
+        )
+    };
+    let piece = |range: (usize, usize)| {
+        if range.0 == tolerance_start {
+            rewritten.as_str()
+        } else {
+            ""
+        }
+    };
+    out.push_str(&file[..first.0]);
+    out.push_str(piece(first));
+    out.push_str(&file[first.1..second.0]);
+    out.push_str(piece(second));
+    out.push_str(&file[second.1..end]);
+    out.push_str(&format!(
+        "{fresh}=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.02),{unit});{newline}"
+    ));
+    out.push_str(&file[end..]);
+    out
+}
+
+#[test]
+fn the_flatness_edit_is_exactly_its_byte_splice() {
+    for newline in ["\n", "\r\n"] {
+        let file = source().replace('\n', newline);
+        let edit = PmiEdit::ToleranceValue {
+            source: read_step_pmi(file.as_bytes()).unwrap().sources["Base flatness"].clone(),
+            value: q("0.02"),
+        };
+        let out = String::from_utf8(patch_step_pmi(file.as_bytes(), &[edit]).unwrap()).unwrap();
+        let expected = flatness_splice(&file, newline);
+        assert!(
+            out == expected,
+            "line end {newline:?}: the patch differs from the splice at byte {}",
+            out.bytes()
+                .zip(expected.bytes())
+                .position(|(a, b)| a != b)
+                .unwrap_or(out.len().min(expected.len()))
+        );
+    }
+}
+
+#[test]
+fn a_face_usage_names_only_its_own_parts_faces() {
+    let file = source();
+    let field = |record: &str, index: usize| -> String {
+        let body = record.split_once('(').unwrap().1;
+        body.split(',')
+            .nth(index)
+            .unwrap()
+            .trim_end_matches([')', ';'])
+            .to_owned()
+    };
+    let line = |id: &str| -> String {
+        file.lines()
+            .find(|line| line.starts_with(&format!("{id}=")))
+            .unwrap()
+            .to_owned()
+    };
+    let usage_of = |aspect: &str| -> String {
+        file.lines()
+            .find(|line| {
+                line.contains("=GEOMETRIC_ITEM_SPECIFIC_USAGE(")
+                    && line.contains(&format!(",{aspect},"))
+            })
+            .unwrap()
+            .to_owned()
+    };
+    let flatness = file
+        .lines()
+        .find(|line| line.contains("FLATNESS_TOLERANCE('Base flatness'"))
+        .unwrap();
+    let base_aspect = field(flatness, 3);
+    let base_usage = usage_of(&base_aspect);
+    let size = file
+        .lines()
+        .find(|line| line.contains("=DIMENSIONAL_SIZE("))
+        .unwrap();
+    let pin_aspect = field(size, 0);
+    let pin_usage = usage_of(&pin_aspect);
+    // GEOMETRIC_ITEM_SPECIFIC_USAGE(name, description, aspect, representation, face)
+    let (base_rep, base_face) = (field(&base_usage, 3), field(&base_usage, 4));
+    let (pin_rep, pin_face) = (field(&pin_usage, 3), field(&pin_usage, 4));
+    assert_ne!(base_rep, pin_rep);
+    let _ = line(&pin_face);
+
+    let mut dec = Decider::default();
+    let original = read_step_assembly(file.as_bytes(), &mut dec).unwrap();
+    let base_items = |assembly: &Assembly<catallax_import::assembly::Part>| {
+        assembly
+            .products
+            .iter()
+            .find(|product| product.name == "Base")
+            .and_then(|product| match &product.content {
+                ProductContent::Part(part) => Some(part.pmi.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let before = base_items(&original);
+    for (changed, reason) in [
+        // The pin's face through the pin's representation.
+        (
+            base_usage.replace(
+                &format!(",{base_rep},{base_face})"),
+                &format!(",{pin_rep},{pin_face})"),
+            ),
+            "which is not of the aspect's part",
+        ),
+        // The pin's face through the base's own representation.
+        (
+            base_usage.replace(&format!(",{base_face})"), &format!(",{pin_face})")),
+            "does not hold",
+        ),
+    ] {
+        let broken = file.replacen(&base_usage, &changed, 1);
+        let assembly = read_step_assembly(broken.as_bytes(), &mut dec)
+            .unwrap_or_else(|error| panic!("the assembly was refused: {error:?}"));
+        let after = base_items(&assembly);
+        let names = |pmi: &catallax_import::StepPmi| {
+            pmi.pmi
+                .items
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>()
+        };
+        let mut expected = names(&before);
+        expected.retain(|id| id != "Base flatness");
+        assert_eq!(names(&after), expected);
+        assert!(
+            after
+                .skipped
+                .iter()
+                .any(|item| item.reason.contains(reason)),
+            "{:?}",
+            after.skipped
+        );
+    }
+}

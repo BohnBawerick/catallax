@@ -10,14 +10,13 @@ use catallax_shapes::distance::{PlanarBoundary, PlanarEdge};
 use catallax_shapes::{Circle, Plane, Point3, Vector3};
 use catallax_step::pmi::{
     Anchor, At, BEVEL_ANGLE, CHAMFER, COMPOSITE, COMPOSITE_STANDARD, COUNTERBORE, COUNTERSINK,
-    Camera, ChamferNominal, Characteristic, Datum, DatumRef, DatumTarget, EDGE_BREAK, FIRST_SIDE,
-    Feature, GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT, HoleHead,
-    HoleSize, INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location, MAX_SETBACK,
-    MIN_SETBACK, MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi, PositionControl,
-    PositionFrame, PositionSegment, Process, ProjectedZone, SECOND_SIDE, SEMANTIC_TEXT, SavedView,
-    Size, SizeKind, SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH, TARGET_WIDTH, THREAD,
-    THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH, off_face, projection_circle_behind,
-    projection_misses_cylinder, projection_plane_hit,
+    Camera, ChamferNominal, Characteristic, Crossing, Datum, DatumRef, DatumTarget, EDGE_BREAK,
+    FIRST_SIDE, Feature, GeometricTolerance, HEAD_DEPTH, HEAD_DIAMETER, HOLE_DEPTH, HOLE_PILOT,
+    HoleHead, HoleSize, INCLUDED_ANGLE, Item, ItemError, ItemKind, KNURL, Limits, Location,
+    MAX_SETBACK, MIN_SETBACK, MaterialCondition, ORIENTATION, PartNotes, PartValidator, Pmi,
+    PositionControl, PositionFrame, PositionSegment, Process, ProjectedZone, SECOND_SIDE,
+    SEMANTIC_TEXT, SavedView, Side, Size, SizeKind, SurfaceTexture, TARGET_DIAMETER, TARGET_LENGTH,
+    TARGET_WIDTH, THREAD, THREAD_DEPTH, THROUGH, TargetArea, TargetKind, WIDTH, ZoneSpan, off_face,
 };
 
 use crate::ImportRefusal;
@@ -352,6 +351,8 @@ struct Reader<'a> {
     g: &'a Graph,
     /// Every entity that refers to an entity, by the entity referred to.
     sharing: BTreeMap<u64, Vec<u64>>,
+    /// The faces each shape representation holds, as they are asked for.
+    representation_faces: std::cell::RefCell<BTreeMap<u64, std::rc::Rc<BTreeSet<u64>>>>,
 }
 
 /// One item as read, before names are made unique.
@@ -377,7 +378,101 @@ impl<'a> Reader<'a> {
                 sharing.entry(*target).or_default().push(*id);
             }
         }
-        Self { g, sharing }
+        Self {
+            g,
+            sharing,
+            representation_faces: Default::default(),
+        }
+    }
+
+    /// The faces a shape representation holds through its solids, shells
+    /// and face sets. A mapped item or another representation is not
+    /// followed, so a face of another part is never among them.
+    fn faces_in(&self, representation: u64) -> std::rc::Rc<BTreeSet<u64>> {
+        if let Some(faces) = self.representation_faces.borrow().get(&representation) {
+            return faces.clone();
+        }
+        let mut faces = BTreeSet::new();
+        let mut pending: Vec<u64> = self
+            .entity(representation)
+            .and_then(|entity| {
+                entity
+                    .parts
+                    .iter()
+                    .find_map(|(_, params)| reference_list(params.get(1)))
+            })
+            .unwrap_or_default();
+        let mut seen = BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(entity) = self.entity(id) else {
+                continue;
+            };
+            match entity.type_name() {
+                "ADVANCED_FACE" | "FACE_SURFACE" => {
+                    faces.insert(id);
+                }
+                "MANIFOLD_SOLID_BREP"
+                | "BREP_WITH_VOIDS"
+                | "FACETED_BREP"
+                | "CLOSED_SHELL"
+                | "OPEN_SHELL"
+                | "ORIENTED_CLOSED_SHELL"
+                | "ORIENTED_OPEN_SHELL"
+                | "CONNECTED_FACE_SET"
+                | "SHELL_BASED_SURFACE_MODEL" => {
+                    for (_, params) in &entity.parts {
+                        collect_references(params, &mut pending);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let faces = std::rc::Rc::new(faces);
+        self.representation_faces
+            .borrow_mut()
+            .insert(representation, faces.clone());
+        faces
+    }
+
+    /// Whether a shape representation belongs to a part: its shape
+    /// definition names the representation, or a plain relationship (not a
+    /// placed one, as an assembly uses) leads to it from one that does.
+    fn part_representation(&self, owner: u64, representation: u64) -> bool {
+        let mut pending: Vec<(u64, u32)> = self
+            .sharing_at(owner, "SHAPE_DEFINITION_REPRESENTATION", 0)
+            .into_iter()
+            .filter_map(|(_, params)| reference(params.get(1)))
+            .map(|id| (id, 0))
+            .collect();
+        let mut seen = BTreeSet::new();
+        while let Some((id, depth)) = pending.pop() {
+            if id == representation {
+                return true;
+            }
+            if !seen.insert(id) || depth >= 4 {
+                continue;
+            }
+            for user in self.sharing.get(&id).map_or(&[][..], Vec::as_slice) {
+                let Some(entity) = self.entity(*user) else {
+                    continue;
+                };
+                if entity.parts.len() != 1
+                    || !entity.type_name().ends_with("REPRESENTATION_RELATIONSHIP")
+                {
+                    continue;
+                }
+                let params = entity.parts[0].1.as_slice();
+                if reference(params.get(2)) == Some(id)
+                    && let Some(related) = reference(params.get(3))
+                {
+                    pending.push((related, depth + 1));
+                }
+            }
+        }
+        false
     }
 
     fn entity(&self, id: u64) -> Option<&'a Entity> {
@@ -474,12 +569,36 @@ impl<'a> Reader<'a> {
             "GEOMETRIC_ITEM_SPECIFIC_USAGE",
             "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
         ] {
-            for (_, params) in self.sharing_at(aspect, kind, 2) {
+            for (usage, params) in self.sharing_at(aspect, kind, 2) {
                 any = true;
+                // The usage names this aspect, through a representation of
+                // the aspect's own part, and faces that representation holds.
+                let owner = self
+                    .aspect_params(aspect)
+                    .and_then(|fields| reference(fields.get(2)));
+                let representation = reference(params.get(3));
+                let (Some(owner), Some(representation)) = (owner, representation) else {
+                    return Err(format!(
+                        "its face usage #{usage} names no part representation"
+                    ));
+                };
+                if reference(params.get(2)) != Some(aspect)
+                    || !self.part_representation(owner, representation)
+                {
+                    return Err(format!(
+                        "its face usage #{usage} names representation #{representation}, which is not of the aspect's part"
+                    ));
+                }
+                let held = self.faces_in(representation);
                 for item in references(params.get(4)) {
                     let kind = self.entity(item).map_or("", Entity::type_name);
                     if kind != "ADVANCED_FACE" && kind != "FACE_SURFACE" {
                         return Err(format!("it is attached to {kind}, not to a face"));
+                    }
+                    if !held.contains(&item) {
+                        return Err(format!(
+                            "its face usage #{usage} names face #{item}, which representation #{representation} does not hold"
+                        ));
                     }
                     let name = format!("#{item}");
                     if !faces.contains(&name) {
@@ -517,8 +636,20 @@ impl<'a> Reader<'a> {
         if members.is_empty() {
             return Err("it is attached to no face".into());
         }
+        let owner = self
+            .aspect_params(aspect)
+            .and_then(|fields| reference(fields.get(2)));
         let mut features = Vec::new();
         for member in members {
+            if self
+                .aspect_params(member)
+                .and_then(|fields| reference(fields.get(2)))
+                != owner
+            {
+                return Err(format!(
+                    "its pattern member #{member} belongs to another part"
+                ));
+            }
             features.extend(self.features(member, depth + 1)?);
         }
         let params = self.aspect_params(aspect).unwrap_or(&[]);
@@ -653,10 +784,37 @@ impl<'a> Reader<'a> {
         string(entity.parts[0].1.get(4))
     }
 
+    /// A datum follows AP242 when its shape aspect name is empty and it is
+    /// not product definitional.
+    fn datum_carrier(&self, datum: u64) -> Result<(), String> {
+        let fields = self
+            .entity(datum)
+            .filter(|entity| entity.parts.len() == 1)
+            .and_then(|entity| entity.part("DATUM"))
+            .ok_or("it is not a single datum")?;
+        match fields {
+            [Param::Str(name), _, _, Param::Enum(flag), _] if name.is_empty() && flag == "F" => {
+                Ok(())
+            }
+            _ => Err(format!(
+                "datum #{datum} needs an empty name and .F. as its product definitional flag"
+            )),
+        }
+    }
+
+    /// The product definitional flag of a shape aspect record.
+    fn definitional_flag(&self, aspect: u64) -> Option<&'a str> {
+        match self.aspect_params(aspect)?.get(3)? {
+            Param::Enum(flag) => Some(flag.as_str()),
+            _ => None,
+        }
+    }
+
     fn datum(&self, id: u64) -> Result<Found, String> {
         let letter = self
             .datum_letter(id)
             .ok_or("it has no identification letter")?;
+        self.datum_carrier(id)?;
         let mut features = Vec::new();
         let mut name = None;
         let targeted = !self.placed_targets(id)?.is_empty();
@@ -672,6 +830,11 @@ impl<'a> Reader<'a> {
             }
             if !self.has(relating, "DATUM_FEATURE") {
                 continue;
+            }
+            if self.definitional_flag(relating) != Some("T") {
+                return Err(format!(
+                    "its datum feature #{relating} needs .T. as its product definitional flag"
+                ));
             }
             name = name.or_else(|| self.id_attribute(relating));
             // A datum feature is one feature however many faces it has. As a
@@ -1276,7 +1439,7 @@ impl<'a> Reader<'a> {
     }
 
     fn datum_refs(&self, systems: &[u64], owner: u64) -> Result<Vec<(DatumRef, u64)>, String> {
-        let resolve = |param| {
+        let resolve = |param| -> Result<(String, u64), String> {
             let datum = reference(param).ok_or("a datum reference names no datum")?;
             let letter = self
                 .datum_letter(datum)
@@ -1286,8 +1449,9 @@ impl<'a> Reader<'a> {
                 .and_then(|e| reference(e.parts[0].1.get(2)))
                 != Some(owner)
             {
-                return Err("a datum reference belongs to another part");
+                return Err("a datum reference belongs to another part".into());
             }
+            self.datum_carrier(datum)?;
             Ok((letter, datum))
         };
         if let [system] = systems
@@ -1313,11 +1477,23 @@ impl<'a> Reader<'a> {
                         .filter(|entity| entity.parts.len() == 1)
                         .and_then(|entity| entity.part("DATUM_REFERENCE_COMPARTMENT"))
                         .ok_or("a datum reference is not a single compartment")?;
-                    let [_, _, shape, Param::Enum(flag), datum, modifiers] = fields else {
+                    let [name, description, shape, Param::Enum(flag), datum, modifiers] = fields
+                    else {
                         return Err("a datum reference compartment has invalid attributes".into());
                     };
+                    // A general datum reference has an empty name, no
+                    // description, no identifier and is not product
+                    // definitional.
+                    if !matches!(name, Param::Str(name) if name.is_empty())
+                        || !matches!(description, Param::Unset)
+                        || flag != "F"
+                        || !self.sharing_at(compartment, "ID_ATTRIBUTE", 1).is_empty()
+                    {
+                        return Err(format!(
+                            "datum reference compartment #{compartment} needs an empty name, no description, no identifier and .F. as its product definitional flag"
+                        ));
+                    }
                     if reference(Some(shape)) != Some(owner)
-                        || !matches!(flag.as_str(), "T" | "F" | "U")
                         || self.sharing_at(compartment, "DATUM_SYSTEM", 4).len() != 1
                     {
                         return Err(
@@ -1755,6 +1931,8 @@ impl<'a> Reader<'a> {
         let starts = self
             .used_faces(start)?
             .ok_or("its projected zone's start names no face")?;
+        // The height in the length unit of the faces it is measured on.
+        let height_file = &height_mm / &self.usage_scale(start)?;
         let mut planes = Vec::with_capacity(starts.len());
         for face in &starts {
             let (point, normal) = self
@@ -1795,7 +1973,7 @@ impl<'a> Reader<'a> {
             let intersection: [Rational; 3] =
                 std::array::from_fn(|i| &axis.origin[i] + &(&offset * &axis.axis[i]));
             self.check_inward_trim(&edges, point, normal)?;
-            self.check_open_entry(face, &intersection, normal)?;
+            self.check_open_entry(face, &intersection, normal, &height_file)?;
             entry_faces.push((*face).clone());
         }
         if starts.iter().any(|face| !entry_faces.contains(face)) {
@@ -1806,6 +1984,27 @@ impl<'a> Reader<'a> {
             direction: direction.ok_or("the position control names no feature")?,
             entry_faces,
         })
+    }
+
+    /// The length unit, in millimetres, of the representation that ties an
+    /// aspect to its faces.
+    fn usage_scale(&self, aspect: u64) -> Result<Rational, String> {
+        let mut scale: Option<Rational> = None;
+        for kind in [
+            "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+            "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
+        ] {
+            for (_, params) in self.sharing_at(aspect, kind, 2) {
+                let representation =
+                    reference(params.get(3)).ok_or("a face usage names no representation")?;
+                let unit = self.representation_scale(representation)?;
+                if scale.as_ref().is_some_and(|known| known != &unit) {
+                    return Err("its faces are named through different length units".into());
+                }
+                scale = Some(unit);
+            }
+        }
+        scale.ok_or_else(|| "its faces have no known length unit".into())
     }
 
     fn check_inward_trim(
@@ -1864,6 +2063,7 @@ impl<'a> Reader<'a> {
         entry: &str,
         intersection: &[Rational; 3],
         normal: &[Rational; 3],
+        height: &Rational,
     ) -> Result<(), String> {
         let entry_id: u64 = entry[1..].parse().expect("a used face names its entity");
         let shells = self.sharing_at(entry_id, "CLOSED_SHELL", 1);
@@ -1881,50 +2081,39 @@ impl<'a> Reader<'a> {
         };
         let at = point(intersection.clone());
         let direction = vector(normal.clone());
+        let span = ZoneSpan::new(at, direction.clone(), &Real::from_rational(height.clone()));
         let mut dec = Decider::default();
+        let detail = |error: Refusal| error.detail;
+        let mut crossings = Vec::new();
         for id in reference_list(shell.get(1)).ok_or(unknown)? {
             let face = format!("#{id}");
             let surface = self.face_surface(&face).ok_or(unknown)?;
             if self.has(surface, "PLANE") {
                 let (origin, axis) = self.outward_plane(&face).ok_or(unknown)?;
+                // The plane's outward normal along the zone: leaving the material.
+                let exiting = dot3(&axis, normal) > Rational::zero();
                 let plane = Plane {
                     origin: point(origin),
                     normal: vector(axis),
                     ref_dir: direction.clone(),
                 };
-                if let Ok(hit) = projection_plane_hit(&at, &direction, &plane, &mut dec) {
+                if let Ok(hit) = span.plane_hit(&plane, &mut dec) {
+                    let boundary = self.face_boundary(&face, &Rational::one()).ok_or(unknown)?;
                     if let Some(hit) = hit
-                        && self
-                            .face_boundary(&face, &Rational::one())
-                            .ok_or(unknown)?
-                            .contains(&hit, &mut dec)
-                            .map_err(|error| error.detail)?
+                        && boundary.contains(&hit, &mut dec).map_err(detail)?
                     {
                         return Err("its projected zone's axis meets a closed end".into());
                     }
+                    if let Some((t, hit)) = span.plane_beyond(&plane, &mut dec).map_err(detail)?
+                        && boundary.contains(&hit, &mut dec).map_err(detail)?
+                    {
+                        crossings.push(Crossing::At { t, exiting });
+                    }
                     continue;
                 }
-            } else if self.has(surface, "CYLINDRICAL_SURFACE") {
-                let round = self.read_round(surface, false).ok_or(unknown)?;
-                let cylinder = catallax_shapes::Cylinder {
-                    origin: point(round.axis.origin),
-                    axis: vector(round.axis.axis),
-                    ref_dir: vector(round.axis.reference),
-                    radius_sq: Real::from_rational(&round.radius * &round.radius),
-                };
-                if projection_misses_cylinder(&at, &direction, &cylinder, &mut dec)
-                    .map_err(|error| error.detail)?
-                {
-                    continue;
-                }
-            } else if !self.has(surface, "CONICAL_SURFACE") {
-                return Err(unknown.into());
             }
-            let edges = self.face_edge_curves(&face);
-            if edges.is_empty() {
-                return Err(unknown.into());
-            }
-            for id in edges {
+            let mut sides = Vec::new();
+            for id in self.face_edge_curves(&face) {
                 let edge = self
                     .entity(id)
                     .and_then(|edge| edge.part("EDGE_CURVE"))
@@ -1939,32 +2128,82 @@ impl<'a> Reader<'a> {
                             .and_then(|fields| reference(fields.get(1)))
                             .and_then(|id| self.point_coordinates(id))
                             .ok_or(unknown)?;
-                        if dot3(&sub3(&end, intersection), normal) > Rational::zero() {
-                            return Err(unknown.into());
-                        }
+                        sides.push(span.point_side(&point(end), &mut dec).map_err(detail)?);
                     }
-                } else {
-                    let circle = curve.part("CIRCLE").ok_or(unknown)?;
+                } else if let Some(circle) = curve.part("CIRCLE") {
                     let frame = reference(circle.get(1))
                         .and_then(|id| self.placement(id))
                         .ok_or(unknown)?;
                     let radius = number(circle.get(2))
                         .filter(|radius| *radius > Rational::zero())
                         .ok_or(unknown)?;
-                    if !projection_circle_behind(
-                        &at,
-                        &direction,
-                        &point(frame.origin),
-                        &vector(frame.axis),
-                        &Real::from_rational(&radius * &radius),
-                        &mut dec,
-                    )
-                    .map_err(|error| error.detail)?
-                    {
-                        return Err(unknown.into());
-                    }
+                    sides.push(
+                        span.circle_side(
+                            &point(frame.origin),
+                            &vector(frame.axis),
+                            &Real::from_rational(&radius * &radius),
+                            &mut dec,
+                        )
+                        .map_err(detail)?,
+                    );
+                } else {
+                    sides.push(None);
                 }
             }
+            // A face wholly behind the entry is never reached.
+            if !sides.is_empty() && sides.iter().all(|side| *side == Some(Side::Behind)) {
+                continue;
+            }
+            let cylinder = if self.has(surface, "CYLINDRICAL_SURFACE") {
+                let round = self.read_round(surface, false).ok_or(unknown)?;
+                Some(catallax_shapes::Cylinder {
+                    origin: point(round.axis.origin),
+                    axis: vector(round.axis.axis),
+                    ref_dir: vector(round.axis.reference),
+                    radius_sq: Real::from_rational(&round.radius * &round.radius),
+                })
+            } else {
+                None
+            };
+            let ball = self.entity(surface).and_then(|entity| {
+                let (frame, radius) = if let Some(fields) = entity.part("SPHERICAL_SURFACE") {
+                    (fields.get(1), number(fields.get(2))?)
+                } else {
+                    let fields = entity.part("TOROIDAL_SURFACE")?;
+                    (
+                        fields.get(1),
+                        number(fields.get(2))? + number(fields.get(3))?,
+                    )
+                };
+                let centre = self.placement(reference(frame)?)?.origin;
+                Some((point(centre), Real::from_rational(&radius * &radius)))
+            });
+            let clear = ZoneSpan::one_side(&sides)
+                || match (&cylinder, &ball) {
+                    (Some(cylinder), _) => {
+                        span.misses_cylinder(cylinder, &mut dec).map_err(detail)?
+                    }
+                    (_, Some((centre, radius_sq))) => span
+                        .misses_ball(centre, radius_sq, &mut dec)
+                        .map_err(detail)?,
+                    _ => false,
+                };
+            if !clear {
+                return Err(unknown.into());
+            }
+            let from = match (&cylinder, &ball) {
+                (Some(cylinder), _) => span.cylinder_beyond(cylinder, &mut dec).map_err(detail)?,
+                (_, Some((centre, radius_sq))) => span
+                    .ball_beyond(centre, radius_sq, &mut dec)
+                    .map_err(detail)?,
+                _ => Some(span.reach()),
+            };
+            crossings.extend(from.map(Crossing::From));
+        }
+        match ZoneSpan::starts_free(&crossings, &mut dec).map_err(detail)? {
+            Some(true) => {}
+            Some(false) => return Err("its projected zone's axis starts inside the part".into()),
+            None => return Err(unknown.into()),
         }
         Ok(())
     }
@@ -2965,8 +3204,11 @@ impl<'a> Reader<'a> {
             }
             let geometry = (|| -> Result<_, String> {
                 let mut scale = None;
+                // Only the length unit matters for the callout's own geometry; a
+                // view's geometry mapping is checked where that view is read, so
+                // a refused view does not take the callout from another view.
                 for model in models {
-                    let unit = self.presentation_scale(model)?;
+                    let unit = self.representation_scale(model)?;
                     if scale.as_ref().is_some_and(|known| known != &unit) {
                         return Err("the callout has conflicting length units".into());
                     }
@@ -3035,8 +3277,7 @@ impl<'a> Reader<'a> {
                 },
             );
         }
-        let mut views: Vec<SavedView> = Vec::new();
-        let mut view_names = BTreeSet::new();
+        let mut accepted: Vec<(Camera, String, Vec<u64>)> = Vec::new();
         for (&model, entity) in self.g {
             if entity.part("DRAUGHTING_MODEL").is_none() {
                 continue;
@@ -3120,34 +3361,34 @@ impl<'a> Reader<'a> {
                     .filter(|name| !name.trim().is_empty())
                     .or_else(|| string(params.first()).filter(|name| !name.trim().is_empty()))
                     .unwrap_or_else(|| format!("View #{camera}"));
-                let mut name = base.clone();
-                for index in 2.. {
-                    if view_names.insert(name.clone()) {
-                        break;
-                    }
-                    name = format!("{base} ({index})");
-                }
-                let mut view_items: Vec<String> = Vec::new();
-                for callout in &shown {
-                    if let Some(items) = presented.get(callout) {
-                        for item in items {
-                            if !view_items.contains(item) {
-                                view_items.push(item.clone());
-                            }
+                accepted.push((camera_record, base, shown.clone()));
+            }
+        }
+        // Every authored name is reserved before a repeat takes a suffix, so a
+        // suffix never displaces a later camera's own name.
+        let names = unique_view_names(accepted.iter().map(|(_, base, _)| base.as_str()));
+        let mut views: Vec<SavedView> = Vec::new();
+        for ((camera_record, _, shown), name) in accepted.into_iter().zip(names) {
+            let mut view_items: Vec<String> = Vec::new();
+            for callout in &shown {
+                if let Some(items) = presented.get(callout) {
+                    for item in items {
+                        if !view_items.contains(item) {
+                            view_items.push(item.clone());
                         }
                     }
-                    if let Some(graphic) = graphics.get_mut(callout)
-                        && !graphic.views.contains(&name)
-                    {
-                        graphic.views.push(name.clone());
-                    }
                 }
-                views.push(SavedView {
-                    name,
-                    camera: camera_record,
-                    items: view_items,
-                });
+                if let Some(graphic) = graphics.get_mut(callout)
+                    && !graphic.views.contains(&name)
+                {
+                    graphic.views.push(name.clone());
+                }
             }
+            views.push(SavedView {
+                name,
+                camera: camera_record,
+                items: view_items,
+            });
         }
         (views, graphics.into_values().collect())
     }
@@ -3217,8 +3458,8 @@ impl<'a> Reader<'a> {
         else {
             return Err("its placed target has invalid attributes".into());
         };
-        if !matches!(flag.as_str(), "T" | "F" | "U") {
-            return Err("its placed target has an invalid definitional flag".into());
+        if flag != "T" {
+            return Err("its placed target needs .T. as its product definitional flag".into());
         }
         let description = decode(raw).ok_or("its target description is unreadable")?;
         let owner = reference(Some(owner))
@@ -3284,6 +3525,9 @@ impl<'a> Reader<'a> {
         let aspect = reference(Some(aspect)).ok_or("its face feature is missing")?;
         if self.aspect_params(aspect).and_then(|p| reference(p.get(2))) != Some(owner) {
             return Err("its face feature belongs to another part".into());
+        }
+        if self.definitional_flag(aspect) != Some("T") {
+            return Err("its face feature needs .T. as its product definitional flag".into());
         }
         let faces = self
             .used_faces(aspect)?
@@ -3665,6 +3909,9 @@ pub(crate) fn read_assembly_pmi(
 ) -> Result<BTreeMap<u64, StepPmi>, ImportRefusal> {
     let reader = Reader::new(graph);
     let mut items = BTreeMap::<u64, Vec<Candidate<'_>>>::new();
+    // PMI no single part owns. An assembly has no PMI list of its own, so
+    // each part reports it.
+    let mut unowned = Vec::new();
     for item in graph
         .iter()
         .filter_map(|(&id, entity)| candidate(id, entity))
@@ -3683,16 +3930,29 @@ pub(crate) fn read_assembly_pmi(
                     .filter_map(|(&shape, &leaf)| (leaf == definition).then_some(shape)),
             );
         }
-        let owner = owners
-            .first()
-            .filter(|id| owners.len() == 1 && shapes.contains_key(id));
-        let Some(&owner) = owner else {
-            return Err(ImportRefusal::Unsupported {
+        // The one part the item's surviving links reach reads it, and refuses
+        // it there with its reason if a link is broken.
+        let leaves: Vec<u64> = owners
+            .iter()
+            .copied()
+            .filter(|id| shapes.contains_key(id))
+            .collect();
+        let [owner] = leaves.as_slice() else {
+            unowned.push(SkippedPmi {
                 entity: format!("#{}", item.id),
-                type_name: "PMI without a unique part attachment".into(),
+                kind: item.entity.type_name().into(),
+                reason: if leaves.is_empty() {
+                    "it is attached to no part of the assembly, so no part reads it".into()
+                } else {
+                    format!(
+                        "it is attached to {} parts of the assembly, not one",
+                        leaves.len()
+                    )
+                },
             });
+            continue;
         };
-        items.entry(owner).or_default().push(item);
+        items.entry(*owner).or_default().push(item);
     }
     let mut presentation = reader.assembly_presentation(shapes);
     Ok(shapes
@@ -3705,6 +3965,7 @@ pub(crate) fn read_assembly_pmi(
             );
             pmi.skipped
                 .extend(presentation.remove(&shape).unwrap_or_default());
+            pmi.skipped.extend(unowned.iter().cloned());
             (shape, pmi)
         })
         .collect())
@@ -3969,6 +4230,32 @@ fn read_items<'a>(
         skipped,
         graphics,
     }
+}
+
+/// Unique view names in order: the first of each authored name keeps it, and
+/// a repeat takes `name (n)` with the lowest free `n` from 2 that no authored
+/// or earlier name holds. Each base keeps its next suffix.
+fn unique_view_names<'n>(bases: impl Iterator<Item = &'n str> + Clone) -> Vec<String> {
+    let mut reserved: BTreeSet<String> = bases.clone().map(str::to_owned).collect();
+    let mut seen = BTreeSet::new();
+    let mut next = BTreeMap::<&str, usize>::new();
+    let mut names = Vec::new();
+    for base in bases {
+        if seen.insert(base) {
+            names.push(base.to_owned());
+            continue;
+        }
+        let suffix = next.entry(base).or_insert(2);
+        let name = loop {
+            let name = format!("{base} ({suffix})");
+            *suffix += 1;
+            if reserved.insert(name.clone()) {
+                break name;
+            }
+        };
+        names.push(name);
+    }
+    names
 }
 
 /// One edit of a source file's PMI.

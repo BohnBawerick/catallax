@@ -27,9 +27,7 @@ use std::fmt;
 
 use catallax_numbers::{Rational, Refusal};
 
-pub use check::{
-    check_on_model, projection_circle_behind, projection_misses_cylinder, projection_plane_hit,
-};
+pub use check::{Crossing, Side, ZoneSpan, check_on_model};
 pub use measure::nominals;
 pub use position::{DatumRef, PositionControl, PositionFrame, PositionSegment, ProjectedZone};
 pub use target::{DatumTarget, TargetArea, TargetKind, off_face};

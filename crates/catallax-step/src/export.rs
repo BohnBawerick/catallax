@@ -1733,7 +1733,6 @@ impl<'a> Exporter<'a> {
             digits,
             self.dec,
         )?;
-        self.graph.unique_draughting_model_names();
         Ok(annotations)
     }
 

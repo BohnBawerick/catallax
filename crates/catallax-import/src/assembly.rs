@@ -55,13 +55,13 @@ pub fn read_step_assembly(
             "SHAPE_DEFINITION_REPRESENTATION" => {
                 let fields = fields(&graph, id, "SHAPE_DEFINITION_REPRESENTATION")?;
                 let shape = reference(fields, 0)?;
-                if graph
-                    .get(&shape)
-                    .and_then(|e| e.part("PROPERTY_DEFINITION"))
-                    .and_then(|property| reference(property, 2).ok())
-                    .and_then(|owner| graph.get(&owner))
-                    .is_some_and(|owner| owner.part("PLACED_DATUM_TARGET_FEATURE").is_some())
-                {
+                // A property's shape definition is a PMI carrier, such as a
+                // datum target's parameters, never a product's geometry. The
+                // PMI reader reports a broken one with its item.
+                if graph.get(&shape).is_some_and(|e| {
+                    e.part("PROPERTY_DEFINITION").is_some()
+                        && e.part("PRODUCT_DEFINITION_SHAPE").is_none()
+                }) {
                     continue;
                 }
                 let shape_fields = self::fields(&graph, shape, "PRODUCT_DEFINITION_SHAPE")?;

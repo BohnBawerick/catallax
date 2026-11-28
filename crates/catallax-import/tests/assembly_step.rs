@@ -487,6 +487,72 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
             .any(|skip| skip.entity == "#900000" && skip.reason.contains("whole part"))
     );
 
+    // One bad target or note never refuses the assembly: it is refused as an
+    // item and the rest of the leaf's PMI is read.
+    let base_part = |source: &str| {
+        let read = read_step_assembly(source.as_bytes(), &mut Decider::default())
+            .unwrap_or_else(|error| panic!("the assembly was refused: {error:?}"));
+        let ProductContent::Part(part) = read
+            .products
+            .into_iter()
+            .find(|p| p.name == "Base")
+            .unwrap()
+            .content
+        else {
+            panic!("expected the leaf part");
+        };
+        part
+    };
+    let target = file
+        .lines()
+        .find(|line| line.contains("=PLACED_DATUM_TARGET_FEATURE("))
+        .unwrap();
+    let target_id = target.split('=').next().unwrap();
+    let target_owner = target.split(',').nth(2).unwrap();
+    for broken in [
+        // The target is gone; its property, parameters and datum link stay.
+        file.replacen(&format!("{target}\n"), "", 1),
+        // The target's own part reference is gone; its links name the leaf.
+        file.replacen(
+            target,
+            &target.replacen(&format!(",{target_owner},"), ",#900009,", 1),
+            1,
+        ),
+    ] {
+        let part = base_part(&broken);
+        assert!(part.pmi.sources.contains_key("Base flatness"));
+        assert!(!part.pmi.sources.contains_key("Base centre"));
+        assert!(
+            part.pmi
+                .skipped
+                .iter()
+                .any(|skip| skip.entity == target_id || skip.reason.contains(target_id)),
+            "{:?}",
+            part.pmi.skipped
+        );
+    }
+    let root_definition = file
+        .lines()
+        .filter_map(|line| {
+            let (id, record) = line.split_once('=')?;
+            record.starts_with("PRODUCT_DEFINITION('").then_some(id)
+        })
+        .find(|id| *id != leaf_definition)
+        .unwrap();
+    let root_note = format!(
+        "#900000=PROPERTY_DEFINITION('semantic text','',{root_definition});\n#900001=DESCRIPTIVE_REPRESENTATION_ITEM('','Assembly note');\n#900002=REPRESENTATION('',(#900001),{context});\n#900003=PROPERTY_DEFINITION_REPRESENTATION(#900000,#900002);\nENDSEC;\nEND-ISO"
+    );
+    let part = base_part(&file.replacen("ENDSEC;\nEND-ISO", &root_note, 1));
+    assert_eq!(part.pmi.sources.len(), 3);
+    assert!(
+        part.pmi
+            .skipped
+            .iter()
+            .any(|skip| skip.entity == "#900000" && skip.reason.contains("no part")),
+        "{:?}",
+        part.pmi.skipped
+    );
+
     let mut with_views = pmi.clone();
     with_views.views.push(SavedView {
         name: "Top".into(),

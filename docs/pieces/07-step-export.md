@@ -193,9 +193,13 @@ controls under that selection.
 
 A projected zone requires a positive height and one planar entry face per
 controlled cylinder, in feature order. Each entry meets the cylinder and its
-outward normal gives the projection direction. The checker requires a clear
-outward ray through the entry's shell, even beyond the stated height. It
-refuses if a face blocks the ray or if it cannot prove the ray clear.
+outward normal gives the projection direction. The checker requires the axis
+to be clear of every face of the entry's shell over the stated height, and the
+zone to start outside the part: past the zone's end, the first face the axis
+crosses must be one it enters. A face beyond the height does not block the
+zone. It refuses if a face meets the zone, if the axis starts inside the part,
+as on a boss standing up through the entry plane, or if it cannot prove
+either.
 
 The recorded NIST STEP File Analyzer 5.54 result found no error on the P1 bracket
 file before callouts and validation properties were added. OpenCASCADE 7.9 and

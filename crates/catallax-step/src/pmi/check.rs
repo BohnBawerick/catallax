@@ -363,49 +363,299 @@ pub(super) fn check_written_target(
     Ok(())
 }
 
+/// The stretch of a projected zone's axis the zone covers: from `at` on the
+/// entry face, along `direction`, for the zone's height. A face blocks the
+/// zone only where it meets this stretch; a face wholly behind the start or
+/// wholly beyond the end leaves it free.
 #[doc(hidden)]
-pub fn projection_plane_hit(
-    at: &Point3,
-    direction: &Vector3,
-    plane: &Plane,
-    dec: &mut Decider,
-) -> Result<Option<Point3>, Refusal> {
-    let height = plane.origin.minus(at).dot(&plane.normal);
-    let along = direction.dot(&plane.normal);
-    if is_zero(&along, dec)? {
-        if is_zero(&height, dec)? {
-            return Err(Refusal::new(
-                "step.pmi-invalid",
-                "the projection lies in a face plane",
-            ));
+pub struct ZoneSpan {
+    at: Point3,
+    direction: Vector3,
+    /// The height in lengths of `direction`.
+    reach: Real,
+}
+
+/// Where the axis past a zone's end meets one face of the part.
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub enum Crossing {
+    /// It passes into the material, or out of it, at `t` lengths of the
+    /// zone's direction from the start.
+    At {
+        /// The crossing's place along the axis.
+        t: Real,
+        /// Whether the axis leaves the material there.
+        exiting: bool,
+    },
+    /// It may meet the face from `t` on, at a place this check cannot settle.
+    From(Real),
+}
+
+/// Which end of a [`ZoneSpan`] a whole curve lies past.
+#[doc(hidden)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side {
+    /// At or behind the start, against the zone's direction.
+    Behind,
+    /// At or past the end of the zone's height.
+    Beyond,
+}
+
+impl ZoneSpan {
+    /// The span from `at` along `direction` for `height` in the same
+    /// length unit as `at`.
+    pub fn new(at: Point3, direction: Vector3, height: &Real) -> Self {
+        let reach = height / &direction.dot(&direction).sqrt();
+        Self {
+            at,
+            direction,
+            reach,
         }
-        return Ok(None);
     }
-    let t = height / along;
-    Ok((!is_positive(&(-t.clone()), dec)?).then(|| at.plus(&direction.scaled(&t))))
+
+    /// The zone's height in lengths of its direction.
+    pub fn reach(&self) -> Real {
+        self.reach.clone()
+    }
+
+    fn end(&self) -> Point3 {
+        self.at.plus(&self.direction.scaled(&self.reach))
+    }
+
+    /// Where the span meets a plane, from its start up to but not at its end.
+    /// Refuses when the span lies in the plane.
+    pub fn plane_hit(&self, plane: &Plane, dec: &mut Decider) -> Result<Option<Point3>, Refusal> {
+        let height = plane.origin.minus(&self.at).dot(&plane.normal);
+        let along = self.direction.dot(&plane.normal);
+        if is_zero(&along, dec)? {
+            if is_zero(&height, dec)? {
+                return Err(Refusal::new(
+                    "step.pmi-invalid",
+                    "the projection lies in a face plane",
+                ));
+            }
+            return Ok(None);
+        }
+        let t = height / along;
+        if is_positive(&(-t.clone()), dec)? || !is_positive(&(&self.reach - &t), dec)? {
+            return Ok(None);
+        }
+        Ok(Some(self.at.plus(&self.direction.scaled(&t))))
+    }
+
+    /// Whether the span, from its start up to but not at its end, stays off
+    /// a cylinder's surface. A span that touches it counts as meeting it.
+    pub fn misses_cylinder(
+        &self,
+        cylinder: &catallax_shapes::Cylinder,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        // |u + t v|^2 = r^2 |axis|^2 on the surface: a t^2 + 2 b t + c = 0.
+        let u = self.at.minus(&cylinder.origin).cross(&cylinder.axis);
+        let v = self.direction.cross(&cylinder.axis);
+        let a = v.dot(&v);
+        let b = u.dot(&v);
+        let c = u.dot(&u) - &cylinder.radius_sq * &cylinder.axis.dot(&cylinder.axis);
+        if is_zero(&a, dec)? {
+            return Ok(!is_zero(&c, dec)?);
+        }
+        if is_positive(&(&a * &c - &b * &b), dec)? {
+            return Ok(true);
+        }
+        if is_zero(&c, dec)? {
+            return Ok(false);
+        }
+        let slope = &a * &self.reach + b.clone() + b.clone();
+        let at_end = &slope * &self.reach + c.clone();
+        if is_positive(&(-c.clone()), dec)? {
+            // The start is inside: the span leaves at the larger root.
+            return Ok(!is_positive(&at_end, dec)?);
+        }
+        if is_positive(&b, dec)? {
+            // Both roots are behind the start.
+            return Ok(true);
+        }
+        // Both roots are ahead: clear when the first is at or past the end.
+        Ok(!is_positive(&(-at_end), dec)? && !is_positive(&(&a * &self.reach + b), dec)?)
+    }
+
+    /// Whether the span, start and end included, stays clear of a ball.
+    pub fn misses_ball(
+        &self,
+        centre: &Point3,
+        radius_sq: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let offset = centre.minus(&self.at);
+        let along = offset.dot(&self.direction);
+        let length_sq = self.direction.dot(&self.direction);
+        let nearest = if !is_positive(&along, dec)? {
+            self.at.clone()
+        } else if !is_positive(&(&self.reach * &length_sq - along.clone()), dec)? {
+            self.end()
+        } else {
+            self.at.plus(&self.direction.scaled(&(along / length_sq)))
+        };
+        let gap = centre.minus(&nearest);
+        is_positive(&(gap.dot(&gap) - radius_sq.clone()), dec)
+    }
+
+    /// Where the axis meets a plane at or past the span's end, with the
+    /// crossing's place along the axis.
+    pub fn plane_beyond(
+        &self,
+        plane: &Plane,
+        dec: &mut Decider,
+    ) -> Result<Option<(Real, Point3)>, Refusal> {
+        let along = self.direction.dot(&plane.normal);
+        if is_zero(&along, dec)? {
+            return Ok(None);
+        }
+        let t = plane.origin.minus(&self.at).dot(&plane.normal) / along;
+        if is_positive(&(&self.reach - &t), dec)? {
+            return Ok(None);
+        }
+        Ok(Some((t.clone(), self.at.plus(&self.direction.scaled(&t)))))
+    }
+
+    /// The first place at or past the span's end where the axis may meet a
+    /// cylinder's surface.
+    pub fn cylinder_beyond(
+        &self,
+        cylinder: &catallax_shapes::Cylinder,
+        dec: &mut Decider,
+    ) -> Result<Option<Real>, Refusal> {
+        let u = self.at.minus(&cylinder.origin).cross(&cylinder.axis);
+        let v = self.direction.cross(&cylinder.axis);
+        let a = v.dot(&v);
+        let b = u.dot(&v);
+        let c = u.dot(&u) - &cylinder.radius_sq * &cylinder.axis.dot(&cylinder.axis);
+        if is_zero(&a, dec)? {
+            return Ok(is_zero(&c, dec)?.then(|| self.reach.clone()));
+        }
+        let discriminant = &b * &b - &a * &c;
+        if is_positive(&(-discriminant.clone()), dec)? {
+            return Ok(None);
+        }
+        let root = discriminant.sqrt();
+        let last = (-b.clone() + root.clone()) / a.clone();
+        if is_positive(&(&self.reach - &last), dec)? {
+            return Ok(None);
+        }
+        let first = (-b - root) / a;
+        Ok(Some(if is_positive(&(&self.reach - &first), dec)? {
+            self.reach.clone()
+        } else {
+            first
+        }))
+    }
+
+    /// The first place at or past the span's end where the axis may meet a
+    /// ball.
+    pub fn ball_beyond(
+        &self,
+        centre: &Point3,
+        radius_sq: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<Real>, Refusal> {
+        let offset = centre.minus(&self.at);
+        let along = offset.dot(&self.direction);
+        let length_sq = self.direction.dot(&self.direction);
+        let spare = radius_sq * &length_sq - (&offset.dot(&offset) * &length_sq - &along * &along);
+        if is_positive(&(-spare.clone()), dec)? {
+            return Ok(None);
+        }
+        let root = spare.sqrt();
+        let last = (along.clone() + root.clone()) / length_sq.clone();
+        if is_positive(&(&self.reach - &last), dec)? {
+            return Ok(None);
+        }
+        let first = (along - root) / length_sq;
+        Ok(Some(if is_positive(&(&self.reach - &first), dec)? {
+            self.reach.clone()
+        } else {
+            first
+        }))
+    }
+
+    /// Whether the zone starts outside the part, from where the axis past the
+    /// span's end first crosses a face: entering the material there means it
+    /// was outside, leaving means it started inside. `None` when a face this
+    /// check cannot place may come first, or two crossings tie.
+    pub fn starts_free(crossings: &[Crossing], dec: &mut Decider) -> Result<Option<bool>, Refusal> {
+        let mut first: Option<(&Real, bool)> = None;
+        let mut tied = false;
+        for crossing in crossings {
+            if let Crossing::At { t, exiting } = crossing {
+                match first {
+                    Some((best, _)) if is_zero(&(t - best), dec)? => tied = true,
+                    Some((best, _)) if !is_positive(&(t - best), dec)? => {
+                        first = Some((t, *exiting));
+                        tied = false;
+                    }
+                    Some(_) => {}
+                    None => first = Some((t, *exiting)),
+                }
+            }
+        }
+        for crossing in crossings {
+            if let Crossing::From(from) = crossing {
+                let later = match first {
+                    Some((best, _)) => is_positive(&(from - best), dec)?,
+                    None => false,
+                };
+                if !later {
+                    return Ok(None);
+                }
+            }
+        }
+        if tied {
+            return Ok(None);
+        }
+        Ok(Some(first.is_none_or(|(_, exiting)| !exiting)))
+    }
+
+    /// Whether every edge of a face lies past the same end of the span, so
+    /// the face leaves the zone free.
+    pub fn one_side(sides: &[Option<Side>]) -> bool {
+        sides
+            .first()
+            .is_some_and(|first| first.is_some() && sides.iter().all(|side| side == first))
+    }
+
+    /// The end a point lies past, or `None` when it is within the span.
+    pub fn point_side(&self, point: &Point3, dec: &mut Decider) -> Result<Option<Side>, Refusal> {
+        let along = point.minus(&self.at).dot(&self.direction);
+        if !is_positive(&along, dec)? {
+            return Ok(Some(Side::Behind));
+        }
+        let past = along - &self.reach * &self.direction.dot(&self.direction);
+        Ok((!is_positive(&(-past), dec)?).then_some(Side::Beyond))
+    }
+
+    /// The end a whole circle lies past, or `None` when part of it is within
+    /// the span.
+    pub fn circle_side(
+        &self,
+        centre: &Point3,
+        axis: &Vector3,
+        radius_sq: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<Side>, Refusal> {
+        if circle_behind(&self.at, &self.direction, centre, axis, radius_sq, dec)? {
+            return Ok(Some(Side::Behind));
+        }
+        let back = self.direction.scaled(&Real::from_i64(-1));
+        Ok(
+            circle_behind(&self.end(), &back, centre, axis, radius_sq, dec)?
+                .then_some(Side::Beyond),
+        )
+    }
 }
 
-#[doc(hidden)]
-pub fn projection_misses_cylinder(
-    at: &Point3,
-    direction: &Vector3,
-    cylinder: &catallax_shapes::Cylinder,
-    dec: &mut Decider,
-) -> Result<bool, Refusal> {
-    let u = at.minus(&cylinder.origin).cross(&cylinder.axis);
-    let v = direction.cross(&cylinder.axis);
-    let a = v.dot(&v);
-    let b = u.dot(&v);
-    let c = u.dot(&u) - &cylinder.radius_sq * &cylinder.axis.dot(&cylinder.axis);
-    if is_zero(&a, dec)? {
-        return Ok(!is_zero(&c, dec)?);
-    }
-    Ok(is_positive(&(&a * &c - &b * &b), dec)?
-        || (is_positive(&c, dec)? && !is_positive(&(-b), dec)?))
-}
-
-#[doc(hidden)]
-pub fn projection_circle_behind(
+/// Whether a whole circle lies at or behind the plane through `at` square to
+/// `direction`.
+fn circle_behind(
     at: &Point3,
     direction: &Vector3,
     centre: &Point3,
@@ -533,6 +783,11 @@ pub(super) fn check_written_projection(
         let (axis, _) = first.ok_or_else(invalid)?;
         let offset = plane.origin.minus(&axis.origin).dot(&normal) / axis.normal.dot(&normal);
         let at = axis.origin.plus(&axis.normal.scaled(&offset));
+        let span = ZoneSpan::new(
+            at.clone(),
+            normal.clone(),
+            &Real::from_rational(zone.height_mm.clone()),
+        );
         let mut owners = shells.iter().filter(|members| {
             members
                 .iter()
@@ -542,45 +797,40 @@ pub(super) fn check_written_projection(
             .next()
             .filter(|_| owners.next().is_none())
             .ok_or_else(invalid)?;
+        let mut crossings = Vec::new();
         for member in *shell {
             let Field::Ref(face) = member else {
                 return Err(invalid());
             };
-            let (bounds, surface, _) = written_face(graph, *face).ok_or_else(invalid)?;
+            let (bounds, surface, same) = written_face(graph, *face).ok_or_else(invalid)?;
             if let Some(plane) = fields(graph, surface, "PLANE")
                 .and_then(|fields| written_plane(graph, fields.get(1)?))
+                && let Ok(hit) = span.plane_hit(&plane, dec)
             {
-                if let Ok(hit) = projection_plane_hit(&at, &normal, &plane, dec) {
-                    if let Some(hit) = hit
-                        && written_boundary(graph, *face)
-                            .ok_or_else(invalid)?
-                            .contains(&hit, dec)?
-                    {
-                        return Err(invalid());
-                    }
-                    continue;
+                let boundary = written_boundary(graph, *face).ok_or_else(invalid)?;
+                if let Some(hit) = hit
+                    && boundary.contains(&hit, dec)?
+                {
+                    return Err(invalid());
                 }
-            } else if let Some([_, frame, Field::Text(radius)]) =
-                fields(graph, surface, "CYLINDRICAL_SURFACE")
-            {
-                let plane = written_plane(graph, frame).ok_or_else(invalid)?;
-                let radius = written_real(radius);
-                let cylinder = catallax_shapes::Cylinder {
-                    origin: plane.origin,
-                    axis: plane.normal,
-                    ref_dir: plane.ref_dir,
-                    radius_sq: &radius * &radius,
-                };
-                if projection_misses_cylinder(&at, &normal, &cylinder, dec)? {
-                    continue;
+                if let Some((t, hit)) = span.plane_beyond(&plane, dec)?
+                    && boundary.contains(&hit, dec)?
+                {
+                    let along = plane.normal.dot(&normal);
+                    let outward = if same != reversed.contains(face) {
+                        along
+                    } else {
+                        -along
+                    };
+                    crossings.push(Crossing::At {
+                        t,
+                        exiting: is_positive(&outward, dec)?,
+                    });
                 }
-            } else if fields(graph, surface, "CONICAL_SURFACE").is_none() {
-                return Err(invalid());
+                continue;
             }
             let edges = written_edges(graph, bounds).ok_or_else(invalid)?;
-            if edges.is_empty() {
-                return Err(invalid());
-            }
+            let mut sides = Vec::new();
             for id in edges {
                 let ("EDGE_CURVE", [_, a, b, curve, _]) = graph.record(id) else {
                     return Err(invalid());
@@ -589,29 +839,74 @@ pub(super) fn check_written_projection(
                 if fields(graph, curve, "LINE").is_some() {
                     for end in [a, b] {
                         let end = written_point(graph, end).ok_or_else(invalid)?;
-                        if is_positive(&end.minus(&at).dot(&normal), dec)? {
-                            return Err(invalid());
-                        }
+                        sides.push(span.point_side(&end, dec)?);
                     }
-                } else {
-                    let Some([_, frame, Field::Text(radius)]) = fields(graph, curve, "CIRCLE")
-                    else {
-                        return Err(invalid());
-                    };
+                } else if let Some([_, frame, Field::Text(radius)]) = fields(graph, curve, "CIRCLE")
+                {
                     let circle = written_plane(graph, frame).ok_or_else(invalid)?;
                     let radius = written_real(radius);
-                    if !projection_circle_behind(
-                        &at,
-                        &normal,
+                    sides.push(span.circle_side(
                         &circle.origin,
                         &circle.normal,
                         &(&radius * &radius),
                         dec,
-                    )? {
-                        return Err(invalid());
-                    }
+                    )?);
+                } else {
+                    sides.push(None);
                 }
             }
+            // A face wholly behind the entry is never reached.
+            if !sides.is_empty() && sides.iter().all(|side| *side == Some(Side::Behind)) {
+                continue;
+            }
+            let cylinder = match fields(graph, surface, "CYLINDRICAL_SURFACE") {
+                Some([_, frame, Field::Text(radius)]) => {
+                    let plane = written_plane(graph, frame).ok_or_else(invalid)?;
+                    let radius = written_real(radius);
+                    Some(catallax_shapes::Cylinder {
+                        origin: plane.origin,
+                        axis: plane.normal,
+                        ref_dir: plane.ref_dir,
+                        radius_sq: &radius * &radius,
+                    })
+                }
+                _ => None,
+            };
+            let ball = match (
+                fields(graph, surface, "SPHERICAL_SURFACE"),
+                fields(graph, surface, "TOROIDAL_SURFACE"),
+            ) {
+                (Some([_, frame, Field::Text(radius)]), _) => Some((frame, written_real(radius))),
+                (_, Some([_, frame, Field::Text(major), Field::Text(minor)])) => {
+                    Some((frame, written_real(major) + written_real(minor)))
+                }
+                _ => None,
+            };
+            let ball = match ball {
+                Some((frame, radius)) => Some((
+                    written_plane(graph, frame).ok_or_else(invalid)?.origin,
+                    &radius * &radius,
+                )),
+                None => None,
+            };
+            let clear = ZoneSpan::one_side(&sides)
+                || match (&cylinder, &ball) {
+                    (Some(cylinder), _) => span.misses_cylinder(cylinder, dec)?,
+                    (_, Some((center, radius_sq))) => span.misses_ball(center, radius_sq, dec)?,
+                    _ => false,
+                };
+            if !clear {
+                return Err(invalid());
+            }
+            let from = match (&cylinder, &ball) {
+                (Some(cylinder), _) => span.cylinder_beyond(cylinder, dec)?,
+                (_, Some((center, radius_sq))) => span.ball_beyond(center, radius_sq, dec)?,
+                _ => Some(span.reach()),
+            };
+            crossings.extend(from.map(Crossing::From));
+        }
+        if ZoneSpan::starts_free(&crossings, dec)? != Some(true) {
+            return Err(invalid());
         }
     }
     Ok(())
@@ -653,8 +948,7 @@ fn feature_of_size(
 fn check_open_entry(
     model: &Model,
     entry: FaceId,
-    at: &Point3,
-    normal: &Vector3,
+    span: &ZoneSpan,
     written: Option<&BTreeMap<FaceId, Vec<Id>>>,
     item: &str,
     dec: &mut Decider,
@@ -677,42 +971,38 @@ fn check_open_entry(
     }
     let blocked = || refuse(item, "a projected zone's axis meets a closed end");
     let unknown = || refuse(item, "the projected zone's exterior start cannot be proved");
+    let mut crossings = Vec::new();
     for face in shell_faces {
-        match model.geom().surface(model.face(face).surface) {
-            Surface::Plane(plane) => {
-                if let Ok(hit) = projection_plane_hit(at, normal, plane, dec) {
-                    if let Some(hit) = hit
-                        && face_boundary(model, face, dec)?
-                            .ok_or_else(unknown)?
-                            .contains(&hit, dec)?
-                    {
-                        return Err(blocked());
-                    }
-                    continue;
-                }
+        let surface = model.geom().surface(model.face(face).surface);
+        if let Surface::Plane(plane) = surface
+            && let Ok(hit) = span.plane_hit(plane, dec)
+        {
+            let boundary = face_boundary(model, face, dec)?.ok_or_else(unknown)?;
+            if let Some(hit) = hit
+                && boundary.contains(&hit, dec)?
+            {
+                return Err(blocked());
             }
-            Surface::Cylinder(cylinder) => {
-                if projection_misses_cylinder(at, normal, cylinder, dec)? {
-                    continue;
-                }
+            if let Some((t, hit)) = span.plane_beyond(plane, dec)?
+                && boundary.contains(&hit, dec)?
+            {
+                let (_, outward) = outward_plane(model, face).ok_or_else(unknown)?;
+                crossings.push(Crossing::At {
+                    t,
+                    exiting: is_positive(&outward.dot(&span.direction), dec)?,
+                });
             }
-            Surface::Cone(_) => {}
-            _ => return Err(unknown()),
+            continue;
         }
-        let mut edges = face_edges(model, face).peekable();
-        if edges.peek().is_none() {
-            return Err(unknown());
-        }
-        for id in edges {
+        let mut sides = Vec::new();
+        for id in face_edges(model, face) {
             let edge = model.edge(id);
             match curve_form(model.geom(), edge.curve, dec)? {
                 CurveForm::Line { .. } => {
                     for end in [edge.start, edge.end] {
                         let end = end.ok_or_else(unknown)?;
                         let end = model.geom().position(model.vertex(end).point);
-                        if is_positive(&end.minus(at).dot(normal), dec)? {
-                            return Err(unknown());
-                        }
+                        sides.push(span.point_side(&end, dec)?);
                     }
                 }
                 CurveForm::Circle {
@@ -720,16 +1010,47 @@ fn check_open_entry(
                     normal: axis,
                     radius_sq,
                     ..
-                } => {
-                    if !projection_circle_behind(at, normal, &center, &axis, &radius_sq, dec)? {
-                        return Err(unknown());
-                    }
-                }
-                _ => return Err(unknown()),
+                } => sides.push(span.circle_side(&center, &axis, &radius_sq, dec)?),
+                _ => sides.push(None),
             }
         }
+        // A face wholly behind the entry is never reached.
+        if !sides.is_empty() && sides.iter().all(|side| *side == Some(Side::Behind)) {
+            continue;
+        }
+        let ball = |center: &Point3, radius: Real| (center.clone(), &radius * &radius);
+        let bound = match surface {
+            Surface::Sphere(sphere) => Some(ball(&sphere.center, sphere.radius.clone())),
+            Surface::Torus(torus) => Some(ball(
+                &torus.center,
+                torus.major.clone() + torus.minor.clone(),
+            )),
+            _ => None,
+        };
+        let clear = ZoneSpan::one_side(&sides)
+            || match (surface, &bound) {
+                (Surface::Cylinder(cylinder), _) => span.misses_cylinder(cylinder, dec)?,
+                (_, Some((center, radius_sq))) => span.misses_ball(center, radius_sq, dec)?,
+                _ => false,
+            };
+        if !clear {
+            return Err(unknown());
+        }
+        let from = match (surface, &bound) {
+            (Surface::Cylinder(cylinder), _) => span.cylinder_beyond(cylinder, dec)?,
+            (_, Some((center, radius_sq))) => span.ball_beyond(center, radius_sq, dec)?,
+            _ => Some(span.reach()),
+        };
+        crossings.extend(from.map(Crossing::From));
     }
-    Ok(())
+    match ZoneSpan::starts_free(&crossings, dec)? {
+        Some(true) => Ok(()),
+        Some(false) => Err(refuse(
+            item,
+            "the projected zone's axis starts inside the part",
+        )),
+        None => Err(unknown()),
+    }
 }
 
 fn check_inward_trim(
@@ -876,15 +1197,12 @@ fn check_position(
             }
             let offset = plane.origin.minus(point).dot(&normal) / axis.dot(&normal);
             check_inward_trim(model, &edges, &plane.origin, &normal, item, dec)?;
-            check_open_entry(
-                model,
-                *entry,
-                &point.plus(&axis.scaled(&offset)),
-                &normal,
-                written,
-                item,
-                dec,
-            )?;
+            let span = ZoneSpan::new(
+                point.plus(&axis.scaled(&offset)),
+                normal.clone(),
+                &Real::from_rational(zone.height_mm.clone()),
+            );
+            check_open_entry(model, *entry, &span, written, item, dec)?;
         }
     }
     Ok(())

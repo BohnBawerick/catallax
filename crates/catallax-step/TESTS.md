@@ -304,3 +304,18 @@ degree-seven conversion now reuses exact degree-only weights and scales each
 coefficient enclosure once per span. Interval accumulation, rounding and error checks are
 unchanged. This fixture uses exact public primitives, not a captured SolidDraft
 document, and does not establish a bracket-edit speedup.
+
+Review follow-ups each have a test that fails on the code before the fix:
+- `a_projected_zone_is_checked_over_its_own_height`: a 2 mm and a 10 mm zone
+  into a 10 mm gap are free, a 12 mm one is refused on the model, on export and
+  on import, and a 1 mm zone above a raised boss is refused because it starts
+  inside the part.
+- `datum_carriers_follow_the_ap242_rules`: each wrong flag or name on a datum,
+  datum feature, placed target or datum reference compartment refuses that
+  datum or frame alone.
+- `authored_view_names_are_reserved_before_suffixes` and
+  `a_refused_view_keeps_shared_callouts_in_other_views`: view names and shared
+  callouts.
+- In `catallax-import`: `a_face_usage_names_only_its_own_parts_faces`, the
+  byte splice of a tolerance edit with both line ends, and broken targets or a
+  root note in `a_leaf_datum_target_round_trips_through_assembly_discovery`.

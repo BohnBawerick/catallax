@@ -4015,7 +4015,11 @@ fn saved_views_write_their_callouts_and_read_back() {
         assert_eq!(definitions.len(), count, "{item}");
         let definition = &definitions[0];
         assert!(definitions.iter().all(|id| id == definition), "{item}");
-        assert!(all[definition].contains(entity), "{item}: {}", all[definition]);
+        assert!(
+            all[definition].contains(entity),
+            "{item}: {}",
+            all[definition]
+        );
     }
     let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
     let cross = |a: &[f64], b: &[f64]| {

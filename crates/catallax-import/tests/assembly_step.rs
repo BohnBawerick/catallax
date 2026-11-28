@@ -536,9 +536,21 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
         .unwrap();
     let target_id = target.split('=').next().unwrap();
     let target_owner = target.split(',').nth(2).unwrap();
+    let target_datum_link = file
+        .lines()
+        .find(|line| {
+            line.contains("=SHAPE_ASPECT_RELATIONSHIP(")
+                && line.contains(&format!(",'datum target',{target_id},"))
+        })
+        .unwrap();
     for broken in [
         // The target is gone; its property, parameters and datum link stay.
         file.replacen(&format!("{target}\n"), "", 1),
+        file.replacen(&format!("{target}\n"), "", 1).replacen(
+            &format!("{target_datum_link}\n"),
+            "",
+            1,
+        ),
         // The target's own part reference is gone; its links name the leaf.
         file.replacen(
             target,
@@ -549,6 +561,7 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
         let part = base_part(&broken);
         assert!(part.pmi.sources.contains_key("Base flatness"));
         assert!(!part.pmi.sources.contains_key("Base centre"));
+        assert!(!part.pmi.sources.contains_key("Base datum"));
         assert!(
             part.pmi
                 .skipped
@@ -630,6 +643,13 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
     )
     .unwrap();
     let output = std::str::from_utf8(&bytes).unwrap();
+    if let Some(directory) = std::env::var_os("CATALLAX_PMI_OUT") {
+        std::fs::write(
+            PathBuf::from(directory).join("c4c-assembly-views.step"),
+            output,
+        )
+        .unwrap();
+    }
     let names: Vec<_> = output
         .lines()
         .filter_map(|line| {
@@ -658,6 +678,11 @@ fn a_leaf_datum_target_round_trips_through_assembly_discovery() {
         let [camera] = cameras.as_slice() else {
             panic!("expected one camera named {name}, got {cameras:?}");
         };
+        assert!(
+            output
+                .lines()
+                .any(|line| line.contains(&format!("=ITEM_DEFINED_TRANSFORMATION('',$,{camera},")))
+        );
         assert!(output.lines().any(|line| {
             line.contains(&format!("=DRAUGHTING_MODEL('{name}',"))
                 && line.contains(&format!(",{camera}),"))

@@ -218,8 +218,18 @@ reported while the other items stay.
 The saved-view test writes the P1 items unchanged with two views, one parallel
 and one in perspective. With `CATALLAX_PMI_OUT` set, the test writes both
 standalone views as `c4c-bore-view.step` and `c4c-top-view.step` and the
-combined `c4c-saved-views.step`. It checks the AP242 Edition 1 draughting model
-rules WR2 and UR1 and reads back each view's camera, window and visible items.
+combined `c4c-saved-views.step`. It checks the AP242 Edition 1 camera and map
+links and draughting model rules WR2 and UR1. It reads back each view's camera,
+window and visible items.
+
+Run `python3 tools/step-regressions/check_ap242_saved_views.py` for full
+EXPRESS validation of the saved-view files. Set `JSDAI_AP242_E1_CLASSPATH` to
+the JSDAI Validate runtime and the compiled AP242 Edition 1 long-form schema
+from the [MBx-IF EXPRESS schema list](https://www.mbx-if.org/home/mbx/resources/express-schemas/).
+The check generates the P1, assembly and source-patch artifacts, then checks
+entity constraints, global rules and uniqueness rules. The unlinked-camera
+negative control must fail before the fixture results are accepted.
+
 An independent walk of the emitted records checks the datum feature and
 tolerance associations, each plane and the extent of the labels and finish
 symbols along both screen dimensions. A handwritten fixture with no equivalent

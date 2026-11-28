@@ -1,7 +1,6 @@
 //! Entity references stay symbolic until the required depth-first numbering pass.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -308,7 +307,7 @@ impl Field {
     }
 }
 
-fn unique_quoted_names(names: &mut [&mut Cow<'static, str>]) -> usize {
+fn unique_quoted_names(names: &mut [&mut Cow<'static, str>]) {
     let bases = names.iter().map(|name| {
         let name = name
             .strip_prefix('\'')
@@ -316,11 +315,10 @@ fn unique_quoted_names(names: &mut [&mut Cow<'static, str>]) -> usize {
             .expect("a quoted model name");
         (name, if name.is_empty() { "PMI" } else { name })
     });
-    let (allocated, tried) = crate::pmi::unique_view_names(bases);
+    let allocated = crate::pmi::unique_view_names(bases);
     for (name, allocated) in names.iter_mut().zip(allocated) {
         **name = Cow::Owned(format!("'{allocated}'"));
     }
-    tried
 }
 
 fn write_fields(fields: &[Field], numbers: &[usize], out: &mut String) {
@@ -381,20 +379,5 @@ mod tests {
                 "'PMI (3)'"
             ]
         );
-    }
-
-    #[test]
-    fn many_blank_models_are_named_in_linear_work() {
-        // Every finished assembly leaf may write a blank global model.
-        let count = 4000;
-        let mut names = quoted(&vec![""; count]);
-        let mut refs: Vec<_> = names.iter_mut().collect();
-        let tried = unique_quoted_names(&mut refs);
-        // One candidate per repeat; restarting at 2 each time tried about
-        // count * count / 2.
-        assert_eq!(tried, count - 1);
-        let distinct: BTreeSet<_> = names.iter().collect();
-        assert_eq!(distinct.len(), count);
-        assert_eq!(names[count - 1], format!("'PMI ({count})'"));
     }
 }

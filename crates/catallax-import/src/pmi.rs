@@ -1988,12 +1988,20 @@ impl<'a> Reader<'a> {
         Ok((features, axes))
     }
 
+    fn controlled_part(&self, aspect: u64) -> Result<u64, String> {
+        self.aspect_params(aspect)
+            .and_then(|fields| reference(fields.get(2)))
+            .filter(|owner| self.has(*owner, "PRODUCT_DEFINITION_SHAPE"))
+            .ok_or_else(|| "the controlled feature has no owning part".into())
+    }
+
     /// A projected zone from where each controlled feature meets the start
     /// faces (recommended practices, section 6.9.2.2). Each feature shares an
     /// edge with exactly one planar start face, whose outward normal gives the
     /// zone's direction.
     fn projection(
         &self,
+        target: u64,
         start: u64,
         height_mm: Rational,
         features: &[Feature<String>],
@@ -2002,11 +2010,18 @@ impl<'a> Reader<'a> {
         let usage = self
             .face_usage(start)?
             .ok_or("its projected zone's start names no face")?;
+        if usage.owner != self.controlled_part(target)? {
+            return Err("its projected zone's start belongs to another part".into());
+        }
+        let representations = self.part_representations(usage.owner);
+        if self.representation_links.reaches_outside(&representations) {
+            return Err("its projected zone's part has unchecked linked geometry".into());
+        }
         let scale = self.usage_scale(&usage)?;
         let height_file = &height_mm / &scale;
         let starts = usage.faces;
         let mut part_faces = BTreeSet::new();
-        for representation in self.part_representations(usage.owner) {
+        for representation in representations {
             let faces = self.faces_in(representation);
             if !faces.is_empty() && self.representation_scale(representation)? != scale {
                 return Err("the projected zone's part uses different length units".into());
@@ -2327,7 +2342,7 @@ impl<'a> Reader<'a> {
             let (features, axes) = self.position_features(upper.target)?;
             let projected_zone = match &upper.projected {
                 Some((height, start)) => {
-                    Some(self.projection(*start, height.clone(), &features, &axes)?)
+                    Some(self.projection(upper.target, *start, height.clone(), &features, &axes)?)
                 }
                 None => None,
             };
@@ -2435,6 +2450,9 @@ impl<'a> Reader<'a> {
         if upper.projected.is_some() || lower.projected.is_some() {
             return Err("a composite frame with a projected zone is not read".into());
         }
+        if self.controlled_part(upper.target)? != self.controlled_part(lower.target)? {
+            return Err("the composite frame's segments belong to different parts".into());
+        }
         if !self.aspect_has_asme_standard(upper.target)
             || !self.aspect_has_asme_standard(lower.target)
         {
@@ -2503,10 +2521,21 @@ impl<'a> Reader<'a> {
             }
         }
         let mut affected = BTreeMap::<u64, Vec<(u64, bool)>>::new();
-        for (&id, entity) in self.g {
-            let Some(fields) = entity.part("PLACED_DATUM_TARGET_FEATURE") else {
-                continue;
-            };
+        let targets: BTreeSet<_> = self
+            .g
+            .iter()
+            .filter_map(|(&id, entity)| {
+                if entity.part("PLACED_DATUM_TARGET_FEATURE").is_some() {
+                    return Some(id);
+                }
+                reference(entity.part("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")?.get(3))
+                    .filter(|target| self.entity(*target).is_none())
+            })
+            .collect();
+        for id in targets {
+            let fields = self
+                .entity(id)
+                .and_then(|entity| entity.part("PLACED_DATUM_TARGET_FEATURE"));
             let has_datum = self
                 .sharing
                 .get(&id)
@@ -2529,8 +2558,9 @@ impl<'a> Reader<'a> {
                         .filter(|owner| self.has(*owner, "PRODUCT_DEFINITION_SHAPE")),
                 );
             }
-            if let Some(owner) =
-                reference(fields.get(2)).filter(|id| self.has(*id, "PRODUCT_DEFINITION_SHAPE"))
+            if let Some(owner) = fields
+                .and_then(|fields| reference(fields.get(2)))
+                .filter(|id| self.has(*id, "PRODUCT_DEFINITION_SHAPE"))
             {
                 owners.insert(owner);
             }
@@ -2833,46 +2863,127 @@ impl<'a> Reader<'a> {
                 Real::from_rational(v[2].clone()),
             )
         };
+        let flag = |value: &Param| match value {
+            Param::Enum(value) if value == "T" => Some(true),
+            Param::Enum(value) if value == "F" => Some(false),
+            _ => None,
+        };
         let mut vertices = Vec::new();
         let mut indices = BTreeMap::new();
         let mut edges = Vec::new();
-        for bound in references(params.get(1)) {
-            let cycle = self.entity(reference(self.entity(bound)?.parts[0].1.get(1))?)?;
-            if cycle.part("VERTEX_LOOP").is_some() {
-                continue;
+        let mut outer = false;
+        let in_plane =
+            |point: &[Rational; 3]| dot3(&sub3(point, &frame.origin), &frame.axis).is_zero();
+        for bound in reference_list(params.get(1))? {
+            let entity = self.entity(bound)?;
+            if !matches!(entity.type_name(), "FACE_BOUND" | "FACE_OUTER_BOUND")
+                || (entity.type_name() == "FACE_OUTER_BOUND" && std::mem::replace(&mut outer, true))
+            {
+                return None;
             }
-            for oriented in references(cycle.part("EDGE_LOOP")?.get(1)) {
-                let edge = reference(self.entity(oriented)?.part("ORIENTED_EDGE")?.get(3))?;
-                let edge = self.entity(edge)?.part("EDGE_CURVE")?;
-                let mut ends = [0usize; 2];
-                for (slot, vertex) in ends.iter_mut().zip([edge.get(1), edge.get(2)]) {
-                    let vertex = reference(vertex)?;
-                    *slot = match indices.get(&vertex) {
-                        Some(index) => *index,
-                        None => {
-                            let point =
-                                reference(self.entity(vertex)?.part("VERTEX_POINT")?.get(1))?;
-                            let point =
-                                coordinates(self.entity(point)?.part("CARTESIAN_POINT")?.get(1))?;
-                            vertices.push(at(&point));
-                            indices.insert(vertex, vertices.len() - 1);
-                            vertices.len() - 1
-                        }
-                    };
-                }
-                let same_sense = match edge.get(4) {
-                    Some(Param::Enum(sense)) if sense == "T" => true,
-                    Some(Param::Enum(sense)) if sense == "F" => false,
-                    _ => return None,
+            let [Param::Str(_), cycle, sense] = entity.part(entity.type_name())? else {
+                return None;
+            };
+            flag(sense)?;
+            let [Param::Str(_), members] =
+                self.entity(reference(Some(cycle))?)?.part("EDGE_LOOP")?
+            else {
+                return None;
+            };
+            let mut first = None;
+            let mut previous = None;
+            for oriented in reference_list(Some(members))? {
+                let [
+                    Param::Str(_),
+                    Param::Derived,
+                    Param::Derived,
+                    edge,
+                    orientation,
+                ] = self.entity(oriented)?.part("ORIENTED_EDGE")?
+                else {
+                    return None;
                 };
-                let curve = self.trim_curve(reference(edge.get(3))?)?;
-                if curve.part("LINE").is_some() {
+                let [Param::Str(_), a, b, geometry, sense] =
+                    self.entity(reference(Some(edge))?)?.part("EDGE_CURVE")?
+                else {
+                    return None;
+                };
+                let ids = [reference(Some(a))?, reference(Some(b))?];
+                let [start, end] = if flag(orientation)? {
+                    ids
+                } else {
+                    [ids[1], ids[0]]
+                };
+                if previous.is_some_and(|other| other != start) {
+                    return None;
+                }
+                first.get_or_insert(start);
+                previous = Some(end);
+                let mut ends = [0usize; 2];
+                let mut points = Vec::with_capacity(2);
+                for (slot, vertex) in ends.iter_mut().zip(ids) {
+                    let [Param::Str(_), point] = self.entity(vertex)?.part("VERTEX_POINT")? else {
+                        return None;
+                    };
+                    let point = self.point_coordinates(reference(Some(point))?)?;
+                    if !in_plane(&point) {
+                        return None;
+                    }
+                    *slot = *indices.entry(vertex).or_insert_with(|| {
+                        vertices.push(at(&point));
+                        vertices.len() - 1
+                    });
+                    points.push(point);
+                }
+                let same_sense = flag(sense)?;
+                let curve = self.trim_curve(reference(Some(geometry))?)?;
+                if let Some([Param::Str(_), point, vector]) = curve.part("LINE") {
+                    let origin = self.point_coordinates(reference(Some(point))?)?;
+                    let [Param::Str(_), direction, magnitude] =
+                        self.entity(reference(Some(vector))?)?.part("VECTOR")?
+                    else {
+                        return None;
+                    };
+                    let [Param::Str(_), ratios] = self
+                        .entity(reference(Some(direction))?)?
+                        .part("DIRECTION")?
+                    else {
+                        return None;
+                    };
+                    let direction = coordinates(Some(ratios))?;
+                    if is_zero3(&direction)
+                        || number(Some(magnitude))? <= Rational::zero()
+                        || points[0] == points[1]
+                        || points
+                            .iter()
+                            .any(|point| !is_zero3(&cross3(&sub3(point, &origin), &direction)))
+                    {
+                        return None;
+                    }
+                    let forward =
+                        dot3(&sub3(&points[1], &points[0]), &direction) > Rational::zero();
+                    if forward != same_sense {
+                        return None;
+                    }
                     edges.push(PlanarEdge::Segment(ends));
                 } else {
-                    // A face bounded by another curve is not checked.
-                    let circle = curve.part("CIRCLE")?;
-                    let placement = self.placement(reference(circle.get(1))?)?;
-                    let radius = &number(circle.get(2))? * scale;
+                    let [Param::Str(_), placement, radius] = curve.part("CIRCLE")? else {
+                        return None;
+                    };
+                    let placement = self.placement(reference(Some(placement))?)?;
+                    let radius = number(Some(radius))?;
+                    if radius <= Rational::zero()
+                        || !in_plane(&placement.origin)
+                        || !is_zero3(&cross3(&placement.axis, &frame.axis))
+                        || points.iter().any(|point| {
+                            let offset = sub3(point, &placement.origin);
+                            dot3(&offset, &offset) != &radius * &radius
+                        })
+                        || (ends[0] != ends[1] && points[0] == points[1])
+                    {
+                        return None;
+                    }
+                    let radius = &radius * scale;
                     edges.push(PlanarEdge::Arc {
                         circle: Circle {
                             center: at(&placement.origin),
@@ -2884,6 +2995,9 @@ impl<'a> Reader<'a> {
                             .then(|| if same_sense { ends } else { [ends[1], ends[0]] }),
                     });
                 }
+            }
+            if first != previous {
+                return None;
             }
         }
         (!edges.is_empty()).then(|| PlanarBoundary {
@@ -3468,9 +3582,9 @@ impl<'a> Reader<'a> {
                         *coordinate = &*coordinate * &scale;
                     }
                 }
-                Ok((kind, polylines, planes, scale, valid_planes))
+                Ok((kind, polylines, planes, scale, valid_planes, model_planes))
             })();
-            let (kind, polylines_mm, planes, scale, valid_planes) = match geometry {
+            let (kind, polylines_mm, planes, scale, valid_planes, model_planes) = match geometry {
                 Ok(geometry) => geometry,
                 Err(reason) => {
                     skipped.push(SkippedPmi {
@@ -3486,11 +3600,15 @@ impl<'a> Reader<'a> {
             let mut legacy_aspects = BTreeSet::new();
             let mut faces = Vec::new();
             for association in associations {
-                let supported = reference(association.get(3))
-                    .and_then(|model| contexts.get(&model))
-                    .is_some_and(|(_, usable, context)| {
-                        *usable && context.as_ref().is_ok_and(|unit| unit == &scale)
-                    });
+                let supported = reference(association.get(3)).is_some_and(|model| {
+                    (models.contains(&model)
+                        || model_planes.get(&model).is_some_and(|planes| {
+                            planes.iter().any(|plane| valid_planes.contains(plane))
+                        }))
+                        && contexts.get(&model).is_some_and(|(_, usable, context)| {
+                            *usable && context.as_ref().is_ok_and(|unit| unit == &scale)
+                        })
+                });
                 if supported {
                     let Some(definition) = reference(association.get(2)) else {
                         continue;
@@ -3667,7 +3785,7 @@ impl<'a> Reader<'a> {
         }
         // Every authored name is reserved before a repeat takes a suffix, so a
         // suffix never displaces a later camera's own name.
-        let (names, _) = catallax_step::pmi::unique_view_names(
+        let names = catallax_step::pmi::unique_view_names(
             accepted
                 .iter()
                 .map(|(_, base, _)| (base.as_str(), base.as_str())),
@@ -4588,7 +4706,15 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             let fields = entity.parts[0].1.as_slice();
             match (entity.parts.len(), entity.type_name()) {
                 (1, "ID_ATTRIBUTE") if reference(fields.get(1)) == Some(root) => {}
-                (1, "TOLERANCE_ZONE") if references(fields.get(4)) == [root] => {
+                (1, "TOLERANCE_ZONE")
+                    if reference_list(fields.get(4)).as_deref() == Some(&[root])
+                        && matches!(fields.first(), Some(Param::Str(name)) if name.is_empty())
+                        && match fields.get(1) {
+                            Some(Param::Unset) => true,
+                            Some(Param::Str(description)) => description.is_empty(),
+                            _ => false,
+                        } =>
+                {
                     if let Some(&dependent) = records.users(user).first() {
                         return Err(refuse_dependency(dependent));
                     }
@@ -4606,7 +4732,8 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
                 continue;
             };
             for definition in references(fields.get(2)) {
-                if reader.aspect_params(definition).is_some()
+                if (reader.aspect_params(definition).is_some()
+                    || reader.has(definition, "DIMENSIONAL_SIZE"))
                     && reader.owner_shapes(definition).contains(&owner)
                     && !reader
                         .graphic_faces(definition)
@@ -4615,6 +4742,12 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
                     return Err(refuse_dependency(id));
                 }
             }
+        }
+        if let Some(size) =
+            reference(base.get(3)).filter(|size| reader.has(*size, "DIMENSIONAL_SIZE"))
+            && let Some((limit, _)) = reader.sharing_at(size, "PLUS_MINUS_TOLERANCE", 1).first()
+        {
+            return Err(refuse_dependency(*limit));
         }
         let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
         if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {

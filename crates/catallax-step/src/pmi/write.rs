@@ -1480,16 +1480,16 @@ impl Emitter<'_> {
             "CAMERA_MODEL_D3",
             vec![quoted(name), frame.into(), volume.into()],
         );
-        let source_point = self
-            .graph
-            .add("CARTESIAN_POINT", vec![text("''"), text("(0.,0.,0.)")]);
-        let source = self.graph.add(
-            "AXIS2_PLACEMENT_3D",
-            vec![text("''"), source_point.into(), text("$"), text("$")],
+        self.root(
+            "ITEM_DEFINED_TRANSFORMATION",
+            vec![text("''"), text("$"), camera.into(), frame.into()],
         );
         let map = self.graph.add(
             "REPRESENTATION_MAP",
-            vec![source.into(), self.references.product.representation.into()],
+            vec![
+                self.references.product.frame.into(),
+                self.references.product.representation.into(),
+            ],
         );
         let target_point = self
             .graph

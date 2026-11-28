@@ -2638,6 +2638,34 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
     assert!(reasons(&skipped).contains("datum target relationship is unreadable"));
 
     let written = records(&file);
+    let rim = written
+        .iter()
+        .find_map(|(id, record)| {
+            if !record.starts_with("CIRCLE(") || !record.ends_with(",2.);") {
+                return None;
+            }
+            let frame = &references(record)[0];
+            let location = &references(&written[frame])[0];
+            (written[location] == "CARTESIAN_POINT('',(10.,12.,0.));").then_some(id)
+        })
+        .unwrap();
+    let bad_rim = mutate(
+        &file,
+        &format!("{rim}={}", written[rim]),
+        &format!("{rim}={}", written[rim].replace(",2.);", ",1.);")),
+    );
+    let bad_rim = mutate(
+        &bad_rim,
+        "CARTESIAN_POINT('',(5.,5.,0.))",
+        "CARTESIAN_POINT('',(11.5,12.,0.))",
+    );
+    let (back, skipped) = read_back(&bad_rim, &report);
+    assert!(!ids(&back).contains(&"A1".to_owned()));
+    assert!(
+        skipped
+            .iter()
+            .any(|item| item.entity == a1 && item.reason.contains("boundary"))
+    );
     let file_faces = written_faces(&file, &report);
     for (face, affected) in [
         (f.holes[0][0], "Bolt pattern"),
@@ -3621,6 +3649,23 @@ fn callout_associations(file: &BTreeMap<String, String>, item: &str) -> Vec<(Str
 
 fn check_edition_one_draughting_models(file: &str) {
     let entities = entities(file);
+    for (id, (kind, fields)) in &entities {
+        if kind == "CAMERA_MODEL_D3" {
+            assert!(
+                entities.values().any(|(kind, fields)| {
+                    kind == "ITEM_DEFINED_TRANSFORMATION" && references(fields).first() == Some(id)
+                }),
+                "camera_model.WR1: {id}"
+            );
+        }
+        if kind == "REPRESENTATION_MAP" {
+            let [origin, representation] = <[String; 2]>::try_from(references(fields)).unwrap();
+            assert!(
+                references(&entities[&representation].1).contains(&origin),
+                "representation_map.WR1: {id}"
+            );
+        }
+    }
     let mut names = std::collections::BTreeSet::new();
     for (kind, fields) in entities.values() {
         if kind != "DRAUGHTING_MODEL" {
@@ -3656,6 +3701,107 @@ fn check_edition_one_draughting_models(file: &str) {
             assert_eq!(rejected_assignments, 1, "DRAUGHTING_MODEL.WR2: {member}");
         }
     }
+}
+
+#[test]
+fn p1_position_patch_refuses_a_dimension_linked_callout() {
+    use catallax_import::{PmiEdit, patch_step_pmi};
+    let part = bracket();
+    let (pmi, _) = viewed_pmi(&part);
+    let (mut file, _) = write(&part, &pmi);
+    let all = records(&file);
+    let associations = callout_associations(&all, "Bore position");
+    assert_eq!(associations.len(), 2);
+    let root = &references(&associations[0].1)[0];
+    let size = &references(&callout_associations(&all, "Bore diameter")[0].1)[0];
+    let record = &all[root];
+    let attributes = record
+        .split_once("GEOMETRIC_TOLERANCE(")
+        .map_or(record.as_str(), |(_, fields)| {
+            fields.split_once(')').unwrap().0
+        });
+    let target = &references(attributes)[1];
+    file = mutate(
+        &file,
+        &format!("{root}={record}"),
+        &format!("{root}={}", record.replace(target, size)),
+    );
+    for (id, association) in associations {
+        file = mutate(
+            &file,
+            &format!("{id}={association}"),
+            &format!(
+                "{id}={}",
+                association.replace(&format!(",{root},"), &format!(",{size},"))
+            ),
+        );
+    }
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert_eq!(&read.sources["Bore position"], root);
+    assert!(
+        matches!(kind_of(&read.pmi, "Bore position"), ItemKind::Tolerance(item) if item.value == q("0.05"))
+    );
+    let Err(error) = patch_step_pmi(
+        file.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: root.clone(),
+            value: q("0.1"),
+        }],
+    ) else {
+        panic!("patch accepted a position callout that still shows 0.05 mm");
+    };
+    assert!(
+        error.detail.contains("DRAUGHTING_MODEL_ITEM_ASSOCIATION"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_wrong_plane_cannot_pair_a_shared_callout() {
+    let part = bracket();
+    let (pmi, _) = viewed_pmi(&part);
+    let (file, _) = write(&part, &pmi);
+    let all = records(&file);
+    let top = line_with(&file, &["=DRAUGHTING_MODEL('Top',"]);
+    let members = references(&all[&top]);
+    let camera = members
+        .iter()
+        .find(|id| all[*id].starts_with("CAMERA_MODEL_D3("))
+        .unwrap();
+    let context = members.last().unwrap();
+    let (plane, callout) = members
+        .iter()
+        .filter(|id| all[*id].starts_with("ANNOTATION_PLANE("))
+        .find_map(|id| {
+            let callout = references(&all[id]).pop()?;
+            all[&callout]
+                .starts_with("DRAUGHTING_CALLOUT('Bore position',")
+                .then_some((id, callout))
+        })
+        .unwrap();
+    let style = &references(&all[plane])[0];
+    let datum = &references(&callout_associations(&all, "Datum A")[0].1)[0];
+    let extra = format!(
+        "#899901=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #899902=DIRECTION('',(1.,0.,0.));\n\
+         #899903=AXIS2_PLACEMENT_3D('',#899901,#899902,$);\n\
+         #899904=PLANE('',#899903);\n\
+         #899905=ANNOTATION_PLANE('',({style}),#899904,({callout}));\n\
+         #899906=DRAUGHTING_MODEL('Side',(#899905,{camera}),{context});\n\
+         #899907=DRAUGHTING_MODEL_ITEM_ASSOCIATION('','',{datum},#899906,{callout});\n"
+    );
+    let changed = mutate(
+        &file,
+        "ENDSEC;\nEND-ISO",
+        &format!("{extra}ENDSEC;\nEND-ISO"),
+    );
+    let read = read_step_pmi(changed.as_bytes()).unwrap();
+    assert_eq!(read.pmi.views[1], pmi.views[1]);
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.entity == callout && item.reason.contains("vary in depth"))
+    );
 }
 
 #[test]
@@ -5585,6 +5731,58 @@ fn projected_zone_checks_the_other_solids_in_its_part() {
         read.skipped
             .iter()
             .any(|skip| skip.reason.contains("axis meets a closed end"))
+    );
+    let nested = mutate(
+        &separate,
+        &format!("#900002=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900001,{representation});"),
+        &format!(
+            "#900002=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900001,#900003);\n\
+                 #900003=SHAPE_REPRESENTATION('',({}),{context});\n\
+                 #900004=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900003,{representation});",
+            references(record)[0]
+        ),
+    );
+    let read = read_step_pmi(nested.as_bytes()).unwrap();
+    assert!(read.pmi.items.is_empty());
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("unchecked linked geometry"))
+    );
+    let start = &references(&all[&definition])[1];
+    let usage = line_with(
+        &file,
+        &["=GEOMETRIC_ITEM_SPECIFIC_USAGE(", &format!(",{start},")],
+    );
+    let face = &references(&all[&usage])[2];
+    let product = line_with(&file, &["=PRODUCT_DEFINITION('"]);
+    let [frame, plate_solid, _, context] = <[String; 4]>::try_from(references(record)).unwrap();
+    let foreign = mutate(
+        &separate,
+        &format!("{definition}={}", all[&definition]),
+        &format!(
+            "{definition}={}",
+            all[&definition].replace(&format!(",{start},"), ",#900012,")
+        ),
+    );
+    let foreign = mutate(
+        &foreign,
+        "ENDSEC;\nEND-ISO",
+        &format!(
+            "#900010=PRODUCT_DEFINITION_SHAPE('','',{product});\n\
+                  #900011=ADVANCED_BREP_SHAPE_REPRESENTATION('',({frame},{plate_solid}),{context});\n\
+                  #900012=SHAPE_ASPECT('','',#900010,.T.);\n\
+                  #900013=SHAPE_DEFINITION_REPRESENTATION(#900010,#900011);\n\
+                  #900014=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#900012,#900011,{face});\n\
+                  ENDSEC;\nEND-ISO"
+        ),
+    );
+    let read = read_step_pmi(foreign.as_bytes()).unwrap();
+    assert!(read.pmi.items.is_empty());
+    assert!(
+        read.skipped
+            .iter()
+            .any(|item| item.reason.contains("start belongs to another part"))
     );
     catallax_step::pmi::check_on_model(&part.model, plate, &pmi("2"), &mut dec).unwrap();
     assert!(

@@ -396,6 +396,16 @@ impl RepresentationLinks {
         (Self(links), error)
     }
 
+    pub(crate) fn reaches_outside(&self, selected: &BTreeSet<u64>) -> bool {
+        selected.iter().any(|id| {
+            self.0
+                .get(id)
+                .into_iter()
+                .flatten()
+                .any(|related| !selected.contains(related))
+        })
+    }
+
     pub(crate) fn related(&self, root: u64) -> impl Iterator<Item = u64> + '_ {
         std::iter::once(root).chain(self.0.get(&root).into_iter().flatten().copied())
     }

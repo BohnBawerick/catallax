@@ -41,12 +41,18 @@ pub struct Camera {
 #[doc(hidden)]
 pub fn unique_view_names<'n>(
     bases: impl Iterator<Item = (&'n str, &'n str)> + Clone,
-) -> (Vec<String>, usize) {
+) -> Vec<String> {
+    allocate_view_names(bases, || {})
+}
+
+fn allocate_view_names<'n>(
+    bases: impl Iterator<Item = (&'n str, &'n str)> + Clone,
+    mut probe: impl FnMut(),
+) -> Vec<String> {
     let mut reserved: BTreeSet<String> = bases.clone().map(|(name, _)| name.to_owned()).collect();
     let mut seen = BTreeSet::new();
     let mut next = BTreeMap::<&str, usize>::new();
     let mut names = Vec::new();
-    let mut tried = 0;
     for (base, suffix_base) in bases {
         if seen.insert(base) {
             names.push(base.to_owned());
@@ -56,12 +62,27 @@ pub fn unique_view_names<'n>(
         let name = loop {
             let name = format!("{suffix_base} ({suffix})");
             *suffix += 1;
-            tried += 1;
+            probe();
             if reserved.insert(name.clone()) {
                 break name;
             }
         };
         names.push(name);
     }
-    (names, tried)
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn many_blank_models_are_named_in_linear_work() {
+        let count = 4000;
+        let mut probes = 0;
+        let names = allocate_view_names((0..count).map(|_| ("", "PMI")), || probes += 1);
+        assert_eq!(probes, count - 1);
+        assert_eq!(names.iter().collect::<BTreeSet<_>>().len(), count);
+        assert_eq!(names[count - 1], format!("PMI ({count})"));
+    }
 }

@@ -487,6 +487,22 @@ fn tolerance_patch_refuses_zone_properties() {
         panic!("a property using the tolerance zone must prevent the edit");
     };
     assert!(refusal.detail.contains("#900000"), "{}", refusal.detail);
+    let described = with_dependency
+        .replace(
+            "#900000=PROPERTY_DEFINITION('zone validation','',#900001);\n",
+            "",
+        )
+        .replace("TOLERANCE_ZONE('','',", "TOLERANCE_ZONE('','0.05 mm',");
+    let Err(refusal) = patch_step_pmi(
+        described.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: flatness.clone(),
+            value: q("0.02"),
+        }],
+    ) else {
+        panic!("the patch retained the old value in a zone description");
+    };
+    assert!(refusal.detail.contains("#900001"), "{refusal:?}");
 }
 
 #[test]

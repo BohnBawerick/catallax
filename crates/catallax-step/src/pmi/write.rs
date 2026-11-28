@@ -790,7 +790,7 @@ impl Emitter<'_> {
     fn position(
         &mut self,
         control: &PositionControl<FaceId>,
-        cylindrical_datums: &BTreeMap<&str, &Vec<FaceId>>,
+        datum_features: &BTreeMap<&str, &Vec<FaceId>>,
         item: &str,
     ) -> Result<(), Refusal> {
         let mut axis = |feature: &[FaceId]| {
@@ -816,9 +816,18 @@ impl Emitter<'_> {
             .iter()
             .flat_map(|segment| &segment.datums)
             .filter(|datum| datum.material.is_some())
-            .filter_map(|datum| cylindrical_datums.get(datum.letter.as_str()))
+            .filter_map(|datum| datum_features.get(datum.letter.as_str()))
         {
-            axis(feature)?;
+            check::written_datum_boundary(
+                self.graph,
+                feature
+                    .iter()
+                    .flat_map(|face| self.faces[face].iter().copied())
+                    .collect(),
+                &self.reversed,
+                item,
+                self.dec,
+            )?;
         }
         let target = self.target(&control.features, item)?;
         match &control.frame {
@@ -1271,14 +1280,14 @@ impl Emitter<'_> {
             ],
         );
         self.usage(aspect, &texture.feature, item)?;
-        Ok(self.graphic_callout(
+        self.graphic_callout(
             item,
             "surface roughness",
             &drawing,
             &equivalent,
             plane,
             &[self.semantic[item], aspect],
-        ))
+        )
     }
 
     fn label_callout(
@@ -1297,14 +1306,14 @@ impl Emitter<'_> {
         let anchor = self.anchor_point(label.feature)?;
         let mut drawing = callout::label(&label.line);
         let plane = self.callout_plane(Some(view), anchor.as_ref(), &mut drawing, item)?;
-        Ok(self.graphic_callout(
+        self.graphic_callout(
             item,
             label.kind,
             &drawing,
             &label.equivalent,
             plane,
             &[definition],
-        ))
+        )
     }
 
     fn callout_plane(
@@ -1379,7 +1388,15 @@ impl Emitter<'_> {
         equivalent: &str,
         plane: Id,
         definitions: &[Id],
-    ) -> Id {
+    ) -> Result<Id, Refusal> {
+        let (length, centre) = drawing.length_and_centre();
+        let length = presented(&length);
+        if length.is_zero() {
+            return Err(Refusal::new(
+                "step.pmi-invalid",
+                format!("{item}: the callout length rounds to zero"),
+            ));
+        }
         let presentation = self.presentation();
         let mut curves = Vec::with_capacity(drawing.polylines.len());
         for line in &drawing.polylines {
@@ -1425,7 +1442,6 @@ impl Emitter<'_> {
                 presentation.model.into(),
             ],
         );
-        let (length, centre) = drawing.length_and_centre();
         let string = self.graph.add(
             "DESCRIPTIVE_REPRESENTATION_ITEM",
             vec![text("'equivalent unicode string'"), quoted(equivalent)],
@@ -1437,7 +1453,7 @@ impl Emitter<'_> {
                 Field::Typed(
                     "POSITIVE_LENGTH_MEASURE",
                     vec![text(decimal(
-                        &presented(&length)
+                        &length
                             .to_decimal_exact()
                             .expect("a rounded length is a decimal"),
                     ))],
@@ -1448,7 +1464,7 @@ impl Emitter<'_> {
         let centre = self.point("polyline centre point", &centre.map(|c| presented(&c)));
         self.validation(within.into(), vec![string, length, centre]);
         self.annotations += 1;
-        plane
+        Ok(plane)
     }
 
     /// A saved view (recommended practices, section 9.4): a draughting model
@@ -1945,18 +1961,11 @@ pub(crate) fn emit(
     }
     // A datum's feature is a DATUM_FEATURE whatever else is attached to it,
     // so datums come first.
-    let mut cylindrical_datums = BTreeMap::new();
+    let mut datum_features = BTreeMap::new();
     for item in &pmi.items {
         if let ItemKind::Datum(datum) = &item.kind {
             emitter.datum(&datum.letter, &datum.feature, &item.id)?;
-            if datum.feature.iter().all(|face| {
-                matches!(
-                    model.geom().surface(model.face(*face).surface),
-                    catallax_shapes::Surface::Cylinder(_)
-                )
-            }) {
-                cylindrical_datums.insert(datum.letter.as_str(), &datum.feature);
-            }
+            datum_features.insert(datum.letter.as_str(), &datum.feature);
         }
     }
     let shown: BTreeSet<_> = pmi.views.iter().flat_map(|view| &view.items).collect();
@@ -2095,7 +2104,7 @@ pub(crate) fn emit(
                 designation,
                 feature,
             } => emitter.face_text(KNURL, designation, feature, id)?,
-            ItemKind::Position(control) => emitter.position(control, &cylindrical_datums, id)?,
+            ItemKind::Position(control) => emitter.position(control, &datum_features, id)?,
             ItemKind::Texture(texture) => {
                 emitter.texture(texture, id)?;
                 if !shown.contains(&item.id) {

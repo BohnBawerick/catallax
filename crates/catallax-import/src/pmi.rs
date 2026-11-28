@@ -67,8 +67,16 @@ pub struct GraphicCallout {
     pub views: Vec<String>,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct GraphicMetadata {
+    text: Option<String>,
+    faces: Option<Feature<String>>,
+    presents: Vec<String>,
+    planes: Vec<GraphicPlane>,
+}
+
 /// An annotation plane in part coordinates.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct GraphicPlane {
     /// The plane's origin in millimetres.
     pub origin_mm: [Rational; 3],
@@ -153,6 +161,22 @@ fn reference_sequence(param: Option<&Param>) -> Option<Vec<u64>> {
         return None;
     };
     items.iter().map(|item| reference(Some(item))).collect()
+}
+
+fn boolean(param: &Param) -> Option<bool> {
+    match param {
+        Param::Enum(value) if value == "T" => Some(true),
+        Param::Enum(value) if value == "F" => Some(false),
+        _ => None,
+    }
+}
+
+struct TrimEdge {
+    id: u64,
+    vertices: [u64; 2],
+    curve: u64,
+    forward: bool,
+    same_sense: bool,
 }
 
 fn collect_references(params: &[Param], out: &mut Vec<u64>) {
@@ -2020,21 +2044,28 @@ impl<'a> Reader<'a> {
         let scale = self.usage_scale(&usage)?;
         let height_file = &height_mm / &scale;
         let starts = usage.faces;
-        let solids = self.projection_solids(&representations, &scale)?;
+        let mut trims = BTreeMap::new();
+        let solids = self.projection_solids(&representations, &scale, &mut trims)?;
+        let edges_for = |face: &str| {
+            face.strip_prefix('#')
+                .and_then(|id| id.parse::<u64>().ok())
+                .and_then(|id| trims.get(&id))
+                .ok_or("the projected zone refers to a face outside its checked solids")
+        };
         let mut planes = Vec::with_capacity(starts.len());
         for face in &starts {
             let (point, normal) = self
                 .outward_plane(face)
                 .ok_or("its projected zone starts on a face that is not planar")?;
-            planes.push((face, point, normal, self.face_edge_curves(face)));
+            planes.push((face, point, normal, edges_for(face)?));
         }
         let mut direction: Option<[Rational; 3]> = None;
         let mut entry_faces = Vec::with_capacity(features.len());
         for (feature, axis) in features.iter().zip(axes) {
-            let edges: BTreeSet<u64> = feature
-                .iter()
-                .flat_map(|face| self.face_edge_curves(face))
-                .collect();
+            let mut edges = BTreeSet::new();
+            for face in feature {
+                edges.extend(edges_for(face)?);
+            }
             let meeting: Vec<_> = planes
                 .iter()
                 .filter(|(_, _, _, own)| !own.is_disjoint(&edges))
@@ -2071,7 +2102,7 @@ impl<'a> Reader<'a> {
                 return Err("the projected zone entry has no unique owning solid".into());
             }
             for faces in &solids {
-                self.check_open_entry(faces, &intersection, normal, &height_file, &scale)?;
+                self.check_open_entry(faces, &trims, &intersection, normal, &height_file, &scale)?;
             }
             entry_faces.push((*face).clone());
         }
@@ -2089,6 +2120,7 @@ impl<'a> Reader<'a> {
         &self,
         representations: &BTreeSet<u64>,
         scale: &Rational,
+        trims: &mut BTreeMap<u64, BTreeSet<u64>>,
     ) -> Result<Vec<BTreeSet<u64>>, String> {
         let unchecked = "its projected zone's part has unchecked geometry";
         let mut seen = BTreeSet::new();
@@ -2144,8 +2176,22 @@ impl<'a> Reader<'a> {
                         return Err(unchecked.into());
                     };
                     let members = reference_list(Some(members)).ok_or(unchecked)?;
-                    if members.is_empty() || members.into_iter().any(|face| !faces.insert(face)) {
-                        return Err(unchecked.into());
+                    let mut uses = BTreeMap::new();
+                    for face in members {
+                        if !faces.insert(face)
+                            || self.sharing_at(face, "CLOSED_SHELL", 1).len() != 1
+                        {
+                            return Err(unchecked.into());
+                        }
+                        let edges = self.face_trim(face).ok_or(unchecked)?;
+                        for edge in &edges {
+                            let counts = uses.entry(edge.id).or_insert([0usize; 2]);
+                            counts[usize::from(edge.forward)] += 1;
+                        }
+                        trims.insert(face, edges.into_iter().map(|edge| edge.id).collect());
+                    }
+                    if uses.values().any(|counts| *counts != [1, 1]) {
+                        return Err("the projected zone's part has an open or inconsistently oriented shell".into());
                     }
                 }
                 solids.push(faces);
@@ -2219,9 +2265,29 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
+    fn surface_ball(&self, surface: u64) -> Option<(Point3, Real)> {
+        let entity = self.entity(surface)?;
+        let radius = |param| number(param).filter(|r| *r > Rational::zero());
+        let (frame, radius) = if let Some(fields) = entity.part("SPHERICAL_SURFACE") {
+            (fields.get(1), radius(fields.get(2))?)
+        } else {
+            let fields = entity.part("TOROIDAL_SURFACE")?;
+            (
+                fields.get(1),
+                radius(fields.get(2))? + radius(fields.get(3))?,
+            )
+        };
+        let [x, y, z] = self
+            .placement(reference(frame)?)?
+            .origin
+            .map(Real::from_rational);
+        Some((Point3::new(x, y, z), Real::from_rational(&radius * &radius)))
+    }
+
     fn check_open_entry(
         &self,
         faces: &BTreeSet<u64>,
+        trims: &BTreeMap<u64, BTreeSet<u64>>,
         intersection: &[Rational; 3],
         normal: &[Rational; 3],
         height: &Rational,
@@ -2241,11 +2307,20 @@ impl<'a> Reader<'a> {
         let span = ZoneSpan::new(at, direction.clone(), &Real::from_rational(height.clone()));
         let mut dec = Decider::default();
         let detail = |error: Refusal| error.detail;
+        if span
+            .misses_solid_ball(
+                faces.iter().map(|face| {
+                    let surface = self.entity(*face)?.part("ADVANCED_FACE")?;
+                    self.surface_ball(reference(surface.get(2))?)
+                }),
+                &mut dec,
+            )
+            .map_err(detail)?
+        {
+            return Ok(());
+        }
         let mut crossings = Vec::new();
         for &id in faces {
-            if self.sharing_at(id, "CLOSED_SHELL", 1).len() != 1 {
-                return Err(unknown.into());
-            }
             let face = format!("#{id}");
             let surface = self.face_surface(&face).ok_or(unknown)?;
             if self.has(surface, "PLANE") {
@@ -2293,9 +2368,9 @@ impl<'a> Reader<'a> {
                 }
             }
             let mut sides = Vec::new();
-            for id in self.face_edge_curves(&face) {
+            for &edge_id in &trims[&id] {
                 let edge = self
-                    .entity(id)
+                    .entity(edge_id)
                     .and_then(|edge| edge.part("EDGE_CURVE"))
                     .ok_or(unknown)?;
                 let curve = self
@@ -2341,20 +2416,7 @@ impl<'a> Reader<'a> {
             } else {
                 None
             };
-            let ball = self.entity(surface).and_then(|entity| {
-                let radius = |param| number(param).filter(|r| *r > Rational::zero());
-                let (frame, radius) = if let Some(fields) = entity.part("SPHERICAL_SURFACE") {
-                    (fields.get(1), radius(fields.get(2))?)
-                } else {
-                    let fields = entity.part("TOROIDAL_SURFACE")?;
-                    (
-                        fields.get(1),
-                        radius(fields.get(2))? + radius(fields.get(3))?,
-                    )
-                };
-                let centre = self.placement(reference(frame)?)?.origin;
-                Some((point(centre), Real::from_rational(&radius * &radius)))
-            });
+            let ball = self.surface_ball(surface);
             let trim = if self.has(surface, "PLANE")
                 || cylinder
                     .as_ref()
@@ -2623,15 +2685,34 @@ impl<'a> Reader<'a> {
             let fields = self
                 .entity(id)
                 .and_then(|entity| entity.part("PLACED_DATUM_TARGET_FEATURE"));
-            let has_datum = self
+            let linked: Vec<_> = self
                 .sharing_at(id, "SHAPE_ASPECT_RELATIONSHIP", 2)
                 .into_iter()
-                .any(|(_, fields)| {
-                    matches!(fields, [_, description, Param::Ref(target), Param::Ref(datum)]
-                        if *target == id && self.has(*datum, "DATUM")
-                            && string(Some(description)).as_deref() == Some(catallax_step::pmi::DATUM_TARGET))
-                });
-            if has_datum {
+                .filter_map(|(_, fields)| match fields {
+                    [_, description, Param::Ref(target), Param::Ref(datum)]
+                        if *target == id
+                            && self.has(*datum, "DATUM")
+                            && string(Some(description)).as_deref()
+                                == Some(catallax_step::pmi::DATUM_TARGET) =>
+                    {
+                        Some(*datum)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let declared_owner = fields.and_then(|fields| reference(fields.get(2)));
+            if let ([datum], Some(owner)) = (linked.as_slice(), declared_owner)
+                && datums
+                    .get(&owner)
+                    .is_some_and(|datums| datums.contains(datum))
+                && self.target_face_usage(id, owner).is_ok_and(|usage| {
+                    let [face] = usage.faces.as_slice() else {
+                        return false;
+                    };
+                    self.graphic_faces(*datum)
+                        .is_ok_and(|faces| faces.contains(face))
+                })
+            {
                 continue;
             }
             let mut owners = self.owner_shapes(id);
@@ -2660,14 +2741,12 @@ impl<'a> Reader<'a> {
                     .iter()
                     .copied()
                     .filter(|datum| {
-                        let Some(faces) = &faces else { return true };
-                        self.datum_features(*datum)
-                            .into_iter()
-                            .flatten()
-                            .flat_map(|aspect| {
-                                self.features(aspect, 0).into_iter().flatten().flatten()
-                            })
-                            .any(|face| faces.contains(&face))
+                        let Some(faces) = &faces else {
+                            return linked.is_empty() || linked.contains(datum);
+                        };
+                        self.graphic_faces(*datum).is_ok_and(|datum_faces| {
+                            datum_faces.iter().any(|face| faces.contains(face))
+                        })
                     })
                     .collect();
                 let ambiguous = possible.len() > 1;
@@ -2788,37 +2867,97 @@ impl<'a> Reader<'a> {
         Some((placement.origin, normal))
     }
 
-    /// The `EDGE_CURVE`s that bound a face.
-    fn face_edge_curves(&self, face: &str) -> BTreeSet<u64> {
-        let mut edges = BTreeSet::new();
-        let Some(params) = face
-            .strip_prefix('#')
-            .and_then(|id| id.parse().ok())
-            .and_then(|id| self.entity(id))
-            .and_then(|face| face.part("ADVANCED_FACE"))
-        else {
-            return edges;
+    fn vertex_coordinates(&self, vertex: u64) -> Option<Vec3> {
+        let [Param::Str(_), Param::Ref(point)] = self.entity(vertex)?.part("VERTEX_POINT")? else {
+            return None;
         };
-        for bound in references(params.get(1)) {
-            let Some(cycle) = self
-                .entity(bound)
-                .and_then(|bound| reference(bound.parts[0].1.get(1)))
-                .and_then(|cycle| self.entity(cycle))
-                .and_then(|cycle| cycle.part("EDGE_LOOP"))
-            else {
-                continue;
+        self.point_coordinates(*point)
+    }
+
+    fn face_trim(&self, face: u64) -> Option<Vec<TrimEdge>> {
+        let [Param::Str(_), bounds, Param::Ref(surface), sense] =
+            self.entity(face)?.part("ADVANCED_FACE")?
+        else {
+            return None;
+        };
+        boolean(sense)?;
+        let surface = self.entity(*surface)?.type_name();
+        let mut trim = Vec::new();
+        let mut outer = false;
+        let mut oriented_uses = BTreeSet::new();
+        for bound in reference_list(Some(bounds))? {
+            let entity = self.entity(bound)?;
+            if !matches!(entity.type_name(), "FACE_BOUND" | "FACE_OUTER_BOUND")
+                || (entity.type_name() == "FACE_OUTER_BOUND" && std::mem::replace(&mut outer, true))
+            {
+                return None;
+            }
+            let [Param::Str(_), Param::Ref(cycle), sense] = entity.part(entity.type_name())? else {
+                return None;
             };
-            for oriented in references(cycle.get(1)) {
-                if let Some(edge) = self
-                    .entity(oriented)
-                    .and_then(|oriented| oriented.part("ORIENTED_EDGE"))
-                    .and_then(|params| reference(params.get(3)))
-                {
-                    edges.insert(edge);
+            let bound_forward = boolean(sense)?;
+            let cycle = self.entity(*cycle)?;
+            if let Some([Param::Str(_), Param::Ref(vertex)]) = cycle.part("VERTEX_LOOP")
+                && matches!(
+                    surface,
+                    "SPHERICAL_SURFACE" | "TOROIDAL_SURFACE" | "CONICAL_SURFACE"
+                )
+            {
+                self.vertex_coordinates(*vertex)?;
+                continue;
+            }
+            let [Param::Str(_), members] = cycle.part("EDGE_LOOP")? else {
+                return None;
+            };
+            let mut first = None;
+            let mut previous = None;
+            for use_id in reference_list(Some(members))? {
+                if !oriented_uses.insert(use_id) {
+                    return None;
                 }
+                let [
+                    Param::Str(_),
+                    Param::Derived,
+                    Param::Derived,
+                    Param::Ref(edge),
+                    sense,
+                ] = self.entity(use_id)?.part("ORIENTED_EDGE")?
+                else {
+                    return None;
+                };
+                let forward = boolean(sense)?;
+                let [
+                    Param::Str(_),
+                    Param::Ref(a),
+                    Param::Ref(b),
+                    Param::Ref(curve),
+                    sense,
+                ] = self.entity(*edge)?.part("EDGE_CURVE")?
+                else {
+                    return None;
+                };
+                self.vertex_coordinates(*a)?;
+                self.vertex_coordinates(*b)?;
+                self.trim_curve(*curve)?;
+                let [start, end] = if forward { [*a, *b] } else { [*b, *a] };
+                if previous.is_some_and(|other| other != start) {
+                    return None;
+                }
+                first.get_or_insert(start);
+                previous = Some(end);
+                trim.push(TrimEdge {
+                    id: *edge,
+                    vertices: [*a, *b],
+                    curve: *curve,
+                    forward: forward == bound_forward,
+                    same_sense: boolean(sense)?,
+                });
+            }
+            if first != previous {
+                return None;
             }
         }
-        edges
+        Some(trim)
     }
 
     /// Millimetres in the length unit of a representation context.
@@ -2895,10 +3034,7 @@ impl<'a> Reader<'a> {
             let geometry = reference(Some(geometry))?;
             if !matches!(
                 self.entity(geometry)?.type_name(),
-                "SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
-                    | "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION"
+                "SHAPE_REPRESENTATION" | "ADVANCED_BREP_SHAPE_REPRESENTATION"
             ) || self.representation_scale(geometry).ok()? != scale
             {
                 return None;
@@ -2960,146 +3096,89 @@ impl<'a> Reader<'a> {
                 Real::from_rational(v[2].clone()),
             )
         };
-        let flag = |value: &Param| match value {
-            Param::Enum(value) if value == "T" => Some(true),
-            Param::Enum(value) if value == "F" => Some(false),
-            _ => None,
-        };
         let mut vertices = Vec::new();
         let mut indices = BTreeMap::new();
         let mut edges = Vec::new();
-        let mut outer = false;
         let in_plane =
             |point: &[Rational; 3]| dot3(&sub3(point, &frame.origin), &frame.axis).is_zero();
-        for bound in reference_list(params.get(1))? {
-            let entity = self.entity(bound)?;
-            if !matches!(entity.type_name(), "FACE_BOUND" | "FACE_OUTER_BOUND")
-                || (entity.type_name() == "FACE_OUTER_BOUND" && std::mem::replace(&mut outer, true))
-            {
-                return None;
+        for edge in self.face_trim(id)? {
+            let mut ends = [0usize; 2];
+            let mut points = Vec::with_capacity(2);
+            for (slot, vertex) in ends.iter_mut().zip(edge.vertices) {
+                let point = self.vertex_coordinates(vertex)?;
+                if !in_plane(&point) {
+                    return None;
+                }
+                *slot = *indices.entry(vertex).or_insert_with(|| {
+                    vertices.push(at(&point));
+                    vertices.len() - 1
+                });
+                points.push(point);
             }
-            let [Param::Str(_), cycle, sense] = entity.part(entity.type_name())? else {
-                return None;
-            };
-            flag(sense)?;
-            let [Param::Str(_), members] =
-                self.entity(reference(Some(cycle))?)?.part("EDGE_LOOP")?
-            else {
-                return None;
-            };
-            let mut first = None;
-            let mut previous = None;
-            for oriented in reference_list(Some(members))? {
-                let [
-                    Param::Str(_),
-                    Param::Derived,
-                    Param::Derived,
-                    edge,
-                    orientation,
-                ] = self.entity(oriented)?.part("ORIENTED_EDGE")?
+            let same_sense = edge.same_sense;
+            let curve = self.trim_curve(edge.curve)?;
+            if let Some([Param::Str(_), point, vector]) = curve.part("LINE") {
+                let origin = self.point_coordinates(reference(Some(point))?)?;
+                let [Param::Str(_), direction, magnitude] =
+                    self.entity(reference(Some(vector))?)?.part("VECTOR")?
                 else {
                     return None;
                 };
-                let [Param::Str(_), a, b, geometry, sense] =
-                    self.entity(reference(Some(edge))?)?.part("EDGE_CURVE")?
+                let [Param::Str(_), ratios] = self
+                    .entity(reference(Some(direction))?)?
+                    .part("DIRECTION")?
                 else {
                     return None;
                 };
-                let ids = [reference(Some(a))?, reference(Some(b))?];
-                let [start, end] = if flag(orientation)? {
-                    ids
-                } else {
-                    [ids[1], ids[0]]
+                let direction = coordinates(Some(ratios))?;
+                let [x, y, z] = direction;
+                let direction = RVector3::new(x, y, z);
+                let [x, y, z] = origin;
+                let origin = RPoint3::new(x, y, z);
+                let endpoint = |index: usize| {
+                    let [x, y, z] = points[index].clone();
+                    RPoint3::new(x, y, z)
                 };
-                if previous.is_some_and(|other| other != start) {
+                let ordered = if same_sense { [0, 1] } else { [1, 0] };
+                if number(Some(magnitude))? <= Rational::zero()
+                    || !catallax_step::pmi::line_matches_trim(
+                        [&endpoint(ordered[0]), &endpoint(ordered[1])],
+                        &origin,
+                        &direction,
+                        mm_per_unit,
+                    )
+                {
                     return None;
                 }
-                first.get_or_insert(start);
-                previous = Some(end);
-                let mut ends = [0usize; 2];
-                let mut points = Vec::with_capacity(2);
-                for (slot, vertex) in ends.iter_mut().zip(ids) {
-                    let [Param::Str(_), point] = self.entity(vertex)?.part("VERTEX_POINT")? else {
-                        return None;
-                    };
-                    let point = self.point_coordinates(reference(Some(point))?)?;
-                    if !in_plane(&point) {
-                        return None;
-                    }
-                    *slot = *indices.entry(vertex).or_insert_with(|| {
-                        vertices.push(at(&point));
-                        vertices.len() - 1
-                    });
-                    points.push(point);
+                edges.push(PlanarEdge::Segment(ends));
+            } else {
+                let [Param::Str(_), placement, radius] = curve.part("CIRCLE")? else {
+                    return None;
+                };
+                let placement = self.placement(reference(Some(placement))?)?;
+                let radius = number(Some(radius))?;
+                if radius <= Rational::zero()
+                    || !in_plane(&placement.origin)
+                    || !is_zero3(&cross3(&placement.axis, &frame.axis))
+                    || points.iter().any(|point| {
+                        let offset = sub3(point, &placement.origin);
+                        dot3(&offset, &offset) != &radius * &radius
+                    })
+                    || (ends[0] != ends[1] && points[0] == points[1])
+                {
+                    return None;
                 }
-                let same_sense = flag(sense)?;
-                let curve = self.trim_curve(reference(Some(geometry))?)?;
-                if let Some([Param::Str(_), point, vector]) = curve.part("LINE") {
-                    let origin = self.point_coordinates(reference(Some(point))?)?;
-                    let [Param::Str(_), direction, magnitude] =
-                        self.entity(reference(Some(vector))?)?.part("VECTOR")?
-                    else {
-                        return None;
-                    };
-                    let [Param::Str(_), ratios] = self
-                        .entity(reference(Some(direction))?)?
-                        .part("DIRECTION")?
-                    else {
-                        return None;
-                    };
-                    let direction = coordinates(Some(ratios))?;
-                    let [x, y, z] = direction;
-                    let direction = RVector3::new(x, y, z);
-                    let [x, y, z] = origin;
-                    let origin = RPoint3::new(x, y, z);
-                    let endpoint = |index: usize| {
-                        let [x, y, z] = points[index].clone();
-                        RPoint3::new(x, y, z)
-                    };
-                    let ordered = if same_sense { [0, 1] } else { [1, 0] };
-                    if number(Some(magnitude))? <= Rational::zero()
-                        || !catallax_step::pmi::line_matches_trim(
-                            [&endpoint(ordered[0]), &endpoint(ordered[1])],
-                            &origin,
-                            &direction,
-                            mm_per_unit,
-                        )
-                    {
-                        return None;
-                    }
-                    edges.push(PlanarEdge::Segment(ends));
-                } else {
-                    let [Param::Str(_), placement, radius] = curve.part("CIRCLE")? else {
-                        return None;
-                    };
-                    let placement = self.placement(reference(Some(placement))?)?;
-                    let radius = number(Some(radius))?;
-                    if radius <= Rational::zero()
-                        || !in_plane(&placement.origin)
-                        || !is_zero3(&cross3(&placement.axis, &frame.axis))
-                        || points.iter().any(|point| {
-                            let offset = sub3(point, &placement.origin);
-                            dot3(&offset, &offset) != &radius * &radius
-                        })
-                        || (ends[0] != ends[1] && points[0] == points[1])
-                    {
-                        return None;
-                    }
-                    let radius = &radius * scale;
-                    edges.push(PlanarEdge::Arc {
-                        circle: Circle {
-                            center: at(&placement.origin),
-                            normal: along(&placement.axis),
-                            radius_sq: Real::from_rational(&radius * &radius),
-                            ref_dir: along(&placement.reference),
-                        },
-                        ends: (ends[0] != ends[1])
-                            .then(|| if same_sense { ends } else { [ends[1], ends[0]] }),
-                    });
-                }
-            }
-            if first != previous {
-                return None;
+                let radius = &radius * scale;
+                edges.push(PlanarEdge::Arc {
+                    circle: Circle {
+                        center: at(&placement.origin),
+                        normal: along(&placement.axis),
+                        radius_sq: Real::from_rational(&radius * &radius),
+                        ref_dir: along(&placement.reference),
+                    },
+                    ends: (ends[0] != ends[1])
+                        .then(|| if same_sense { ends } else { [ends[1], ends[0]] }),
+                });
             }
         }
         (!edges.is_empty()).then(|| PlanarBoundary {
@@ -3367,6 +3446,11 @@ impl<'a> Reader<'a> {
     }
 
     fn graphic_faces(&self, id: u64) -> Result<Vec<String>, String> {
+        self.attached_faces(id)?
+            .ok_or_else(|| "its linked item names no face feature".into())
+    }
+
+    fn attached_faces(&self, id: u64) -> Result<Option<Vec<String>>, String> {
         let entity = self.entity(id).ok_or("its linked item is missing")?;
         let mut aspects = Vec::new();
         if let Some(fields) = entity.part("DIMENSIONAL_SIZE") {
@@ -3392,6 +3476,8 @@ impl<'a> Reader<'a> {
             );
         } else if self.aspect_params(id).is_some() {
             aspects.push(id);
+        } else {
+            return Ok(None);
         }
         if aspects.is_empty() {
             return Err("its linked item names no face feature".into());
@@ -3400,7 +3486,7 @@ impl<'a> Reader<'a> {
         for aspect in aspects {
             faces.extend(self.features(aspect, 0)?.into_iter().flatten());
         }
-        Ok(faces)
+        Ok(Some(faces))
     }
 
     fn legacy_texture<'b>(
@@ -3543,6 +3629,7 @@ impl<'a> Reader<'a> {
             .collect();
         let mut presented = BTreeMap::new();
         let mut graphics = BTreeMap::new();
+        let mut drawings = BTreeMap::new();
         let mut callout_scales = BTreeMap::new();
         let mut occurrence_callouts = BTreeMap::<u64, Vec<u64>>::new();
         for (&callout, entity) in self.g {
@@ -3573,7 +3660,7 @@ impl<'a> Reader<'a> {
             let subjects: Vec<_> = std::iter::once(callout)
                 .chain(occurrences.iter().copied())
                 .collect();
-            let mut associations = Vec::new();
+            let mut associations = BTreeMap::<_, Vec<_>>::new();
             let mut models = BTreeSet::new();
             let mut associated = BTreeSet::new();
             let mut planes = BTreeMap::new();
@@ -3581,8 +3668,10 @@ impl<'a> Reader<'a> {
                 for (_, association) in
                     self.sharing_at(subject, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
                 {
-                    associated.extend(reference(association.get(3)));
-                    associations.push(association);
+                    if let Some(model) = reference(association.get(3)) {
+                        associated.insert(model);
+                        associations.entry(model).or_default().push(association);
+                    }
                 }
                 models.extend(self.draughting_models_containing(subject));
                 planes.extend(
@@ -3727,6 +3816,7 @@ impl<'a> Reader<'a> {
                     .or_default()
                     .push(callout);
             }
+            let mut has_graphics = false;
             for &model in &supported {
                 let scope: Vec<_> = std::iter::once(model)
                     .chain(
@@ -3760,10 +3850,10 @@ impl<'a> Reader<'a> {
                 let mut presents = BTreeSet::new();
                 let mut legacy_aspects = BTreeSet::new();
                 let mut faces = Vec::new();
-                for &association in &associations {
-                    if !reference(association.get(3)).is_some_and(|owner| scope.contains(&owner)) {
-                        continue;
-                    }
+                for association in scope
+                    .iter()
+                    .flat_map(|model| associations.get(model).into_iter().flatten())
+                {
                     let Some(definition) = reference(association.get(2)) else {
                         continue;
                     };
@@ -3820,26 +3910,29 @@ impl<'a> Reader<'a> {
                 faces.dedup();
                 graphics.insert(
                     key,
-                    GraphicCallout {
-                        entity: format!("#{callout}"),
-                        name: name.clone(),
-                        kind: kind.clone(),
-                        text: equivalent,
-                        faces: (!faces.is_empty()).then_some(faces),
-                        presents: presents.into_iter().map(|id| format!("#{id}")).collect(),
-                        polylines_mm: polylines_mm.clone(),
-                        planes: planes
-                            .iter()
-                            .filter(|(id, _)| {
-                                let mut models = self.draughting_models_containing(**id).peekable();
-                                models.peek().is_none()
-                                    || models.any(|model| scope.contains(&model))
-                            })
-                            .map(|(_, plane)| plane.clone())
-                            .collect(),
-                        views: Vec::new(),
-                    },
+                    (
+                        GraphicMetadata {
+                            text: equivalent,
+                            faces: (!faces.is_empty()).then_some(faces),
+                            presents: presents.into_iter().map(|id| format!("#{id}")).collect(),
+                            planes: planes
+                                .iter()
+                                .filter(|(id, _)| {
+                                    let mut models =
+                                        self.draughting_models_containing(**id).peekable();
+                                    models.peek().is_none()
+                                        || models.any(|model| scope.contains(&model))
+                                })
+                                .map(|(_, plane)| plane.clone())
+                                .collect(),
+                        },
+                        Vec::new(),
+                    ),
                 );
+                has_graphics = true;
+            }
+            if has_graphics {
+                drawings.insert(callout, (name, kind, polylines_mm));
             }
         }
         let mut accepted = Vec::new();
@@ -3960,8 +4053,8 @@ impl<'a> Reader<'a> {
                         }
                     }
                 }
-                if let Some(graphic) = graphics.get_mut(&(callout, model)) {
-                    graphic.views.push(name.clone());
+                if let Some((_, views)) = graphics.get_mut(&(callout, model)) {
+                    views.push(name.clone());
                 }
             }
             views.push(SavedView {
@@ -3970,27 +4063,44 @@ impl<'a> Reader<'a> {
                 items: view_items,
             });
         }
-        let mut scoped_graphics = BTreeMap::<_, Vec<GraphicCallout>>::new();
-        for ((callout, model), mut graphic) in graphics {
-            if graphic.views.is_empty() && (contexts[&model].0 || shown_callouts.contains(&callout))
-            {
+        let mut variants = BTreeMap::new();
+        for ((callout, model), (metadata, names)) in graphics {
+            if names.is_empty() && (contexts[&model].0 || shown_callouts.contains(&callout)) {
                 continue;
             }
-            let names = std::mem::take(&mut graphic.views);
-            let variants = scoped_graphics.entry(callout).or_default();
-            if let Some(known) = variants.iter_mut().find(|known| {
-                known.text == graphic.text
-                    && known.faces == graphic.faces
-                    && known.presents == graphic.presents
-                    && known.planes == graphic.planes
-            }) {
-                known.views.extend(names);
-            } else {
-                graphic.views = names;
-                variants.push(graphic);
-            }
+            variants
+                .entry((callout, metadata))
+                .and_modify(|(_, views): &mut (u64, Vec<String>)| {
+                    views.extend(names.iter().cloned())
+                })
+                .or_insert((model, names));
         }
-        (views, scoped_graphics.into_values().flatten().collect())
+        let mut variants: Vec<_> = variants.into_iter().collect();
+        variants.sort_by_key(|((callout, _), (model, _))| (*callout, *model));
+        let mut variants = variants.into_iter().peekable();
+        let mut graphics = Vec::new();
+        while let Some(((callout, metadata), (_, views))) = variants.next() {
+            let (name, kind, polylines_mm) =
+                if variants.peek().is_some_and(|((id, _), _)| *id == callout) {
+                    drawings[&callout].clone()
+                } else {
+                    drawings
+                        .remove(&callout)
+                        .expect("the scoped graphic has a drawing")
+                };
+            graphics.push(GraphicCallout {
+                entity: format!("#{callout}"),
+                name,
+                kind,
+                text: metadata.text,
+                faces: metadata.faces,
+                presents: metadata.presents,
+                planes: metadata.planes,
+                polylines_mm,
+                views,
+            });
+        }
+        (views, graphics)
     }
 
     /// Editable text on faces (recommended practices, section 7.4): a face
@@ -4440,15 +4550,18 @@ impl<'a> Reader<'a> {
 /// Refuses only a file that is not readable Part 21 text. What cannot be
 /// represented is listed in [`StepPmi::skipped`].
 pub fn read_step_pmi(bytes: &[u8]) -> Result<StepPmi, ImportRefusal> {
-    let graph = parse(bytes)?;
-    let reader = Reader::new(&graph);
-    Ok(read_items(
-        &reader,
-        graph
+    Ok(read_pmi(&Reader::new(&parse(bytes)?)))
+}
+
+fn read_pmi(reader: &Reader<'_>) -> StepPmi {
+    read_items(
+        reader,
+        reader
+            .g
             .iter()
             .filter_map(|(&id, entity)| candidate(id, entity)),
         None,
-    ))
+    )
 }
 
 pub(crate) fn read_assembly_pmi(
@@ -4796,6 +4909,202 @@ fn patch_refusal(what: impl std::fmt::Display) -> Refusal {
     Refusal::new("step.pmi-patch", what.to_string())
 }
 
+struct EditedTolerance {
+    root: u64,
+    owner: u64,
+    name: String,
+    faces: BTreeSet<String>,
+    old_mm: Rational,
+    mm_per_unit: Rational,
+}
+
+impl EditedTolerance {
+    fn stale_text(&self, text: &str) -> bool {
+        let mut at = 0;
+        while at < text.len() {
+            let tail = &text[at..];
+            let digits = |s: &str| s.bytes().take_while(u8::is_ascii_digit).count();
+            let whole = digits(tail);
+            let fraction = tail[whole..].strip_prefix('.').map_or(0, |s| 1 + digits(s));
+            if whole == 0 && fraction <= 1 {
+                at += tail.chars().next().expect("nonempty text").len_utf8();
+                continue;
+            }
+            let mut end = whole + fraction;
+            if let Some(exponent) = tail[end..].strip_prefix(['e', 'E']) {
+                let unsigned = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+                let count = digits(unsigned);
+                if count != 0 {
+                    end += 1 + exponent.len() - unsigned.len() + count;
+                }
+            }
+            let literal_id = at > 0
+                && text.as_bytes()[at - 1] == b'#'
+                && fraction <= 1
+                && end == whole + fraction;
+            let mut numeric = String::new();
+            if whole == 0 {
+                numeric.push('0');
+            }
+            numeric.push_str(&tail[..whole + fraction]);
+            if fraction == 1 {
+                numeric.push('0');
+            }
+            numeric.push_str(&tail[whole + fraction..end]);
+            let unit: String = tail[end..]
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_alphabetic() || matches!(c, '"' | '\''))
+                .flat_map(char::to_lowercase)
+                .collect();
+            let scale = match unit.as_str() {
+                "mm" | "millimeter" | "millimeters" | "millimetre" | "millimetres" => {
+                    Some(Rational::one())
+                }
+                "cm" => Some(Rational::from_i64(10)),
+                "m" => Some(Rational::from_i64(1000)),
+                "μm" | "µm" | "um" | "micron" | "microns" => Rational::from_ratio(1, 1000),
+                "in" | "inch" | "inches" | "\"" => Rational::from_ratio(254, 10),
+                "ft" | "foot" | "feet" | "'" => Rational::from_ratio(3048, 10),
+                "mil" | "mils" | "thou" => Rational::from_ratio(254, 10_000),
+                _ => None,
+            };
+            if !literal_id && let Ok(value) = Rational::parse(&numeric) {
+                let stale = match scale {
+                    Some(scale) => &value * &scale == self.old_mm,
+                    None => value == self.old_mm || &value * &self.mm_per_unit == self.old_mm,
+                };
+                if stale {
+                    return true;
+                }
+            }
+            at += end;
+        }
+        false
+    }
+
+    fn check_dependencies(&self, reader: &Reader<'_>) -> Result<(), Refusal> {
+        let refuse = |id, kind| {
+            patch_refusal(format!(
+                "{}: #{id} ({kind}) may still depend on the old value",
+                self.name,
+            ))
+        };
+        let mut attached = BTreeSet::from([self.root]);
+        let mut unresolved = BTreeSet::new();
+        for &id in reader.g.keys() {
+            if id == self.root {
+                continue;
+            }
+            match reader.attached_faces(id) {
+                Ok(Some(faces))
+                    if faces.iter().any(|face| self.faces.contains(face))
+                        && reader.owner_shapes(id).contains(&self.owner) =>
+                {
+                    attached.insert(id);
+                }
+                Err(_) if reader.owner_shapes(id).contains(&self.owner) => {
+                    unresolved.insert(id);
+                }
+                _ => {}
+            }
+        }
+        let mut pending: Vec<_> = attached.into_iter().map(|id| (id, None)).collect();
+        let mut seen = BTreeSet::new();
+        let mut presentation = None;
+        while let Some((id, association)) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(entity) = reader.entity(id) else {
+                return Err(refuse(id, "missing entity"));
+            };
+            let kind = entity.type_name();
+            let association = if entity.part("DRAUGHTING_MODEL_ITEM_ASSOCIATION").is_some() {
+                presentation.get_or_insert(id);
+                Some(id)
+            } else {
+                association
+            };
+            let bad_text = |params: &[Param]| {
+                let mut stack: Vec<_> = params.iter().collect();
+                while let Some(param) = stack.pop() {
+                    match param {
+                        Param::Str(raw)
+                            if decode(raw).is_none_or(|text| self.stale_text(&text)) =>
+                        {
+                            return true;
+                        }
+                        Param::List(params) | Param::Typed(_, params) => stack.extend(params),
+                        _ => {}
+                    }
+                }
+                false
+            };
+            if entity.parts.iter().any(|(_, params)| bad_text(params)) {
+                return Err(if let Some(association) = association {
+                    let error = refuse(association, "DRAUGHTING_MODEL_ITEM_ASSOCIATION");
+                    patch_refusal(format!("{} through #{id} ({kind})", error.detail))
+                } else {
+                    refuse(id, kind)
+                });
+            }
+            for &user in reader.sharing.get(&id).into_iter().flatten() {
+                let entity = &reader.g[&user];
+                for (carrier, position) in [
+                    ("ID_ATTRIBUTE", 1),
+                    ("TOLERANCE_ZONE", 4),
+                    ("PROPERTY_DEFINITION", 2),
+                    ("PROPERTY_DEFINITION_REPRESENTATION", 0),
+                    ("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION", 0),
+                    ("DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2),
+                    ("CHARACTERIZED_ITEM_WITHIN_REPRESENTATION", 2),
+                ] {
+                    if entity
+                        .part(carrier)
+                        .is_some_and(|params| references(params.get(position)).contains(&id))
+                    {
+                        pending.push((user, association));
+                    }
+                }
+            }
+            for (carrier, position) in [
+                ("TOLERANCE_ZONE", 5),
+                ("PROPERTY_DEFINITION_REPRESENTATION", 1),
+                ("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION", 1),
+                ("DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4),
+                ("DRAUGHTING_CALLOUT", 1),
+                ("ANNOTATION_CURVE_OCCURRENCE", 2),
+                ("GEOMETRIC_CURVE_SET", 1),
+                ("POLYLINE", 1),
+                ("REPRESENTATION", 1),
+                ("SHAPE_DIMENSION_REPRESENTATION", 1),
+                ("SURFACE_TEXTURE_REPRESENTATION", 1),
+            ] {
+                if let Some(params) = entity.part(carrier) {
+                    pending.extend(
+                        references(params.get(position))
+                            .into_iter()
+                            .map(|id| (id, association)),
+                    );
+                }
+            }
+        }
+        for id in unresolved {
+            if let Some((association, _)) = reader
+                .sharing_at(id, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)
+                .first()
+            {
+                presentation.get_or_insert(*association);
+            }
+        }
+        if let Some(id) = presentation {
+            return Err(refuse(id, "DRAUGHTING_MODEL_ITEM_ASSOCIATION"));
+        }
+        Ok(())
+    }
+}
+
 /// Edits the PMI of a STEP file in its own records, keeping every other
 /// record as it was written: the assembly, colours, other annotations and
 /// records this reader does not know. No edits give back the same bytes.
@@ -4868,6 +5177,7 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             .collect::<BTreeMap<_, _>>()
     };
     let mut patch = Patch::new(&records);
+    let mut dependencies = Vec::new();
     let mut expected = scoped(&reader);
     for (root, owner, source, value) in edits_by_id {
         let part = expected.get_mut(&owner).expect("selected part was read");
@@ -4903,24 +5213,11 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
             let fields = entity.parts[0].1.as_slice();
             match (entity.parts.len(), entity.type_name()) {
                 (1, "ID_ATTRIBUTE") if reference(fields.get(1)) == Some(root) => {}
+                (1, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")
+                    if reference(fields.get(2)) == Some(root) => {}
                 (1, "TOLERANCE_ZONE")
-                    if reference_list(fields.get(4)).as_deref() == Some(&[root])
-                        && matches!(fields.first(), Some(Param::Str(name)) if name.is_empty())
-                        && match fields.get(1) {
-                            Some(Param::Unset) => true,
-                            Some(Param::Str(description)) => description.is_empty(),
-                            _ => false,
-                        } =>
+                    if reference_list(fields.get(4)).as_deref() == Some(&[root]) =>
                 {
-                    let form = reference(fields.get(5)).ok_or_else(|| refuse_dependency(user))?;
-                    if !matches!(
-                        graph.get(&form).and_then(|e| e.part("TOLERANCE_ZONE_FORM")),
-                        Some([label]) if matches!(string(Some(label)).as_deref(),
-                            Some("cylindrical or circular" | "within a cylinder" | "within a circle"
-                                | "between two parallel planes"))
-                    ) {
-                        return Err(refuse_dependency(form));
-                    }
                     if let Some(&dependent) = records.users(user).first() {
                         return Err(refuse_dependency(dependent));
                     }
@@ -4932,43 +5229,6 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
         let base = entity
             .part("GEOMETRIC_TOLERANCE")
             .unwrap_or(entity.parts[0].1.as_slice());
-        if !base[..2]
-            .iter()
-            .enumerate()
-            .all(|(index, field)| match field {
-                Param::Unset => index == 1,
-                Param::Str(raw) => decode(raw).is_some_and(|text| {
-                    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '#' | '.')))
-                        .all(|word| {
-                            word.strip_prefix('#').is_some_and(|id| {
-                                !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
-                            }) || !word
-                                .trim_start_matches('.')
-                                .starts_with(|c: char| c.is_numeric())
-                        })
-                }),
-                _ => false,
-            })
-        {
-            return Err(refuse_dependency(root));
-        }
-        let controlled: BTreeSet<_> = tolerance.features.iter().flatten().collect();
-        for (&id, association) in &graph {
-            let Some(fields) = association.part("DRAUGHTING_MODEL_ITEM_ASSOCIATION") else {
-                continue;
-            };
-            for definition in references(fields.get(2)) {
-                if (reader.aspect_params(definition).is_some()
-                    || reader.has(definition, "DIMENSIONAL_SIZE"))
-                    && reader.owner_shapes(definition).contains(&owner)
-                    && !reader
-                        .graphic_faces(definition)
-                        .is_ok_and(|faces| faces.iter().all(|face| !controlled.contains(face)))
-                {
-                    return Err(refuse_dependency(id));
-                }
-            }
-        }
         let magnitude = reference(base.get(2)).expect("a read tolerance has a value");
         if let Some(&user) = records.users(magnitude).iter().find(|&&user| user != root) {
             return Err(refuse_dependency(user));
@@ -4990,11 +5250,29 @@ pub fn patch_step_pmi(bytes: &[u8], edits: &[PmiEdit]) -> Result<Vec<u8>, Refusa
         patch
             .replace_owned_magnitude(root, magnitude, kind, &(value / &scale), *unit)
             .map_err(|error| patch_refusal(format!("{item}: {}", error.detail)))?;
+        dependencies.push(EditedTolerance {
+            root,
+            owner,
+            name: item.clone(),
+            faces: tolerance.features.iter().flatten().cloned().collect(),
+            old_mm: tolerance.value.clone(),
+            mm_per_unit: scale,
+        });
         tolerance.value = value.clone();
     }
     let out = patch.apply();
-    let graph = parse(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
-    if scoped(&Reader::new(&graph)) != expected {
+    let changed_graph = parse(&out).map_err(|refusal| patch_refusal(format!("{refusal:?}")))?;
+    let changed_reader = Reader::new(&changed_graph);
+    for tolerance in dependencies {
+        tolerance.check_dependencies(&changed_reader)?;
+    }
+    let before = read_pmi(&reader);
+    let after = read_pmi(&changed_reader);
+    if scoped(&changed_reader) != expected
+        || before.pmi.views != after.pmi.views
+        || before.graphics != after.graphics
+        || before.skipped != after.skipped
+    {
         return Err(patch_refusal(
             "the patched file does not read back as the edited PMI",
         ));

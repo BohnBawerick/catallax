@@ -482,6 +482,15 @@ fn tolerance_patch_refuses_retained_magnitude_text() {
         for text in [
             format!("{carrier}('{name} {magnitude} mm','',"),
             format!("{carrier}('{name}','{magnitude} mm maximum',"),
+            format!("{carrier}('{name}','MAX{magnitude}mm',"),
+            format!(
+                "{carrier}('{name}','{}0mm',",
+                magnitude.trim_start_matches('0')
+            ),
+            format!(
+                "{carrier}('{name}','{} um',",
+                (&q(magnitude) * &q("1000")).to_decimal_exact().unwrap()
+            ),
         ] {
             let changed = line.replace(&base, &text);
             assert_ne!(changed, line);
@@ -494,6 +503,28 @@ fn tolerance_patch_refuses_retained_magnitude_text() {
             );
         }
     }
+    let source = &original.sources["Base flatness"];
+    let named = file.replacen(
+        "FLATNESS_TOLERANCE('Base flatness','',",
+        "FLATNESS_TOLERANCE('','',",
+        1,
+    );
+    let named = named.replacen(
+        "ENDSEC;\nEND-ISO",
+        &format!("#900000=ID_ATTRIBUTE('MAX0.05mm',{source});\nENDSEC;\nEND-ISO"),
+        1,
+    );
+    let read = read_step_pmi(named.as_bytes()).unwrap();
+    assert_eq!(&read.sources["MAX0.05mm"], source);
+    let error = patch_step_pmi(
+        named.as_bytes(),
+        &[PmiEdit::ToleranceValue {
+            source: source.clone(),
+            value: q("0.02"),
+        }],
+    )
+    .unwrap_err();
+    assert!(error.detail.contains("#900000 (ID_ATTRIBUTE)"), "{error:?}");
 }
 
 #[test]

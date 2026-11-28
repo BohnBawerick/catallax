@@ -2637,6 +2637,22 @@ fn a_bad_target_or_frame_on_import_keeps_the_independent_items() {
     );
     assert!(reasons(&skipped).contains("datum target relationship is unreadable"));
 
+    let imported = read_step_pmi(file.as_bytes()).unwrap();
+    let datum_b = &imported.sources["Datum B"];
+    let wrong_datum = mutate(
+        &file,
+        relationship,
+        &relationship.replace(&format!(",{});", endpoint[1]), &format!(",{datum_b});")),
+    );
+    let (back, skipped) = read_back(&wrong_datum, &report);
+    assert_eq!(
+        ids(&back),
+        ["Bore", "Datum C", "Datum D"],
+        "{}",
+        reasons(&skipped)
+    );
+    assert!(reasons(&skipped).contains(&format!("datum target {a1} was not read")));
+
     let written = records(&file);
     let rim = written
         .iter()
@@ -3794,6 +3810,30 @@ fn p1_position_patch_refuses_a_dimension_linked_callout() {
         }),
         "{error:?}"
     );
+    let bore = &references(&all[size])[0];
+    let other = all
+        .iter()
+        .find_map(|(id, body)| (body.starts_with("DATUM_FEATURE(") && id != bore).then_some(id))
+        .unwrap();
+    let mut location = mutate(
+        &file,
+        "ENDSEC;\nEND-ISO",
+        &format!(
+            "#900050=DIMENSIONAL_LOCATION('linear distance','',{bore},{other});\nENDSEC;\nEND-ISO"
+        ),
+    );
+    for (id, association) in &associations {
+        let from = association.replace(&format!(",{root},"), &format!(",{size},"));
+        let to = association.replace(&format!(",{root},"), ",#900050,");
+        location = mutate(&location, &format!("{id}={from}"), &format!("{id}={to}"));
+    }
+    let error = patch_step_pmi(location.as_bytes(), std::slice::from_ref(&edit)).unwrap_err();
+    assert!(
+        associations.iter().any(|(id, _)| error
+            .detail
+            .contains(&format!("{id} (DRAUGHTING_MODEL_ITEM_ASSOCIATION)"))),
+        "{error:?}"
+    );
     pmi.views.clear();
     let (unpresented, _) = write(&part, &pmi);
     let plain = read_step_pmi(unpresented.as_bytes()).unwrap();
@@ -4890,6 +4930,119 @@ fn written_position_needs_coaxial_trimmed_cylinders() {
 }
 
 #[test]
+fn written_material_boundary_keeps_opposed_planes_separated() {
+    use catallax_shapes::{RVector3, Rotation};
+    use catallax_topology::block;
+
+    let mut model = Model::new();
+    let at = |x, z| Pose::from_rational(Rotation::identity(), RVector3::new(q(x), q("0"), q(z)));
+    let lower = block(&mut model, [q("2"), q("2"), q("10")], &at("0", "0")).unwrap();
+    let upper = block(&mut model, [q("2"), q("2"), q("1")], &at("4", "10.00001")).unwrap();
+    let shaft = cylinder(&mut model, q("1"), q("3"), &at("8", "0")).unwrap();
+    let mut body = model.body(lower).clone();
+    body.lumps.extend(&model.body(upper).lumps);
+    body.lumps.extend(&model.body(shaft).lumps);
+    let body = model.add_body(body);
+    let part = Bracket { model, body };
+    let [bottom] = part.planes(2, "10").try_into().unwrap();
+    let [top] = part.planes(2, "10.00001").try_into().unwrap();
+    let pmi = Pmi {
+        items: vec![
+            item(
+                "Datum A",
+                ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![bottom, top],
+                }),
+            ),
+            item(
+                "Shaft position",
+                ItemKind::Position(PositionControl {
+                    features: vec![part.round(2, "1", ["8", "0"])],
+                    frame: PositionFrame::Single {
+                        segment: segment(
+                            "0.05",
+                            None,
+                            vec![bounded("A", MaterialCondition::Maximum)],
+                        ),
+                        projected_zone: None,
+                    },
+                }),
+            ),
+        ],
+        ..Pmi::default()
+    };
+    let (file, report) = write(&part, &pmi);
+    assert!(read_back(&file, &report).1.is_empty());
+    let mut out = Vec::new();
+    let options = StepOptions {
+        significant_digits: 5,
+        ..StepOptions::default()
+    };
+    let error = write_step_with_pmi(
+        &part.model,
+        part.body,
+        &options,
+        &pmi,
+        &mut Decider::default(),
+        &mut out,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .detail
+            .contains("written datum faces do not prove two separated opposed planes"),
+        "{error:?}"
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
+fn written_circular_trim_checks_the_whole_circle_seam() {
+    use catallax_boolean::{BoolOp, boolean};
+    use catallax_shapes::{RVector3, Rotation};
+    use catallax_topology::block;
+
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let stock = block(&mut model, [q("10"), q("10"), q("5")], &Pose::identity()).unwrap();
+    let at = Pose::from_rational(Rotation::identity(), RVector3::new(q("5"), q("5"), q("0")));
+    let bore = cylinder(&mut model, q("0.123456"), q("5"), &at).unwrap();
+    let body = boolean(&mut model, stock, bore, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let part = Bracket { model, body };
+    let [top] = part.planes(2, "5").try_into().unwrap();
+    let pmi = Pmi {
+        items: vec![
+            item(
+                "Datum A",
+                ItemKind::Datum(Datum {
+                    letter: "A".into(),
+                    feature: vec![top],
+                }),
+            ),
+            item("A1", target(1, top, v("1", "1", "5"), TargetKind::Point)),
+        ],
+        ..Pmi::default()
+    };
+    let (file, report) = write(&part, &pmi);
+    assert!(read_back(&file, &report).1.is_empty());
+    let mut out = Vec::new();
+    let options = StepOptions {
+        significant_digits: 5,
+        ..StepOptions::default()
+    };
+    let error = write_step_with_pmi(&part.model, part.body, &options, &pmi, &mut dec, &mut out)
+        .unwrap_err();
+    assert!(
+        error.detail.contains("written trim cannot be checked"),
+        "{error:?}"
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
 fn rounded_step_geometry_cannot_reverse_a_projection() {
     use catallax_shapes::{Isometry, RVector3, Rotation};
     let (mut part, _) = hole_fixture();
@@ -5323,7 +5476,7 @@ fn a_boss_blocks_projection_across_a_recess() {
                 "{error:?}"
             );
         }
-        let (file, _) = write(
+        let (file, report) = write(
             &part,
             &make_pmi(ItemKind::Tolerance(GeometricTolerance {
                 characteristic: Characteristic::Position,
@@ -5361,6 +5514,39 @@ fn a_boss_blocks_projection_across_a_recess() {
             "{:?}",
             read.skipped
         );
+        if raised {
+            let [cap] = part.planes(2, "8").try_into().unwrap();
+            let cap = written_faces(&file, &report)
+                .into_iter()
+                .find_map(|(id, face)| (face == cap).then_some(id))
+                .unwrap();
+            let (shell, body) = all
+                .iter()
+                .find(|(_, body)| {
+                    body.starts_with("CLOSED_SHELL(") && references(body).contains(&cap)
+                })
+                .unwrap();
+            let remaining = references(body)
+                .into_iter()
+                .filter(|id| id != &cap)
+                .collect::<Vec<_>>()
+                .join(",");
+            let deliberately_open = mutate(
+                &file,
+                &format!("{shell}={body}"),
+                &format!("{shell}=CLOSED_SHELL('',({remaining}));"),
+            );
+            let read = read_step_pmi(deliberately_open.as_bytes()).unwrap();
+            assert!(!read.sources.contains_key("Recess wall"));
+            assert!(read.sources.contains_key("Rim"));
+            assert!(
+                read.skipped.iter().any(|item| item
+                    .reason
+                    .contains("open or inconsistently oriented shell")),
+                "{:?}",
+                read.skipped
+            );
+        }
     }
 }
 
@@ -5515,6 +5701,116 @@ fn an_oblique_camera_and_target_write_exact_direction_ratios() {
     assert!(direction[0] > q("0"));
     assert_eq!(direction[1], &direction[0] * &q("2"));
     assert!(direction[2].is_zero());
+}
+
+#[test]
+fn tiny_saved_view_refuses_zero_length_callouts() {
+    use catallax_topology::{Loop, block};
+    let mut model = Model::new();
+    let body = block(&mut model, [q("2"), q("2"), q("2")], &Pose::identity()).unwrap();
+    let part = Bracket { model, body };
+    let [face] = part.planes(2, "2").try_into().unwrap();
+    let Loop::Coedges(edges) = part.model.loop_(part.model.face(face).loops[0]) else {
+        panic!("block face has edges");
+    };
+    let vertex = part
+        .model
+        .edge(part.model.coedge(edges[0]).edge)
+        .start
+        .unwrap();
+    let point = part.model.geom().position(part.model.vertex(vertex).point);
+    let point = point.rational_components().unwrap();
+    for kind in [
+        ItemKind::Datum(Datum {
+            letter: "A".into(),
+            feature: vec![face],
+        }),
+        ItemKind::Texture(SurfaceTexture {
+            parameter: "Ra".into(),
+            process: Process::Any,
+            value: q("3.2"),
+            feature: vec![face],
+        }),
+    ] {
+        let pmi = Pmi {
+            items: vec![item("Top face", kind)],
+            views: vec![SavedView {
+                name: "Tiny".into(),
+                camera: Camera {
+                    eye: [point[0].clone(), point[1].clone(), q("10")],
+                    direction: v("0", "0", "-1"),
+                    up: v("0", "1", "0"),
+                    distance: q("8"),
+                    window: [q("0.00000001"), q("0.00000001")],
+                    perspective: false,
+                },
+                items: vec!["Top face".into()],
+            }],
+            ..Pmi::default()
+        };
+        let error = try_write(&part, &pmi).unwrap_err();
+        assert!(error.contains("callout length rounds to zero"), "{error}");
+    }
+}
+
+#[test]
+fn shared_view_graphics_emit_one_copy_of_identical_strokes() {
+    let source = include_str!("fixtures/graphical-only-pmi.step");
+    let mut models = String::new();
+    for i in 0..128 {
+        use std::fmt::Write;
+        let model = 100 + 2 * i;
+        writeln!(models, "#{model}=DRAUGHTING_MODEL('Top',(#38,#49),#9);").unwrap();
+        writeln!(
+            models,
+            "#{}=MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP('','',#{model},#39);",
+            model + 1
+        )
+        .unwrap();
+    }
+    let shared = mutate(
+        source,
+        "ENDSEC;\nEND-ISO",
+        &format!("{models}ENDSEC;\nEND-ISO"),
+    );
+    let imported = read_step_pmi(shared.as_bytes()).unwrap();
+    let [graphic] = imported.graphics.as_slice() else {
+        panic!("shared strokes were duplicated");
+    };
+    assert_eq!(imported.pmi.views.len(), 129);
+    assert_eq!(graphic.views.len(), 129);
+    assert_eq!(graphic.views[128], "Top (129)");
+    assert_eq!(
+        graphic.polylines_mm,
+        [vec![v("2", "2", "5"), v("4", "4", "5"), v("8", "4", "5")]]
+    );
+}
+
+#[test]
+fn saved_view_mappings_require_supported_shape_representations() {
+    let source = include_str!("fixtures/graphical-only-pmi.step");
+    let mapped = mutate(source, "(#38,#49),#9", "(#38,#49,#61),#9");
+    let mapped = mutate(
+        &mapped,
+        "ENDSEC;\nEND-ISO",
+        "#60=REPRESENTATION_MAP(#15,#22);\n#61=MAPPED_ITEM('',#60,#15);\nENDSEC;\nEND-ISO",
+    );
+    assert_eq!(read_step_pmi(mapped.as_bytes()).unwrap().pmi.views.len(), 1);
+    for carrier in [
+        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+        "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION",
+    ] {
+        let changed = mutate(
+            &mapped,
+            "#22=SHAPE_REPRESENTATION(",
+            &format!("#22={carrier}("),
+        );
+        let read = read_step_pmi(changed.as_bytes()).unwrap();
+        assert!(read.pmi.views.is_empty());
+        assert!(read.skipped.iter().any(
+            |item| item.entity == "#50" && item.reason.contains("unreadable geometry mapping")
+        ));
+    }
 }
 
 #[test]
@@ -5813,8 +6109,10 @@ fn a_projected_zone_is_checked_over_its_own_height() {
         .unwrap()
         .body;
     let off_axis = block(&mut model, [q("2"), q("2"), q("2")], &at("10", "30", "30")).unwrap();
+    let sphere = catallax_topology::sphere(&mut model, q("4"), &at("10", "7", "35")).unwrap();
     let mut separated = model.body(body).clone();
     separated.lumps.extend(&model.body(off_axis).lumps);
+    separated.lumps.extend(&model.body(sphere).lumps);
     let body = model.add_body(separated);
     let part = Bracket { model, body };
     let floor = part
